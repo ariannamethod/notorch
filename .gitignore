@@ -2,3 +2,8 @@ notorch_test
 notorch_test_gpu
 *.o
 *.a
+infer_gemma
+infer_janus_nt
+test_gguf
+notorch_test
+*.o

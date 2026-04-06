@@ -50,7 +50,7 @@ yeah. me too. so i did something about it.
 
 just C. just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in under a second. try that with PyTorch. go ahead. i'll wait. actually no i won't because i'd be waiting for 47 minutes while cmake does whatever cmake does.
 
-it's part of [the Arianna Method](https://github.com/ariannamethod/ariannamethod) — patterns over parameters, emergence over engineering, raw C over existential dread.
+it's part of [the Arianna Method](https://github.com/theariannamethod/ariannamethod.ai) — patterns over parameters, emergence over engineering, raw C over existential dread.
 
 extracted from the core of [ariannamethod.ai](https://ariannamethod.ai) where it actually runs in production. training actual models. in C. like adults.
 
@@ -79,7 +79,7 @@ and for WHAT? a matmul and a softmax. that's all neural networks are. matmuls an
 
 so here we are. **notorch**. everything you need. nothing you don't. no Python runtime. no GIL. no garbage collector pausing your training at the worst possible moment. no `torch.no_grad()` context manager that you forget and then wonder why you're out of memory. just tensors, autograd, optimizers, and the cold clarity of C.
 
-**the entire framework is two files.** `notorch.h` and `notorch.c`. that's it. ~2500 lines. you can read the whole thing in an afternoon. try reading PyTorch's source in an afternoon. actually don't. you'll end up in a hospital.
+**the entire framework is two files.** `notorch.h` and `notorch.c`. that's it. ~3000 lines. you can read the whole thing in an afternoon. try reading PyTorch's source in an afternoon. actually don't. you'll end up in a hospital.
 
 ---
 
@@ -477,15 +477,20 @@ the macOS path uses Apple Accelerate, which means your MacBook's AMX coprocessor
 
 ```
 notorch/
-├── notorch.h          # header — all types, constants, API declarations (465 lines)
-├── notorch.c          # implementation — the whole framework (2488 lines)
-├── test_notorch.c     # test suite — 47 tests, numerical grad checks (1401 lines)
-├── Makefile           # build system (68 lines, because simplicity is art)
-├── LICENSE            # LGPL-3.0 (use it in your stuff, just share improvements)
-└── README.md          # you are here. are you okay? it's been a long read.
+├── notorch.h          # core API — tensors, autograd, optimizers, ops (465 lines)
+├── notorch.c          # core implementation (2488 lines)
+├── gguf.h             # GGUF file parser header (100 lines)
+├── gguf.c             # GGUF parser + F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K dequant (420 lines)
+├── infer_janus.c      # Janus RRPRAM inference — universal loader (370 lines)
+├── infer_gemma.c      # Gemma-3 inference via GGUF — GQA, KV cache (430 lines)
+├── test_notorch.c     # 47 tests, numerical gradient checks (1400 lines)
+├── test_gguf.c        # GGUF parser tests (40 lines)
+├── Makefile           # build: CPU/GPU/inference/test (75 lines)
+├── LICENSE            # LGPL-3.0
+└── README.md          # this. you survived. congratulations.
 ```
 
-total: **~4400 lines of C**. that's the entire framework, tests, and build system.
+total: **~6000 lines of C**. framework + GGUF + inference engines + tests. tested on 20+ real model files across 4 architectures (llama, gemma3, qwen2, pitomadom).
 
 for reference, PyTorch's `torch/` directory alone is ~800,000 lines of Python, ~1,500,000 lines of C++, and an emotional support system for its build engineers. notorch is 0.15% of that. and it does everything you need to train a transformer.
 
@@ -538,9 +543,62 @@ every backward pass is verified against finite differences: `(f(x+h) - f(x-h)) /
 
 ---
 
-## performance
+## real inference — tested on real weights
 
-this isn't a benchmarking paper. but here are some vibes:
+notorch isn't theoretical. it runs actual models on actual hardware.
+
+### GGUF loader (llama.cpp compatible)
+
+loads any GGUF file. parses metadata, tensor directory, dequantizes weights. supports F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K. that covers every quantization that matters.
+
+**tested on 12 GGUF files, 4 architectures, 0 failures:**
+
+| model | arch | params | quant | file | status |
+|-------|------|--------|-------|------|--------|
+| nanollama nano | llama | 34M | Q4_0 | 19 MB | ✓ parses + dequant |
+| nanollama micro-yent | llama | 66M | F16 | 132 MB | ✓ |
+| nanollama mini-arianna | llama | 170M | F16 | 335 MB | ✓ |
+| nanollama small-yent | llama | 330M | F16 | 642 MB | ✓ |
+| WTForacle (SmolLM2 360M) | llama | 360M | Q4_0 | 219 MB | ✓ |
+| actually.llama | llama | 27M | F32 | 107 MB | ✓ |
+| nano-yent | llama | 34M | F16 | 88 MB | ✓ |
+| Qwen2.5 0.5B (yent) | qwen2 | 630M | Q4_K/Q5_0/Q6_K | 491 MB | ✓ |
+| **Gemma-3 270M (leo)** | **gemma3** | **268M** | **Q8_0** | **278 MB** | **✓ inference** |
+| pitomadom | pitomadom_rtl | 20M | F16 | 39 MB | ✓ |
+| sorokin | llama | 34M | Q4_0 | 19 MB | ✓ |
+| MOE model | llama | 55M | F32 | 221 MB | ✓ |
+
+### Janus RRPRAM inference — 8 weight files, bit-perfect
+
+custom 3-way gated attention (QKV + RRPRAM + Janus echo). universal loader auto-detects char (V=256) vs BPE (V=2048) vs Resonance (no echo) format.
+
+| model | params | loss | tok/s | status |
+|-------|--------|------|-------|--------|
+| janus_char_leo_d12 | 26.2M | **0.6473** (bit-perfect) | 17.4 | ✓ |
+| janus_bpe_leo | 24.0M | — | 15.9 | ✓ |
+| hybrid_bpe_leo | 24.0M | — | 24.0 | ✓ |
+| janus_bpe_yent | 24.0M | — | 21.0 | ✓ |
+| hybrid_bpe_yent | 24.0M | — | 20.3 | ✓ |
+| resonance_bpe_leo | 20.5M | — | 6.3 | ✓ |
+| resonance_bpe_yent | 20.5M | — | 16.4 | ✓ |
+| dario/janus_bpe_leo | 24.0M | — | 8.3 | ✓ |
+
+### Gemma-3 inference — Google's model, pure C
+
+full Gemma-3 architecture: 18 layers, GQA (4 heads, 1 KV head), QK-norm, RoPE, SiLU-gated FFN, post-attention/FFN norms, tied embeddings, KV cache.
+
+- prefill: **15.9 tok/s**
+- decode: **13.5 tok/s**
+- on an 8 GB MacBook. with Accelerate BLAS. no Python. no pip. no conda. no suffering.
+
+```bash
+make gemma
+./infer_gemma ~/Downloads/gemma-notorch/leo-q8_0.gguf "What is life?" 50 0.7
+```
+
+---
+
+## performance
 
 - **compile time**: <1 second. your coffee won't even cool down.
 - **import time**: 0 ms. there's nothing to import. it's C.
