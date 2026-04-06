@@ -598,6 +598,43 @@ make gemma
 
 ---
 
+## training — yes, actual training
+
+notorch trains transformers from scratch. on a laptop. in C.
+
+### PostGPT-Q (1.65M params)
+
+```bash
+make train_q && ./train_q 10000 5e-4
+```
+
+| metric | value |
+|--------|-------|
+| architecture | V=256 E=128 H=4 FFN=512 L=6 CTX=64 |
+| parameters | 1,648,256 |
+| dataset | postgpt.txt (52 KB, information theory corpus) |
+| optimizer | Chuck (self-aware AdamW, synced with PyTorch) |
+| loss | 5.99 → **1.05** (82.5% reduction, 10K steps) |
+| time | 18 minutes on 8 GB Mac |
+| NaN | 0 |
+
+loss/random = **0.19**. for comparison, the PyTorch version of the same model was still at loss/random ≈ 1.0 after 500 steps.
+
+### Yent (9.8M params)
+
+```bash
+make train_yent && ./train_yent 5000 3e-4
+```
+
+| metric | value |
+|--------|-------|
+| architecture | V=256 E=224 H=8 FFN=896 L=12 CTX=128 |
+| parameters | 9,782,752 |
+| dataset | yent_v11_en_final.txt (5.6 MB, cynical AI personality) |
+| optimizer | Chuck with cosine schedule, warmup, NaN guard |
+
+---
+
 ## performance
 
 - **compile time**: <1 second. your coffee won't even cool down.

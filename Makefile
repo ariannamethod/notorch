@@ -65,10 +65,15 @@ llama: infer_llama.c gguf.c gguf.h notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama infer_llama.c gguf.c notorch.c -lm
 	@echo "Compiled: infer_llama (LLaMA/Qwen GGUF, $(BLAS_NAME))"
 
-# PostGPT-Q training
+# PostGPT-Q training (1.65M)
 train_q: train_q.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_q train_q.c notorch.c -lm
-	@echo "Compiled: train_q (PostGPT-Q, $(BLAS_NAME))"
+	@echo "Compiled: train_q (PostGPT-Q 1.65M, $(BLAS_NAME))"
+
+# Yent training (9.8M)
+train_yent: train_yent.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_yent train_yent.c notorch.c -lm
+	@echo "Compiled: train_yent (Yent 9.8M, $(BLAS_NAME))"
 
 test: notorch_test
 	./notorch_test
