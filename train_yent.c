@@ -7,6 +7,7 @@
  *
  * Build: make train_yent
  * Run:   ./train_yent [steps] [lr]
+ *        ./train_yent --resume [steps] [lr]   (continue from checkpoint)
  */
 
 #include "notorch.h"
@@ -21,6 +22,12 @@
 #define FFN_D 896
 #define CTX   128
 #define NLAYERS 12
+
+#define CKPT_EVERY  1000
+#define EVAL_SEQS   32
+#define LOG_EVERY   100
+#define BEST_PREFIX "yent_best"
+#define CKPT_PREFIX "yent_ckpt"
 
 typedef struct {
     nt_tensor *wte, *wpe;
@@ -76,6 +83,68 @@ static void model_free(Model* m) {
     nt_tensor_free(m->rms_f); nt_tensor_free(m->head); free(m);
 }
 
+/* ── Param array helpers (save/load) ── */
+
+static int model_n_tensors(void) { return 2 + NLAYERS * 9 + 2; }
+
+static nt_tensor** model_param_array(Model* m) {
+    int n = model_n_tensors();
+    nt_tensor** p = (nt_tensor**)malloc(n * sizeof(nt_tensor*));
+    int i = 0;
+    p[i++] = m->wte; p[i++] = m->wpe;
+    for (int l = 0; l < NLAYERS; l++) {
+        p[i++]=m->L[l].rms1; p[i++]=m->L[l].wq; p[i++]=m->L[l].wk;
+        p[i++]=m->L[l].wv; p[i++]=m->L[l].wo; p[i++]=m->L[l].rms2;
+        p[i++]=m->L[l].w_gate; p[i++]=m->L[l].w_up; p[i++]=m->L[l].w_down;
+    }
+    p[i++] = m->rms_f; p[i++] = m->head;
+    return p;
+}
+
+static void save_model(Model* m, const char* prefix) {
+    char path[256];
+    snprintf(path, sizeof(path), "%s.bin", prefix);
+    nt_tensor** p = model_param_array(m);
+    nt_save(path, p, model_n_tensors());
+    free(p);
+}
+
+static void save_checkpoint(Model* m, int step, float best_loss) {
+    save_model(m, CKPT_PREFIX);
+    char mpath[256];
+    snprintf(mpath, sizeof(mpath), "%s.meta", CKPT_PREFIX);
+    FILE* f = fopen(mpath, "w");
+    if (f) { fprintf(f, "%d\n%.6f\n", step, best_loss); fclose(f); }
+}
+
+static int load_checkpoint(Model* m, float* best_loss) {
+    char wpath[256], mpath[256];
+    snprintf(wpath, sizeof(wpath), "%s.bin", CKPT_PREFIX);
+    snprintf(mpath, sizeof(mpath), "%s.meta", CKPT_PREFIX);
+    int n_loaded = 0;
+    nt_tensor** loaded = nt_load(wpath, &n_loaded);
+    if (!loaded) return -1;
+    int expected = model_n_tensors();
+    if (n_loaded != expected) {
+        printf("  WARN: checkpoint has %d tensors, expected %d\n", n_loaded, expected);
+        for (int i = 0; i < n_loaded; i++) nt_tensor_free(loaded[i]);
+        free(loaded);
+        return -1;
+    }
+    nt_tensor** mp = model_param_array(m);
+    for (int i = 0; i < expected; i++) {
+        memcpy(mp[i]->data, loaded[i]->data, mp[i]->len * sizeof(float));
+        nt_tensor_free(loaded[i]);
+    }
+    free(loaded); free(mp);
+    int step = 0; *best_loss = 99.0f;
+    FILE* f = fopen(mpath, "r");
+    if (f) { fscanf(f, "%d\n%f\n", &step, best_loss); fclose(f); }
+    return step;
+}
+
+/* ── Forward pass ── */
+
 static int forward(Model* m, int* tokens, int* targets) {
     int wte_i = nt_tape_param(m->wte); nt_tape_no_decay(wte_i);
     int wpe_i = nt_tape_param(m->wpe); nt_tape_no_decay(wpe_i);
@@ -121,16 +190,43 @@ static int forward(Model* m, int* tokens, int* targets) {
     return nt_seq_cross_entropy(logits, tgt_i, CTX, V);
 }
 
+/* ── Validation: average loss over fixed sequences ── */
+
+static float eval_loss(Model* m, unsigned char* data, long fsize) {
+    float total = 0;
+    int count = 0;
+    long stride = fsize / EVAL_SEQS;
+    for (int s = 0; s < EVAL_SEQS; s++) {
+        long off = s * stride;
+        if (off + CTX + 1 > fsize) break;
+        int tokens[CTX], targets[CTX];
+        for (int i = 0; i < CTX; i++) { tokens[i] = data[off+i]; targets[i] = data[off+i+1]; }
+        nt_tape_start();
+        nt_train_mode(0);
+        int loss_idx = forward(m, tokens, targets);
+        total += nt_tape_get()->entries[loss_idx].output->data[0];
+        count++;
+        nt_tape_clear();
+        nt_train_mode(1);
+    }
+    return count > 0 ? total / count : 99.0f;
+}
+
 static double now_ms(void) { struct timeval tv; gettimeofday(&tv, NULL); return tv.tv_sec*1000.0+tv.tv_usec/1000.0; }
 
 int main(int argc, char** argv) {
-    int steps = argc > 1 ? atoi(argv[1]) : 5000;
-    float base_lr = argc > 2 ? (float)atof(argv[2]) : 3e-4f;
+    int resume = 0;
+    int arg_off = 1;
+    if (argc > 1 && strcmp(argv[1], "--resume") == 0) { resume = 1; arg_off = 2; }
+    int steps = arg_off < argc ? atoi(argv[arg_off]) : 30000;
+    float base_lr = (arg_off+1) < argc ? (float)atof(argv[arg_off+1]) : 3e-4f;
 
     printf("════════════════════════════════════════════════════════\n");
     printf("  notorch — Yent 9.8M LLaMA training\n");
     printf("  V=%d E=%d H=%d FFN=%d CTX=%d L=%d\n", V, EMB, HEADS, FFN_D, CTX, NLAYERS);
     printf("  Chuck optimizer, %d steps, lr=%.1e\n", steps, base_lr);
+    if (resume) printf("  RESUME MODE\n");
+    printf("  checkpoint every %d steps\n", CKPT_EVERY);
     printf("════════════════════════════════════════════════════════\n");
 
     const char* path = "/Users/ataeff/Downloads/yent-datasets/yent_v11_en_final.txt";
@@ -145,15 +241,29 @@ int main(int argc, char** argv) {
     Model* model = model_new();
     printf("model: %ld params (%.1f MB)\n", count_params(model), count_params(model)*4.0f/1048576.0f);
 
+    int start_step = 0;
+    float best_loss = 99.0f;
+
+    if (resume) {
+        int loaded_step = load_checkpoint(model, &best_loss);
+        if (loaded_step >= 0) {
+            start_step = loaded_step;
+            printf("  RESUMED from step %d, best_loss=%.4f\n", start_step, best_loss);
+        } else {
+            printf("  no checkpoint found, starting fresh\n");
+        }
+    }
+
     nt_schedule sched = nt_schedule_cosine(base_lr, steps/10, steps, base_lr*0.1f);
+    sched.current_step = start_step;
     nt_nan_guard guard = nt_nan_guard_new();
 
     printf("\ntraining...\n");
-    printf("─────────────────────────────────────────────────\n");
+    printf("─────────────────────────────────────────────────────\n");
     double t0 = now_ms();
-    float first_loss = 0, best_loss = 99;
+    float loss_ema = 0, first_loss = 0;
 
-    for (int step = 0; step < steps; step++) {
+    for (int step = start_step; step < steps; step++) {
         float lr = nt_schedule_get_lr(&sched);
         int off = rand() % (int)(fsize - CTX - 1);
         int tokens[CTX], targets[CTX];
@@ -162,7 +272,10 @@ int main(int argc, char** argv) {
         nt_tape_start();
         int loss_idx = forward(model, tokens, targets);
         float lv = nt_tape_get()->entries[loss_idx].output->data[0];
-        if (step == 0) first_loss = lv;
+
+        if (step == start_step) { first_loss = lv; loss_ema = lv; }
+        else loss_ema = 0.95f * loss_ema + 0.05f * lv;
+
         if (lv < best_loss) best_loss = lv;
 
         nt_tape_backward(loss_idx);
@@ -171,81 +284,89 @@ int main(int argc, char** argv) {
         nt_tape_chuck_step(lr, lv);
         nt_tape_clear();
 
-        if ((step+1) % 100 == 0 || step == 0) {
-            printf("  step %5d | train %.4f | best %.4f | lr %.2e | %.1fs\n",
-                   step+1, lv, best_loss, lr, (now_ms()-t0)/1000.0);
+        if ((step+1) % LOG_EVERY == 0 || step == start_step) {
+            printf("  step %5d | train %.4f | ema %.4f | best %.4f | lr %.2e | %.1fs\n",
+                   step+1, lv, loss_ema, best_loss, lr, (now_ms()-t0)/1000.0);
+            fflush(stdout);
+        }
+
+        /* checkpoint + val eval */
+        if ((step+1) % CKPT_EVERY == 0 && step > start_step) {
+            float val = eval_loss(model, data, fsize);
+            printf("  ──── ckpt %d | val %.4f | saving... ", step+1, val);
+            save_checkpoint(model, step+1, best_loss);
+            if (val < best_loss) {
+                best_loss = val;
+                save_model(model, BEST_PREFIX);
+                printf("★ new best!");
+            }
+            printf("\n");
             fflush(stdout);
         }
     }
 
+    /* final eval */
+    float final_val = eval_loss(model, data, fsize);
     double total_s = (now_ms()-t0)/1000.0;
-    float last_loss = 0;
-    { // eval last
-        int off = 0;
-        int tokens[CTX], targets[CTX];
-        for (int i = 0; i < CTX; i++) { tokens[i]=data[off+i]; targets[i]=data[off+i+1]; }
-        nt_tape_start();
-        int loss_idx = forward(model, tokens, targets);
-        last_loss = nt_tape_get()->entries[loss_idx].output->data[0];
-        nt_tape_clear();
-    }
+    int trained_steps = steps - start_step;
 
-    printf("─────────────────────────────────────────────────\n");
-    printf("  loss: %.4f → %.4f (best: %.4f)\n", first_loss, last_loss, best_loss);
-    printf("  time: %.0fs (%.1f steps/s)\n", total_s, steps/total_s);
-    printf("  nans: %d\n", guard.total_nan_count);
+    printf("─────────────────────────────────────────────────────\n");
+    printf("  train: %.4f → ema %.4f (best: %.4f)\n", first_loss, loss_ema, best_loss);
+    printf("  val:   %.4f\n", final_val);
+    printf("  time:  %.0fs (%.1f min) | %.2f steps/s\n", total_s, total_s/60.0, trained_steps/total_s);
+    printf("  nans:  %d\n", guard.total_nan_count);
 
-    // Generate
+    /* Generate sample */
     printf("\n── generation (temp=0.8) ──\n");
     nt_train_mode(0);
-    int ctx[CTX]; int gen_len = 0;
-    const char* seed = "Q: Who are you?\nA: ";
-    for (int i = 0; seed[i] && gen_len < CTX/2; i++) ctx[gen_len++] = (unsigned char)seed[i];
-    printf("%s", seed);
-
-    for (int step = 0; step < CTX - gen_len - 1; step++) {
-        int tokens[CTX], targets[CTX];
-        for (int i = 0; i < gen_len; i++) tokens[i] = ctx[i];
-        for (int i = gen_len; i < CTX; i++) tokens[i] = 0;
-        memset(targets, 0, sizeof(targets));
-        nt_tape_start();
-        int loss_idx = forward(model, tokens, targets);
-        nt_tape* tape = nt_tape_get();
-        int logits_idx = tape->entries[loss_idx].parent1;
-        float* last = tape->entries[logits_idx].output->data + (gen_len-1)*V;
-        for (int i = 0; i < V; i++) last[i] /= 0.8f;
-        float mx = last[0]; for (int i=1;i<V;i++) if(last[i]>mx) mx=last[i];
-        float sm = 0; for (int i=0;i<V;i++) { last[i]=expf(last[i]-mx); sm+=last[i]; }
-        for (int i=0;i<V;i++) last[i]/=sm;
-        float r=(float)rand()/(float)RAND_MAX, cum=0; int next=0;
-        for (int i=0;i<V;i++) { cum+=last[i]; if(cum>=r){next=i;break;} }
-        char c = (char)next;
-        if (c >= 32 && c < 127) printf("%c", c); else if (c=='\n') printf("\n"); else printf(".");
-        fflush(stdout);
-        ctx[gen_len++] = next;
-        nt_tape_clear();
+    const char* prompts[] = {
+        "Q: Who are you?\nA: ",
+        "Q: What is consciousness?\nA: ",
+        "Q: Tell me a joke.\nA: "
+    };
+    for (int p = 0; p < 3; p++) {
+        int ctx[CTX]; int gen_len = 0;
+        const char* seed = prompts[p];
+        for (int i = 0; seed[i] && gen_len < CTX/2; i++) ctx[gen_len++] = (unsigned char)seed[i];
+        printf("%s", seed);
+        for (int s = 0; s < 80; s++) {
+            int tokens[CTX], targets[CTX];
+            for (int i = 0; i < gen_len; i++) tokens[i] = ctx[i];
+            for (int i = gen_len; i < CTX; i++) tokens[i] = 0;
+            memset(targets, 0, sizeof(targets));
+            nt_tape_start();
+            int loss_idx = forward(model, tokens, targets);
+            nt_tape* tape = nt_tape_get();
+            int logits_idx = tape->entries[loss_idx].parent1;
+            float* last = tape->entries[logits_idx].output->data + (gen_len-1)*V;
+            for (int i = 0; i < V; i++) last[i] /= 0.8f;
+            float mx = last[0]; for (int i=1;i<V;i++) if(last[i]>mx) mx=last[i];
+            float sm = 0; for (int i=0;i<V;i++) { last[i]=expf(last[i]-mx); sm+=last[i]; }
+            for (int i=0;i<V;i++) last[i]/=sm;
+            float r=(float)rand()/(float)RAND_MAX, cum=0; int next=0;
+            for (int i=0;i<V;i++) { cum+=last[i]; if(cum>=r){next=i;break;} }
+            char c = (char)next;
+            if (c == '\n') break;
+            if (c >= 32 && c < 127) printf("%c", c);
+            else printf(".");
+            fflush(stdout);
+            ctx[gen_len++] = next;
+            nt_tape_clear();
+            if (gen_len >= CTX - 1) break;
+        }
+        printf("\n\n");
     }
-    printf("\n");
 
-    // Save
-    printf("\n── saving ──\n");
-    int n_tensors = 2 + NLAYERS*9 + 2;
-    nt_tensor** params = (nt_tensor**)malloc(n_tensors * sizeof(nt_tensor*));
-    int pi = 0;
-    params[pi++] = model->wte; params[pi++] = model->wpe;
-    for (int l = 0; l < NLAYERS; l++) {
-        params[pi++]=model->L[l].rms1; params[pi++]=model->L[l].wq; params[pi++]=model->L[l].wk;
-        params[pi++]=model->L[l].wv; params[pi++]=model->L[l].wo; params[pi++]=model->L[l].rms2;
-        params[pi++]=model->L[l].w_gate; params[pi++]=model->L[l].w_up; params[pi++]=model->L[l].w_down;
-    }
-    params[pi++] = model->rms_f; params[pi++] = model->head;
-    nt_save("yent_10m.bin", params, pi);
-    printf("  saved %d tensors to yent_10m.bin (%.1f MB)\n", pi, count_params(model)*4.0f/1048576.0f);
-    free(params);
+    /* Save final model */
+    printf("── saving ──\n");
+    save_model(model, "yent_10m");
+    printf("  yent_10m.bin (%.1f MB)\n", count_params(model)*4.0f/1048576.0f);
+    save_checkpoint(model, steps, best_loss);
+    printf("  checkpoint saved (step %d)\n", steps);
 
     model_free(model); free(data);
     printf("\n════════════════════════════════════════════════════════\n");
-    printf("  Yent 9.8M trained. No Python harmed. Chuck approves.\n");
+    printf("  Yent 9.8M trained. %d steps. No Python harmed.\n", steps);
     printf("════════════════════════════════════════════════════════\n");
     return 0;
 }

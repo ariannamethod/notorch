@@ -667,6 +667,21 @@ both models converge. both produce weights. both use Chuck optimizer with cosine
 - **memory overhead**: tensor data + tape entries. no Python object headers. no gradient graph metadata bloat. no "accidental quadratic" from `retain_graph=True`.
 - **matmul speed**: competitive with numpy (which itself uses BLAS) when compiled with OpenBLAS or Accelerate. faster on small matrices because no Python dispatch overhead.
 
+### concurrent training on 8 GB Mac
+
+we ran two transformer trainings simultaneously on an 8 GB MacBook Air (M1). not sequentially. simultaneously. at the same time. on the same machine. while also running a browser and a terminal.
+
+| model | params | RAM usage | status |
+|-------|--------|-----------|--------|
+| Yent (LLaMA-like, 12L char-level) | 9.8M | ~126 MB | training loss 2.03 → converging |
+| neovlm (Hebbian VLM, 6L dual-mode) | 6.36M | ~96 MB | text loss 0.0002, draw loss 0.50 |
+
+total memory: **~222 MB** for two active transformer trainings with autograd, Chuck optimizer, cosine scheduling, NaN guard, and checkpointing. both models use Apple Accelerate BLAS. both converge. both produce weights.
+
+try this with PyTorch. one `import torch` eats 800 MB of RAM. one training session on a 10M model needs 2-4 GB. two in parallel? on 8 GB? your OS would start killing processes before the first forward pass finishes.
+
+notorch runs both in ~3% of system memory. because C doesn't allocate what it doesn't need.
+
 for inference, this is excellent. for training, it's more than sufficient for models up to ~100M parameters. for anything bigger, you want distributed training and that's a different problem (and a different repo, probably).
 
 ---
