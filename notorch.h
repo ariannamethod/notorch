@@ -102,6 +102,7 @@ void nt_tensor_print(const nt_tensor* t, const char* name);
 #define NT_OP_LAYERNORM      20   // (x - mean) / sqrt(var + eps) * gamma + beta
 #define NT_OP_SEQ_LAYERNORM  21   // layernorm per position
 #define NT_OP_GELU           22   // GELU activation
+#define NT_OP_GQA_ATTN       23   // grouped-query causal attention
 
 typedef struct {
     nt_tensor* output;          // forward result
@@ -112,6 +113,8 @@ typedef struct {
     int        parent3;
     float      aux;             // auxiliary scalar (target for CE, scale for SCALE, T for seq)
     float      aux2;            // second auxiliary (D for seq ops, V for seq_crossent)
+    float      aux3;            // third auxiliary (n_heads for GQA)
+    float      aux4;            // fourth auxiliary (n_kv_heads for GQA)
     int        is_param;        // 1 = trainable parameter
     int        no_decay;        // 1 = skip weight decay (embeddings)
 } nt_tape_entry;
@@ -195,6 +198,7 @@ nt_tape* nt_tape_get(void);
 // Record operations on tape (returns entry index)
 int  nt_tape_record(nt_tensor* output, int op, int p1, int p2, float aux);
 int  nt_tape_record3(nt_tensor* output, int op, int p1, int p2, int p3, float aux, float aux2);
+int  nt_tape_record4(nt_tensor* output, int op, int p1, int p2, int p3, float aux, float aux2, float aux3, float aux4);
 int  nt_tape_param(nt_tensor* param);
 void nt_tape_no_decay(int idx);   // mark param as no-decay (embeddings)
 
@@ -306,6 +310,10 @@ int nt_causal_attention(int q_idx, int k_idx, int v_idx, int T, int D);
 
 // Multi-head causal self-attention
 int nt_mh_causal_attention(int q_idx, int k_idx, int v_idx, int T, int head_dim);
+
+// Grouped-Query Attention (GQA): Q has n_heads, K/V have n_kv_heads
+// Q: [T, n_heads * head_dim], K/V: [T, n_kv_heads * head_dim]
+int nt_gqa_causal_attention(int q_idx, int k_idx, int v_idx, int T, int head_dim, int n_heads, int n_kv_heads);
 
 // Cross-entropy loss (single position)
 int nt_cross_entropy(int logits_idx, int target);

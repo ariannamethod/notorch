@@ -260,6 +260,27 @@ int nt_tape_record3(nt_tensor* output, int op, int p1, int p2, int p3, float aux
     return idx;
 }
 
+int nt_tape_record4(nt_tensor* output, int op, int p1, int p2, int p3, float aux, float aux2, float aux3, float aux4) {
+    if (!g_tape.active || g_tape.count >= NT_TAPE_MAX_ENTRIES) return -1;
+    int idx = g_tape.count;
+    nt_tape_entry* e = &g_tape.entries[idx];
+    e->output = output;
+    nt_tensor_ref(output);
+    e->grad = NULL;
+    e->op = op;
+    e->parent1 = p1;
+    e->parent2 = p2;
+    e->parent3 = p3;
+    e->aux = aux;
+    e->aux2 = aux2;
+    e->aux3 = aux3;
+    e->aux4 = aux4;
+    e->is_param = 0;
+    e->no_decay = 0;
+    g_tape.count++;
+    return idx;
+}
+
 int nt_tape_param(nt_tensor* param) {
     if (!g_tape.active || g_tape.count >= NT_TAPE_MAX_ENTRIES) return -1;
     int idx = g_tape.count;
@@ -795,6 +816,77 @@ void nt_tape_backward(int loss_idx) {
                     tape_acc_grad(e->parent1, dq, T * D);
                     tape_acc_grad(e->parent2, dk, T * D);
                     tape_acc_grad(e->parent3, dv, T * D);
+                }
+                free(dq); free(dk); free(dv);
+            }
+            break;
+        }
+
+        case NT_OP_GQA_ATTN: {
+            if (e->parent1 >= 0 && e->parent2 >= 0 && e->parent3 >= 0) {
+                nt_tape_entry* pq = &g_tape.entries[e->parent1];
+                nt_tape_entry* pk = &g_tape.entries[e->parent2];
+                nt_tape_entry* pv = &g_tape.entries[e->parent3];
+                int T = (int)e->aux;
+                int head_dim = (int)e->aux2;
+                int n_heads = (int)e->aux3;
+                int n_kv_heads = (int)e->aux4;
+                int Q_D = n_heads * head_dim;
+                int KV_D = n_kv_heads * head_dim;
+                int gqa_ratio = n_heads / n_kv_heads;
+                float sc = 1.0f / sqrtf((float)head_dim);
+                float* dq = (float*)calloc(T * Q_D, sizeof(float));
+                float* dk = (float*)calloc(T * KV_D, sizeof(float));
+                float* dv = (float*)calloc(T * KV_D, sizeof(float));
+                if (dq && dk && dv) {
+                    for (int h = 0; h < n_heads; h++) {
+                        int kv_h = h / gqa_ratio;
+                        int q_off = h * head_dim;
+                        int kv_off = kv_h * head_dim;
+                        for (int i = 0; i < T; i++) {
+                            float* qi = pq->output->data + i * Q_D + q_off;
+                            float* dout_i = dout + i * Q_D + q_off;
+                            float* scores = (float*)calloc(i + 1, sizeof(float));
+                            float* attn = (float*)calloc(i + 1, sizeof(float));
+                            if (!scores || !attn) { free(scores); free(attn); continue; }
+                            float mx = -1e30f;
+                            for (int j = 0; j <= i; j++) {
+                                float* kj = pk->output->data + j * KV_D + kv_off;
+                                float dot = 0;
+                                for (int d = 0; d < head_dim; d++) dot += qi[d] * kj[d];
+                                scores[j] = dot * sc;
+                                if (scores[j] > mx) mx = scores[j];
+                            }
+                            float sm = 0;
+                            for (int j = 0; j <= i; j++) { attn[j] = expf(scores[j] - mx); sm += attn[j]; }
+                            if (sm > 0) for (int j = 0; j <= i; j++) attn[j] /= sm;
+                            float* d_attn = (float*)calloc(i + 1, sizeof(float));
+                            if (d_attn) {
+                                for (int j = 0; j <= i; j++) {
+                                    float* vj = pv->output->data + j * KV_D + kv_off;
+                                    for (int d = 0; d < head_dim; d++) d_attn[j] += dout_i[d] * vj[d];
+                                }
+                                for (int j = 0; j <= i; j++) {
+                                    float* dvj = dv + j * KV_D + kv_off;
+                                    for (int d = 0; d < head_dim; d++) dvj[d] += attn[j] * dout_i[d];
+                                }
+                                float dot_da = 0;
+                                for (int j = 0; j <= i; j++) dot_da += d_attn[j] * attn[j];
+                                for (int j = 0; j <= i; j++) {
+                                    float ds = attn[j] * (d_attn[j] - dot_da) * sc;
+                                    float* kj = pk->output->data + j * KV_D + kv_off;
+                                    for (int d = 0; d < head_dim; d++) {
+                                        dq[i * Q_D + q_off + d] += ds * kj[d];
+                                        dk[j * KV_D + kv_off + d] += ds * qi[d];
+                                    }
+                                }
+                            }
+                            free(scores); free(attn); free(d_attn);
+                        }
+                    }
+                    tape_acc_grad(e->parent1, dq, T * Q_D);
+                    tape_acc_grad(e->parent2, dk, T * KV_D);
+                    tape_acc_grad(e->parent3, dv, T * KV_D);
                 }
                 free(dq); free(dk); free(dv);
             }
@@ -1594,12 +1686,10 @@ int nt_embedding(int wte_idx, int token_id) {
 }
 
 int nt_seq_embedding(int wte_idx, int wpe_idx, int tokens_idx, int T, int D) {
-    if (wte_idx < 0 || wpe_idx < 0 || tokens_idx < 0) return -1;
+    if (wte_idx < 0 || tokens_idx < 0) return -1;
     nt_tape_entry* wte = &g_tape.entries[wte_idx];
-    nt_tape_entry* wpe = &g_tape.entries[wpe_idx];
     nt_tape_entry* tok = &g_tape.entries[tokens_idx];
     int wte_rows = wte->output->ndim >= 2 ? wte->output->shape[0] : wte->output->len / D;
-    int wpe_rows = wpe->output->ndim >= 2 ? wpe->output->shape[0] : wpe->output->len / D;
 
     nt_tensor* out = nt_tensor_new(T * D);
     if (!out) return -1;
@@ -1607,9 +1697,18 @@ int nt_seq_embedding(int wte_idx, int wpe_idx, int tokens_idx, int T, int D) {
         int tid = (int)tok->output->data[t];
         if (tid < 0) tid = 0;
         if (tid >= wte_rows) tid = wte_rows - 1;
-        int pos = t < wpe_rows ? t : wpe_rows - 1;
         for (int d = 0; d < D; d++)
-            out->data[t * D + d] = wte->output->data[tid * D + d] + wpe->output->data[pos * D + d];
+            out->data[t * D + d] = wte->output->data[tid * D + d];
+    }
+    /* Add position embeddings if provided */
+    if (wpe_idx >= 0) {
+        nt_tape_entry* wpe = &g_tape.entries[wpe_idx];
+        int wpe_rows = wpe->output->ndim >= 2 ? wpe->output->shape[0] : wpe->output->len / D;
+        for (int t = 0; t < T; t++) {
+            int pos = t < wpe_rows ? t : wpe_rows - 1;
+            for (int d = 0; d < D; d++)
+                out->data[t * D + d] += wpe->output->data[pos * D + d];
+        }
     }
     int idx = nt_tape_record3(out, NT_OP_SEQ_EMBED, wte_idx, wpe_idx, tokens_idx, (float)T, (float)D);
     nt_tensor_free(out);
@@ -1867,6 +1966,53 @@ int nt_mh_causal_attention(int q_idx, int k_idx, int v_idx, int T, int head_dim)
     free(scores_buf);
 
     int idx = nt_tape_record3(out, NT_OP_MH_CAUSAL_ATTN, q_idx, k_idx, v_idx, (float)T, (float)head_dim);
+    nt_tensor_free(out);
+    return idx;
+}
+
+int nt_gqa_causal_attention(int q_idx, int k_idx, int v_idx, int T, int head_dim, int n_heads, int n_kv_heads) {
+    if (q_idx < 0 || k_idx < 0 || v_idx < 0) return -1;
+    int Q_D = n_heads * head_dim;
+    int KV_D = n_kv_heads * head_dim;
+    int gqa_ratio = n_heads / n_kv_heads;
+    float scale = 1.0f / sqrtf((float)head_dim);
+
+    nt_tensor* out = nt_tensor_new(T * Q_D);
+    if (!out) return -1;
+    nt_tape_entry* pq = &g_tape.entries[q_idx];
+    nt_tape_entry* pk = &g_tape.entries[k_idx];
+    nt_tape_entry* pv = &g_tape.entries[v_idx];
+
+    float* scores_buf = (float*)malloc(T * sizeof(float));
+    for (int h = 0; h < n_heads; h++) {
+        int kv_h = h / gqa_ratio;
+        int q_off = h * head_dim;
+        int kv_off = kv_h * head_dim;
+        for (int i = 0; i < T; i++) {
+            float* qi = pq->output->data + i * Q_D + q_off;
+            float mx = -1e30f;
+            for (int j = 0; j <= i; j++) {
+                float* kj = pk->output->data + j * KV_D + kv_off;
+                float dot = 0;
+                for (int d = 0; d < head_dim; d++) dot += qi[d] * kj[d];
+                scores_buf[j] = dot * scale;
+                if (scores_buf[j] > mx) mx = scores_buf[j];
+            }
+            float sum = 0;
+            for (int j = 0; j <= i; j++) { scores_buf[j] = expf(scores_buf[j] - mx); sum += scores_buf[j]; }
+            if (sum > 0) for (int j = 0; j <= i; j++) scores_buf[j] /= sum;
+            float* oi = out->data + i * Q_D + q_off;
+            for (int d = 0; d < head_dim; d++) oi[d] = 0;
+            for (int j = 0; j <= i; j++) {
+                float* vj = pv->output->data + j * KV_D + kv_off;
+                for (int d = 0; d < head_dim; d++) oi[d] += scores_buf[j] * vj[d];
+            }
+        }
+    }
+    free(scores_buf);
+
+    int idx = nt_tape_record4(out, NT_OP_GQA_ATTN, q_idx, k_idx, v_idx,
+                              (float)T, (float)head_dim, (float)n_heads, (float)n_kv_heads);
     nt_tensor_free(out);
     return idx;
 }

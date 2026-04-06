@@ -74,6 +74,11 @@ train_yent: examples/train_yent.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_yent examples/train_yent.c notorch.c -lm
 	@echo "Compiled: train_yent (Yent 9.8M, $(BLAS_NAME))"
 
+# Dubrovsky training (GQA + RoPE)
+train_dubrovsky: examples/train_dubrovsky.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_dubrovsky examples/train_dubrovsky.c notorch.c -lm
+	@echo "Compiled: train_dubrovsky (Dubrovsky GQA+RoPE, $(BLAS_NAME))"
+
 # ── Test & Clean ──
 
 test: notorch_test
