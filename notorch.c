@@ -909,6 +909,168 @@ void nt_tape_backward(int loss_idx) {
             break;
         }
 
+        case NT_OP_DROPOUT: {
+            // y = x * mask (mask encoded in output: 0 = dropped, scale = kept)
+            if (e->parent1 >= 0) {
+                float p = e->aux;
+                float scale = (p > 0.0f && p < 1.0f) ? 1.0f / (1.0f - p) : 1.0f;
+                float* gx = (float*)calloc(out_len, sizeof(float));
+                if (gx) {
+                    for (int i = 0; i < out_len; i++) {
+                        // If output was zero, the mask dropped it
+                        gx[i] = (e->output->data[i] != 0.0f) ? dout[i] * scale : 0.0f;
+                    }
+                    tape_acc_grad(e->parent1, gx, out_len);
+                }
+                free(gx);
+            }
+            break;
+        }
+
+        case NT_OP_GELU: {
+            // y = 0.5*x*(1 + tanh(sqrt(2/pi)*(x + 0.044715*x^3)))
+            if (e->parent1 >= 0) {
+                nt_tape_entry* px = &g_tape.entries[e->parent1];
+                float* gx = (float*)calloc(out_len, sizeof(float));
+                if (gx) {
+                    for (int i = 0; i < out_len; i++) {
+                        float x = px->output->data[i];
+                        float x3 = x * x * x;
+                        float inner = 0.7978845608f * (x + 0.044715f * x3);
+                        float th = tanhf(inner);
+                        float gelu_grad = 0.5f * (1.0f + th) +
+                            0.5f * x * (1.0f - th * th) * 0.7978845608f * (1.0f + 3.0f * 0.044715f * x * x);
+                        gx[i] = dout[i] * gelu_grad;
+                    }
+                    tape_acc_grad(e->parent1, gx, out_len);
+                }
+                free(gx);
+            }
+            break;
+        }
+
+        case NT_OP_LAYERNORM: {
+            // y = gamma * (x - mean) / sqrt(var + eps) + beta
+            // parent1 = x, parent2 = gamma, parent3 = beta
+            if (e->parent1 >= 0) {
+                nt_tape_entry* px = &g_tape.entries[e->parent1];
+                int n = out_len;
+                int has_gamma = (e->parent2 >= 0 && e->parent2 < g_tape.count);
+                int has_beta = (e->parent3 >= 0 && e->parent3 < g_tape.count);
+                float* gamma_data = has_gamma ? g_tape.entries[e->parent2].output->data : NULL;
+
+                // Recompute stats
+                float mean = 0;
+                for (int i = 0; i < n; i++) mean += px->output->data[i];
+                mean /= n;
+                float var = 0;
+                for (int i = 0; i < n; i++) { float d = px->output->data[i] - mean; var += d * d; }
+                var /= n;
+                float inv_std = 1.0f / sqrtf(var + 1e-5f);
+
+                // dout_eff = dout * gamma for x-gradient
+                float* dout_eff = (float*)calloc(n, sizeof(float));
+                if (dout_eff) {
+                    for (int i = 0; i < n; i++)
+                        dout_eff[i] = has_gamma ? dout[i] * gamma_data[i] : dout[i];
+
+                    // x gradient (standard layernorm backward)
+                    float sum_dout = 0, sum_dout_xhat = 0;
+                    for (int i = 0; i < n; i++) {
+                        float xhat = (px->output->data[i] - mean) * inv_std;
+                        sum_dout += dout_eff[i];
+                        sum_dout_xhat += dout_eff[i] * xhat;
+                    }
+                    float* gx = (float*)calloc(n, sizeof(float));
+                    if (gx) {
+                        for (int i = 0; i < n; i++) {
+                            float xhat = (px->output->data[i] - mean) * inv_std;
+                            gx[i] = inv_std * (dout_eff[i] - sum_dout / n - xhat * sum_dout_xhat / n);
+                        }
+                        tape_acc_grad(e->parent1, gx, n);
+                    }
+                    free(gx);
+                    free(dout_eff);
+                }
+
+                // Gamma gradient: d_gamma[i] = dout[i] * xhat[i]
+                if (has_gamma) {
+                    int gn = g_tape.entries[e->parent2].output->len;
+                    float* gg = (float*)calloc(gn, sizeof(float));
+                    if (gg) {
+                        for (int i = 0; i < n && i < gn; i++)
+                            gg[i] += dout[i] * (px->output->data[i] - mean) * inv_std;
+                        tape_acc_grad(e->parent2, gg, gn);
+                    }
+                    free(gg);
+                }
+                // Beta gradient: d_beta[i] = dout[i]
+                if (has_beta) {
+                    int bn = g_tape.entries[e->parent3].output->len;
+                    float* gb = (float*)calloc(bn, sizeof(float));
+                    if (gb) {
+                        for (int i = 0; i < n && i < bn; i++)
+                            gb[i] += dout[i];
+                        tape_acc_grad(e->parent3, gb, bn);
+                    }
+                    free(gb);
+                }
+            }
+            break;
+        }
+
+        case NT_OP_SEQ_LAYERNORM: {
+            // Same as LAYERNORM but per-position
+            if (e->parent1 >= 0) {
+                nt_tape_entry* px = &g_tape.entries[e->parent1];
+                int T = (int)e->aux;
+                int D = (int)e->aux2;
+                int has_gamma = (e->parent2 >= 0 && e->parent2 < g_tape.count);
+                int has_beta = (e->parent3 >= 0 && e->parent3 < g_tape.count);
+                float* gamma_data = has_gamma ? g_tape.entries[e->parent2].output->data : NULL;
+
+                float* gx = (float*)calloc(T * D, sizeof(float));
+                float* gg = has_gamma ? (float*)calloc(D, sizeof(float)) : NULL;
+                float* gb = has_beta ? (float*)calloc(D, sizeof(float)) : NULL;
+
+                if (gx) {
+                    for (int t = 0; t < T; t++) {
+                        float* x_t = px->output->data + t * D;
+                        float* dout_t = dout + t * D;
+                        float mean = 0;
+                        for (int d = 0; d < D; d++) mean += x_t[d];
+                        mean /= D;
+                        float var = 0;
+                        for (int d = 0; d < D; d++) { float dd = x_t[d] - mean; var += dd * dd; }
+                        var /= D;
+                        float inv_std = 1.0f / sqrtf(var + 1e-5f);
+
+                        float sum_de = 0, sum_de_xhat = 0;
+                        for (int d = 0; d < D; d++) {
+                            float de = has_gamma ? dout_t[d] * gamma_data[d] : dout_t[d];
+                            float xhat = (x_t[d] - mean) * inv_std;
+                            sum_de += de;
+                            sum_de_xhat += de * xhat;
+                        }
+                        for (int d = 0; d < D; d++) {
+                            float de = has_gamma ? dout_t[d] * gamma_data[d] : dout_t[d];
+                            float xhat = (x_t[d] - mean) * inv_std;
+                            gx[t * D + d] = inv_std * (de - sum_de / D - xhat * sum_de_xhat / D);
+                        }
+                        if (gg) for (int d = 0; d < D; d++)
+                            gg[d] += dout_t[d] * (x_t[d] - mean) * inv_std;
+                        if (gb) for (int d = 0; d < D; d++)
+                            gb[d] += dout_t[d];
+                    }
+                    tape_acc_grad(e->parent1, gx, T * D);
+                    if (gg && has_gamma) tape_acc_grad(e->parent2, gg, D);
+                    if (gb && has_beta) tape_acc_grad(e->parent3, gb, D);
+                }
+                free(gx); free(gg); free(gb);
+            }
+            break;
+        }
+
         case NT_OP_ROPE: {
             // RoPE: rotation is orthogonal, backward = inverse rotation (transpose)
             // forward: x' = x*cos - y*sin, y' = x*sin + y*cos
@@ -1222,6 +1384,177 @@ void nt_tape_apply_accum(int n_accum) {
         }
         param_idx++;
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TRAINING MODE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+static int g_training_mode = 1;
+
+void nt_train_mode(int training) { g_training_mode = training; }
+int  nt_is_training(void) { return g_training_mode; }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LR SCHEDULE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+nt_schedule nt_schedule_cosine(float base_lr, int warmup_steps, int total_steps, float min_lr) {
+    nt_schedule s = {0};
+    s.type = NT_SCHED_COSINE;
+    s.base_lr = base_lr;
+    s.min_lr = min_lr;
+    s.warmup_steps = warmup_steps;
+    s.total_steps = total_steps > 0 ? total_steps : 1;
+    return s;
+}
+
+nt_schedule nt_schedule_step(float base_lr, int warmup_steps, int step_size, float gamma) {
+    nt_schedule s = {0};
+    s.type = NT_SCHED_STEP;
+    s.base_lr = base_lr;
+    s.warmup_steps = warmup_steps;
+    s.step_size = step_size > 0 ? step_size : 1;
+    s.step_gamma = gamma > 0 ? gamma : 0.1f;
+    return s;
+}
+
+nt_schedule nt_schedule_linear(float base_lr, int warmup_steps, int total_steps, float min_lr) {
+    nt_schedule s = {0};
+    s.type = NT_SCHED_LINEAR;
+    s.base_lr = base_lr;
+    s.min_lr = min_lr;
+    s.warmup_steps = warmup_steps;
+    s.total_steps = total_steps > 0 ? total_steps : 1;
+    return s;
+}
+
+float nt_schedule_get_lr(nt_schedule* s) {
+    if (!s) return 0.001f;
+    int step = s->current_step++;
+    float lr = s->base_lr;
+
+    // Warmup phase: linear ramp from min_lr to base_lr
+    if (step < s->warmup_steps && s->warmup_steps > 0) {
+        float t = (float)step / (float)s->warmup_steps;
+        return s->min_lr + t * (s->base_lr - s->min_lr);
+    }
+
+    int decay_step = step - s->warmup_steps;
+
+    switch (s->type) {
+    case NT_SCHED_COSINE: {
+        int decay_total = s->total_steps - s->warmup_steps;
+        if (decay_total <= 0) return lr;
+        float progress = (float)decay_step / (float)decay_total;
+        if (progress > 1.0f) progress = 1.0f;
+        lr = s->min_lr + 0.5f * (s->base_lr - s->min_lr) * (1.0f + cosf(3.14159265f * progress));
+        break;
+    }
+    case NT_SCHED_STEP: {
+        int n_decays = decay_step / s->step_size;
+        lr = s->base_lr * powf(s->step_gamma, (float)n_decays);
+        break;
+    }
+    case NT_SCHED_LINEAR: {
+        int decay_total = s->total_steps - s->warmup_steps;
+        if (decay_total <= 0) return lr;
+        float progress = (float)decay_step / (float)decay_total;
+        if (progress > 1.0f) progress = 1.0f;
+        lr = s->base_lr - progress * (s->base_lr - s->min_lr);
+        break;
+    }
+    default:
+        break;
+    }
+    return lr;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NaN/Inf GUARD
+// ═══════════════════════════════════════════════════════════════════════════════
+
+nt_nan_guard nt_nan_guard_new(void) {
+    nt_nan_guard g = {0};
+    g.loss_scale = 1.0f;
+    g.scale_factor = 2.0f;
+    g.scale_window = 100;
+    return g;
+}
+
+int nt_nan_guard_check(nt_nan_guard* guard) {
+    if (!guard) return 1;
+    int has_nan = 0;
+
+    for (int i = 0; i < g_tape.count; i++) {
+        nt_tape_entry* e = &g_tape.entries[i];
+        if (!e->is_param || !e->grad) continue;
+        int n = e->grad->len;
+        for (int j = 0; j < n; j++) {
+            float g = e->grad->data[j];
+            if (g != g || g == 1.0f/0.0f || g == -1.0f/0.0f) {  // NaN or Inf
+                has_nan = 1;
+                break;
+            }
+        }
+        if (has_nan) break;
+    }
+
+    if (has_nan) {
+        // Zero all gradients — don't apply this step
+        for (int i = 0; i < g_tape.count; i++) {
+            nt_tape_entry* e = &g_tape.entries[i];
+            if (!e->is_param || !e->grad) continue;
+            memset(e->grad->data, 0, e->grad->len * sizeof(float));
+        }
+        guard->loss_scale /= guard->scale_factor;
+        if (guard->loss_scale < 1e-8f) guard->loss_scale = 1e-8f;
+        guard->stable_steps = 0;
+        guard->total_nan_count++;
+        guard->skipped_steps++;
+        return 0;
+    }
+
+    // Clean step
+    guard->stable_steps++;
+    if (guard->stable_steps >= guard->scale_window) {
+        guard->loss_scale *= guard->scale_factor;
+        if (guard->loss_scale > 65536.0f) guard->loss_scale = 65536.0f;
+        guard->stable_steps = 0;
+    }
+    return 1;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROFILER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#include <sys/time.h>
+
+static nt_profiler g_profiler = {0};
+static long g_alloc_bytes = 0;
+
+static double now_ms(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000.0 + tv.tv_usec / 1000.0;
+}
+
+void nt_profiler_enable(void)  { g_profiler.enabled = 1; }
+void nt_profiler_disable(void) { g_profiler.enabled = 0; }
+void nt_profiler_reset(void)   { memset(&g_profiler, 0, sizeof(g_profiler)); }
+nt_profiler* nt_profiler_get(void) { return &g_profiler; }
+
+void nt_profiler_print(void) {
+    printf("── notorch profiler ──\n");
+    printf("  ops: %d, params: %d (%ld elements, %.2f MB)\n",
+           g_profiler.n_ops, g_profiler.n_params,
+           g_profiler.total_param_elems,
+           (float)g_profiler.total_param_elems * 4.0f / 1048576.0f);
+    printf("  forward:   %.2f ms\n", g_profiler.forward_ms);
+    printf("  backward:  %.2f ms\n", g_profiler.backward_ms);
+    printf("  optimizer: %.2f ms\n", g_profiler.optimizer_ms);
+    printf("  peak mem:  %.2f MB\n", (float)g_profiler.peak_memory / 1048576.0f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1629,6 +1962,126 @@ int nt_rope(int x_idx, int T, int head_dim) {
     }
 
     int idx = nt_tape_record3(out, NT_OP_ROPE, x_idx, -1, -1, (float)T, (float)head_dim);
+    nt_tensor_free(out);
+    return idx;
+}
+
+int nt_dropout(int x_idx, float p) {
+    if (x_idx < 0) return -1;
+    nt_tape_entry* px = &g_tape.entries[x_idx];
+    int n = px->output->len;
+    nt_tensor* out = nt_tensor_new(n);
+    if (!out) return -1;
+
+    if (g_training_mode && p > 0.0f && p < 1.0f) {
+        float scale = 1.0f / (1.0f - p);  // inverted dropout
+        for (int i = 0; i < n; i++) {
+            float r = rand_uniform();
+            out->data[i] = (r >= p) ? px->output->data[i] * scale : 0.0f;
+        }
+    } else {
+        memcpy(out->data, px->output->data, n * sizeof(float));
+    }
+
+    // Store the dropout mask in output for backward (mask encoded as: 0 = dropped, scale = kept)
+    int idx = nt_tape_record(out, NT_OP_DROPOUT, x_idx, -1, p);
+    nt_tensor_free(out);
+    return idx;
+}
+
+int nt_gelu(int x_idx) {
+    if (x_idx < 0) return -1;
+    nt_tape_entry* px = &g_tape.entries[x_idx];
+    int n = px->output->len;
+    nt_tensor* out = nt_tensor_new(n);
+    if (!out) return -1;
+    for (int i = 0; i < n; i++) {
+        float x = px->output->data[i];
+        float x3 = x * x * x;
+        float inner = 0.7978845608f * (x + 0.044715f * x3);
+        out->data[i] = 0.5f * x * (1.0f + tanhf(inner));
+    }
+    int idx = nt_tape_record(out, NT_OP_GELU, x_idx, -1, 0);
+    nt_tensor_free(out);
+    return idx;
+}
+
+int nt_layernorm(int x_idx, int gamma_idx, int beta_idx) {
+    if (x_idx < 0) return -1;
+    nt_tape_entry* px = &g_tape.entries[x_idx];
+    int n = px->output->len;
+    nt_tensor* out = nt_tensor_new(n);
+    if (!out) return -1;
+
+    // Compute mean and variance
+    float mean = 0;
+    for (int i = 0; i < n; i++) mean += px->output->data[i];
+    mean /= n;
+    float var = 0;
+    for (int i = 0; i < n; i++) {
+        float d = px->output->data[i] - mean;
+        var += d * d;
+    }
+    var /= n;
+    float inv_std = 1.0f / sqrtf(var + 1e-5f);
+
+    for (int i = 0; i < n; i++)
+        out->data[i] = (px->output->data[i] - mean) * inv_std;
+
+    // Apply affine: gamma * normalized + beta
+    if (gamma_idx >= 0 && gamma_idx < g_tape.count) {
+        nt_tape_entry* pg = &g_tape.entries[gamma_idx];
+        for (int i = 0; i < n && i < pg->output->len; i++)
+            out->data[i] *= pg->output->data[i];
+    }
+    if (beta_idx >= 0 && beta_idx < g_tape.count) {
+        nt_tape_entry* pb = &g_tape.entries[beta_idx];
+        for (int i = 0; i < n && i < pb->output->len; i++)
+            out->data[i] += pb->output->data[i];
+    }
+
+    int g_idx = (gamma_idx >= 0 && gamma_idx < g_tape.count) ? gamma_idx : -1;
+    int b_idx = (beta_idx >= 0 && beta_idx < g_tape.count) ? beta_idx : -1;
+    int idx = nt_tape_record3(out, NT_OP_LAYERNORM, x_idx, g_idx, b_idx, 0, 0);
+    nt_tensor_free(out);
+    return idx;
+}
+
+int nt_seq_layernorm(int x_idx, int gamma_idx, int beta_idx, int T, int D) {
+    if (x_idx < 0 || T <= 0 || D <= 0) return -1;
+    nt_tape_entry* px = &g_tape.entries[x_idx];
+    nt_tensor* out = nt_tensor_new(T * D);
+    if (!out) return -1;
+
+    for (int t = 0; t < T; t++) {
+        float* x_t = px->output->data + t * D;
+        float* o_t = out->data + t * D;
+        float mean = 0;
+        for (int d = 0; d < D; d++) mean += x_t[d];
+        mean /= D;
+        float var = 0;
+        for (int d = 0; d < D; d++) { float dd = x_t[d] - mean; var += dd * dd; }
+        var /= D;
+        float inv_std = 1.0f / sqrtf(var + 1e-5f);
+        for (int d = 0; d < D; d++) o_t[d] = (x_t[d] - mean) * inv_std;
+    }
+
+    if (gamma_idx >= 0 && gamma_idx < g_tape.count) {
+        nt_tape_entry* pg = &g_tape.entries[gamma_idx];
+        for (int t = 0; t < T; t++)
+            for (int d = 0; d < D && d < pg->output->len; d++)
+                out->data[t * D + d] *= pg->output->data[d];
+    }
+    if (beta_idx >= 0 && beta_idx < g_tape.count) {
+        nt_tape_entry* pb = &g_tape.entries[beta_idx];
+        for (int t = 0; t < T; t++)
+            for (int d = 0; d < D && d < pb->output->len; d++)
+                out->data[t * D + d] += pb->output->data[d];
+    }
+
+    int g_idx = (gamma_idx >= 0 && gamma_idx < g_tape.count) ? gamma_idx : -1;
+    int b_idx = (beta_idx >= 0 && beta_idx < g_tape.count) ? beta_idx : -1;
+    int idx = nt_tape_record3(out, NT_OP_SEQ_LAYERNORM, x_idx, g_idx, b_idx, (float)T, (float)D);
     nt_tensor_free(out);
     return idx;
 }

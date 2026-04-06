@@ -98,6 +98,10 @@ void nt_tensor_print(const nt_tensor* t, const char* name);
 #define NT_OP_MH_CAUSAL_ATTN 16   // multi-head causal self-attention
 #define NT_OP_GEGLU          17   // y = GELU(x @ W1) * (x @ W2) — Gemma-3 FFN
 #define NT_OP_ROPE           18   // rotary position embedding
+#define NT_OP_DROPOUT        19   // zero mask with probability p
+#define NT_OP_LAYERNORM      20   // (x - mean) / sqrt(var + eps) * gamma + beta
+#define NT_OP_SEQ_LAYERNORM  21   // layernorm per position
+#define NT_OP_GELU           22   // GELU activation
 
 typedef struct {
     nt_tensor* output;          // forward result
@@ -203,6 +207,64 @@ void  nt_tape_accum_grads(void);
 void  nt_tape_apply_accum(int n_accum);
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// LR SCHEDULE — warmup + cosine annealing + step decay
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#define NT_SCHED_NONE     0
+#define NT_SCHED_COSINE   1   // cosine annealing to min_lr
+#define NT_SCHED_STEP     2   // multiply by gamma every step_size steps
+#define NT_SCHED_LINEAR   3   // linear decay to min_lr
+
+typedef struct {
+    int   type;               // NT_SCHED_*
+    float base_lr;            // starting learning rate
+    float min_lr;             // floor (default 0)
+    int   warmup_steps;       // linear warmup from min_lr to base_lr
+    int   total_steps;        // for cosine/linear: total training steps
+    // Step decay params
+    int   step_size;          // decay every N steps (NT_SCHED_STEP)
+    float step_gamma;         // multiply factor (NT_SCHED_STEP, default 0.1)
+    // State
+    int   current_step;
+} nt_schedule;
+
+// Create schedule
+nt_schedule nt_schedule_cosine(float base_lr, int warmup_steps, int total_steps, float min_lr);
+nt_schedule nt_schedule_step(float base_lr, int warmup_steps, int step_size, float gamma);
+nt_schedule nt_schedule_linear(float base_lr, int warmup_steps, int total_steps, float min_lr);
+
+// Get current LR and advance step
+float nt_schedule_get_lr(nt_schedule* s);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NaN/Inf GUARD — detect divergence, auto loss scaling
+// ═══════════════════════════════════════════════════════════════════════════════
+
+typedef struct {
+    float loss_scale;         // dynamic loss scale (starts at 1.0)
+    float scale_factor;       // multiply/divide by this (default 2.0)
+    int   stable_steps;       // consecutive clean steps
+    int   scale_window;       // increase scale after this many clean steps (default 100)
+    int   total_nan_count;    // lifetime NaN detections
+    int   skipped_steps;      // steps skipped due to NaN
+} nt_nan_guard;
+
+// Initialize guard
+nt_nan_guard nt_nan_guard_new(void);
+
+// Check gradients for NaN/Inf. Returns 1 if clean, 0 if NaN detected.
+// On NaN: zeros grads, halves loss_scale, increments skipped_steps.
+// On clean: increments stable_steps, doubles loss_scale if stable enough.
+int nt_nan_guard_check(nt_nan_guard* guard);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TRAINING MODE — dropout needs this
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void nt_train_mode(int training);   // 1 = training, 0 = eval
+int  nt_is_training(void);
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // FORWARD OPS — record on tape and compute forward pass
 // All return tape entry index.
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -257,6 +319,40 @@ int nt_scale(int x_idx, float s);
 
 // RoPE: apply rotary position embeddings in-place
 int nt_rope(int x_idx, int T, int head_dim);
+
+// Dropout: zero random elements with probability p (training only)
+int nt_dropout(int x_idx, float p);
+
+// LayerNorm: y = gamma * (x - mean) / sqrt(var + eps) + beta
+int nt_layernorm(int x_idx, int gamma_idx, int beta_idx);
+
+// Sequence LayerNorm: normalize each of T positions independently
+int nt_seq_layernorm(int x_idx, int gamma_idx, int beta_idx, int T, int D);
+
+// GELU activation: x * 0.5 * (1 + tanh(sqrt(2/pi) * (x + 0.044715*x^3)))
+int nt_gelu(int x_idx);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROFILER — op timing + memory tracking
+// ═══════════════════════════════════════════════════════════════════════════════
+
+typedef struct {
+    double forward_ms;        // total forward time
+    double backward_ms;       // total backward time
+    double optimizer_ms;      // total optimizer time
+    long   peak_memory;       // peak bytes allocated
+    long   current_memory;    // current bytes allocated
+    int    n_ops;             // number of ops recorded
+    int    n_params;          // number of params
+    long   total_param_elems; // total parameter elements
+    int    enabled;           // 1 = profiling active
+} nt_profiler;
+
+void         nt_profiler_enable(void);
+void         nt_profiler_disable(void);
+void         nt_profiler_reset(void);
+nt_profiler* nt_profiler_get(void);
+void         nt_profiler_print(void);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BPE TOKENIZER — load merges, encode/decode
