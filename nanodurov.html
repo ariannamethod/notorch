@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nanodurov — Arianna voice</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a0a; color: #e0e0e0; font-family: 'Courier New', monospace; height: 100vh; display: flex; flex-direction: column; }
+#header { padding: 12px 20px; border-bottom: 1px solid #222; font-size: 13px; color: #666; }
+#header span { color: #888; }
+#header .title { color: #e0e0e0; font-weight: bold; }
+#chat { flex: 1; overflow-y: auto; padding: 20px; }
+.msg { margin-bottom: 16px; line-height: 1.5; }
+.msg .who { font-weight: bold; margin-bottom: 2px; }
+.msg.user .who { color: #4a9eff; }
+.msg.ai .who { color: #ff6b9d; }
+.msg .text { color: #ccc; white-space: pre-wrap; }
+.msg.ai .text { color: #e8d5b7; }
+.msg.system { color: #555; font-size: 12px; }
+#input-area { padding: 12px 20px; border-top: 1px solid #222; display: flex; gap: 10px; }
+#input { flex: 1; background: #111; border: 1px solid #333; color: #e0e0e0; padding: 10px; font-family: inherit; font-size: 14px; border-radius: 4px; outline: none; }
+#input:focus { border-color: #4a9eff; }
+#send { background: #222; color: #e0e0e0; border: 1px solid #333; padding: 10px 20px; cursor: pointer; font-family: inherit; border-radius: 4px; }
+#send:hover { background: #333; }
+#send:disabled { opacity: 0.3; cursor: default; }
+#load-area { padding: 20px; text-align: center; }
+#load-area button { background: #1a1a2e; color: #4a9eff; border: 1px solid #4a9eff; padding: 12px 24px; cursor: pointer; font-family: inherit; font-size: 14px; border-radius: 4px; margin: 5px; }
+#load-area button:hover { background: #4a9eff; color: #0a0a0a; }
+#status { color: #555; margin-top: 10px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <span class="title">nanodurov</span> — <span>Arianna voice | 15.7M params | BPE 2048 | notorch</span>
+  <span id="gpu-badge" style="float:right"></span>
+</div>
+
+<div id="load-area">
+  <p style="color:#888; margin-bottom:15px;">load model weights + BPE merges to start chatting</p>
+  <button onclick="loadFiles()">Load weights + merges</button>
+  <input type="file" id="file-weights" accept=".bin" style="display:none" multiple>
+  <div id="status"></div>
+</div>
+
+<div id="chat" style="display:none"></div>
+<div id="input-area" style="display:none">
+  <input id="input" placeholder="talk to Arianna..." onkeydown="if(event.key==='Enter')generate()">
+  <button id="send" onclick="generate()">send</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════
+const DIM = 384, NLAYERS = 8, NHEADS = 8, HD = 48, HIDDEN = 1024, CTX = 256, VOCAB = 2048;
+
+// ═══════════════════════════════════════════════════════════════
+// BPE TOKENIZER
+// ═══════════════════════════════════════════════════════════════
+let bpeMerges = [];
+let bpeTokens = []; // decode table: id → Uint8Array
+
+function bpeBuildDecodeTable() {
+  bpeTokens = new Array(256 + bpeMerges.length);
+  for (let i = 0; i < 256; i++) bpeTokens[i] = new Uint8Array([i]);
+  for (let m = 0; m < bpeMerges.length; m++) {
+    const [a, b] = bpeMerges[m];
+    const ta = bpeTokens[a], tb = bpeTokens[b];
+    const merged = new Uint8Array(ta.length + tb.length);
+    merged.set(ta); merged.set(tb, ta.length);
+    bpeTokens[256 + m] = merged;
+  }
+}
+
+function bpeEncode(text) {
+  const bytes = new TextEncoder().encode(text);
+  let ids = Array.from(bytes);
+  for (let m = 0; m < bpeMerges.length; m++) {
+    const [a, b] = bpeMerges[m];
+    const newId = 256 + m;
+    let i = 0;
+    while (i < ids.length - 1) {
+      if (ids[i] === a && ids[i + 1] === b) {
+        ids[i] = newId;
+        ids.splice(i + 1, 1);
+      } else i++;
+    }
+  }
+  return ids;
+}
+
+function bpeDecode(ids) {
+  const bytes = [];
+  for (const id of ids) {
+    if (id >= 0 && id < bpeTokens.length) {
+      for (const b of bpeTokens[id]) bytes.push(b);
+    }
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MODEL WEIGHTS
+// ═══════════════════════════════════════════════════════════════
+let W = null; // { wte, layers: [{rms1, wq, wk, wv, wo, rms2, w_gate, w_up, w_down}], rms_f, head }
+
+function loadWeightsFromBuffer(buf) {
+  const view = new DataView(buf);
+  let off = 0;
+
+  // notorch format: magic "NTOR" (4B) + n_tensors (4B) + per tensor: ndim(4B) + shape[] + float data
+  const magic = view.getUint32(off, true); off += 4;
+  if (magic !== 0x524F544E) throw new Error('bad magic: ' + magic.toString(16)); // "NTOR" LE
+  const nTensors = view.getInt32(off, true); off += 4;
+
+  function readTensor() {
+    const ndim = view.getInt32(off, true); off += 4;
+    let len = 1;
+    const shape = [];
+    for (let d = 0; d < ndim; d++) {
+      const s = view.getInt32(off, true); off += 4;
+      shape.push(s); len *= s;
+    }
+    const data = new Float32Array(buf, off, len);
+    off += len * 4;
+    return { data: new Float32Array(data), shape, len }; // copy data
+  }
+
+  const expected = 1 + NLAYERS * 9 + 2;
+  if (nTensors !== expected) throw new Error(`expected ${expected} tensors, got ${nTensors}`);
+
+  W = { layers: [] };
+  W.wte = readTensor();
+  for (let l = 0; l < NLAYERS; l++) {
+    W.layers.push({
+      rms1: readTensor(), wq: readTensor(), wk: readTensor(),
+      wv: readTensor(), wo: readTensor(), rms2: readTensor(),
+      w_gate: readTensor(), w_up: readTensor(), w_down: readTensor()
+    });
+  }
+  W.rms_f = readTensor();
+  W.head = readTensor();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INFERENCE (JS, KV cache)
+// ═══════════════════════════════════════════════════════════════
+let kvK = null, kvV = null; // [NLAYERS][CTX][DIM]
+
+function initKV() {
+  kvK = Array.from({length: NLAYERS}, () => Array.from({length: CTX}, () => new Float32Array(DIM)));
+  kvV = Array.from({length: NLAYERS}, () => Array.from({length: CTX}, () => new Float32Array(DIM)));
+}
+
+function rmsnorm(out, x, w) {
+  let ss = 0;
+  for (let i = 0; i < DIM; i++) ss += x[i] * x[i];
+  ss = 1.0 / Math.sqrt(ss / DIM + 1e-5);
+  for (let i = 0; i < DIM; i++) out[i] = x[i] * ss * w[i];
+}
+
+function matmul(out, x, w, outD, inD) {
+  for (let o = 0; o < outD; o++) {
+    let s = 0;
+    const base = o * inD;
+    for (let i = 0; i < inD; i++) s += w[base + i] * x[i];
+    out[o] = s;
+  }
+}
+
+function rope(x, pos) {
+  for (let h = 0; h < NHEADS; h++) {
+    for (let i = 0; i < HD / 2; i++) {
+      const freq = 1.0 / Math.pow(10000.0, (2 * i) / HD);
+      const theta = pos * freq;
+      const cs = Math.cos(theta), sn = Math.sin(theta);
+      const idx = h * HD + i * 2;
+      const x0 = x[idx], x1 = x[idx + 1];
+      x[idx] = x0 * cs - x1 * sn;
+      x[idx + 1] = x0 * sn + x1 * cs;
+    }
+  }
+}
+
+function forwardPos(token, pos) {
+  const x = new Float32Array(DIM);
+  const xn = new Float32Array(DIM);
+  const q = new Float32Array(DIM), k = new Float32Array(DIM), v = new Float32Array(DIM);
+  const attnOut = new Float32Array(DIM);
+  const gate = new Float32Array(HIDDEN), up = new Float32Array(HIDDEN), down = new Float32Array(DIM);
+  const proj = new Float32Array(DIM);
+  const logits = new Float32Array(VOCAB);
+
+  // Token embedding
+  x.set(W.wte.data.subarray(token * DIM, token * DIM + DIM));
+
+  for (let l = 0; l < NLAYERS; l++) {
+    const L = W.layers[l];
+    rmsnorm(xn, x, L.rms1.data);
+    matmul(q, xn, L.wq.data, DIM, DIM);
+    matmul(k, xn, L.wk.data, DIM, DIM);
+    matmul(v, xn, L.wv.data, DIM, DIM);
+    rope(q, pos); rope(k, pos);
+    kvK[l][pos].set(k); kvV[l][pos].set(v);
+
+    // MHA
+    const scale = 1.0 / Math.sqrt(HD);
+    attnOut.fill(0);
+    for (let h = 0; h < NHEADS; h++) {
+      const ho = h * HD;
+      const scores = new Float32Array(pos + 1);
+      for (let j = 0; j <= pos; j++) {
+        let dot = 0;
+        for (let d = 0; d < HD; d++) dot += q[ho + d] * kvK[l][j][ho + d];
+        scores[j] = dot * scale;
+      }
+      // softmax
+      let mx = scores[0]; for (let j = 1; j <= pos; j++) if (scores[j] > mx) mx = scores[j];
+      let sm = 0; for (let j = 0; j <= pos; j++) { scores[j] = Math.exp(scores[j] - mx); sm += scores[j]; }
+      for (let j = 0; j <= pos; j++) scores[j] /= sm;
+      for (let j = 0; j <= pos; j++)
+        for (let d = 0; d < HD; d++) attnOut[ho + d] += scores[j] * kvV[l][j][ho + d];
+    }
+
+    matmul(proj, attnOut, L.wo.data, DIM, DIM);
+    for (let i = 0; i < DIM; i++) x[i] += proj[i];
+
+    rmsnorm(xn, x, L.rms2.data);
+    matmul(gate, xn, L.w_gate.data, HIDDEN, DIM);
+    matmul(up, xn, L.w_up.data, HIDDEN, DIM);
+    for (let i = 0; i < HIDDEN; i++) gate[i] = gate[i] / (1 + Math.exp(-gate[i])) * up[i];
+    matmul(down, gate, L.w_down.data, DIM, HIDDEN);
+    for (let i = 0; i < DIM; i++) x[i] += down[i];
+  }
+
+  rmsnorm(xn, x, W.rms_f.data);
+  matmul(logits, xn, W.head.data, VOCAB, DIM);
+  return logits;
+}
+
+function sampleToken(logits, temp = 0.8, topK = 40) {
+  for (let i = 0; i < VOCAB; i++) logits[i] /= temp;
+  // top-k
+  if (topK > 0 && topK < VOCAB) {
+    const sorted = Array.from(logits).sort((a, b) => b - a);
+    const threshold = sorted[topK - 1];
+    for (let i = 0; i < VOCAB; i++) if (logits[i] < threshold) logits[i] = -1e30;
+  }
+  // softmax
+  let mx = logits[0]; for (let i = 1; i < VOCAB; i++) if (logits[i] > mx) mx = logits[i];
+  let sm = 0; for (let i = 0; i < VOCAB; i++) { logits[i] = Math.exp(logits[i] - mx); sm += logits[i]; }
+  for (let i = 0; i < VOCAB; i++) logits[i] /= sm;
+  let r = Math.random(), cum = 0;
+  for (let i = 0; i < VOCAB; i++) { cum += logits[i]; if (cum >= r) return i; }
+  return VOCAB - 1;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════════════════════
+const chat = document.getElementById('chat');
+const input = document.getElementById('input');
+
+function addMsg(who, text, cls) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + cls;
+  div.innerHTML = `<div class="who">${who}</div><div class="text">${text}</div>`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+
+function setStatus(text) { document.getElementById('status').textContent = text; }
+
+async function loadFiles() {
+  setStatus('select nanodurov_arianna.bin and arianna_bpe_merges.txt...');
+  const fileInput = document.getElementById('file-weights');
+  fileInput.onchange = async () => {
+    const files = Array.from(fileInput.files);
+    const binFile = files.find(f => f.name.endsWith('.bin'));
+    const txtFile = files.find(f => f.name.endsWith('.txt'));
+    if (!binFile || !txtFile) { setStatus('need .bin (weights) and .txt (merges)'); return; }
+
+    // Load merges
+    setStatus('loading BPE merges...');
+    const mergesText = await txtFile.text();
+    bpeMerges = mergesText.trim().split('\n').map(line => {
+      const [a, b] = line.trim().split(/\s+/).map(Number);
+      return [a, b];
+    });
+    bpeBuildDecodeTable();
+    setStatus(`BPE: ${bpeMerges.length} merges, vocab ${256 + bpeMerges.length}`);
+
+    // Load weights
+    setStatus('loading weights (60 MB)...');
+    const buf = await binFile.arrayBuffer();
+    try {
+      loadWeightsFromBuffer(buf);
+    } catch (e) {
+      setStatus('ERROR: ' + e.message); return;
+    }
+    initKV();
+
+    // Check WebGPU
+    let gpuText = 'CPU (JS)';
+    if (navigator.gpu) {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (adapter) gpuText = 'WebGPU available (using JS fallback for now)';
+    }
+    document.getElementById('gpu-badge').textContent = gpuText;
+
+    // Show chat
+    document.getElementById('load-area').style.display = 'none';
+    chat.style.display = 'block';
+    document.getElementById('input-area').style.display = 'flex';
+    addMsg('system', 'nanodurov loaded. 15.7M params. Arianna voice. type anything.', 'system');
+    input.focus();
+  };
+  fileInput.click();
+}
+
+async function generate() {
+  const text = input.value.trim();
+  if (!text || !W) return;
+  input.value = '';
+  document.getElementById('send').disabled = true;
+
+  addMsg('You', text, 'user');
+  const aiMsg = addMsg('Arianna', '', 'ai');
+  const textEl = aiMsg.querySelector('.text');
+
+  // Encode prompt
+  const prompt = `Q: ${text}\nA:`;
+  const tokens = bpeEncode(prompt);
+
+  // Reset KV cache
+  initKV();
+
+  // Prefill
+  let logits;
+  for (let i = 0; i < tokens.length; i++) {
+    logits = forwardPos(tokens[i], i);
+    // yield to UI every 2 tokens
+    if (i % 2 === 0) await new Promise(r => setTimeout(r, 0));
+  }
+
+  // Generate
+  let pos = tokens.length;
+  let output = '';
+  for (let s = 0; s < CTX - pos; s++) {
+    const next = sampleToken(logits, 0.8, 40);
+    const decoded = bpeDecode([next]);
+    if (decoded.includes('\nQ') || decoded.includes('\n\n')) break;
+    output += decoded;
+    textEl.textContent = output;
+    chat.scrollTop = chat.scrollHeight;
+
+    logits = forwardPos(next, pos);
+    pos++;
+    if (pos >= CTX) break;
+
+    // yield to UI every 3 tokens
+    if (s % 3 === 0) await new Promise(r => setTimeout(r, 0));
+  }
+
+  if (!output.trim()) textEl.textContent = '(silence)';
+  document.getElementById('send').disabled = false;
+  input.focus();
+}
+</script>
+</body>
+</html>
