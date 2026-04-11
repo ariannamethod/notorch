@@ -88,14 +88,14 @@ so here we are. **notorch**. everything you need. nothing you don't. no Python r
 ```
         ╔═══════════════════════════════════════════════════════╗
         ║                                                       ║
-        ║   R.I.P. PyTorch (in my codebase)                    ║
+        ║   R.I.P. PyTorch (in my codebase)                     ║
         ║   2016 - 2026                                         ║
         ║                                                       ║
         ║   "He died as he lived:                               ║
         ║    consuming all available memory                     ║
         ║    and segfaulting at the worst moment"               ║
         ║                                                       ║
-        ║   Survived by: pip, conda, 2.7 GB of dead weight,    ║
+        ║   Survived by: pip, conda, 2.7 GB of dead weight,     ║
         ║   a thousand Stack Overflow questions about CUDA      ║
         ║   driver versions, and a broken conda environment     ║
         ║   that nobody dares to delete.                        ║
