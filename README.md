@@ -60,7 +60,7 @@ extracted from the core of [ariannamethod.ai](https://ariannamethod.ai) where it
 
 let me tell you a story.
 
-once upon a time there was a framework called PyTorch. it was beautiful. it had autograd. it had CUDA support. it had a community of millions. it had documentation that was sometimes accurate. it had a build system that required a PhD in software engineering and a pact with ancient spirits.
+once upon a time there was a framework called PyTorch. it had autograd. it had CUDA support. it had a build system that required a PhD in software engineering and a pact with ancient spirits.
 
 and every time you wanted to train a 4-layer MLP on a dataset smaller than your browser cache, you had to:
 
@@ -515,7 +515,7 @@ total: **~9000 lines of C**. framework + vision + GGUF + BPE + 4 inference engin
 
 all trained from scratch on 8 GB Mac. no Python. no pip. Chuck optimizer.
 
-for reference, PyTorch's `torch/` directory alone is ~800,000 lines of Python, ~1,500,000 lines of C++, and an emotional support system for its build engineers. notorch is 0.15% of that. and it does everything you need to train a transformer.
+for context: ~9000 lines of C. total. framework + vision + GGUF + BPE + inference engines + training scripts + 95 tests. that's everything you need to train a transformer from scratch.
 
 ---
 
@@ -644,7 +644,7 @@ make train_q && ./train_q 10000 5e-4
 | architecture | V=256 E=128 H=4 FFN=512 L=6 CTX=64 |
 | parameters | 1,648,256 |
 | dataset | postgpt.txt (52 KB, information theory corpus) |
-| optimizer | Chuck (self-aware AdamW, synced with PyTorch) |
+| optimizer | Chuck (self-aware AdamW) |
 | loss | 5.99 → **1.05** (82.5% reduction, 10K steps) |
 | time | 18 minutes on 8 GB Mac |
 | NaN | 0 |
@@ -752,7 +752,7 @@ LGPL-3.0-or-later. use it in your stuff. link against it. build commercial produ
 
 ## final words
 
-look. i know this sounds insane. "guy rewrites PyTorch in 2500 lines of C and calls it a framework." i get it. i see how that looks.
+look. i know this sounds insane. "guy writes a neural network framework in 2500 lines of C." i get it. i see how that looks.
 
 but here's the thing: the entire history of deep learning fits in a few dozen mathematical operations. matmul. softmax. relu. cross-entropy. adam. backward. that's it. the rest is infrastructure. and infrastructure should be invisible. it should compile in a second. it should fit in your head. it should not require a Docker container.
 
