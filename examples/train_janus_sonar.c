@@ -60,15 +60,22 @@ typedef struct {
     nt_tensor *head;
 } Model;
 
+/* Asymmetric init: α_raw = 2.0 → σ(2) ≈ 0.88. W_A dominates at start,
+   W_B gets small gradient, giving it room to specialize rather than mirror W_A. */
+#define DUAL_ALPHA_INIT 2.0f
+
 static void dual_new(DualProj* d, int rows, int cols, int fan_in, int fan_out, float out_scale) {
     d->a = nt_tensor_new2d(rows, cols); nt_tensor_xavier(d->a, fan_in, fan_out);
     d->b = nt_tensor_new2d(rows, cols); nt_tensor_xavier(d->b, fan_in, fan_out);
+    /* break init symmetry: scale B differently so W_A and W_B start in
+       different regions of param space even before α diverges. */
+    for (int i = 0; i < d->b->len; i++) d->b->data[i] *= 0.5f;
     if (out_scale != 1.0f) {
         for (int i = 0; i < d->a->len; i++) d->a->data[i] *= out_scale;
         for (int i = 0; i < d->b->len; i++) d->b->data[i] *= out_scale;
     }
     d->alpha = nt_tensor_new(1);
-    d->alpha->data[0] = 0.0f;  /* sigmoid(0) = 0.5 → balanced blend at start */
+    d->alpha->data[0] = DUAL_ALPHA_INIT;
 }
 
 static void dual_free(DualProj* d) {
