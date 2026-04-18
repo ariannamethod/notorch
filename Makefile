@@ -89,21 +89,6 @@ train_dubrovsky: examples/train_dubrovsky.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_dubrovsky examples/train_dubrovsky.c notorch.c -lm
 	@echo "Compiled: train_dubrovsky (Dubrovsky GQA+RoPE, $(BLAS_NAME))"
 
-# Janus Sonar training (triple attention: MHA + RRPRAM + Janus Echo)
-train_janus_sonar: examples/train_janus_sonar.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_janus_sonar examples/train_janus_sonar.c notorch.c -lm
-	@echo "Compiled: train_janus_sonar (Janus triple attn 1.5M, $(BLAS_NAME))"
-
-# Janus Sonar inference
-infer_janus_sonar: examples/infer_janus_sonar.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_janus_sonar examples/infer_janus_sonar.c notorch.c -lm
-	@echo "Compiled: infer_janus_sonar ($(BLAS_NAME))"
-
-# Janus Sonar CHAIN inference — 8-step bidirectional + calendar drift + Schumann
-infer_janus_sonar_chain: examples/infer_janus_sonar_chain.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_janus_sonar_chain examples/infer_janus_sonar_chain.c notorch.c -lm
-	@echo "Compiled: infer_janus_sonar_chain ($(BLAS_NAME))"
-
 # DPO — Direct Preference Optimization (Rafailov 2023)
 train_dpo: examples/train_dpo.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_dpo examples/train_dpo.c notorch.c -lm
