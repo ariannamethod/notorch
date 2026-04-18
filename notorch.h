@@ -206,6 +206,7 @@ int  nt_tape_record3(nt_tensor* output, int op, int p1, int p2, int p3, float au
 int  nt_tape_record4(nt_tensor* output, int op, int p1, int p2, int p3, float aux, float aux2, float aux3, float aux4);
 int  nt_tape_param(nt_tensor* param);
 void nt_tape_no_decay(int idx);   // mark param as no-decay (embeddings)
+void nt_tape_freeze_param(int param_idx);  // freeze param (Chuck skips it) — for LoRA
 
 // Backward pass
 void nt_tape_backward(int loss_idx);

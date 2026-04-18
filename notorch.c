@@ -326,6 +326,11 @@ void nt_tape_no_decay(int idx) {
         g_tape.entries[idx].no_decay = 1;
 }
 
+void nt_tape_freeze_param(int param_idx) {
+    if (param_idx >= 0 && param_idx < g_tape.n_params)
+        g_tape.chuck_params[param_idx].frozen = 1;
+}
+
 // Find tape entry by tensor pointer
 static int tape_find(nt_tensor* t) {
     if (!t) return -1;
