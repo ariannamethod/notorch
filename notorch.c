@@ -1386,6 +1386,113 @@ void nt_tape_backward(int loss_idx) {
             break;
         }
 
+        case NT_OP_SWIGLU: {
+            // y = SiLU(gate) * up, silu(g) = g * σ(g)
+            // d/dg silu(g) = σ(g) + g*σ(g)*(1-σ(g)) = σ(g) * (1 + g*(1-σ(g)))
+            // dgate = dout * up * silu'(gate)
+            // dup   = dout * silu(gate)
+            if (e->parent1 >= 0 && e->parent2 >= 0) {
+                nt_tape_entry* pg = &g_tape.entries[e->parent1];
+                nt_tape_entry* pu = &g_tape.entries[e->parent2];
+                int n = out_len;
+                float* dg = (float*)calloc(n, sizeof(float));
+                float* du = (float*)calloc(n, sizeof(float));
+                if (dg && du) {
+                    for (int i = 0; i < n; i++) {
+                        float g = pg->output->data[i];
+                        float u = pu->output->data[i];
+                        float s = 1.0f / (1.0f + expf(-g));
+                        float silu = g * s;
+                        float dsilu_dg = s * (1.0f + g * (1.0f - s));
+                        dg[i] = dout[i] * u * dsilu_dg;
+                        du[i] = dout[i] * silu;
+                    }
+                    tape_acc_grad(e->parent1, dg, n);
+                    tape_acc_grad(e->parent2, du, n);
+                }
+                free(dg); free(du);
+            }
+            break;
+        }
+
+        case NT_OP_BIT_LINEAR: {
+            // STE: treat quantization as identity, so backward = standard matvec
+            // dW[i,j] = dout[i] * x[j]
+            // dx[j]   = Σ_i W[i,j] * dout[i]   (using full-precision W, per BitNet paper)
+            if (e->parent1 >= 0 && e->parent2 >= 0) {
+                nt_tape_entry* pw = &g_tape.entries[e->parent1];
+                nt_tape_entry* px = &g_tape.entries[e->parent2];
+                int rows = pw->output->shape[0];
+                int cols = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / rows;
+                if (rows > 0 && cols > 0) {
+                    float* dw = (float*)calloc(rows * cols, sizeof(float));
+                    if (dw) {
+                        for (int i = 0; i < rows; i++)
+                            for (int j = 0; j < cols; j++)
+                                dw[i * cols + j] = dout[i] * px->output->data[j];
+                        tape_acc_grad(e->parent1, dw, rows * cols);
+                    }
+                    free(dw);
+                    float* dx = (float*)calloc(cols, sizeof(float));
+                    if (dx) {
+                        for (int j = 0; j < cols; j++) {
+                            float acc = 0;
+                            for (int i = 0; i < rows; i++)
+                                acc += pw->output->data[i * cols + j] * dout[i];
+                            dx[j] = acc;
+                        }
+                        tape_acc_grad(e->parent2, dx, cols);
+                    }
+                    free(dx);
+                }
+            }
+            break;
+        }
+
+        case NT_OP_BIT_SEQ_LINEAR: {
+            // STE backward over T positions: dW = Σ_t dout[t] ⊗ x[t]; dx[t] = W^T @ dout[t]
+            if (e->parent1 >= 0 && e->parent2 >= 0) {
+                nt_tape_entry* pw = &g_tape.entries[e->parent1];
+                nt_tape_entry* px = &g_tape.entries[e->parent2];
+                int T = (int)e->aux;
+                int rows = pw->output->shape[0];
+                int cols = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / rows;
+                if (rows > 0 && cols > 0 && T > 0) {
+                    float* dw = (float*)calloc(rows * cols, sizeof(float));
+                    if (dw) {
+                        for (int t = 0; t < T; t++) {
+                            const float* dout_t = dout + t * rows;
+                            const float* x_t = px->output->data + t * cols;
+                            for (int i = 0; i < rows; i++) {
+                                float dot_i = dout_t[i];
+                                float* dw_row = dw + i * cols;
+                                for (int j = 0; j < cols; j++)
+                                    dw_row[j] += dot_i * x_t[j];
+                            }
+                        }
+                        tape_acc_grad(e->parent1, dw, rows * cols);
+                    }
+                    free(dw);
+                    float* dx = (float*)calloc(T * cols, sizeof(float));
+                    if (dx) {
+                        for (int t = 0; t < T; t++) {
+                            const float* dout_t = dout + t * rows;
+                            float* dx_t = dx + t * cols;
+                            for (int j = 0; j < cols; j++) {
+                                float acc = 0;
+                                for (int i = 0; i < rows; i++)
+                                    acc += pw->output->data[i * cols + j] * dout_t[i];
+                                dx_t[j] = acc;
+                            }
+                        }
+                        tape_acc_grad(e->parent2, dx, T * cols);
+                    }
+                    free(dx);
+                }
+            }
+            break;
+        }
+
         default:
             break;
         }
@@ -2328,6 +2435,209 @@ int nt_concat(int a_idx, int b_idx, int T) {
     int idx = nt_tape_record(out, NT_OP_CONCAT, a_idx, b_idx, (float)T);
     nt_tensor_free(out);
     return idx;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SWIGLU — y = SiLU(gate) * up (element-wise, pre-computed tensors)
+// ═══════════════════════════════════════════════════════════════════════════════
+int nt_swiglu(int gate_idx, int up_idx) {
+    if (gate_idx < 0 || up_idx < 0) return -1;
+    nt_tape_entry* pg = &g_tape.entries[gate_idx];
+    nt_tape_entry* pu = &g_tape.entries[up_idx];
+    int n = pg->output->len;
+    if (pu->output->len != n) return -1;
+    nt_tensor* out = nt_tensor_new(n);
+    if (!out) return -1;
+    if (pg->output->ndim > 0)
+        nt_tensor_reshape(out, pg->output->shape, pg->output->ndim);
+    for (int i = 0; i < n; i++) {
+        float g = pg->output->data[i];
+        float s = 1.0f / (1.0f + expf(-g));
+        out->data[i] = (g * s) * pu->output->data[i];  // silu(g) * u
+    }
+    int idx = nt_tape_record(out, NT_OP_SWIGLU, gate_idx, up_idx, 0);
+    nt_tensor_free(out);
+    return idx;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BITLINEAR — BitNet b1.58 (ternary W, int8 x, STE backward)
+// Forward: Wq = clamp(round(W/γ_W), -1, +1), γ_W = mean|W|
+//          xq = clamp(round(x * 127/γ_x), -128, +127), γ_x = max|x|
+//          y = (γ_W γ_x / 127) × (Wq @ xq)
+// Backward: STE — treats quant as identity, dW = dout ⊗ x, dx = W^T @ dout (full-precision W)
+// ═══════════════════════════════════════════════════════════════════════════════
+static inline float nt_bit_absmean(const float* w, int n) {
+    if (n <= 0) return 1.0f;
+    float s = 0; for (int i = 0; i < n; i++) s += fabsf(w[i]);
+    float g = s / n;
+    return g > 1e-8f ? g : 1e-8f;
+}
+
+static inline signed char nt_bit_ternary(float w, float inv_gamma) {
+    int q = (int)lrintf(w * inv_gamma);
+    if (q > 1) q = 1; else if (q < -1) q = -1;
+    return (signed char)q;
+}
+
+static inline float nt_bit_int8_absmax(const float* x, int n) {
+    float xmax = 0;
+    for (int j = 0; j < n; j++) { float v = fabsf(x[j]); if (v > xmax) xmax = v; }
+    return xmax > 1e-8f ? xmax : 1e-8f;
+}
+
+int nt_bit_linear(int w_idx, int x_idx) {
+    if (w_idx < 0 || x_idx < 0) return -1;
+    nt_tape_entry* pw = &g_tape.entries[w_idx];
+    nt_tape_entry* px = &g_tape.entries[x_idx];
+    int rows = pw->output->shape[0];
+    int cols = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / rows;
+    if (rows <= 0 || cols <= 0) return -1;
+    nt_tensor* out = nt_tensor_new(rows);
+    if (!out) return -1;
+
+    float gamma_w = nt_bit_absmean(pw->output->data, rows * cols);
+    float inv_gw = 1.0f / gamma_w;
+    float gamma_x = nt_bit_int8_absmax(px->output->data, cols);
+    float inv_sx = 127.0f / gamma_x;
+    float output_scale = gamma_w * gamma_x / 127.0f;
+
+    signed char* x_q = (signed char*)calloc(cols, sizeof(signed char));
+    if (!x_q) { nt_tensor_free(out); return -1; }
+    for (int j = 0; j < cols; j++) {
+        int q = (int)lrintf(px->output->data[j] * inv_sx);
+        if (q > 127) q = 127; else if (q < -128) q = -128;
+        x_q[j] = (signed char)q;
+    }
+
+    const float* W = pw->output->data;
+    for (int i = 0; i < rows; i++) {
+        long long acc = 0;
+        const float* W_row = W + i * cols;
+        for (int j = 0; j < cols; j++)
+            acc += (long long)nt_bit_ternary(W_row[j], inv_gw) * x_q[j];
+        out->data[i] = output_scale * (float)acc;
+    }
+    free(x_q);
+
+    int idx = nt_tape_record(out, NT_OP_BIT_LINEAR, w_idx, x_idx, gamma_w);
+    nt_tensor_free(out);
+    return idx;
+}
+
+int nt_bit_seq_linear(int w_idx, int x_idx, int T) {
+    if (w_idx < 0 || x_idx < 0 || T <= 0) return -1;
+    nt_tape_entry* pw = &g_tape.entries[w_idx];
+    nt_tape_entry* px = &g_tape.entries[x_idx];
+    int rows = pw->output->shape[0];
+    int cols = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / rows;
+    if (rows <= 0 || cols <= 0) return -1;
+
+    nt_tensor* out = nt_tensor_new(T * rows);
+    if (!out) return -1;
+
+    float gamma_w = nt_bit_absmean(pw->output->data, rows * cols);
+    float inv_gw = 1.0f / gamma_w;
+
+    signed char* Wq = (signed char*)calloc(rows * cols, sizeof(signed char));
+    if (!Wq) { nt_tensor_free(out); return -1; }
+    for (int i = 0; i < rows * cols; i++)
+        Wq[i] = nt_bit_ternary(pw->output->data[i], inv_gw);
+
+    signed char* x_q = (signed char*)calloc(cols, sizeof(signed char));
+    if (!x_q) { free(Wq); nt_tensor_free(out); return -1; }
+
+    for (int t = 0; t < T; t++) {
+        const float* x_row = px->output->data + t * cols;
+        float gamma_x = nt_bit_int8_absmax(x_row, cols);
+        float inv_sx = 127.0f / gamma_x;
+        float output_scale = gamma_w * gamma_x / 127.0f;
+
+        for (int j = 0; j < cols; j++) {
+            int q = (int)lrintf(x_row[j] * inv_sx);
+            if (q > 127) q = 127; else if (q < -128) q = -128;
+            x_q[j] = (signed char)q;
+        }
+
+        float* y_row = out->data + t * rows;
+        for (int i = 0; i < rows; i++) {
+            long long acc = 0;
+            const signed char* Wq_row = Wq + i * cols;
+            for (int j = 0; j < cols; j++)
+                acc += (long long)Wq_row[j] * x_q[j];
+            y_row[i] = output_scale * (float)acc;
+        }
+    }
+    free(Wq);
+    free(x_q);
+
+    int idx = nt_tape_record3(out, NT_OP_BIT_SEQ_LINEAR, w_idx, x_idx, -1, (float)T, gamma_w);
+    nt_tensor_free(out);
+    return idx;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPA — Sentence Phonon Attention (inference-time; pure helpers, no tape)
+// ═══════════════════════════════════════════════════════════════════════════════
+void nt_spa_embed_sentence(const int* tokens, int n_tokens,
+                           const float* W_embed, int vocab_size, int dim,
+                           float alpha, float* out_emb) {
+    if (!tokens || !W_embed || !out_emb || n_tokens <= 0 || dim <= 0 || vocab_size <= 0) return;
+    if (alpha < 0 || alpha > 1) alpha = 0.85f;
+
+    for (int d = 0; d < dim; d++) out_emb[d] = 0;
+
+    float total_weight = 0;
+    for (int i = 0; i < n_tokens; i++) {
+        int tok = tokens[i];
+        if (tok < 0 || tok >= vocab_size) continue;
+        float w = powf(alpha, (float)(n_tokens - 1 - i));
+        total_weight += w;
+        const float* row = W_embed + (size_t)tok * dim;
+        for (int d = 0; d < dim; d++) out_emb[d] += w * row[d];
+    }
+    if (total_weight > 0)
+        for (int d = 0; d < dim; d++) out_emb[d] /= total_weight;
+}
+
+float nt_spa_connectedness(const float* query_emb, int dim,
+                           const float* sentence_embeddings, int n_sentences) {
+    if (!query_emb || !sentence_embeddings || dim <= 0 || n_sentences <= 0) return 0;
+    float scale = 1.0f / sqrtf((float)dim);
+
+    float* scores = (float*)calloc(n_sentences, sizeof(float));
+    if (!scores) return 0;
+
+    float max_s = -1e30f;
+    for (int i = 0; i < n_sentences; i++) {
+        float s = 0;
+        const float* emb = sentence_embeddings + (size_t)i * dim;
+        for (int d = 0; d < dim; d++) s += query_emb[d] * emb[d];
+        s *= scale;
+        scores[i] = s;
+        if (s > max_s) max_s = s;
+    }
+    float sum = 0;
+    for (int i = 0; i < n_sentences; i++) { scores[i] = expf(scores[i] - max_s); sum += scores[i]; }
+    float max_attn = 0;
+    if (sum > 0) {
+        for (int i = 0; i < n_sentences; i++) {
+            float w = scores[i] / sum;
+            if (w > max_attn) max_attn = w;
+        }
+    }
+    free(scores);
+    return max_attn;
+}
+
+void nt_spa_modulate_logits(float* logits, int V, float connectedness, float strength) {
+    if (!logits || V <= 0) return;
+    if (connectedness < 0) connectedness = 0;
+    if (connectedness > 1) connectedness = 1;
+    float spa_temp = 1.0f - strength * connectedness;
+    if (spa_temp < 1e-3f) spa_temp = 1e-3f;
+    float inv = 1.0f / spa_temp;
+    for (int i = 0; i < V; i++) logits[i] *= inv;
 }
 
 int nt_cross_entropy(int logits_idx, int target) {

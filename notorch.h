@@ -108,6 +108,9 @@ void nt_tensor_print(const nt_tensor* t, const char* name);
 #define NT_OP_SEQ_MATVEC_T  26   // Y[t] = W^T @ X[t] — transposed seq_linear for Janus Echo
 #define NT_OP_SIGMOID       27   // y = 1 / (1 + exp(-x)) — logistic activation
 #define NT_OP_SCALE_BY_T    28   // y[i] = a[0] * x[i], a is scalar tensor [1]
+#define NT_OP_SWIGLU        29   // y = SiLU(gate) * up (element-wise, pre-computed tensors)
+#define NT_OP_BIT_LINEAR    30   // y = bitquant(W) @ x — BitNet 1.58, STE backward
+#define NT_OP_BIT_SEQ_LINEAR 31  // Y[t] = bitquant(W) @ X[t] for T positions (BitNet seq)
 
 typedef struct {
     nt_tensor* output;          // forward result
@@ -370,6 +373,40 @@ int nt_rrpram_attention(int wr_idx, int x_idx, int v_idx, int T, int n_embd, int
 
 // Concatenate per-position: out[t] = [a[t], b[t]]. a: [T, D_a], b: [T, D_b] → out: [T, D_a+D_b]
 int nt_concat(int a_idx, int b_idx, int T);
+
+// SwiGLU: y = SiLU(gate) * up (element-wise)
+// gate and up must have same length (typically pre-computed via nt_seq_linear or nt_bit_seq_linear).
+// Used in LLaMA/Qwen/BitNet FFN: gate = W_gate @ x, up = W_up @ x, h = swiglu(gate, up), out = W_down @ h.
+int nt_swiglu(int gate_idx, int up_idx);
+
+// BitLinear (BitNet b1.58): y = bitquant(W) @ x
+// W quantized to ternary {-1, 0, +1} via absmean (γ_W = mean|W|).
+// x quantized to int8 via absmax (γ_x = max|x|). Output rescaled: y = (γ_W γ_x / 127) × int_matmul.
+// Backward uses Straight-Through Estimator: gradient flows through quantization as identity,
+// so dW = dout ⊗ x, dx = W^T @ dout (using full-precision W).
+int nt_bit_linear(int w_idx, int x_idx);
+
+// Sequence BitLinear: Y[t] = bitquant(W) @ X[t] for t = 0..T-1.
+// W is quantized once per forward (shared across positions), x is per-position absmax quantized.
+int nt_bit_seq_linear(int w_idx, int x_idx, int T);
+
+// SPA — Sentence Phonon Attention (inference-time helpers; no tape, no gradient).
+// Compute sentence embedding via exponentially-weighted mean of token embeddings.
+// tokens: token IDs in sentence (len n_tokens). W_embed: pointer to [vocab_size × dim] matrix.
+// alpha: recency bias (0.85 typical — larger α = more recent tokens weighted higher).
+// out_emb: caller-provided buffer of length `dim`.
+void nt_spa_embed_sentence(const int* tokens, int n_tokens,
+                           const float* W_embed, int vocab_size, int dim,
+                           float alpha, float* out_emb);
+
+// SPA connectedness: max softmax attention score between query_emb and history of sentence embeddings.
+// Returns value in [0, 1]. Larger = current sentence more connected to history.
+float nt_spa_connectedness(const float* query_emb, int dim,
+                           const float* sentence_embeddings, int n_sentences);
+
+// Modulate logits by SPA connectedness (higher conn → sharper distribution via effective-temperature drop).
+// logits: buffer of V values modified in place. strength ∈ [0, 1] (0.3 typical).
+void nt_spa_modulate_logits(float* logits, int V, float connectedness, float strength);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BLAS — direct matmul API for inference engines
