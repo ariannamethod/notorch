@@ -2539,37 +2539,65 @@ int nt_bit_seq_linear(int w_idx, int x_idx, int T) {
     float gamma_w = nt_bit_absmean(pw->output->data, rows * cols);
     float inv_gw = 1.0f / gamma_w;
 
-    signed char* Wq = (signed char*)calloc(rows * cols, sizeof(signed char));
-    if (!Wq) { nt_tensor_free(out); return -1; }
-    for (int i = 0; i < rows * cols; i++)
-        Wq[i] = nt_bit_ternary(pw->output->data[i], inv_gw);
+    /* Pre-quantize W to ternary stored as FLOAT (so cblas_sgemm can consume it) */
+    float* Wq_f = (float*)malloc((size_t)rows * cols * sizeof(float));
+    if (!Wq_f) { nt_tensor_free(out); return -1; }
+    for (int i = 0; i < rows * cols; i++) {
+        int q = (int)lrintf(pw->output->data[i] * inv_gw);
+        if (q > 1) q = 1; else if (q < -1) q = -1;
+        Wq_f[i] = (float)q;
+    }
 
-    signed char* x_q = (signed char*)calloc(cols, sizeof(signed char));
-    if (!x_q) { free(Wq); nt_tensor_free(out); return -1; }
-
+    /* Pre-quantize full X per-position to int8-range FLOAT, store per-position scale */
+    float* Xq_f = (float*)malloc((size_t)T * cols * sizeof(float));
+    float* gamma_x_per_t = (float*)malloc(T * sizeof(float));
+    if (!Xq_f || !gamma_x_per_t) {
+        free(Wq_f); free(Xq_f); free(gamma_x_per_t); nt_tensor_free(out); return -1;
+    }
     for (int t = 0; t < T; t++) {
         const float* x_row = px->output->data + t * cols;
         float gamma_x = nt_bit_int8_absmax(x_row, cols);
+        gamma_x_per_t[t] = gamma_x;
         float inv_sx = 127.0f / gamma_x;
-        float output_scale = gamma_w * gamma_x / 127.0f;
-
+        float* xq_row = Xq_f + t * cols;
         for (int j = 0; j < cols; j++) {
-            int q = (int)lrintf(x_row[j] * inv_sx);
-            if (q > 127) q = 127; else if (q < -128) q = -128;
-            x_q[j] = (signed char)q;
-        }
-
-        float* y_row = out->data + t * rows;
-        for (int i = 0; i < rows; i++) {
-            long long acc = 0;
-            const signed char* Wq_row = Wq + i * cols;
-            for (int j = 0; j < cols; j++)
-                acc += (long long)Wq_row[j] * x_q[j];
-            y_row[i] = output_scale * (float)acc;
+            float q = lrintf(x_row[j] * inv_sx);
+            if (q > 127.0f) q = 127.0f; else if (q < -128.0f) q = -128.0f;
+            xq_row[j] = q;
         }
     }
-    free(Wq);
-    free(x_q);
+
+#ifdef USE_BLAS
+    /* Single BLAS matmul: Y[T,rows] = Xq[T,cols] @ Wq^T[cols,rows]
+     * Wq stored row-major as [rows, cols] so CblasTrans gives Wq^T. */
+    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                T, rows, cols,
+                1.0f, Xq_f, cols, Wq_f, cols,
+                0.0f, out->data, rows);
+    /* Apply per-position output scale (gamma_w * gamma_x / 127) */
+    float base = gamma_w / 127.0f;
+    for (int t = 0; t < T; t++) {
+        float s = base * gamma_x_per_t[t];
+        float* y_row = out->data + t * rows;
+        for (int i = 0; i < rows; i++) y_row[i] *= s;
+    }
+#else
+    for (int t = 0; t < T; t++) {
+        float output_scale = gamma_w * gamma_x_per_t[t] / 127.0f;
+        const float* xq_row = Xq_f + t * cols;
+        float* y_row = out->data + t * rows;
+        for (int i = 0; i < rows; i++) {
+            float acc = 0;
+            const float* Wq_row = Wq_f + i * cols;
+            for (int j = 0; j < cols; j++) acc += Wq_row[j] * xq_row[j];
+            y_row[i] = output_scale * acc;
+        }
+    }
+#endif
+
+    free(Wq_f);
+    free(Xq_f);
+    free(gamma_x_per_t);
 
     int idx = nt_tape_record3(out, NT_OP_BIT_SEQ_LINEAR, w_idx, x_idx, -1, (float)T, gamma_w);
     nt_tensor_free(out);
