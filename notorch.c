@@ -3295,3 +3295,16 @@ void nt_blas_mm(float *C, const float *A, const float *B, int m, int k, int n) {
         }
 #endif
 }
+
+void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n) {
+#ifdef USE_BLAS
+    cblas_sgemv(CblasRowMajor, CblasNoTrans,
+                m, n, 1.0f, W, n, x, 1, 0.0f, out, 1);
+#else
+    for (int i = 0; i < m; i++) {
+        float s = 0;
+        for (int j = 0; j < n; j++) s += W[i*n + j] * x[j];
+        out[i] = s;
+    }
+#endif
+}

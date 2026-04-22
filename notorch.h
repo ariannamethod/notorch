@@ -418,6 +418,11 @@ void nt_blas_mmT(float *C, const float *A, const float *BT, int m, int k, int n)
 // C[m,n] = A[m,k] @ B[k,n]
 void nt_blas_mm(float *C, const float *A, const float *B, int m, int k, int n);
 
+// out[m] = W[m,n] @ x[n]  — matrix–vector path for inference engines that
+// call matvec per-token inside a hot loop. Under USE_BLAS uses cblas_sgemv
+// (Accelerate / OpenBLAS); without BLAS falls back to the naive nested loop.
+void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROFILER — op timing + memory tracking
 // ═══════════════════════════════════════════════════════════════════════════════
