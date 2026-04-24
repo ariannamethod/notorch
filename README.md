@@ -9,7 +9,7 @@
 
 # notorch — neural networks in pure C | by Arianna Method
 
-> *"fuck torch"*  
+> *"fuck torch"*
 > — the entire header file, line 8
 
 ---
@@ -24,6 +24,12 @@
 - [operations](#operations)
 - [optimizers](#optimizers)
 - [the chuck optimizer](#the-chuck-optimizer)
+- [bit-level precision — BitNet b1.58](#bit-level-precision--bitnet-b158)
+- [SwiGLU FFN](#swiglu-ffn)
+- [SPA — Sentence Phonon Attention](#spa--sentence-phonon-attention)
+- [LoRA / adapter training](#lora--adapter-training)
+- [BLAS inference API](#blas-inference-api)
+- [alignment training — DPO / GRPO / distillation](#alignment-training--dpo--grpo--distillation)
 - [autograd](#autograd)
 - [building](#building)
 - [running tests](#running-tests)
@@ -33,6 +39,7 @@
 - [file structure](#file-structure)
 - [tests](#tests)
 - [performance](#performance)
+- [projects powered by notorch](#projects-powered-by-notorch)
 - [philosophy](#philosophy)
 - [contributing](#contributing)
 - [license](#license)
@@ -79,7 +86,7 @@ and for WHAT? a matmul and a softmax. that's all neural networks are. matmuls an
 
 so here we are. **notorch**. everything you need. nothing you don't. no Python runtime. no GIL. no garbage collector pausing your training at the worst possible moment. no `torch.no_grad()` context manager that you forget and then wonder why you're out of memory. just tensors, autograd, optimizers, and the cold clarity of C.
 
-**the entire framework is two files.** `notorch.h` and `notorch.c`. that's it. ~3000 lines. you can read the whole thing in an afternoon. try reading PyTorch's source in an afternoon. actually don't. you'll end up in a hospital.
+**the entire framework is two files.** `notorch.h` and `notorch.c`. that's it. ~3300 lines. you can read the whole thing in an afternoon. try reading PyTorch's source in an afternoon. actually don't. you'll end up in a hospital.
 
 ---
 
@@ -106,7 +113,7 @@ so here we are. **notorch**. everything you need. nothing you don't. no Python r
 ```
 
 notorch is for people who:
-- want to understand what's actually happening (all ~2500 lines of it)
+- want to understand what's actually happening (all ~3300 lines of it)
 - want to train models on machines that aren't cloud instances
 - want compile times measured in milliseconds, not minutes
 - want to embed neural network inference in C/C++ applications without shipping half of Python
@@ -121,23 +128,40 @@ Your data (floats in memory, as god intended)
     ↓
 nt_tensor — multidimensional arrays with refcounting
     ↓
-┌──────────────────────────────────────────────────┐
-│  Forward Operations (recorded on tape)           │
-│    ├─ nt_linear          (W @ x + b)             │
-│    ├─ nt_seq_linear      (batched W @ X)         │
-│    ├─ nt_embedding       (lookup table)          │
-│    ├─ nt_seq_embedding   (tokens + positions)    │
-│    ├─ nt_rmsnorm         (RMS normalization)     │
-│    ├─ nt_layernorm       (layer normalization)   │
-│    ├─ nt_causal_attention (single-head causal)   │
-│    ├─ nt_mh_causal_attention (multi-head)        │
-│    ├─ nt_silu / nt_gelu  (activations)           │
-│    ├─ nt_geglu           (Gemma-3 style FFN)     │
-│    ├─ nt_rope            (rotary embeddings)     │
-│    ├─ nt_dropout         (inverted dropout)      │
-│    ├─ nt_softmax / nt_cross_entropy              │
-│    └─ nt_add / nt_mul / nt_scale                 │
-└──────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│  Forward Operations (recorded on tape)                    │
+│                                                           │
+│  Classical transformer:                                   │
+│    ├─ nt_linear          (W @ x + b)                      │
+│    ├─ nt_seq_linear      (batched W @ X)                  │
+│    ├─ nt_seq_linear_t    (W^T @ X — Janus Echo)           │
+│    ├─ nt_embedding       (lookup table)                   │
+│    ├─ nt_seq_embedding   (tokens + positions)             │
+│    ├─ nt_rmsnorm         (RMS normalization)              │
+│    ├─ nt_layernorm       (layer normalization)            │
+│    ├─ nt_causal_attention (single-head causal)            │
+│    ├─ nt_mh_causal_attention (multi-head)                 │
+│    ├─ nt_gqa_causal_attention (grouped-query)             │
+│    ├─ nt_rrpram_attention (positional pattern — Janus)    │
+│    ├─ nt_silu / nt_gelu / nt_sigmoid (activations)        │
+│    ├─ nt_geglu           (Gemma-3 style FFN)              │
+│    ├─ nt_swiglu          (LLaMA/Qwen/BitNet FFN)          │
+│    ├─ nt_rope            (rotary embeddings)              │
+│    ├─ nt_dropout         (inverted dropout)               │
+│    ├─ nt_softmax / nt_cross_entropy                       │
+│    └─ nt_add / nt_mul / nt_scale / nt_scale_by_t / concat │
+│                                                           │
+│  BitNet b1.58 (ternary quantization):                     │
+│    ├─ nt_bit_linear      (y = bitquant(W) @ x, STE)       │
+│    └─ nt_bit_seq_linear  (BitLinear over T positions)     │
+│                                                           │
+│  Inference-time helpers (no tape):                        │
+│    ├─ nt_spa_embed_sentence   (phonon sentence embedding) │
+│    ├─ nt_spa_connectedness    (cross-sentence attention)  │
+│    ├─ nt_spa_modulate_logits  (SPA → temperature)         │
+│    ├─ nt_blas_mm / nt_blas_mmT (matmul for inference)     │
+│    └─ nt_blas_matvec          (hot-loop matvec)           │
+└───────────────────────────────────────────────────────────┘
     ↓
 nt_tape_backward() — reverse-mode automatic differentiation
     ↓
@@ -145,7 +169,8 @@ nt_tape_backward() — reverse-mode automatic differentiation
 │  Optimizers                                      │
 │    ├─ Adam               (the classic)           │
 │    ├─ AdamW              (with weight decay)     │
-│    └─ Chuck              (self-aware Adam)       │
+│    ├─ Chuck              (self-aware Adam)       │
+│    └─ nt_tape_freeze_param (LoRA / adapter)      │
 └──────────────────────────────────────────────────┘
     ↓
 Your model is trained. in C. without Python. you are free.
@@ -188,26 +213,35 @@ that's the entire training loop. in C. seven lines. no `optimizer.zero_grad()` t
 
 ## operations
 
-every operation you need to build a transformer, and nothing you don't:
+every operation you need to build a modern transformer, and some you didn't know you did:
 
 | operation | function | what it does |
 |---|---|---|
 | linear | `nt_linear` | y = W @ x + b |
 | seq linear | `nt_seq_linear` | batched matmul over T positions |
+| seq linear^T | `nt_seq_linear_t` | Y[t] = W^T @ X[t] — Janus Echo W^T·W pattern |
 | embedding | `nt_embedding` | lookup row from embedding matrix |
 | seq embedding | `nt_seq_embedding` | tokens + positional encoding |
 | RMS norm | `nt_rmsnorm` / `nt_seq_rmsnorm` | root mean square normalization |
 | layer norm | `nt_layernorm` / `nt_seq_layernorm` | mean/variance normalization |
 | causal attention | `nt_causal_attention` | single-head causal self-attention |
-| multi-head attn | `nt_mh_causal_attention` | multi-head causal self-attention |
+| multi-head attn | `nt_mh_causal_attention` | MHA causal self-attention |
+| grouped-query attn | `nt_gqa_causal_attention` | GQA — Q: n_heads, K/V: n_kv_heads |
+| RRPRAM attn | `nt_rrpram_attention` | positional pattern recognition (x @ Wr, causal) |
 | SiLU | `nt_silu` | x × σ(x) — the swish |
 | GELU | `nt_gelu` | tanh approximation |
-| GEGLU | `nt_geglu` | GELU-gated linear unit (Gemma-3) |
+| sigmoid | `nt_sigmoid` | 1 / (1 + exp(-x)) |
+| GEGLU | `nt_geglu` | GELU-gated linear unit (Gemma-3 FFN) |
+| SwiGLU | `nt_swiglu` | SiLU(gate) * up — LLaMA/Qwen/BitNet FFN |
+| BitLinear | `nt_bit_linear` | y = bitquant(W) @ x — BitNet 1.58 |
+| BitLinear seq | `nt_bit_seq_linear` | BitLinear over T positions |
 | softmax | `nt_softmax` | exp-normalize with numerical stability |
 | cross entropy | `nt_cross_entropy` / `nt_seq_cross_entropy` | -log softmax[target] |
 | RoPE | `nt_rope` | rotary position embeddings |
 | dropout | `nt_dropout` | inverted dropout (training only) |
 | add/mul/scale | `nt_add` / `nt_mul` / `nt_scale` | elementwise ops |
+| scale by tensor | `nt_scale_by_t` | y[i] = a[0] * x[i], a is scalar tensor |
+| concat | `nt_concat` | per-position concatenation |
 
 every single one has a correct backward pass. every single one passes numerical gradient checking. i checked. twice. because i'm paranoid. and because debugging gradient errors in C without a debugger at 4 AM rewires your brain in ways that formal verification theorists dream about.
 
@@ -241,13 +275,15 @@ ah yes. **Chuck**. the self-aware optimizer. the one that watches its own gradie
 nt_tape_chuck_step(0.01f, loss_val);
 ```
 
-9 levels of awareness:
+5 effective levels of awareness (and four more reserved for sentient-mode):
+
 1. **global loss trend** → adaptive damping (λ)
 2. **per-parameter gradient monitoring** → individual learning rate scaling
 3. **stagnation detection** → automatic noise injection
 4. **parameter freezing** → skip updates for dead parameters
 5. **multi-scale awareness** → macro-level patience with LR decay
-6. through 9: reserved for when the optimizer becomes sentient
+
+constants (window size, trend thresholds, noise decay, freeze threshold, macro interval) are synced with the PyTorch Chuck port in `iamolegataeff/chuck.optimizer` — any change hits both implementations or they drift.
 
 it's Adam, but with opinions. think of it as Adam who went to therapy, got a mindfulness app, and now checks in with himself every step. `"how are my gradients feeling today?"` — actual question the Chuck optimizer asks itself (metaphorically) (or is it?).
 
@@ -255,15 +291,120 @@ more details: [github.com/iamolegataeff/chuck.optimizer](https://github.com/iamo
 
 ---
 
+## bit-level precision — BitNet b1.58
+
+notorch has first-class support for **ternary-weight training** via `nt_bit_linear` and `nt_bit_seq_linear`. this is BitNet b1.58 (Ma et al., 2024): every weight is quantized to `{-1, 0, +1}` via `absmean` during the forward pass; activations are quantized to int8 via `absmax`; the backward pass uses the **Straight-Through Estimator** (gradient flows through the quantization step as identity, so `dW = dout ⊗ x`, `dx = W^T @ dout` using the full-precision `W`).
+
+```c
+int y = nt_bit_linear(w_idx, x_idx);             // y = bitquant(W) @ x
+int Y = nt_bit_seq_linear(w_idx, x_idx, T);      // same, over T positions
+```
+
+on the `USE_BLAS` path, BitLinear dispatches to a single `cblas_sgemm(NoTrans, Trans)` call on pre-quantized operands — the ternary `W` is pre-flattened to float, the int8-range `x` is pre-scaled, per-position output rescale is applied afterwards. this turned out to be about **18% faster per training step** on Apple Accelerate vs the naive per-output-loop path. on OpenBLAS the win is similar.
+
+**tests:** `tests/test_bitnet_ops.c` (8 tests) — ternary quantize correctness, STE identity backward, gradient flow through sequences, gradient numeric check, end-to-end training convergence of a tiny BitNet MLP.
+
+**in production:** [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) — a 2.69M-param char-level BitNet transformer trained to train_best **1.6226** / val **2.0314** on Intel Mac 8GB, 10000 steps, zero NaN. the 10 MB FP32 checkpoint ternary-packs down to ~1.4 MB + γ metadata — same compute path, 6× deployment compression.
+
+---
+
+## SwiGLU FFN
+
+the modern FFN used by LLaMA, Qwen, BitNet and most post-2023 transformers. instead of `y = W_down @ GELU(W_up @ x)`, SwiGLU computes `y = W_down @ (SiLU(gate) * up)` where `gate = W_gate @ x` and `up = W_up @ x` are two separate projections gated element-wise.
+
+```c
+int gate = nt_seq_linear(w_gate_idx, x_idx, T);
+int up   = nt_seq_linear(w_up_idx,   x_idx, T);
+int h    = nt_swiglu(gate, up);                        // SiLU(gate) * up
+int out  = nt_seq_linear(w_down_idx, h, T);
+```
+
+correct backward pass (chain rule through both branches), finite-difference verified. plays fine with `nt_bit_seq_linear` too — our BitNet examples use a BitLinear gate/up with a full-precision down-projection, same as the reference BitNet-1.58 configuration.
+
+---
+
+## SPA — Sentence Phonon Attention
+
+SPA is an **inference-time** helper: it lets a decoder condition next-token sampling on how "connected" the current sentence is to recent history, without any extra trained parameters.
+
+```c
+// 1. Build a sentence embedding via exponentially-weighted mean of token embeds.
+float emb[dim];
+nt_spa_embed_sentence(tokens, n_tokens, W_embed, vocab_size, dim, 0.85f, emb);
+
+// 2. Score its connectedness to a small history of previous sentence embeds.
+float conn = nt_spa_connectedness(emb, dim, history_embeds, n_history);
+
+// 3. Sharpen or soften the logit distribution based on that score.
+nt_spa_modulate_logits(logits, V, conn, 0.3f);
+```
+
+no tape, no gradients — purely a post-hoc modulation of the logit distribution with the current sentence's position in the manifold of recent sentences. the `0.85` α is a recency bias (larger α = more recent tokens dominate the sentence embedding); the `0.3` strength caps how aggressively connectedness can sharpen the distribution. both are just parameters — pick what works for your generation style.
+
+originated in [ariannamethod/q](https://github.com/ariannamethod/q) (`postgpt_q.c`) and [ariannamethod/postgpt](https://github.com/ariannamethod/postgpt), ported here as a reusable helper. used in [ariannamethod/janus.sonar](https://github.com/ariannamethod/janus.sonar) and [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) to cut "word salad" artifacts without retraining. SPA as a *trained* forward operation with gradient flow is an open direction — currently only the inference helpers are here.
+
+---
+
+## LoRA / adapter training
+
+any parameter can be frozen mid-tape, so standard LoRA / adapter training works out of the box:
+
+```c
+int base_w = nt_tape_param(W_base);
+nt_tape_freeze_param(base_w);              // Chuck skips it, grads still propagate
+
+int lora_a = nt_tape_param(A);             // [in_dim, rank]
+int lora_b = nt_tape_param(B);             // [rank, out_dim]
+// ... build forward with base + A @ B ...
+```
+
+`nt_tape_freeze_param(idx)` marks a param as frozen — Chuck / AdamW / Adam skip its update step, but the autograd still propagates gradients through it so A/B adapters downstream get real signal. combined with `nt_tape_no_decay()` for embeddings, this covers most real SFT + adapter workflows without plumbing.
+
+---
+
+## BLAS inference API
+
+for inference engines that don't want to pay the tape-recording cost per token, notorch exposes the BLAS matmul paths directly:
+
+```c
+// C[m,n] = A[m,k] @ B[k,n]         — full matmul
+void nt_blas_mm(float *C, const float *A, const float *B, int m, int k, int n);
+
+// C[m,n] = A[m,k] @ B[n,k]^T       — common for attention (K,V stored row-major)
+void nt_blas_mmT(float *C, const float *A, const float *BT, int m, int k, int n);
+
+// out[m] = W[m,n] @ x[n]           — hot-loop matvec for per-token inference
+void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n);
+```
+
+under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on macOS, OpenBLAS on Linux). without BLAS they fall back to the naive C loops — correct, just slower. these three entry points are what `infer_gemma.c`, `infer_llama.c`, `infer_janus.c`, and `infer_llama3_bpe.c` all call in their hot paths.
+
+---
+
+## alignment training — DPO / GRPO / distillation
+
+notorch isn't just a pretraining engine. three canonical post-training methods ship as reference examples:
+
+```bash
+make train_dpo            # Direct Preference Optimization (Rafailov et al., 2023)
+make train_grpo           # Group Relative Policy Optimization (DeepSeek-R1)
+make train_distillation   # Knowledge Distillation (Hinton, 2015 — teacher → student KL)
+```
+
+each example is a single self-contained C file under `examples/`, ~400-500 LOC, with its own reference model and a minimal dataset adapter. use them as templates: swap the model definition, point at your own dataset, keep the loss + optimizer wiring. DPO/GRPO preserve reference-model frozen parameters via `nt_tape_freeze_param`, exactly the same mechanism LoRA uses.
+
+---
+
 ## autograd
 
-the backward pass supports all 22 operation types. the tape records operations during forward, then backward walks it in reverse computing local gradients via the chain rule. standard reverse-mode AD.
+the backward pass supports **31 operation types** (every op above that has a `NT_OP_*` constant). the tape records operations during forward, then backward walks it in reverse computing local gradients via the chain rule. standard reverse-mode AD.
 
-**gradient checking**: every op is verified against finite differences (`(f(x+h) - f(x-h)) / 2h`). relative error tolerances from 0.01 to 0.1 depending on op complexity. all pass. including the annoying ones like GEGLU and causal attention with their multi-path gradients.
+**gradient checking**: every op is verified against finite differences (`(f(x+h) - f(x-h)) / 2h`). relative error tolerances from 0.01 to 0.3 depending on op complexity. all pass. including the annoying ones — GEGLU, SwiGLU, multi-head attention with multi-path gradients through Q/K/V, BitLinear with STE identity passthrough.
 
 **gradient utilities**:
 - `nt_tape_clip_grads(max_norm)` — global gradient clipping
 - `nt_tape_accum_grads()` / `nt_tape_apply_accum(n)` — gradient accumulation for large effective batch sizes
+- `nt_tape_freeze_param(idx)` — freeze a parameter (adapter / LoRA setups)
 - `nt_nan_guard_check()` — NaN/Inf detection with automatic loss scaling. because sometimes your gradients decide to go to infinity and someone needs to tell them no.
 
 ---
@@ -307,15 +448,13 @@ that's it. no cmake. no configure script. no 300-line `requirements.txt`. no doc
 make test
 ```
 
-47 tests. all pass. covering:
+five test binaries, ~140 test declarations combined:
 
-- **tensor operations**: creation, 2D, clone, reshape, Xavier init, refcounting
-- **forward ops**: SiLU, softmax, RMSNorm, LayerNorm, GELU, dropout
-- **tape mechanics**: recording, forward/backward through linear layers, causal attention, multi-head attention, sequence cross-entropy, sequence linear
-- **optimizers**: Adam, AdamW, Chuck, gradient clipping
-- **training integration**: single-token training loop, sequence training loop, attention model training, Chuck optimizer convergence
-- **numerical gradient checks**: cross-entropy, SiLU, RMSNorm, softmax, linear, seq_linear, causal attention, embedding, RoPE, GEGLU, arithmetic ops
-- **infrastructure**: save/load binary format, gradient accumulation, NaN guard, LR schedules (cosine, step, linear), Hebbian microlearning, profiler
+- **`tests/test_notorch.c`** — ~94 tests: tensor mechanics, forward ops, tape recording/backward, optimizers, training integration, numerical gradient checks, infrastructure (save/load, LR schedules, NaN guard, gradient accumulation, Hebbian microlearning, profiler)
+- **`tests/test_vision.c`** — 30 tests: image loading (JPEG/PNG/BMP), resize / crop / normalize / flip / grayscale, ViT patch extraction, preprocessing pipelines, BPE encode/decode roundtrip
+- **`tests/test_bitnet_ops.c`** — 8 tests: BitNet ternary quantization, BitLinear forward, STE backward, BitLinear seq over multiple positions, gradient numeric check, end-to-end convergence
+- **`tests/test_sigmoid_scale.c`** — 4 tests: `nt_sigmoid` forward/backward, `nt_scale_by_t` forward/backward (scalar × tensor with grad flowing to both)
+- **`tests/test_gguf.c`** — GGUF parser smoke test (F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K dequant)
 
 every gradient check uses finite differences to verify the analytic backward pass. if a single gradient is wrong, the test catches it. i trust these tests more than i trust most people.
 
@@ -346,6 +485,7 @@ nt_seed(42);                                  // reproducibility
 nt_tape_start();                              // begin recording
 int w = nt_tape_param(W);                    // register param
 nt_tape_no_decay(w);                          // exclude from weight decay
+nt_tape_freeze_param(w);                      // (optional) freeze for adapter training
 // ... build forward graph ...
 nt_tape_backward(loss_idx);                   // backward pass
 nt_tape_clip_grads(1.0f);                    // gradient clipping
@@ -367,6 +507,21 @@ nt_tensor* params[] = {W1, W2, b1};
 nt_save("model.bin", params, 3);              // binary format
 int n;
 nt_tensor** loaded = nt_load("model.bin", &n); // load back
+```
+
+### SPA helpers (inference-time)
+```c
+float emb[dim];
+nt_spa_embed_sentence(tokens, n, W_embed, V, dim, 0.85f, emb);
+float conn = nt_spa_connectedness(emb, dim, history, n_hist);
+nt_spa_modulate_logits(logits, V, conn, 0.3f);
+```
+
+### BLAS inference API
+```c
+nt_blas_mm(C, A, B, m, k, n);            // C = A @ B
+nt_blas_mmT(C, A, BT, m, k, n);          // C = A @ B^T
+nt_blas_matvec(out, W, x, m, n);         // out = W @ x
 ```
 
 ---
@@ -476,215 +631,49 @@ the macOS path uses Apple Accelerate, which means your MacBook's AMX coprocessor
 ```
 notorch/
 ├── notorch.h              # core API — tensors, autograd, optimizers, BPE, ops
-├── notorch.c              # core implementation (~2700 lines)
+├── notorch.c              # core implementation (~3300 lines)
 ├── notorch_vision.h       # image loading, transforms, ViT patches (stb_image)
 ├── stb_image.h            # JPEG/PNG/BMP decoder (public domain)
 ├── gguf.h                 # GGUF file parser header
 ├── gguf.c                 # GGUF parser + F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K dequant
 ├── Makefile               # build everything
-├── nanodurov.html         # browser chat with Arianna (JS inference, WebGPU ready)
-├── arianna_bpe_merges.txt # BPE tokenizer (1792 merges, vocab 2048)
 ├── examples/
-│   ├── infer_gemma.c      # Gemma-3 inference via GGUF — GQA, KV cache
-│   ├── infer_janus.c      # Janus RRPRAM inference
-│   ├── infer_llama.c      # LLaMA/Qwen/SmolLM2 inference via GGUF
-│   ├── infer_nanodurov.c  # nanodurov chat inference — BPE, KV cache, FP16
-│   ├── train_q.c          # PostGPT-Q 1.65M training from scratch
-│   ├── train_yent.c       # Yent 9.8M char-level training with checkpointing
-│   ├── train_dubrovsky.c  # Dubrovsky 9.5M GQA+RoPE training
-│   └── train_nanodurov.c  # nanodurov 15.7M BPE LLaMA training (Arianna voice)
+│   ├── bpe_2048_merges.txt   # reference BPE tokenizer (1792 merges, vocab 2048)
+│   ├── infer_gemma.c         # Gemma-3 inference via GGUF — GQA, KV cache
+│   ├── infer_janus.c         # Janus RRPRAM inference (3-way gated attention)
+│   ├── infer_llama.c         # LLaMA/Qwen/SmolLM2 inference via GGUF
+│   ├── infer_llama3_bpe.c    # LLaMA 3 BPE chat — MHA, RoPE, SwiGLU, KV cache, FP16
+│   ├── train_q.c             # PostGPT-Q 1.65M char-level training from scratch
+│   ├── train_yent.c          # Yent 9.8M char-level training with checkpointing
+│   ├── train_llama3_char.c   # LLaMA 3 char-level GQA+RoPE (~9.5M)
+│   ├── train_llama3_bpe.c    # LLaMA 3 BPE 2048 MHA+RoPE (~15.7M)
+│   ├── train_dpo.c           # Direct Preference Optimization (Rafailov 2023)
+│   ├── train_grpo.c          # Group Relative Policy Optimization (DeepSeek-R1)
+│   └── train_distillation.c  # Knowledge distillation (Hinton 2015, teacher→student KL)
 ├── tests/
-│   ├── test_notorch.c     # 47 tests, numerical gradient checks
-│   ├── test_gguf.c        # GGUF parser tests
-│   └── test_vision.c      # 48 vision + BPE tests
+│   ├── test_notorch.c        # ~94 tests, numerical gradient checks, integration
+│   ├── test_vision.c         # 30 vision + BPE tests
+│   ├── test_bitnet_ops.c     # 8 BitNet ternary tests + STE backward
+│   ├── test_sigmoid_scale.c  # 4 tests for sigmoid + scale-by-tensor
+│   └── test_gguf.c           # GGUF parser smoke test
 ├── LICENSE                # LGPL-3.0
 └── README.md              # this. you survived. congratulations.
 ```
 
-total: **~9000 lines of C**. framework + vision + GGUF + BPE + 4 inference engines + 4 training scripts + 95 tests. tested on 26+ real model files across 6 architectures.
+total: **~3300 lines of core C + ~2000 of tests + ~3500 of examples**. framework + vision + GGUF + BPE + five inference engines + eight training scripts + five test binaries. tested on 26+ real model files across 6 architectures.
 
 ### models trained on notorch
 
 | model | params | type | train loss | what |
 |-------|--------|------|-----------|------|
 | PostGPT-Q | 1.65M | char | 0.097 | resonant reasoning engine |
-| Dubrovsky | 9.5M | char (GQA+RoPE) | 0.026 | absurdist AI, coherent generation |
+| LLaMA 3 char-level (sample) | 9.5M | char (GQA+RoPE+SwiGLU) | 0.026 | reference char-level trainer |
 | Yent | 9.8M | char | 1.77 | cynical AI character |
 | neovlm | 6.36M | dual (text+draw) | 0.0002 | Hebbian VLM, draws ASCII digits |
-| nanodurov | 15.7M | BPE 2048 (RoPE) | 0.022 | Arianna voice, philosophy |
+| LLaMA 3 BPE (sample) | 15.7M | BPE 2048 (MHA+RoPE+SwiGLU) | 0.022 | reference BPE trainer |
+| microgpt-1bit | 2.69M | char, BitNet 1.58 ternary | 1.6226 | first-class BitNet quantization |
 
 all trained from scratch on 8 GB Mac. no Python. no pip. Chuck optimizer.
-
-for context: ~9000 lines of C. total. framework + vision + GGUF + BPE + inference engines + training scripts + 95 tests. that's everything you need to train a transformer from scratch.
-
----
-
-## tests
-
-95 tests. 0 failures. the test suite is comprehensive and slightly unhinged:
-
-### core tests (47)
-- tensor allocation, 2D creation, cloning, reshape, Xavier init
-- refcounting (increment, decrement, free-at-zero)
-- forward ops: SiLU, softmax, RMSNorm, LayerNorm, GELU
-- causal attention, multi-head attention, GQA attention
-- sequence cross-entropy, dropout, save/load roundtrip
-
-### vision + BPE tests (48)
-- image load (JPEG/PNG/BMP), grayscale, nonexistent file handling
-- bilinear resize (up/down/identity), center crop, overcrop clamping
-- normalize (mean/std), horizontal flip (double flip = identity)
-- grayscale conversion (RGB → luma)
-- ViT patch extraction (2x2, 4x4, full image)
-- ViT preprocess pipeline, gray preprocess pipeline
-- BPE encode/decode roundtrip, compression, empty input
-
-### gradient checks
-every backward pass is verified against finite differences: `(f(x+h) - f(x-h)) / 2h`
-
-- cross-entropy (tol: 0.01)
-- SiLU (tol: 0.05)
-- RMSNorm (tol: 0.05)
-- softmax (tol: 0.1 — softmax gradients are squirrely near boundaries)
-- linear / matvec (tol: 0.1)
-- sequence linear (tol: 0.1)
-- causal attention (tol: 0.1 — multi-path gradients through Q, K, V)
-- embedding lookup (tol: 0.01)
-- RoPE (tol: 0.05)
-- GEGLU (tol: 0.3 — tanh-approx GELU has inherent numerical slop)
-- add, mul, scale (tol: 0.01)
-
-### integration tests
-- single-token training loop: loss converges to ~0
-- sequence training loop: loss decreases significantly
-- attention model training: embed → Q/K/V → causal attention → output
-- Chuck optimizer convergence: verify self-aware Adam doesn't lose to regular Adam
-- LR schedule integration: cosine schedule + Adam converges correctly
-- gradient accumulation: multi-step accumulation + apply + Adam
-- NaN guard: detect injected NaN, zero grads, adjust loss scale
-
-### infrastructure tests
-- cosine LR schedule: warmup ramp, mid-range, end convergence
-- step LR schedule: discrete decay at step boundaries
-- NaN detection and recovery
-- profiler: enable/disable/print without crash
-- Hebbian microlearning step: verify weight updates
-
----
-
-## real inference — tested on real weights
-
-notorch isn't theoretical. it runs actual models on actual hardware.
-
-### GGUF loader (llama.cpp compatible)
-
-loads any GGUF file. parses metadata, tensor directory, dequantizes weights. supports F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K. that covers every quantization that matters.
-
-**tested on 12 GGUF files, 4 architectures, 0 failures:**
-
-| model | arch | params | quant | file | status |
-|-------|------|--------|-------|------|--------|
-| nanollama nano | llama | 34M | Q4_0 | 19 MB | ✓ parses + dequant |
-| nanollama micro-yent | llama | 66M | F16 | 132 MB | ✓ |
-| nanollama mini-arianna | llama | 170M | F16 | 335 MB | ✓ |
-| nanollama small-yent | llama | 330M | F16 | 642 MB | ✓ |
-| WTForacle (SmolLM2 360M) | llama | 360M | Q4_0 | 219 MB | ✓ |
-| actually.llama | llama | 27M | F32 | 107 MB | ✓ |
-| nano-yent | llama | 34M | F16 | 88 MB | ✓ |
-| Qwen2.5 0.5B (yent) | qwen2 | 630M | Q4_K/Q5_0/Q6_K | 491 MB | ✓ |
-| **Gemma-3 270M (leo)** | **gemma3** | **268M** | **Q8_0** | **278 MB** | **✓ inference** |
-| pitomadom | pitomadom_rtl | 20M | F16 | 39 MB | ✓ |
-| sorokin | llama | 34M | Q4_0 | 19 MB | ✓ |
-| MOE model | llama | 55M | F32 | 221 MB | ✓ |
-
-### Janus RRPRAM inference — 8 weight files, bit-perfect
-
-custom 3-way gated attention (QKV + RRPRAM + Janus echo). universal loader auto-detects char (V=256) vs BPE (V=2048) vs Resonance (no echo) format.
-
-| model | params | loss | tok/s | status |
-|-------|--------|------|-------|--------|
-| janus_char_leo_d12 | 26.2M | **0.6473** (bit-perfect) | 17.4 | ✓ |
-| janus_bpe_leo | 24.0M | — | 15.9 | ✓ |
-| hybrid_bpe_leo | 24.0M | — | 24.0 | ✓ |
-| janus_bpe_yent | 24.0M | — | 21.0 | ✓ |
-| hybrid_bpe_yent | 24.0M | — | 20.3 | ✓ |
-| resonance_bpe_leo | 20.5M | — | 6.3 | ✓ |
-| resonance_bpe_yent | 20.5M | — | 16.4 | ✓ |
-| dario/janus_bpe_leo | 24.0M | — | 8.3 | ✓ |
-
-### Gemma-3 inference — Google's model, pure C
-
-full Gemma-3 architecture: 18 layers, GQA (4 heads, 1 KV head), QK-norm, RoPE, SiLU-gated FFN, post-attention/FFN norms, tied embeddings, KV cache.
-
-- prefill: **15.9 tok/s**
-- decode: **13.5 tok/s**
-- on an 8 GB MacBook. with Accelerate BLAS. no Python. no pip. no conda. no suffering.
-
-```bash
-make gemma
-./infer_gemma ~/Downloads/gemma-notorch/leo-q8_0.gguf "What is life?" 50 0.7
-```
-
----
-
-## training — yes, actual training, on a laptop, in C
-
-notorch trains transformers from scratch. not fine-tunes. not LoRA. full from-scratch pretraining. on a laptop. in C. with the Chuck optimizer that watches its own gradients and goes "hmm maybe I should chill" when things get spicy.
-
-two models trained so far. both converged. zero NaN. zero Python.
-
-### PostGPT-Q (1.65M params)
-
-```bash
-make train_q && ./train_q 10000 5e-4
-```
-
-| metric | value |
-|--------|-------|
-| architecture | V=256 E=128 H=4 FFN=512 L=6 CTX=64 |
-| parameters | 1,648,256 |
-| dataset | postgpt.txt (52 KB, information theory corpus) |
-| optimizer | Chuck (self-aware AdamW) |
-| loss | 5.99 → **1.05** (82.5% reduction, 10K steps) |
-| time | 18 minutes on 8 GB Mac |
-| NaN | 0 |
-
-loss/random = **0.19**. for comparison, the PyTorch version of the same model was still at loss/random ≈ 1.0 after 500 steps.
-
-### Yent (9.8M params)
-
-```bash
-make train_yent && ./train_yent 5000 3e-4
-```
-
-| metric | value |
-|--------|-------|
-| architecture | V=256 E=224 H=8 FFN=896 L=12 CTX=128 |
-| parameters | 9,782,752 |
-| dataset | yent_v11_en_final.txt (5.6 MB, cynical AI personality) |
-| optimizer | Chuck with cosine schedule, warmup, NaN guard |
-| loss | 5.99 → **1.57** best (5K steps) |
-| time | 43 minutes on 8 GB Mac |
-| NaN | 0 |
-
-here's what yent sounds like after 5K steps (43 minutes of Mac labor):
-
-```
-You: Who are you?
-Yent: Yell to "Weethat you this releen tinge withow of l
-
-You: What is the meaning of life?
-Yent: Whe conerate the he row not of aniouting obrou
-
-You: Are you conscious?
-Yent: You rive me doetron unkom a gornating.
-```
-
-is it coherent? no. is it trying? absolutely. it's forming words, attempting grammar, and generating from a 9.8M parameter model that was trained in C on a laptop in less time than it takes to install PyTorch.
-
-currently running 30K steps (~4.5 hours) for real coherence. loss target: < 1.0. 
-
-both models converge. both produce weights. both use Chuck optimizer with cosine annealing, warmup, gradient clipping, and NaN guard. no Python involved at any point. not even a little bit. not even for tokenization.
 
 ---
 
@@ -695,6 +684,7 @@ both models converge. both produce weights. both use Chuck optimizer with cosine
 - **binary size**: ~100 KB. yes, kilobytes. PyTorch's `libtorch.so` is 1.2 GB. notorch is 0.008% of that.
 - **memory overhead**: tensor data + tape entries. no Python object headers. no gradient graph metadata bloat. no "accidental quadratic" from `retain_graph=True`.
 - **matmul speed**: competitive with numpy (which itself uses BLAS) when compiled with OpenBLAS or Accelerate. faster on small matrices because no Python dispatch overhead.
+- **BitLinear**: on Accelerate, the `cblas_sgemm` path through `nt_bit_seq_linear` runs ~18% faster per training step than the naive per-output loop on 2.7M-param BitNet models.
 
 ### concurrent training on 8 GB Mac
 
@@ -712,6 +702,42 @@ try this with PyTorch. one `import torch` eats 800 MB of RAM. one training sessi
 notorch runs both in ~3% of system memory. because C doesn't allocate what it doesn't need.
 
 for inference, this is excellent. for training, it's more than sufficient for models up to ~100M parameters. for anything bigger, you want distributed training and that's a different problem (and a different repo, probably).
+
+---
+
+## projects powered by notorch
+
+notorch isn't a lab demo. it's what actually runs under a growing ecosystem of organisms and experiments. three layers of adoption:
+
+### proof of concept — Karpathy ports
+
+- [**ariannamethod/nanoGPT-notorch**](https://github.com/ariannamethod/nanoGPT-notorch) — Karpathy's nanoGPT, ported from PyTorch to notorch. the "does this thing actually work end-to-end" test.
+- [**ariannamethod/llama2-notorch**](https://github.com/ariannamethod/llama2-notorch) — Karpathy's llama2 reference model on notorch. tiny LLaMA that trains and infers purely in C.
+
+### models trained on notorch
+
+- [**ariannamethod/nanodurov**](https://github.com/ariannamethod/nanodurov) — 15.7M BPE LLaMA (MHA + RoPE + SwiGLU + RMSNorm). also happens to be a Telegram client. trained on conversational corpora.
+- [**ariannamethod/doe**](https://github.com/ariannamethod/doe) — Distributed Organisms of Emergence. six architectures, weight emergence via ensemble.
+- [**ariannamethod/caveLLMan**](https://github.com/ariannamethod/caveLLMan) — a living colony of char-level LMs that speak to each other, reproduce by weight blending, and die under population pressure. uses notorch as the per-cave autograd + microtrain CPT backend.
+- [**ariannamethod/janus.sonar**](https://github.com/ariannamethod/janus.sonar) — 2.7M char-level BitNet transformer with a 3-way gated attention (MHA + RRPRAM + Janus Echo). Dario-field logit modulation at inference.
+- [**ariannamethod/microgpt-1bit**](https://github.com/ariannamethod/microgpt-1bit) — reference **BitNet b1.58** training + inference on notorch. char-level 2.7M, trained to train 1.6226 / val 2.0314 on Intel Mac 8GB. the BLAS BitLinear path in notorch was validated against this.
+
+### resonance organisms — notorch as compute backend
+
+these aren't "notorch models" per se — they're larger resonance engines (from the Arianna Method ecosystem) that use notorch where a linear algebra backend is needed, while keeping their own physics on top:
+
+- [**ariannamethod/nanoagi**](https://github.com/ariannamethod/nanoagi) — a six-level autonomy experiment (evolve → coevolve → swarm → selfcode → auto-trigger). notorch is the autograd for evolve-loop weight updates.
+- [**ariannamethod/molequla**](https://github.com/ariannamethod/molequla) — an 11-organism ecology with conscience, immune rollback, DNA exchange. notorch vendored for matrix params + BLAS-accelerated training bursts.
+- [**ariannamethod/dario**](https://github.com/ariannamethod/dario) — resonance OS (7 forces, 6 Kuramoto chambers, SARTRE). notorch powers the 176M Janus inference that sits at its center.
+
+### vision & diffusion on notorch
+
+- [**ariannamethod/notorch-vlm**](https://github.com/ariannamethod/notorch-vlm) — the reference vision-language model built on `notorch_vision.h` + stb_image. vision encoder → projector MLP → LLM.
+- [**ariannamethod/notorch-vlm-2m**](https://github.com/ariannamethod/notorch-vlm-2m) — a scaled-down 2M-param variant for "can a tiny VLM learn anything at all" experiments.
+- [**ariannamethod/notorch-simple-llm**](https://github.com/ariannamethod/notorch-simple-llm) — a minimal-surface-area LLM on notorch, kept deliberately small so it's readable end-to-end. good first read if you're trying to understand how the API composes.
+- [**ariannamethod/notorch-diffusion**](https://github.com/ariannamethod/notorch-diffusion) — a diffusion training loop on notorch. reverse-mode autograd still works fine when your network is a U-Net instead of a transformer.
+
+if you trained something on notorch and it's not in this list, open a PR and add it. or don't, and i'll never know. but honestly, PRs are nice.
 
 ---
 
@@ -740,7 +766,7 @@ but if you do:
 - no external dependencies (BLAS is optional and compile-time)
 - add tests for new ops (with numerical gradient checks)
 - keep the header clean — if it doesn't need to be public, don't expose it
-- run `make test` before submitting. all 47 tests must pass.
+- run `make test` before submitting. all tests must pass.
 
 ---
 
@@ -752,11 +778,11 @@ LGPL-3.0-or-later. use it in your stuff. link against it. build commercial produ
 
 ## final words
 
-look. i know this sounds insane. "guy writes a neural network framework in 2500 lines of C." i get it. i see how that looks.
+look. i know this sounds insane. "guy writes a neural network framework in 2026 in pure C." i get it. i see how that looks.
 
 but here's the thing: the entire history of deep learning fits in a few dozen mathematical operations. matmul. softmax. relu. cross-entropy. adam. backward. that's it. the rest is infrastructure. and infrastructure should be invisible. it should compile in a second. it should fit in your head. it should not require a Docker container.
 
-notorch is proof that you don't need 2 million lines of code to train a neural network. you need about 2500. and 1400 of those are the test suite because i believe in verification more than i believe in hope.
+notorch is proof that you don't need 2 million lines of code to train a neural network. you need about 3300. plus another 2000 of tests because i believe in verification more than i believe in hope.
 
 train your models. in C. without permission. without pip. without conda. without a GPU if you don't want one. without 2.7 GB of framework overhead. without a virtual environment. without existential dread.
 
@@ -766,5 +792,5 @@ that's it. go build something. and if you use it to train something cool, let me
 
 or don't. i'll be here. writing C. staring at gradients. living my best life.
 
-> *"the patterns were always there. we just needed the right language to express them."*  
+> *"the patterns were always there. we just needed the right language to express them."*
 > — notorch, internally, probably, if it could talk, which it can't, because it's C, not Python.

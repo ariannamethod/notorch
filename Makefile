@@ -74,20 +74,20 @@ train_yent: examples/train_yent.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_yent examples/train_yent.c notorch.c -lm
 	@echo "Compiled: train_yent (Yent 9.8M, $(BLAS_NAME))"
 
-# nanodurov inference (interactive chat)
-infer_nanodurov: examples/infer_nanodurov.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_nanodurov examples/infer_nanodurov.c notorch.c -lm
-	@echo "Compiled: infer_nanodurov (Arianna 15.7M, $(BLAS_NAME))"
+# LLaMA 3 BPE training (MHA + RoPE + SwiGLU, 15.7M params, vocab 2048)
+train_llama3_bpe: examples/train_llama3_bpe.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_llama3_bpe examples/train_llama3_bpe.c notorch.c -lm
+	@echo "Compiled: train_llama3_bpe (MHA + RoPE + BPE 2048, 15.7M, $(BLAS_NAME))"
 
-# nanodurov BPE training (Arianna voice, 15.7M)
-train_nanodurov: examples/train_nanodurov.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_nanodurov examples/train_nanodurov.c notorch.c -lm
-	@echo "Compiled: train_nanodurov (BPE 15.7M, $(BLAS_NAME))"
+# LLaMA 3 BPE inference (interactive chat, KV cache, optional FP16 weights)
+infer_llama3_bpe: examples/infer_llama3_bpe.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama3_bpe examples/infer_llama3_bpe.c notorch.c -lm
+	@echo "Compiled: infer_llama3_bpe (MHA + RoPE + BPE 2048, $(BLAS_NAME))"
 
-# Dubrovsky training (GQA + RoPE)
-train_dubrovsky: examples/train_dubrovsky.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_dubrovsky examples/train_dubrovsky.c notorch.c -lm
-	@echo "Compiled: train_dubrovsky (Dubrovsky GQA+RoPE, $(BLAS_NAME))"
+# LLaMA 3 char-level training (GQA + RoPE + SwiGLU, ~9.5M params)
+train_llama3_char: examples/train_llama3_char.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_llama3_char examples/train_llama3_char.c notorch.c -lm
+	@echo "Compiled: train_llama3_char (GQA + RoPE, $(BLAS_NAME))"
 
 # DPO — Direct Preference Optimization (Rafailov 2023)
 train_dpo: examples/train_dpo.c notorch.c notorch.h
@@ -117,19 +117,32 @@ test: notorch_test test_vision
 
 clean:
 	rm -f notorch_test notorch_test_gpu notorch.o libnotorch.a notorch_cuda.o \
-		infer_janus_nt infer_gemma infer_llama train_q train_yent chat_yent test_gguf
+		infer_janus_nt infer_gemma infer_llama \
+		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \
+		train_dpo train_grpo train_distillation test_vision test_gguf
 
 help:
 	@echo "notorch — neural networks in pure C"
 	@echo ""
-	@echo "  make            Build and run tests with BLAS"
-	@echo "  make cpu        Build tests without BLAS (portable)"
-	@echo "  make gpu        Build tests with CUDA"
-	@echo "  make lib        Build static library (libnotorch.a)"
-	@echo "  make infer      Build Janus RRPRAM inference"
-	@echo "  make gemma      Build Gemma-3 GGUF inference"
-	@echo "  make llama      Build LLaMA/Qwen/SmolLM2 inference"
-	@echo "  make train_q    Build PostGPT-Q training"
-	@echo "  make train_yent Build Yent 9.8M training"
-	@echo "  make test       Build and run tests"
-	@echo "  make clean      Remove build artifacts"
+	@echo "  make                    Build and run tests with BLAS"
+	@echo "  make cpu                Build tests without BLAS (portable)"
+	@echo "  make gpu                Build tests with CUDA"
+	@echo "  make lib                Build static library (libnotorch.a)"
+	@echo ""
+	@echo "  inference:"
+	@echo "    make infer            Janus RRPRAM inference"
+	@echo "    make gemma            Gemma-3 GGUF inference"
+	@echo "    make llama            LLaMA/Qwen/SmolLM2 GGUF inference"
+	@echo "    make infer_llama3_bpe LLaMA 3 BPE chat (vocab 2048)"
+	@echo ""
+	@echo "  training:"
+	@echo "    make train_q          PostGPT-Q 1.65M (char-level research)"
+	@echo "    make train_yent       Yent 9.8M char-level"
+	@echo "    make train_llama3_char LLaMA 3 char-level (GQA, ~9.5M)"
+	@echo "    make train_llama3_bpe  LLaMA 3 BPE 2048 (MHA, ~15.7M)"
+	@echo "    make train_dpo        DPO alignment"
+	@echo "    make train_grpo       GRPO self-play RL"
+	@echo "    make train_distillation  Knowledge distillation"
+	@echo ""
+	@echo "  make test               Build and run tests"
+	@echo "  make clean              Remove build artifacts"

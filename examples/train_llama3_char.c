@@ -1,16 +1,17 @@
 /*
- * train_dubrovsky.c — Train Dubrovsky char-level transformer on notorch
+ * train_llama3_char.c — LLaMA 3 char-level transformer on notorch
  *
- * Architecture (from alexey.c / dubrovsky_config.json):
+ * Architecture:
  *   dim=384, layers=6, heads=6, kv_heads=2 (GQA), vocab=88, ctx=256
  *   hidden_dim=1024 (SwiGLU), RoPE theta=10000, RMSNorm
+ *   ≈9.5M parameters.
  *
- * Dataset: dubrovsky.txt (~1.17MB, Q/A absurdist AI)
- * Karpathy formula: ~1.1MB + ~10M params + 10-15K steps = loss < 1.5
+ * Dataset: any char-level Q/A corpus (~1MB sample, default `corpus.txt`).
+ * Karpathy formula: ~1.1MB + ~10M params + 10-15K steps → loss < 1.5
  *
- * Build: make train_dubrovsky
- * Run:   ./train_dubrovsky [steps] [lr]
- *        ./train_dubrovsky --resume [steps] [lr]
+ * Build: make train_llama3_char
+ * Run:   ./train_llama3_char [steps] [lr] [corpus.txt]
+ *        ./train_llama3_char --resume [steps] [lr] [corpus.txt]
  */
 
 #include "notorch.h"
@@ -31,9 +32,9 @@
 #define CKPT_EVERY  1000
 #define EVAL_SEQS   32
 #define LOG_EVERY   100
-#define CKPT_PREFIX "dub_ckpt"
+#define CKPT_PREFIX "llama3_char_ckpt"
 
-/* Character mapping: exact Dubrovsky tokenizer.json (88 chars) */
+/* Character mapping: 88-char reference vocabulary (ASCII + 6 UTF-8 specials) */
 static char vocab_chars[VOCAB];
 static int  char_to_id[256];
 
@@ -42,7 +43,7 @@ static const char* utf8_decode[] = {"×", "à", "é", "ö", "—", "™"};
 
 static void init_vocab(void) {
     memset(char_to_id, -1, sizeof(char_to_id));
-    /* Exact mapping from dubrovsky tokenizer.json */
+    /* 82 ASCII slots + 6 UTF-8 specials (× à é ö — ™) */
     const char* ascii_order = "\n !\"$%&'()*+,-./"
                               "0123456789:;=?"
                               "ABCDEFGHIJKLMNOPQRSTUVWYZ"
@@ -297,7 +298,7 @@ int main(int argc, char** argv) {
     float base_lr = (arg_off+1) < argc ? (float)atof(argv[arg_off+1]) : 3e-4f;
 
     printf("════════════════════════════════════════════════════════\n");
-    printf("  notorch — Dubrovsky training\n");
+    printf("  notorch — LLaMA 3 char-level training\n");
     printf("  dim=%d L=%d H=%d KV=%d HD=%d FFN=%d CTX=%d V=%d\n",
            DIM, NLAYERS, NHEADS, NKV_HEADS, HEAD_DIM, HIDDEN, CTX, VOCAB);
     printf("  GQA ratio: %d Q heads per KV head\n", NHEADS / NKV_HEADS);
@@ -307,7 +308,7 @@ int main(int argc, char** argv) {
     printf("════════════════════════════════════════════════════════\n");
 
     /* Load and encode data */
-    const char* path = argc > 1 ? argv[1] : "dubrovsky.txt";
+    const char* path = (arg_off+2) < argc ? argv[arg_off+2] : "corpus.txt";
     FILE* f = fopen(path, "rb");
     if (!f) { printf("cannot open %s\n", path); return 1; }
     fseek(f, 0, SEEK_END); long fsize = ftell(f); fseek(f, 0, SEEK_SET);
@@ -389,7 +390,7 @@ int main(int argc, char** argv) {
             save_checkpoint(model, step+1, best_loss);
             if (val < best_loss) {
                 best_loss = val;
-                save_model(model, "dub_best");
+                save_model(model, "llama3_char_best");
                 printf("★ new best!");
             }
             printf("\n"); fflush(stdout);
@@ -448,13 +449,13 @@ int main(int argc, char** argv) {
 
     /* Save */
     printf("── saving ──\n");
-    save_model(model, "dubrovsky");
-    printf("  dubrovsky.bin (%.1f MB)\n", np*4.0f/1048576.0f);
+    save_model(model, "llama3_char");
+    printf("  llama3_char.bin (%.1f MB)\n", np*4.0f/1048576.0f);
     save_checkpoint(model, steps, best_loss);
 
     model_free(model); free(encoded);
     printf("\n════════════════════════════════════════════════════════\n");
-    printf("  Dubrovsky trained. %d steps. GQA + RoPE. No Python.\n", steps);
+    printf("  LLaMA 3 char-level trained. %d steps. GQA + RoPE + SwiGLU. No Python.\n", steps);
     printf("════════════════════════════════════════════════════════\n");
     return 0;
 }
