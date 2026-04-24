@@ -688,7 +688,7 @@ all trained from scratch on 8 GB Mac. no Python. no pip. Chuck optimizer.
 
 ### concurrent training on 8 GB Mac
 
-we ran two transformer trainings simultaneously on an 8 GB MacBook Air (M1). not sequentially. simultaneously. at the same time. on the same machine. while also running a browser and a terminal.
+we ran two transformer trainings simultaneously on a 2019 Intel i5 MacBook with 8 GB RAM. not an M1. not Apple Silicon. the pre-AMX, pre-Neural-Engine Intel one. not sequentially. simultaneously. at the same time. on the same machine. while also running a browser and a terminal.
 
 | model | params | RAM usage | status |
 |-------|--------|-----------|--------|
