@@ -21,7 +21,7 @@ endif
 
 # ── Targets ──
 
-.PHONY: all test clean cpu gpu help
+.PHONY: all test clean cpu gpu help lib install
 
 all: notorch_test
 	@echo "Built with $(BLAS_NAME). Run: ./notorch_test"
@@ -44,11 +44,26 @@ gpu: notorch.c notorch.h notorch_cuda.cu tests/test_notorch.c
 		-L/usr/local/cuda/lib64 -lcudart -lcublas -lm
 	@echo "Compiled: notorch_test_gpu (CUDA + BLAS)"
 
-# Static library
-lib: notorch.c notorch.h
+# Static library — bundles notorch.o + gguf.o so a single -lnotorch linkage
+# satisfies both tensor ops (nt_blas_mmT, nt_bpe_*) and GGUF reader
+# (gguf_open, gguf_dequant, gguf_get_kv).
+lib: libnotorch.a
+
+libnotorch.a: notorch.c notorch.h gguf.c gguf.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
-	ar rcs libnotorch.a notorch.o
-	@echo "Built: libnotorch.a"
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf.o
+	ar rcs libnotorch.a notorch.o gguf.o
+	@echo "Built: libnotorch.a (notorch + gguf)"
+
+# ── Install — system-wide baseline at $PREFIX (default /opt/homebrew) ──
+PREFIX ?= /opt/homebrew
+
+install: libnotorch.a
+	install -d $(PREFIX)/lib $(PREFIX)/include/ariannamethod
+	install -m 0644 libnotorch.a $(PREFIX)/lib/libnotorch.a
+	install -m 0644 notorch.h    $(PREFIX)/include/ariannamethod/notorch.h
+	install -m 0644 gguf.h       $(PREFIX)/include/ariannamethod/gguf.h
+	@echo "Installed: $(PREFIX)/lib/libnotorch.a + $(PREFIX)/include/ariannamethod/{notorch,gguf}.h"
 
 # ── Inference ──
 
@@ -116,7 +131,7 @@ test: notorch_test test_vision
 	./test_vision
 
 clean:
-	rm -f notorch_test notorch_test_gpu notorch.o libnotorch.a notorch_cuda.o \
+	rm -f notorch_test notorch_test_gpu notorch.o gguf.o libnotorch.a notorch_cuda.o \
 		infer_janus_nt infer_gemma infer_llama \
 		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \
 		train_dpo train_grpo train_distillation test_vision test_gguf
