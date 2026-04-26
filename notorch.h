@@ -23,7 +23,7 @@ extern "C" {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #define NT_MAX_DIMS     8
-#define NT_MAX_ELEMENTS (1 << 24)  // 16M floats max per tensor
+#define NT_MAX_ELEMENTS (1 << 28)  // 268M floats max per tensor (Qwen-0.5B vocab×embed = 136M)
 
 typedef struct {
     float*   data;              // CPU data (heap-allocated)
@@ -111,6 +111,7 @@ void nt_tensor_print(const nt_tensor* t, const char* name);
 #define NT_OP_SWIGLU        29   // y = SiLU(gate) * up (element-wise, pre-computed tensors)
 #define NT_OP_BIT_LINEAR    30   // y = bitquant(W) @ x — BitNet 1.58, STE backward
 #define NT_OP_BIT_SEQ_LINEAR 31  // Y[t] = bitquant(W) @ X[t] for T positions (BitNet seq)
+#define NT_OP_SEQ_CROSSENT_MASKED 32  // masked sequence cross-entropy (parent3 = mask)
 
 typedef struct {
     nt_tensor* output;          // forward result
@@ -125,6 +126,7 @@ typedef struct {
     float      aux4;            // fourth auxiliary (n_kv_heads for GQA)
     int        is_param;        // 1 = trainable parameter
     int        no_decay;        // 1 = skip weight decay (embeddings)
+    int        frozen;          // 1 = skip backward computation (frozen base in LoRA)
 } nt_tape_entry;
 
 // Adam optimizer state per parameter
@@ -342,6 +344,10 @@ int nt_cross_entropy(int logits_idx, int target);
 // Sequence cross-entropy loss (T positions)
 int nt_seq_cross_entropy(int logits_idx, int targets_idx, int T, int V);
 
+// Masked sequence cross-entropy: loss only on positions where mask[t] == 1.
+// mask tensor must have T float elements; gradient zeroed on positions with mask=0.
+int nt_seq_cross_entropy_masked(int logits_idx, int targets_idx, int mask_idx, int T, int V);
+
 // Element-wise add
 int nt_add(int a_idx, int b_idx);
 
@@ -351,8 +357,11 @@ int nt_mul(int a_idx, int b_idx);
 // Scale by scalar
 int nt_scale(int x_idx, float s);
 
-// RoPE: apply rotary position embeddings in-place
+// RoPE: apply rotary position embeddings in-place (default freq_base = 10000)
 int nt_rope(int x_idx, int T, int head_dim);
+
+// RoPE with explicit freq_base — Qwen2 uses 1000000, Llama uses 10000
+int nt_rope_freq(int x_idx, int T, int head_dim, float freq_base);
 
 // Dropout: zero random elements with probability p (training only)
 int nt_dropout(int x_idx, float p);

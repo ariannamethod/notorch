@@ -329,6 +329,10 @@ void nt_tape_no_decay(int idx) {
 void nt_tape_freeze_param(int param_idx) {
     if (param_idx >= 0 && param_idx < g_tape.n_params)
         g_tape.chuck_params[param_idx].frozen = 1;
+    // Also set the per-entry frozen flag so backward can skip computation.
+    // Note: param_idx in this API is the *tape entry index*, returned by nt_tape_param().
+    if (param_idx >= 0 && param_idx < g_tape.count)
+        g_tape.entries[param_idx].frozen = 1;
 }
 
 // Find tape entry by tensor pointer
@@ -352,6 +356,7 @@ static int tape_ensure(nt_tensor* t) {
 static void tape_acc_grad(int idx, const float* grad, int len) {
     if (idx < 0 || idx >= g_tape.count) return;
     nt_tape_entry* e = &g_tape.entries[idx];
+    if (e->frozen) return;   // skip allocation + accumulation for frozen params
     if (!e->grad) {
         e->grad = nt_tensor_new(len);
         if (!e->grad) return;
@@ -658,37 +663,47 @@ void nt_tape_backward(int loss_idx) {
                 int T = (int)e->aux;
                 int out_d = pw->output->shape[0];
                 int in_d = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / out_d;
-                float* dw = (float*)calloc(pw->output->len, sizeof(float));
-                float* dx = (float*)calloc(px->output->len, sizeof(float));
-                if (dw && dx) {
+                int w_frozen = pw->frozen;     // skip dw if W is frozen (LoRA on frozen base)
+                int x_frozen = px->frozen;     // also skip dx if X chain is frozen (rare)
+                float* dw = w_frozen ? NULL : (float*)calloc(pw->output->len, sizeof(float));
+                float* dx = x_frozen ? NULL : (float*)calloc(px->output->len, sizeof(float));
+                if ((dw || w_frozen) && (dx || x_frozen)) {
                     float* Wd = pw->output->data;
                     float* Xd = px->output->data;
 #ifdef USE_BLAS
-                    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
-                                T, in_d, out_d,
-                                1.0f, dout, out_d, Wd, in_d,
-                                0.0f, dx, in_d);
-                    cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
-                                out_d, in_d, T,
-                                1.0f, dout, out_d, Xd, in_d,
-                                0.0f, dw, in_d);
-#else
-                    for (int t = 0; t < T; t++) {
-                        float* dout_t = dout + t * out_d;
-                        for (int j = 0; j < in_d; j++)
-                            for (int i = 0; i < out_d; i++)
-                                dx[t * in_d + j] += Wd[i * in_d + j] * dout_t[i];
+                    if (!x_frozen) {
+                        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+                                    T, in_d, out_d,
+                                    1.0f, dout, out_d, Wd, in_d,
+                                    0.0f, dx, in_d);
                     }
-                    for (int t = 0; t < T; t++) {
-                        float* dout_t = dout + t * out_d;
-                        float* x_t = Xd + t * in_d;
-                        for (int i = 0; i < out_d; i++)
+                    if (!w_frozen) {
+                        cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
+                                    out_d, in_d, T,
+                                    1.0f, dout, out_d, Xd, in_d,
+                                    0.0f, dw, in_d);
+                    }
+#else
+                    if (!x_frozen) {
+                        for (int t = 0; t < T; t++) {
+                            float* dout_t = dout + t * out_d;
                             for (int j = 0; j < in_d; j++)
-                                dw[i * in_d + j] += dout_t[i] * x_t[j];
+                                for (int i = 0; i < out_d; i++)
+                                    dx[t * in_d + j] += Wd[i * in_d + j] * dout_t[i];
+                        }
+                    }
+                    if (!w_frozen) {
+                        for (int t = 0; t < T; t++) {
+                            float* dout_t = dout + t * out_d;
+                            float* x_t = Xd + t * in_d;
+                            for (int i = 0; i < out_d; i++)
+                                for (int j = 0; j < in_d; j++)
+                                    dw[i * in_d + j] += dout_t[i] * x_t[j];
+                        }
                     }
 #endif
-                    tape_acc_grad(e->parent1, dw, pw->output->len);
-                    tape_acc_grad(e->parent2, dx, px->output->len);
+                    if (!w_frozen) tape_acc_grad(e->parent1, dw, pw->output->len);
+                    if (!x_frozen) tape_acc_grad(e->parent2, dx, px->output->len);
                 }
                 free(dw); free(dx);
             }
@@ -1108,6 +1123,44 @@ void nt_tape_backward(int loss_idx) {
             break;
         }
 
+        case NT_OP_SEQ_CROSSENT_MASKED: {
+            if (e->parent1 >= 0 && e->parent2 >= 0 && e->parent3 >= 0) {
+                nt_tape_entry* pl = &g_tape.entries[e->parent1];
+                nt_tape_entry* pt = &g_tape.entries[e->parent2];
+                nt_tape_entry* pm = &g_tape.entries[e->parent3];
+                int T = (int)e->aux;
+                int V = (int)e->aux2;
+                float n_active = 0;
+                for (int t = 0; t < T; t++) n_active += pm->output->data[t];
+                if (n_active <= 0) break;
+                float* dl = (float*)calloc(T * V, sizeof(float));
+                if (dl) {
+                    for (int t = 0; t < T; t++) {
+                        float m = pm->output->data[t];
+                        if (m == 0.0f) continue;   // dl row stays zero
+                        float* logits_t = pl->output->data + t * V;
+                        int target = (int)pt->output->data[t];
+                        if (target < 0 || target >= V) target = 0;
+                        float mx = logits_t[0];
+                        for (int j = 1; j < V; j++)
+                            if (logits_t[j] > mx) mx = logits_t[j];
+                        float sum = 0;
+                        for (int j = 0; j < V; j++) {
+                            dl[t * V + j] = expf(logits_t[j] - mx);
+                            sum += dl[t * V + j];
+                        }
+                        for (int j = 0; j < V; j++) dl[t * V + j] /= sum;
+                        dl[t * V + target] -= 1.0f;
+                        float s = m * dout[0] / n_active;
+                        for (int j = 0; j < V; j++) dl[t * V + j] *= s;
+                    }
+                    tape_acc_grad(e->parent1, dl, T * V);
+                }
+                free(dl);
+            }
+            break;
+        }
+
         case NT_OP_GEGLU: {
             // y = GELU(x @ W1) * (x @ W2)
             // Stored: parent1 = x, parent2 = W1, parent3 = W2
@@ -1361,13 +1414,14 @@ void nt_tape_backward(int loss_idx) {
                 if (head_dim <= 0) head_dim = D; // fallback: single head
                 int n_heads = D / head_dim;
 
+                float fb = (e->aux3 > 0.0f) ? e->aux3 : 10000.0f;
                 float* gx = (float*)calloc(total, sizeof(float));
                 if (gx) {
                     for (int t = 0; t < T; t++) {
                         for (int h = 0; h < n_heads; h++) {
                             int base = t * D + h * head_dim;
                             for (int i = 0; i < head_dim / 2; i++) {
-                                float freq = 1.0f / powf(10000.0f, 2.0f * i / head_dim);
+                                float freq = 1.0f / powf(fb, 2.0f * i / head_dim);
                                 float angle = t * freq;
                                 float cos_a = cosf(angle);
                                 float sin_a = sinf(angle);
@@ -2709,6 +2763,34 @@ int nt_seq_cross_entropy(int logits_idx, int targets_idx, int T, int V) {
     return idx;
 }
 
+int nt_seq_cross_entropy_masked(int logits_idx, int targets_idx, int mask_idx, int T, int V) {
+    if (logits_idx < 0 || targets_idx < 0 || mask_idx < 0) return -1;
+    nt_tape_entry* pl = &g_tape.entries[logits_idx];
+    nt_tape_entry* pt = &g_tape.entries[targets_idx];
+    nt_tape_entry* pm = &g_tape.entries[mask_idx];
+    nt_tensor* out = nt_tensor_new(1);
+    if (!out) return -1;
+    float total_loss = 0;
+    float n_active = 0;
+    for (int t = 0; t < T; t++) {
+        float m = pm->output->data[t];
+        if (m == 0.0f) continue;
+        float* logits_t = pl->output->data + t * V;
+        int target = (int)pt->output->data[t];
+        if (target < 0 || target >= V) target = 0;
+        float mx = logits_t[0];
+        for (int j = 1; j < V; j++) if (logits_t[j] > mx) mx = logits_t[j];
+        float sum = 0;
+        for (int j = 0; j < V; j++) sum += expf(logits_t[j] - mx);
+        total_loss += m * -(logits_t[target] - mx - logf(sum));
+        n_active += m;
+    }
+    out->data[0] = (n_active > 0) ? total_loss / n_active : 0.0f;
+    int idx = nt_tape_record3(out, NT_OP_SEQ_CROSSENT_MASKED, logits_idx, targets_idx, mask_idx, (float)T, (float)V);
+    nt_tensor_free(out);
+    return idx;
+}
+
 int nt_add(int a_idx, int b_idx) {
     if (a_idx < 0 || b_idx < 0) return -1;
     nt_tape_entry* pa = &g_tape.entries[a_idx];
@@ -2749,8 +2831,9 @@ int nt_scale(int x_idx, float s) {
     return idx;
 }
 
-int nt_rope(int x_idx, int T, int head_dim) {
+int nt_rope_freq(int x_idx, int T, int head_dim, float freq_base) {
     if (x_idx < 0 || T <= 0 || head_dim <= 0) return -1;
+    if (freq_base <= 0.0f) freq_base = 10000.0f;
     nt_tape_entry* px = &g_tape.entries[x_idx];
     int total = px->output->len;
     int D = total / T;
@@ -2764,7 +2847,7 @@ int nt_rope(int x_idx, int T, int head_dim) {
         for (int h = 0; h < n_heads; h++) {
             int base = t * D + h * head_dim;
             for (int i = 0; i < head_dim / 2; i++) {
-                float freq = 1.0f / powf(10000.0f, 2.0f * i / head_dim);
+                float freq = 1.0f / powf(freq_base, 2.0f * i / head_dim);
                 float angle = t * freq;
                 float cos_a = cosf(angle);
                 float sin_a = sinf(angle);
@@ -2776,9 +2859,13 @@ int nt_rope(int x_idx, int T, int head_dim) {
         }
     }
 
-    int idx = nt_tape_record3(out, NT_OP_ROPE, x_idx, -1, -1, (float)T, (float)head_dim);
+    int idx = nt_tape_record4(out, NT_OP_ROPE, x_idx, -1, -1, (float)T, (float)head_dim, freq_base, 0.0f);
     nt_tensor_free(out);
     return idx;
+}
+
+int nt_rope(int x_idx, int T, int head_dim) {
+    return nt_rope_freq(x_idx, T, head_dim, 10000.0f);
 }
 
 int nt_dropout(int x_idx, float p) {
