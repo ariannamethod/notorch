@@ -455,11 +455,18 @@ static void test_save_load(void) {
     for (int i = 0; i < 5; i++) t2->data[i] = (float)(i * 10);
 
     nt_tensor* params[] = {t1, t2};
-    int rc = nt_save("/tmp/notorch_test.bin", params, 2);
+    /* Honor $TMPDIR so the test works on sandboxed environments
+       (Termux/Android, hermetic CI runners) where /tmp is read-only
+       or absent. POSIX-y: TMPDIR > /tmp fallback. */
+    const char* tmpdir = getenv("TMPDIR");
+    if (!tmpdir || !*tmpdir) tmpdir = "/tmp";
+    char tmp_path[512];
+    snprintf(tmp_path, sizeof(tmp_path), "%s/notorch_test.bin", tmpdir);
+    int rc = nt_save(tmp_path, params, 2);
     ASSERT(rc == 0, "save ok");
 
     int n_loaded = 0;
-    nt_tensor** loaded = nt_load("/tmp/notorch_test.bin", &n_loaded);
+    nt_tensor** loaded = nt_load(tmp_path, &n_loaded);
     ASSERT(loaded != NULL, "load ok");
     ASSERT(n_loaded == 2, "loaded count");
     ASSERT(loaded[0]->ndim == 2, "loaded[0] ndim");
