@@ -2,6 +2,7 @@
 # "fuck torch"
 
 CC = cc
+AR ?= ar
 CFLAGS = -O2 -Wall -Wextra -std=c11 -I.
 
 # Detect platform
@@ -14,8 +15,15 @@ ifeq ($(UNAME), Darwin)
 endif
 
 # ── Linux: OpenBLAS ──
+# Prefer pkg-config when available — handles distros that ship cblas.h in
+# a subdir (Termux: /usr/include/openblas/) and custom $PREFIX layouts.
+# Fallback to bare -lopenblas for minimal environments.
 ifeq ($(UNAME), Linux)
-  BLAS_FLAGS = -DUSE_BLAS -lopenblas
+  ifneq ($(shell command -v pkg-config 2>/dev/null),)
+    BLAS_FLAGS = -DUSE_BLAS $(shell pkg-config --cflags openblas 2>/dev/null) $(shell pkg-config --libs openblas 2>/dev/null || echo -lopenblas)
+  else
+    BLAS_FLAGS = -DUSE_BLAS -lopenblas
+  endif
   BLAS_NAME = OpenBLAS
 endif
 
@@ -52,7 +60,7 @@ lib: libnotorch.a
 libnotorch.a: notorch.c notorch.h gguf.c gguf.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf.o
-	ar rcs libnotorch.a notorch.o gguf.o
+	$(AR) rcs libnotorch.a notorch.o gguf.o
 	@echo "Built: libnotorch.a (notorch + gguf)"
 
 # ── Install — system-wide baseline at $PREFIX (default /opt/homebrew) ──
