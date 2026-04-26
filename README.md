@@ -617,12 +617,23 @@ that's it. that's the whole thing. no virtual environment. no requirements.txt. 
 |---|---|---|
 | macOS | Apple Accelerate (AMX / Neural Engine) | `make` |
 | Linux | OpenBLAS | `make` |
+| **Android (Termux, ARM64)** | **OpenBLAS via Termux** | **`pkg install libopenblas binutils && make BLAS=1`** |
 | any POSIX | pure C fallback | `make cpu` |
 | NVIDIA GPU | CUDA + cuBLAS | `make gpu` |
 
 the BLAS backends are optional. without them, everything still works — just uses naive C loops. which are honestly fine for anything under ~50M parameters. for bigger stuff, BLAS gives you 10-50x on matmuls because it's using your CPU's vector instructions instead of pretending it's 1995.
 
 the macOS path uses Apple Accelerate, which means your MacBook's AMX coprocessor and Neural Engine are doing the heavy lifting. for free. no NVIDIA required. no drivers. no compatibility hell. just `make` and go.
+
+### Termux Edition (Android, ARM64)
+
+notorch builds, tests, and **trains** on a phone via Termux. Verified on Galaxy A56 (Android 15, aarch64, 8 GB RAM): **9.5 M LLaMA 3 char-level model trained for 10 000 steps in 2 h 13 m, peak RSS 130–155 MB, 0 NaN, val 1.15.** Phone never swapped. 8× BLAS speedup on aarch64.
+
+This is, to our knowledge, the first publicly documented full LLaMA 3 char-level training on Android — at any phone, any model size.
+
+- Setup walkthrough, generation samples, and full benchmark: [`termux-edition/`](termux-edition/)
+- Reference run, logs, and per-checkpoint loss curve: [`device-1/notorch-train/`](https://github.com/ariannamethod/ariannamethod/tree/main/device-1/notorch-train) in the umbrella repo
+- The two upstream patches that make Termux build out of the box: PR [#5](https://github.com/ariannamethod/notorch/pull/5) (TMPDIR + AR + openblas pkg-config; merged)
 
 ---
 
