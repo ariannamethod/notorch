@@ -627,13 +627,14 @@ the macOS path uses Apple Accelerate, which means your MacBook's AMX coprocessor
 
 ### Termux Edition (Android, ARM64)
 
-notorch builds, tests, and **trains** on a phone via Termux. Verified on Galaxy A56 (Android 15, aarch64, 8 GB RAM): **9.5 M LLaMA 3 char-level model trained for 10 000 steps in 2 h 13 m, peak RSS 130–155 MB, 0 NaN, val 1.15.** Phone never swapped. 8× BLAS speedup on aarch64.
+[Termux](https://termux.dev) is a full POSIX environment on Android — APT package manager, native ARM64 toolchain via clang, OpenBLAS, git, make, gdb, the lot — running without root. For pure-C projects this means no porting work and no compromises: the same `make BLAS=1` that compiles notorch on Linux compiles it on a phone.
 
-This is, to our knowledge, the first publicly documented full LLaMA 3 char-level training on Android — at any phone, any model size.
+notorch builds, tests, and trains end-to-end in this environment. Verified workload (Galaxy A56, Android 15, aarch64, 8 GB RAM): **9.5 M LLaMA 3 char-level model, 10 000 steps in 2 h 13 m, peak RSS 130–155 MB, val 1.15, 0 NaN.** No swap. OpenBLAS on aarch64 gives ~8× over the scalar fallback.
 
-- Setup walkthrough, generation samples, and full benchmark: [`termux-edition/`](termux-edition/)
-- Reference run, logs, and per-checkpoint loss curve: [`device-1/notorch-train/`](https://github.com/ariannamethod/ariannamethod/tree/main/device-1/notorch-train) in the umbrella repo
-- The two upstream patches that make Termux build out of the box: PR [#5](https://github.com/ariannamethod/notorch/pull/5) (TMPDIR + AR + openblas pkg-config; merged)
+A phone with 8 GB of RAM and Termux installed is now a credible host for the 10–100 M parameter regime — small LMs, persona LoRAs, narrow code-completion models, micro-translators. The substrate is the same as on a workstation; the platform is finally accessible.
+
+- [`termux-edition/`](termux-edition/) — setup walkthrough, training tutorial, hardware envelope
+- Portability patches landed in PR [#5](https://github.com/ariannamethod/notorch/pull/5) (TMPDIR honour + AR override + openblas via pkg-config; merged)
 
 ---
 
