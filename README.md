@@ -741,6 +741,7 @@ these aren't "notorch models" per se — they're larger resonance engines (from 
 - [**ariannamethod/nanoagi**](https://github.com/ariannamethod/nanoagi) — a six-level autonomy experiment (evolve → coevolve → swarm → selfcode → auto-trigger). notorch is the autograd for evolve-loop weight updates.
 - [**ariannamethod/molequla**](https://github.com/ariannamethod/molequla) — an 11-organism ecology with conscience, immune rollback, DNA exchange. notorch vendored for matrix params + BLAS-accelerated training bursts.
 - [**ariannamethod/dario**](https://github.com/ariannamethod/dario) — resonance OS (7 forces, 6 Kuramoto chambers, SARTRE). notorch powers the 176M Janus inference that sits at its center.
+- [**ariannamethod/metaharmonix**](https://github.com/ariannamethod/metaharmonix) — Arianna Method terminal, sibling-not-fork to Termux. notorch is baked in (`bake/notorch/`) so the terminal ships a tensor library, not just a shell.
 
 ### vision & diffusion on notorch
 
