@@ -40,6 +40,7 @@
 - [tests](#tests)
 - [performance](#performance)
 - [projects powered by notorch](#projects-powered-by-notorch)
+- [js edition — notorch.js](#js-edition--notorchjs)
 - [philosophy](#philosophy)
 - [contributing](#contributing)
 - [license](#license)
@@ -751,6 +752,69 @@ these aren't "notorch models" per se — they're larger resonance engines (from 
 - [**ariannamethod/notorch-diffusion**](https://github.com/ariannamethod/notorch-diffusion) — a diffusion training loop on notorch. reverse-mode autograd still works fine when your network is a U-Net instead of a transformer.
 
 if you trained something on notorch and it's not in this list, open a PR and add it. or don't, and i'll never know. but honestly, PRs are nice.
+
+---
+
+## js edition — notorch.js
+
+> *"the logic of memory without the weight of framework"*
+> — `js-edition/notorch.js`, line 1
+
+a single-file pure-JavaScript port of notorch for the browser. WebGPU when available, V8-optimised CPU fallback (Math.fround f32 hint) when not. zero npm dependencies. live at `js-edition/notorch.js` (~2350 LOC).
+
+co-built with Gemini and Claude Opus.
+
+### what it ships (feature parity with the C lib at small scale)
+
+**inference primitives** — `add / sub / mul / div / neg / scale / transpose / softmax / silu / sigmoid / tanh / relu / gelu / swiglu / swigluFFN / layernorm / rmsnorm / embedding / attention (multi-head causal, fused) / rope / dropout / concat / slice / linear / argmax / sample (temperature + top-k + top-p) / KVCache`.
+
+**weight loaders** — `loadNotorchBin` (NTOR magic, byte-compatible with `notorch.c:3207`), `loadSafetensors` (HF JSON-header format), `saveNotorchBin`.
+
+**tokenizers** — `CharTokenizer` (with `.fit()`), `BPETokenizer` (`fromMerges` + greedy lowest-rank-pair encode).
+
+**training** — full reverse-mode `Tape` with backward implementations for every forward primitive (matched 1:1 to C `notorch.c` switch). losses: `crossEntropyLoss`, `seqCrossEntropyLoss`, `mseLoss`. optimizers: `SGD` with momentum and **`Chuck` 1:1 ported** from `nt_tape_chuck_step` — all 4 levels (global loss EMA dampen, per-param dampen, stagnation noise, macro-patience LR scale). plus `clipGradNorm`, cosine + step `Schedule`s.
+
+**engine quality** — WebGPU buffer pool keyed by `(byteSize, usage)` with explicit `cleanup()`, **tiled WGSL matmul kernel (16×16 workgroup-shared tiles)**, async pipeline cache, tape `mark()` / `truncate()` so the forward graph rebuilds without losing optimizer state, CPU matmul switched from naive ijk to 32×32 tile-blocked.
+
+### the test that proves it works
+
+a tiny GPT (vocab=64, dModel=32, nHeads=2, ctx=16, 1 layer, **20 576 params**) trained for 50 steps on a trivial `"abcabc..."` corpus with Chuck:
+
+```
+step  0 | loss 4.0888 | lr 1.00e-4
+step 10 | loss 0.7211 | lr 4.85e-3
+step 20 | loss 0.0717 | lr 3.77e-3
+step 30 | loss 0.0109 | lr 2.12e-3
+step 40 | loss 0.0062 | lr 6.73e-4
+step 49 | loss 0.0061 | lr 1.06e-4
+
+Loss trajectory: 4.0888 → 0.0061 (99.9% drop) over 50 steps
+Sample after training (T=0.5): "bcabcabc"  ← perfect cycle continuation
+```
+
+autograd works, Chuck works, sampler works, everything works.
+
+### caveats (honest)
+
+- WebGPU paths are code-correct but were not runtime-verified in node (no headless WebGPU). real validation needs a browser. CPU path passes everywhere `node` runs.
+- `gqa_attention` and BitLinear / BitNet ops not ported yet — out of scope for the first cut.
+- generic transpose backward covers 2D and 3D `(1, 2)` swap (sufficient for attention; not fully general).
+- async batching of multiple GPU ops into one submit is partially achieved through the buffer pool, but no explicit op queue. impact only matters once multiple GPU ops chain.
+
+### use it
+
+```html
+<script type="module">
+  import { Notorch, Tensor, CharTokenizer, Tape, Chuck, crossEntropyLoss } from './js-edition/notorch.js';
+
+  const nt = new Notorch();
+  await nt.init();  // tries WebGPU, silently falls back to CPU
+
+  // ... build your tiny transformer, train it in the browser tab.
+</script>
+```
+
+zero build step, zero npm install, zero `node_modules`. paste it into a `<script>` and go.
 
 ---
 
