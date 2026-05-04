@@ -772,7 +772,7 @@ co-built with Gemini and Claude Opus.
 
 **tokenizers** — `CharTokenizer` (with `.fit()`), `BPETokenizer` (`fromMerges` + greedy lowest-rank-pair encode).
 
-**training** — full reverse-mode `Tape` with backward implementations for every forward primitive (matched 1:1 to C `notorch.c` switch). losses: `crossEntropyLoss`, `seqCrossEntropyLoss`, `mseLoss`. optimizers: `SGD` with momentum and **`Chuck` 1:1 ported** from `nt_tape_chuck_step` — all 4 levels (global loss EMA dampen, per-param dampen, stagnation noise, macro-patience LR scale). plus `clipGradNorm`, cosine + step `Schedule`s.
+**training** — full reverse-mode `Tape` with backward implementations for every forward primitive (matched 1:1 to C `notorch.c` switch). engine losses: `nt.crossEntropyLoss`, `nt.seqCrossEntropyLoss`, `nt.mseLoss`. optimizers: `SGD` with momentum and **`Chuck` 1:1 ported** from `nt_tape_chuck_step` — all 4 levels (global loss EMA dampen, per-param dampen, stagnation noise, macro-patience LR scale). plus `clipGradNorm`, cosine + step `Schedule`s.
 
 **engine quality** — WebGPU buffer pool keyed by `(byteSize, usage)` with explicit `cleanup()`, **tiled WGSL matmul kernel (16×16 workgroup-shared tiles)**, async pipeline cache, tape `mark()` / `truncate()` so the forward graph rebuilds without losing optimizer state, CPU matmul switched from naive ijk to 32×32 tile-blocked.
 
@@ -805,12 +805,13 @@ autograd works, Chuck works, sampler works, everything works.
 
 ```html
 <script type="module">
-  import { Notorch, Tensor, CharTokenizer, Tape, Chuck, crossEntropyLoss } from './js-edition/notorch.js';
+  import { Notorch, Tensor, CharTokenizer, Tape, Chuck } from './js-edition/notorch.js';
 
   const nt = new Notorch();
   await nt.init();  // tries WebGPU, silently falls back to CPU
 
-  // ... build your tiny transformer, train it in the browser tab.
+  // ... build your tiny transformer, then call nt.crossEntropyLoss(...)
+  // or nt.seqCrossEntropyLoss(...) during the training step.
 </script>
 ```
 
