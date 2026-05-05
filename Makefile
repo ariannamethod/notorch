@@ -34,9 +34,17 @@ ifeq ($(UNAME), Linux)
   BLAS_NAME = OpenBLAS
 endif
 
+# ── In-house SIMD: AVX2 + FMA (no external BLAS) ──
+# Hand-rolled cblas_* shim in notorch_simd.h. Pure C + intrinsics + pthread.
+# Drop-in replacement on x86_64 Haswell+ (Intel 2013, AMD 2015). Mutually
+# exclusive with USE_BLAS — the shim re-#defines USE_BLAS internally so the
+# call sites in notorch.c keep working unchanged.
+SIMD_FLAGS = -DUSE_SIMD -mavx2 -mfma
+SIMD_LIBS  = -lpthread
+
 # ── Targets ──
 
-.PHONY: all test clean cpu gpu help lib install
+.PHONY: all test clean cpu gpu simd help lib install
 
 all: notorch_test
 	@echo "Built with $(BLAS_NAME). Run: ./notorch_test"
@@ -46,10 +54,15 @@ notorch_test: notorch.c notorch.h tests/test_notorch.c
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch_test tests/test_notorch.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: notorch_test (CPU + $(BLAS_NAME))"
 
-# CPU without BLAS (portable fallback)
+# CPU without BLAS (portable scalar fallback)
 cpu: notorch.c notorch.h tests/test_notorch.c
-	$(CC) $(CFLAGS) -o notorch_test tests/test_notorch.c notorch.c -lm $(BLAS_LIBS)
-	@echo "Compiled: notorch_test (CPU, no BLAS)"
+	$(CC) $(CFLAGS) -o notorch_test tests/test_notorch.c notorch.c -lm
+	@echo "Compiled: notorch_test (CPU, scalar — no BLAS, no SIMD)"
+
+# In-house AVX2+FMA SIMD shim — zero external BLAS dependency
+simd: notorch.c notorch.h notorch_simd.h tests/test_notorch.c
+	$(CC) $(CFLAGS) $(SIMD_FLAGS) -o notorch_test_simd tests/test_notorch.c notorch.c -lm $(SIMD_LIBS)
+	@echo "Compiled: notorch_test_simd (in-house AVX2+FMA, pthread)"
 
 # GPU (CUDA)
 gpu: notorch.c notorch.h notorch_cuda.cu tests/test_notorch.c

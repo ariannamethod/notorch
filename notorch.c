@@ -21,6 +21,18 @@
   #endif
 #endif
 
+#ifdef USE_SIMD
+  #ifdef USE_BLAS
+    #error "USE_SIMD and USE_BLAS are mutually exclusive — pick one matmul backend."
+  #endif
+  // In-house AVX2 + FMA shim for cblas_sgemm / sgemv / sger.
+  // Lets every existing cblas_* call site stay unchanged.
+  #include "notorch_simd.h"
+  // Also satisfy the original `#ifdef USE_BLAS` guards in this file by aliasing
+  // them on. The shim defines the same CBLAS_* enums and functions.
+  #define USE_BLAS 1
+#endif
+
 #ifdef USE_CUDA
   #include "notorch_cuda.h"
 #endif
