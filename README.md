@@ -419,7 +419,10 @@ make
 # CPU without BLAS (works everywhere, even on a potato)
 make cpu
 
-# GPU (CUDA)
+# CPU with in-house AVX2+FMA SIMD — zero external math library
+make simd
+
+# GPU (CUDA via cuBLAS)
 make gpu
 
 # Static library (for embedding in your project)
@@ -437,9 +440,41 @@ make clean
 - a C compiler (gcc, clang, whatever)
 - `-lm` (math library, because we use sqrt and exp like civilized people)
 - **optional**: OpenBLAS (Linux) or Accelerate framework (macOS) for BLAS-accelerated matmuls
-- **optional**: CUDA toolkit for GPU support
+- **optional**: x86_64 CPU with AVX2 + FMA (Intel Haswell 2013+, AMD Excavator 2015+) for `make simd` — zero external math library
+- **optional**: CUDA toolkit for GPU support (cuBLAS-backed sgemm + element-wise + attention + cross-entropy kernels)
 
 that's it. no cmake. no configure script. no 300-line `requirements.txt`. no docker. no kubernetes. just `make`. the way Ken Thompson intended.
+
+### in-house SIMD path — `make simd`
+
+`notorch_simd.h` is a drop-in `cblas_sgemm` / `cblas_sgemv` / `cblas_sger` shim under `-DUSE_SIMD` (mutually exclusive with `-DUSE_BLAS`). Pure C + `<immintrin.h>` + `<pthread.h>`, no external math library. Targets x86_64 with AVX2 + FMA.
+
+Design:
+- 6×16 register-blocked AVX2+FMA micro-kernel (12 YMM accumulators, 4MB SwiGLU panels fit Skylake's 16-reg file)
+- Outer cache-blocked GEMM (Mc=96, Kc=256, Nc=1024) with row + col packing for streaming through the kernel
+- Persistent pthread pool (no per-call create/join) — workers sleep on `pthread_cond_t`, master signals work, workers FMA. Single-thread fast path for matmuls under 256K mul-adds where signal latency would dominate.
+- AVX2 `_mm_prefetch` ahead of the kernel inner loop, AVX2 vectorized panel packing for `col_stride==1` paths (forward + input-grad)
+- Edge tiles (m mod 6 ≠ 0 or n mod 16 ≠ 0) handled via scalar fallback within the same buffer layout
+
+Bench at training-relevant shapes on Intel i5-8500T (6c, no AVX-512) vs OpenBLAS 0.3.26:
+
+| Shape | OpenBLAS 6T | in-house SIMD | Ratio |
+|---|---|---|---|
+| Llama 576×576 dW (TN, 512 ctx) | 131 GFLOP/s | **141 GFLOP/s** | **1.08× faster** |
+| Janus 640×1664 FFN-down (NN, 1024 ctx) | 132 GFLOP/s | **160 GFLOP/s** | **1.21× faster** |
+| Llama 576×576 dWffn (TN, 512 ctx) | 197 GFLOP/s | 177 GFLOP/s | 0.90× |
+| Llama 576×576 forward QKV (NN, 512 ctx) | 103 GFLOP/s | 71 GFLOP/s | 0.69× |
+| Janus 640×640 forward QKV (NN, 1024 ctx) | 161 GFLOP/s | 79 GFLOP/s | 0.49× |
+
+Average ~0.7× of OpenBLAS at training-relevant shapes, with peaks above OpenBLAS on weight-grad (TN) and certain FFN-down configurations. Slower on T=128 small-matrix shapes (irrelevant for ≥10M-param training).
+
+**Correctness validated** end-to-end: all 213+ existing notorch tests pass under `make simd` (notorch_test 47/47 incl. all 11 numeric gradient checks, test_vision 48/48, test_bitnet_ops 118/118, test_sigmoid_scale 4/4) + `bench_simd.c` micro-bench + `test_simd_correctness.c` direct-vs-scalar comparison + `test_simd_loss.c` end-to-end forward → softmax → cross-entropy at lm_head shape produces bit-identical 10.379384 vs OpenBLAS path. Real nanollama 89M training step 1 produces train loss 10.3876 — bit-identical to OpenBLAS baseline.
+
+Override thread count via env: `NT_SIMD_THREADS=N`. Single-thread variant for debugging via `-DNOTORCH_SIMD_DEBUG_SCALAR` (uses `notorch_simd_scalar.h` instead — same API, pure scalar inner loop).
+
+### CUDA path — `make gpu`
+
+`notorch_cuda.{h,cu}` is the CUDA backend (ported from `ariannamethod.ai/core/`). cuBLAS-backed sgemm wrappers (3 transpose modes), element-wise kernels (add/mul/silu/rmsnorm) with backward, weight cache to keep weights resident on GPU across forward/backward, multi-head attention kernels, cross-entropy kernel. Built via `nvcc -c notorch_cuda.cu -lcublas` and linked against `-lcudart -lcublas`. Activated by `-DUSE_CUDA`. Identical CBLAS-style semantics to the CPU path (call sites in `notorch.c` are unchanged) — only the linkage layer differs.
 
 ---
 
