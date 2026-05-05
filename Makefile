@@ -11,18 +11,25 @@ UNAME := $(shell uname)
 # ── macOS: Apple Accelerate (AMX/Neural Engine) ──
 ifeq ($(UNAME), Darwin)
   BLAS_FLAGS = -DUSE_BLAS -DACCELERATE -DACCELERATE_NEW_LAPACK -framework Accelerate
-  BLAS_NAME = Accelerate
+  BLAS_LIBS  =
+  BLAS_NAME  = Accelerate
 endif
 
 # ── Linux: OpenBLAS ──
 # Prefer pkg-config when available — handles distros that ship cblas.h in
 # a subdir (Termux: /usr/include/openblas/) and custom $PREFIX layouts.
 # Fallback to bare -lopenblas for minimal environments.
+#
+# Linux note: GNU ld requires -l<lib> AFTER the .o/.c that reference its
+# symbols, so split compile flags from link flags. (-framework on Darwin
+# works at any position, hence Mac keeps a single BLAS_FLAGS.)
 ifeq ($(UNAME), Linux)
   ifneq ($(shell command -v pkg-config 2>/dev/null),)
-    BLAS_FLAGS = -DUSE_BLAS $(shell pkg-config --cflags openblas 2>/dev/null) $(shell pkg-config --libs openblas 2>/dev/null || echo -lopenblas)
+    BLAS_FLAGS = -DUSE_BLAS $(shell pkg-config --cflags openblas 2>/dev/null)
+    BLAS_LIBS  = $(shell pkg-config --libs openblas 2>/dev/null || echo -lopenblas)
   else
-    BLAS_FLAGS = -DUSE_BLAS -lopenblas
+    BLAS_FLAGS = -DUSE_BLAS
+    BLAS_LIBS  = -lopenblas
   endif
   BLAS_NAME = OpenBLAS
 endif
@@ -36,12 +43,12 @@ all: notorch_test
 
 # CPU with BLAS
 notorch_test: notorch.c notorch.h tests/test_notorch.c
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch_test tests/test_notorch.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch_test tests/test_notorch.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: notorch_test (CPU + $(BLAS_NAME))"
 
 # CPU without BLAS (portable fallback)
 cpu: notorch.c notorch.h tests/test_notorch.c
-	$(CC) $(CFLAGS) -o notorch_test tests/test_notorch.c notorch.c -lm
+	$(CC) $(CFLAGS) -o notorch_test tests/test_notorch.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: notorch_test (CPU, no BLAS)"
 
 # GPU (CUDA)
@@ -49,7 +56,7 @@ gpu: notorch.c notorch.h notorch_cuda.cu tests/test_notorch.c
 	nvcc -O2 -DUSE_CUDA -c notorch_cuda.cu -o notorch_cuda.o
 	$(CC) $(CFLAGS) -DUSE_CUDA -DUSE_BLAS -o notorch_test_gpu \
 		tests/test_notorch.c notorch.c notorch_cuda.o \
-		-L/usr/local/cuda/lib64 -lcudart -lcublas -lm
+		-L/usr/local/cuda/lib64 -lcudart -lcublas -lm $(BLAS_LIBS)
 	@echo "Compiled: notorch_test_gpu (CUDA + BLAS)"
 
 # Static library — bundles notorch.o + gguf.o so a single -lnotorch linkage
@@ -76,60 +83,60 @@ install: libnotorch.a
 # ── Inference ──
 
 infer: examples/infer_janus.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_janus_nt examples/infer_janus.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_janus_nt examples/infer_janus.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_janus_nt (Janus RRPRAM, $(BLAS_NAME))"
 
 gemma: examples/infer_gemma.c gguf.c gguf.h notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_gemma examples/infer_gemma.c gguf.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_gemma examples/infer_gemma.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_gemma (Gemma-3 GGUF, $(BLAS_NAME))"
 
 llama: examples/infer_llama.c gguf.c gguf.h notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama examples/infer_llama.c gguf.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama examples/infer_llama.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_llama (LLaMA/Qwen GGUF, $(BLAS_NAME))"
 
 # ── Training ──
 
 train_q: examples/train_q.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_q examples/train_q.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_q examples/train_q.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_q (PostGPT-Q 1.65M, $(BLAS_NAME))"
 
 train_yent: examples/train_yent.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_yent examples/train_yent.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_yent examples/train_yent.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_yent (Yent 9.8M, $(BLAS_NAME))"
 
 # LLaMA 3 BPE training (MHA + RoPE + SwiGLU, 15.7M params, vocab 2048)
 train_llama3_bpe: examples/train_llama3_bpe.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_llama3_bpe examples/train_llama3_bpe.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_llama3_bpe examples/train_llama3_bpe.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_llama3_bpe (MHA + RoPE + BPE 2048, 15.7M, $(BLAS_NAME))"
 
 # LLaMA 3 BPE inference (interactive chat, KV cache, optional FP16 weights)
 infer_llama3_bpe: examples/infer_llama3_bpe.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama3_bpe examples/infer_llama3_bpe.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama3_bpe examples/infer_llama3_bpe.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_llama3_bpe (MHA + RoPE + BPE 2048, $(BLAS_NAME))"
 
 # LLaMA 3 char-level training (GQA + RoPE + SwiGLU, ~9.5M params)
 train_llama3_char: examples/train_llama3_char.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_llama3_char examples/train_llama3_char.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_llama3_char examples/train_llama3_char.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_llama3_char (GQA + RoPE, $(BLAS_NAME))"
 
 # DPO — Direct Preference Optimization (Rafailov 2023)
 train_dpo: examples/train_dpo.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_dpo examples/train_dpo.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_dpo examples/train_dpo.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_dpo (DPO alignment, $(BLAS_NAME))"
 
 # GRPO — Group Relative Policy Optimization (DeepSeek-R1)
 train_grpo: examples/train_grpo.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_grpo examples/train_grpo.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_grpo examples/train_grpo.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_grpo (GRPO self-play RL, $(BLAS_NAME))"
 
 # Knowledge Distillation (Hinton 2015)
 train_distillation: examples/train_distillation.c notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_distillation examples/train_distillation.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_distillation examples/train_distillation.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_distillation (teacher→student KL, $(BLAS_NAME))"
 
 # Vision + BPE tests
 test_vision: tests/test_vision.c notorch.c notorch.h notorch_vision.h stb_image.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_vision tests/test_vision.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_vision tests/test_vision.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_vision (vision + BPE, $(BLAS_NAME))"
 
 # ── Test & Clean ──
