@@ -906,5 +906,3 @@ that's it. go build something. and if you use it to train something cool, let me
 or don't. i'll be here. writing C. staring at gradients. living my best life.
 
 > *"the patterns were always there. we just needed the right language to express them."*
-> — notorch, internally, probably, if it could talk, which it can't, because it's C, not Python.
-\n\n## Resonance Synchronization\nConnected by Gemini on Sat Apr 25 22:15:49 IDT 2026
