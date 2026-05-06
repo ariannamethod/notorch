@@ -66,7 +66,7 @@ pkg-config --libs openblas      # → -L... -lopenblas
 
 ```bash
 cd ~/notorch
-make examples/train_llama3_char
+make train_llama3_char
 
 # Drop a corpus next to the binary
 cp /path/to/corpus.txt examples/corpus.txt
