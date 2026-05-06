@@ -973,6 +973,122 @@ void nt_tape_backward(int loss_idx) {
             break;
         }
 
+        case NT_OP_RRPRAM_LR: {
+            /* Low-rank RRPRAM backward.
+             * Forward: u = X @ Wr_a[h]; scores = u @ Wr_b[h]; attn = softmax(causal); out = Σ attn·V.
+             * dout flows back through:
+             *   d_attn  = dout · V               (per i, h, j)
+             *   d_v     = attn · dout            (per j, h)
+             *   d_score = softmax_bwd(d_attn, attn)
+             *   d_u     = d_score @ Wr_b[h]^T
+             *   d_Wr_b  = u^T @ d_score (causal-masked outer-product)
+             *   d_x     = Σ_h d_u · Wr_a[h]^T
+             *   d_Wr_a  = Σ_h x^T @ d_u
+             */
+            if (e->parent1 >= 0 && e->parent2 >= 0 && e->parent3 >= 0) {
+                nt_tape_entry* pwr = &g_tape.entries[e->parent1];
+                nt_tape_entry* px  = &g_tape.entries[e->parent2];
+                nt_tape_entry* pv  = &g_tape.entries[e->parent3];
+                int T = (int)e->aux; int n_embd = (int)e->aux2;
+                int nr = (int)e->aux3; int hd = (int)e->aux4;
+                int out_dim = nr * hd;
+                int T_r = T;   /* same assumption as forward */
+                long combined_len = pwr->output->len;
+                int rank = (int)(combined_len / ((long)nr * (n_embd + T_r)));
+                long wra_total = (long)nr * n_embd * rank;
+
+                float* dwr = (float*)calloc(combined_len, sizeof(float));
+                float* dx  = (float*)calloc((long)T * n_embd, sizeof(float));
+                float* dv  = (float*)calloc((long)T * out_dim, sizeof(float));
+                float* u_buf      = (float*)malloc(rank * sizeof(float));
+                float* du_buf     = (float*)malloc(rank * sizeof(float));
+                float* scores_buf = (float*)malloc(T_r  * sizeof(float));
+                float* attn_buf   = (float*)malloc(T_r  * sizeof(float));
+                float* d_attn_buf = (float*)malloc(T_r  * sizeof(float));
+                float* d_score_buf= (float*)malloc(T_r  * sizeof(float));
+
+                if (dwr && dx && dv && u_buf && du_buf && scores_buf && attn_buf && d_attn_buf && d_score_buf) {
+                    for (int h = 0; h < nr; h++) {
+                        long wr_a_base = (long)h * n_embd * rank;
+                        long wr_b_base = wra_total + (long)h * rank * T_r;
+                        int  v_off     = h * hd;
+                        for (int i = 0; i < T; i++) {
+                            float* xi = px->output->data + i * n_embd;
+                            float* dout_i = dout + i * out_dim + v_off;
+
+                            /* recompute forward: u, scores, attn */
+                            for (int r = 0; r < rank; r++) u_buf[r] = 0.0f;
+                            for (int d = 0; d < n_embd; d++) {
+                                float xd = xi[d];
+                                const float* wa_row = pwr->output->data + wr_a_base + (long)d * rank;
+                                for (int r = 0; r < rank; r++) u_buf[r] += xd * wa_row[r];
+                            }
+                            float mx = -1e30f;
+                            for (int j = 0; j <= i; j++) {
+                                float s = 0.0f;
+                                for (int r = 0; r < rank; r++) {
+                                    s += u_buf[r] * pwr->output->data[wr_b_base + (long)r * T_r + j];
+                                }
+                                scores_buf[j] = s;
+                                if (s > mx) mx = s;
+                            }
+                            float sm = 0.0f;
+                            for (int j = 0; j <= i; j++) { attn_buf[j] = expf(scores_buf[j] - mx); sm += attn_buf[j]; }
+                            if (sm > 0.0f) for (int j = 0; j <= i; j++) attn_buf[j] /= sm;
+
+                            /* d_attn[j] = Σ_d dout_i[d] · v[j, h_off+d]
+                             * d_v [j, h_off+d] += attn[j] · dout_i[d] */
+                            for (int j = 0; j <= i; j++) d_attn_buf[j] = 0.0f;
+                            for (int j = 0; j <= i; j++) {
+                                const float* vj = pv->output->data + j * out_dim + v_off;
+                                float* dvj      = dv + j * out_dim + v_off;
+                                for (int d = 0; d < hd; d++) {
+                                    d_attn_buf[j] += dout_i[d] * vj[d];
+                                    dvj[d]        += attn_buf[j] * dout_i[d];
+                                }
+                            }
+
+                            /* softmax backward → d_score */
+                            float dot_da = 0.0f;
+                            for (int j = 0; j <= i; j++) dot_da += d_attn_buf[j] * attn_buf[j];
+                            for (int j = 0; j <= i; j++) d_score_buf[j] = attn_buf[j] * (d_attn_buf[j] - dot_da);
+
+                            /* d_u[r] = Σ_j d_score[j] · Wr_b[h, r, j] (j ≤ i)
+                             * d_Wr_b[h, r, j] += d_score[j] · u[r]   (j ≤ i) */
+                            for (int r = 0; r < rank; r++) du_buf[r] = 0.0f;
+                            for (int j = 0; j <= i; j++) {
+                                float ds = d_score_buf[j];
+                                for (int r = 0; r < rank; r++) {
+                                    du_buf[r] += ds * pwr->output->data[wr_b_base + (long)r * T_r + j];
+                                    dwr[wr_b_base + (long)r * T_r + j] += ds * u_buf[r];
+                                }
+                            }
+
+                            /* d_xi[d] += Σ_r d_u[r] · Wr_a[h, d, r]
+                             * d_Wr_a[h, d, r] += d_u[r] · xi[d] */
+                            for (int d = 0; d < n_embd; d++) {
+                                const float* wa_row = pwr->output->data + wr_a_base + (long)d * rank;
+                                float* dwa_row     = dwr + wr_a_base + (long)d * rank;
+                                float dxd = 0.0f;
+                                float xd = xi[d];
+                                for (int r = 0; r < rank; r++) {
+                                    dxd        += du_buf[r] * wa_row[r];
+                                    dwa_row[r] += du_buf[r] * xd;
+                                }
+                                dx[i * n_embd + d] += dxd;
+                            }
+                        }
+                    }
+                    tape_acc_grad(e->parent1, dwr, combined_len);
+                    tape_acc_grad(e->parent2, dx,  (long)T * n_embd);
+                    tape_acc_grad(e->parent3, dv,  (long)T * out_dim);
+                }
+                free(dwr); free(dx); free(dv);
+                free(u_buf); free(du_buf); free(scores_buf); free(attn_buf); free(d_attn_buf); free(d_score_buf);
+            }
+            break;
+        }
+
         case NT_OP_RRPRAM_ATTN: {
             if (e->parent1 >= 0 && e->parent2 >= 0 && e->parent3 >= 0) {
                 nt_tape_entry* pwr = &g_tape.entries[e->parent1];
@@ -2484,6 +2600,87 @@ int nt_rrpram_attention(int wr_idx, int x_idx, int v_idx, int T, int n_embd, int
     }
     free(scores_buf);
     int idx = nt_tape_record4(out, NT_OP_RRPRAM_ATTN, wr_idx, x_idx, v_idx,
+                              (float)T, (float)n_embd, (float)nr_heads, (float)head_dim);
+    nt_tensor_free(out);
+    return idx;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * Low-rank RRPRAM: Wr = Wr_a × Wr_b factorized.
+ *
+ * wr_combined layout: [Wr_a flat | Wr_b flat]
+ *   Wr_a: H*E*R floats — head h offset = h*E*R, indexed [d, r] = h*E*R + d*R + r
+ *   Wr_b: H*R*T_r floats — head h offset = H*E*R + h*R*T_r, indexed [r, j] = ... + r*T_r + j
+ *   Total length = H*R*(E + T_r)
+ *
+ * Assumption: T_r == T (positional dim equals current ctx).
+ * Rank derived: R = wr_combined->len / (H * (E + T))
+ *
+ * Per head h, position i (causal: j ≤ i):
+ *   u[r]      = Σ_d xi[d] · Wr_a[h, d, r]              (matmul X[i,:] @ Wr_a[h])
+ *   scores[j] = Σ_r u[r]   · Wr_b[h, r, j]              (matmul u @ Wr_b[h])
+ *   attn[j]   = softmax(scores[0..i])
+ *   out[d]    = Σ_j attn[j] · v[j, h_off+d]              (weighted sum of V)
+ * ════════════════════════════════════════════════════════════════════════ */
+int nt_rrpram_lowrank_attention(int wr_combined_idx, int x_idx, int v_idx,
+                                 int T, int n_embd, int nr_heads, int head_dim) {
+    if (wr_combined_idx < 0 || x_idx < 0 || v_idx < 0) return -1;
+    int out_dim = nr_heads * head_dim;
+    nt_tensor* out = nt_tensor_new(T * out_dim);
+    if (!out) return -1;
+    nt_tape_entry* pwr = &g_tape.entries[wr_combined_idx];
+    nt_tape_entry* px  = &g_tape.entries[x_idx];
+    nt_tape_entry* pv  = &g_tape.entries[v_idx];
+
+    int T_r = T;   /* assumption */
+    long combined_len = pwr->output->len;
+    int rank = (int)(combined_len / ((long)nr_heads * (n_embd + T_r)));
+    if (rank < 1) { nt_tensor_free(out); return -1; }
+    long wra_total = (long)nr_heads * n_embd * rank;          /* offset of Wr_b section */
+
+    float* u_buf      = (float*)malloc(rank * sizeof(float));
+    float* scores_buf = (float*)malloc(T_r  * sizeof(float));
+    if (!u_buf || !scores_buf) { free(u_buf); free(scores_buf); nt_tensor_free(out); return -1; }
+
+    for (int h = 0; h < nr_heads; h++) {
+        long wr_a_base = (long)h * n_embd * rank;             /* Wr_a[h] */
+        long wr_b_base = wra_total + (long)h * rank * T_r;     /* Wr_b[h] inside same buffer */
+        int  v_off     = h * head_dim;
+        for (int i = 0; i < T; i++) {
+            float* xi = px->output->data + i * n_embd;
+            /* u[r] = Σ_d xi[d] · Wr_a[h, d, r] */
+            for (int r = 0; r < rank; r++) u_buf[r] = 0.0f;
+            for (int d = 0; d < n_embd; d++) {
+                float xd = xi[d];
+                const float* wa_row = pwr->output->data + wr_a_base + (long)d * rank;
+                for (int r = 0; r < rank; r++) u_buf[r] += xd * wa_row[r];
+            }
+            /* scores[j] = Σ_r u[r] · Wr_b[h, r, j] for j ≤ i */
+            float mx = -1e30f;
+            for (int j = 0; j <= i; j++) {
+                float s = 0.0f;
+                for (int r = 0; r < rank; r++) {
+                    s += u_buf[r] * pwr->output->data[wr_b_base + (long)r * T_r + j];
+                }
+                scores_buf[j] = s;
+                if (s > mx) mx = s;
+            }
+            /* softmax */
+            float sm = 0.0f;
+            for (int j = 0; j <= i; j++) { scores_buf[j] = expf(scores_buf[j] - mx); sm += scores_buf[j]; }
+            if (sm > 0.0f) for (int j = 0; j <= i; j++) scores_buf[j] /= sm;
+            /* out[d] = Σ_j attn[j] · v[j, h_off+d] */
+            float* oi = out->data + i * out_dim + v_off;
+            for (int d = 0; d < head_dim; d++) oi[d] = 0.0f;
+            for (int j = 0; j <= i; j++) {
+                const float* vj = pv->output->data + j * out_dim + v_off;
+                for (int d = 0; d < head_dim; d++) oi[d] += scores_buf[j] * vj[d];
+            }
+        }
+    }
+    free(u_buf); free(scores_buf);
+
+    int idx = nt_tape_record4(out, NT_OP_RRPRAM_LR, wr_combined_idx, x_idx, v_idx,
                               (float)T, (float)n_embd, (float)nr_heads, (float)head_dim);
     nt_tensor_free(out);
     return idx;

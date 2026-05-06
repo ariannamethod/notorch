@@ -112,6 +112,7 @@ void nt_tensor_print(const nt_tensor* t, const char* name);
 #define NT_OP_BIT_LINEAR    30   // y = bitquant(W) @ x — BitNet 1.58, STE backward
 #define NT_OP_BIT_SEQ_LINEAR 31  // Y[t] = bitquant(W) @ X[t] for T positions (BitNet seq)
 #define NT_OP_SEQ_CROSSENT_MASKED 32  // masked sequence cross-entropy (parent3 = mask)
+#define NT_OP_RRPRAM_LR     33   // low-rank RRPRAM (Wr = Wr_a × Wr_b packed in one tensor)
 
 typedef struct {
     nt_tensor* output;          // forward result
@@ -379,6 +380,20 @@ int nt_gelu(int x_idx);
 // wr: [nr_heads * n_embd, ctx], x: [T, n_embd], v: [T, nr_heads * head_dim]
 // output: [T, nr_heads * head_dim]
 int nt_rrpram_attention(int wr_idx, int x_idx, int v_idx, int T, int n_embd, int nr_heads, int head_dim);
+
+// Low-rank RRPRAM: same as nt_rrpram_attention but Wr = Wr_a × Wr_b factorized.
+// wr_combined holds Wr_a (size H*E*R) followed by Wr_b (size H*R*T_r), so total
+// length = H*R*(E+T_r). Assumption: T_r == T (positional dim equals current ctx).
+// Rank derived from tensor length: R = len / (H * (E + T)).
+// Per head: scores[i,j] = (xi @ Wr_a[h]) @ Wr_b[h] [:, j] for j ≤ i (causal).
+// Backward propagates gradients to Wr_a, Wr_b (stored in same combined buffer
+// at proper offsets), x, v separately. Same V interpretation as nt_rrpram_attention.
+//
+// Saves params relative to full-rank when R << min(E, T_r). Plan #5.1: R=128
+// at E=1024, T_r=2048 reduces RRPRAM weights from H·E·T_r per layer down to
+// H·R·(E+T_r) — a 5× reduction at this configuration.
+int nt_rrpram_lowrank_attention(int wr_combined_idx, int x_idx, int v_idx,
+                                 int T, int n_embd, int nr_heads, int head_dim);
 
 // Concatenate per-position: out[t] = [a[t], b[t]]. a: [T, D_a], b: [T, D_b] → out: [T, D_a+D_b]
 int nt_concat(int a_idx, int b_idx, int T);
