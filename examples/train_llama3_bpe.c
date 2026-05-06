@@ -221,6 +221,7 @@ static float eval_loss(Model* m, int* encoded, int n_tokens) {
 static double now_ms(void) { struct timeval tv; gettimeofday(&tv, NULL); return tv.tv_sec*1000.0+tv.tv_usec/1000.0; }
 
 int main(int argc, char** argv) {
+    setvbuf(stdout, NULL, _IONBF, 0);
     int resume = 0, arg_off = 1;
     if (argc > 1 && strcmp(argv[1], "--resume") == 0) { resume = 1; arg_off = 2; }
     int steps = arg_off < argc ? atoi(argv[arg_off]) : 15000;
