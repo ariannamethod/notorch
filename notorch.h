@@ -34,7 +34,8 @@ typedef struct {
     int      refcount;
 #ifdef USE_CUDA
     float*   d_data;            // GPU device pointer
-    int      gpu_valid;         // 1 = GPU copy is current
+    int      gpu_valid;         // 1 = GPU copy is up to date with last write
+    int      cpu_dirty;         // 1 = GPU was last writer, CPU mirror stale, needs ensure_cpu
 #endif
 } nt_tensor;
 
@@ -226,6 +227,14 @@ void  nt_tape_chuck_step(float lr, float loss_val);
 float nt_tape_clip_grads(float max_norm);
 void  nt_tape_accum_grads(void);
 void  nt_tape_apply_accum(int n_accum);
+
+// ── GPU mode toggle ──
+// When on (1), hot tape ops (seq_linear / seq_linear_t / seq_rmsnorm / silu /
+// swiglu / add / mh_causal_attention / seq_cross_entropy) dispatch to CUDA via
+// notorch_cuda.{h,cu}. Default = off (CPU path). Compiled out when USE_CUDA
+// is undefined. Caller is responsible for gpu_init() / gpu_shutdown().
+void nt_set_gpu_mode(int on_off);
+int  nt_get_gpu_mode(void);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // LR SCHEDULE — warmup + cosine annealing + step decay
