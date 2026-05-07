@@ -132,6 +132,10 @@ train_llama3_char: examples/train_llama3_char.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_llama3_char examples/train_llama3_char.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_llama3_char (GQA + RoPE, $(BLAS_NAME))"
 
+infer_llama3_char: examples/infer_llama3_char.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama3_char examples/infer_llama3_char.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: infer_llama3_char (char-level inference, $(BLAS_NAME))"
+
 # DPO — Direct Preference Optimization (Rafailov 2023)
 train_dpo: examples/train_dpo.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_dpo examples/train_dpo.c notorch.c -lm $(BLAS_LIBS)
