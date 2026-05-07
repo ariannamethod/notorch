@@ -6,6 +6,25 @@ This folder ships everything needed to run it on a phone (or anywhere else notor
 
 Trained with [notorch](https://github.com/ariannamethod/notorch) (~5600 LOC, pure C) + Chuck optimizer + libopenblas. No PyTorch, no Adam, no CUDA, no datacenter.
 
+## Reproduced on a 4 GB phone — bit-identical loss
+
+On 2026-05-07 device-2 (Galaxy A07, **4 GB RAM**, half the memory of the original) re-ran the same recipe — same notorch commit, same Chuck, same corpus, same seed — and produced **bit-identical numerics**:
+
+| metric | A56 8 GB (original) | A07 4 GB (reproduction) |
+|---|---|---|
+| train final loss | 1.0685 | **1.0685** |
+| best train loss | 0.4712 | **0.4712** |
+| val loss (ckpt 10000) | 1.1460 | **1.1460** |
+| nan count | 0 | 0 |
+| ckpt size | 36.3 MB | 36.3 MB |
+| wall time | 2 h 13 m | 3 h 13 m |
+| throughput | 1.25 steps/s | 0.86 steps/s |
+
+Half the RAM ⇒ ~45 % slower wall, *zero* numeric divergence. notorch determinism + Chuck stability across heterogeneous Android hardware. Demo-grade reproducibility on commodity phones — Karpathy's 1.1 MB × 10 K formula carrying intact through 4 GB Termux.
+
+Reports: [`phone-2-galaxy-a07-final.md`](phone-2-galaxy-a07-final.md), [`phone-2-galaxy-a07-samples.md`](phone-2-galaxy-a07-samples.md), [`phone-2-galaxy-a07-toolchain.md`](phone-2-galaxy-a07-toolchain.md).
+Phone-2 weights live in the umbrella repo at [`ariannamethod/phones/results/galaxy-a07/llama3_char_ckpt.bin`](https://github.com/ariannamethod/ariannamethod/blob/main/phones/results/galaxy-a07/llama3_char_ckpt.bin) (one set of weights here is enough — both checkpoints are identical bytes).
+
 ## Files
 
 | File | Size | Purpose |
