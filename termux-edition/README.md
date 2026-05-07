@@ -24,8 +24,12 @@ The interesting consequence: a sub-$500 phone running Termux is now a viable tra
 - 9.5 M LLaMA 3 char-level model, 10 000 steps, 2 h 13 m wall, train 5.58 → 1.07, val 1.94 → 1.15, train-val gap 0.08, 0 NaN
 - Peak RSS 130–155 MB steady — phone never swapped
 - ~8× speedup of OpenBLAS over scalar baseline on aarch64
+- **15.7 M LLaMA 3 BPE (vocab 2048) on Yent v11 corpus, 5.4 MB / 1.95 M tokens, 15 000 steps, 4 h 42 m loop wall + ~18 min one-time encode, 1.10 s/step sustained, train 7.81 → 4.35 (best 2.90), val 4.94 → 3.93, 0 NaN, 60 MB ckpt** — first BPE LLaMA 3 trained end-to-end on Android Termux.
 
-Reference run with full logs and per-checkpoint loss curve: [`device-1/notorch-train/`](https://github.com/ariannamethod/ariannamethod/tree/main/device-1/notorch-train) in the umbrella repo.
+Reference runs with full logs:
+- char-level 9.5 M: [`device-1/notorch-train/`](https://github.com/ariannamethod/ariannamethod/tree/main/device-1/notorch-train) in the umbrella repo.
+- BPE 15.7 M: [`phones/results/arianna-method/2026-05-07-yent-bpe-15k-final.md`](https://github.com/ariannamethod/ariannamethod/blob/main/phones/results/arianna-method/2026-05-07-yent-bpe-15k-final.md).
+- 4 GB peer (Galaxy A07) char-level, bit-identical loss to the 8 GB run thanks to `nt_seed(42)` determinism: [`phones/results/galaxy-a07/2026-05-07-10k-char-arianna-final.md`](https://github.com/ariannamethod/ariannamethod/blob/main/phones/results/galaxy-a07/2026-05-07-10k-char-arianna-final.md).
 
 ## Setup (one-time)
 
