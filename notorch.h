@@ -69,6 +69,10 @@ void nt_tensor_xavier(nt_tensor* t, int fan_in, int fan_out);
 // Reshape in-place (total elements must match). Returns 0 on success.
 int nt_tensor_reshape(nt_tensor* t, const int* new_shape, int new_ndim);
 
+// Sync GPU mirror to CPU. No-op on non-USE_CUDA builds. Use before reading
+// param->data after a Chuck/Adam step on GPU (e.g. saving LoRA adapter).
+void nt_tensor_sync_cpu(nt_tensor* t);
+
 // Print tensor info (shape, first/last few values)
 void nt_tensor_print(const nt_tensor* t, const char* name);
 
