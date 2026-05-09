@@ -118,6 +118,7 @@ void nt_tensor_print(const nt_tensor* t, const char* name);
 #define NT_OP_BIT_SEQ_LINEAR 31  // Y[t] = bitquant(W) @ X[t] for T positions (BitNet seq)
 #define NT_OP_SEQ_CROSSENT_MASKED 32  // masked sequence cross-entropy (parent3 = mask)
 #define NT_OP_RRPRAM_LR     33   // low-rank RRPRAM (Wr = Wr_a × Wr_b packed in one tensor)
+#define NT_OP_RRPRAM_BCAST  34   // broadcast RRPRAM — mid[h,r] = Σ_t x[t]·Wr_a[h] (canonical Janus pattern, sc=1/sqrt(D))
 
 typedef struct {
     nt_tensor* output;          // forward result
@@ -416,6 +417,14 @@ int nt_rrpram_attention(int wr_idx, int x_idx, int v_idx, int T, int n_embd, int
 // H·R·(E+T_r) — a 5× reduction at this configuration.
 int nt_rrpram_lowrank_attention(int wr_combined_idx, int x_idx, int v_idx,
                                  int T, int n_embd, int nr_heads, int head_dim);
+
+// Broadcast RRPRAM low-rank attention — canonical Janus pattern (per dario/infer_v4.c:218-249).
+// mid[h,r] = Σ_t Σ_e x[t,e] · Wr_a[h,e,r] computed once per layer (broadcast over t).
+// score[h,j] = Σ_r mid[h,r] · Wr_b[h,r,j] * sc with sc = 1/sqrt(D) (canonical scale).
+// attn[h,i,j] = softmax_causal(scores[h])[i,j] for j ≤ i.
+// out[i, h_off+d] = Σ_{j≤i} attn[h,i,j] · v[j, h_off+d].
+int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
+                                   int T, int n_embd, int nr_heads, int head_dim);
 
 // Concatenate per-position: out[t] = [a[t], b[t]]. a: [T, D_a], b: [T, D_b] → out: [T, D_a+D_b]
 int nt_concat(int a_idx, int b_idx, int T);
