@@ -2415,12 +2415,26 @@ void nt_tape_chuck_step(float lr, float loss_val) {
 
     // ── Level 2: Per-param gradient norm + Adam update ──
     int param_idx = 0;
+    int g_dbg = getenv("NT_CHUCK_DBG") ? atoi(getenv("NT_CHUCK_DBG")) : 0;
+    int dbg_count = 0;
     for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param || !e->grad) continue;
+        if (!e->is_param) {
+            if (g_dbg && dbg_count < 5) { fprintf(stderr, "  [chuck-skip] tape_i=%d not_param\n", i); dbg_count++; }
+            continue;
+        }
+        if (!e->grad) {
+            if (g_dbg && dbg_count < 5 && param_idx >= 320 && param_idx <= 330) { fprintf(stderr, "  [chuck-skip] tape_i=%d param_i=%d no_grad\n", i, param_idx); dbg_count++; }
+            param_idx++;
+            continue;
+        }
         nt_adam_state* as = &g_tape.adam[param_idx];
         nt_chuck_param_state* cp = &g_tape.chuck_params[param_idx];
         if (cp->dampen == 0.0f) cp->dampen = 1.0f;
+        if (g_dbg && param_idx >= 325 && param_idx <= 330) {
+            fprintf(stderr, "  [chuck-DBG] tape_i=%d param_i=%d frozen=%d m=%p v=%p len_out=%d len_m=%d\n",
+                    i, param_idx, cp->frozen, (void*)as->m, (void*)as->v, e->output->len, as->m ? as->m->len : -1);
+        }
         if (cp->frozen) { param_idx++; continue; }
         if (!as->m || !as->v) { param_idx++; continue; }
 
