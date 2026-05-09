@@ -282,6 +282,9 @@ void nt_tape_clear(void) {
             nt_tensor_free(g_tape.entries[i].grad);
             g_tape.entries[i].grad = NULL;
         }
+        /* Reset frozen flag — defense-in-depth so reused slots can't leak
+         * frozen=1 from prior session into ops that don't init it explicitly. */
+        g_tape.entries[i].frozen = 0;
     }
     g_tape.count = 0;
     g_tape.active = 0;
@@ -326,6 +329,7 @@ int nt_tape_record(nt_tensor* output, int op, int p1, int p2, float aux) {
     e->aux2 = 0;
     e->is_param = 0;
     e->no_decay = 0;
+    e->frozen = 0;  /* clear leftover from prior tape session sharing this slot */
     g_tape.count++;
     return idx;
 }
@@ -345,6 +349,7 @@ int nt_tape_record3(nt_tensor* output, int op, int p1, int p2, int p3, float aux
     e->aux2 = aux2;
     e->is_param = 0;
     e->no_decay = 0;
+    e->frozen = 0;  /* clear leftover from prior tape session sharing this slot */
     g_tape.count++;
     return idx;
 }

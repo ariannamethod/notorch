@@ -199,15 +199,25 @@ static int sentinel_layout_check(void) {
     for (int t = 0; t < T_LEN; t++)
         for (int e = 0; e < E_LEN; e++)
             x[t*E_LEN+e] = 1.0f;
-    /* v[t,h_off+d] = 1 for all (so attention weighted sum = sum of weights = 1). */
-    for (long i = 0; i < T_LEN * OUT_DIM; i++) v[i] = 1.0f;
+    /* v[j, h*hd+d] = 10*j + h + 0.01*d — position-coded so wrong attn weights
+     * (from wrong stride read) yield distinct output values, NOT just 1. */
+    for (int j = 0; j < T_LEN; j++)
+        for (int h = 0; h < H_LEN; h++)
+            for (int d = 0; d < HD_LEN; d++)
+                v[j*OUT_DIM + h*HD_LEN + d] = 10.0f*j + (float)h + 0.01f*(float)d;
 
-    /* Expected: mid[h,r=0] = T_LEN*E_LEN = 24. mid[h,r=1] = 0.
-     * score[h,j] = mid[h,0] * Wr_b[h,0,j] + 0 = 24 * ((j+1)*100 + h*10).
-     * scaled by sc=1/sqrt(hd)=0.5. Then softmax over j ≤ i across positions [0..T_LEN-1].
-     * Output[i] = Σ_{j<=i} attn[i,j]*v[j] = Σ_{j<=i} attn[i,j]*1 = 1 (since v=1, attn sums to 1).
-     * So out[i, h_off+d] = 1 for all (i,h,d) when v all ones.
-     * Check op output matches this; mismatch implies wrong stride/rank read. */
+    /* Expected (correct ctx_T stride):
+     *   mid[h, r=0] = Σ_t,e x[t,e] * Wr_a[h,e,r=0] = T*E*1 = 24 (all r=0 weights = 1).
+     *   mid[h, r=1] = 0 (all r=1 weights = 0).
+     *   score[h, j] = mid[h,0] * Wr_b[h,0,j] = 24 * ((j+1)*100 + h*10).
+     *   scaled = score * sc = score / sqrt(4) = score / 2.
+     *   With T=3 positions, score values are large → softmax peaks at j=last visible.
+     *   For i=0: j∈{0}; attn[0,0]=1; out[0,h*hd+d] = v[0,h*hd+d] = 0+h+0.01d
+     *   For i=1: j∈{0,1}; softmax dominated by j=1 (larger score); out ≈ v[1,h,d] = 10+h+0.01d
+     *   For i=2: j∈{0,1,2}; softmax dominated by j=2; out ≈ v[2,h,d] = 20+h+0.01d
+     * Wrong stride (T_input=3 vs ctx_T=7) reads from wrong Wr_b columns →
+     * different score values → different attn dist → different output values
+     * → max_diff != 0. */
     nt_tape_start();
     nt_tensor* tw = nt_tensor_new(wr_len);
     memcpy(tw->data, wr, (size_t)wr_len * sizeof(float));
@@ -230,12 +240,46 @@ static int sentinel_layout_check(void) {
     nt_tape_entry* po = &nt_tape_get()->entries[out_idx];
     int n_fail = 0;
     float max_diff = 0.0f;
+    /* Compute analytic expected output via direct ctx_T stride formula.
+     * (wra_total declared at line 186 above.) */
+    float sc = 1.0f / sqrtf((float)HD_LEN);
+    float* expected = (float*)calloc(T_LEN * OUT_DIM, sizeof(float));
+    for (int h = 0; h < H_LEN; h++) {
+        float mid[R_LEN];
+        for (int r = 0; r < R_LEN; r++) mid[r] = 0.0f;
+        for (int t = 0; t < T_LEN; t++)
+            for (int e = 0; e < E_LEN; e++)
+                for (int r = 0; r < R_LEN; r++)
+                    mid[r] += x[t*E_LEN+e] * wr[(long)h*E_LEN*R_LEN + (long)e*R_LEN + r];
+        float scores[T_LEN];
+        for (int j = 0; j < T_LEN; j++) {
+            float s = 0.0f;
+            for (int r = 0; r < R_LEN; r++)
+                s += mid[r] * wr[wra_total + (long)h*R_LEN*CTX_T + (long)r*CTX_T + j];
+            scores[j] = s * sc;
+        }
+        for (int i = 0; i < T_LEN; i++) {
+            float mx = -1e30f;
+            for (int j = 0; j <= i; j++) if (scores[j] > mx) mx = scores[j];
+            float sm = 0.0f;
+            float att[T_LEN] = {0};
+            for (int j = 0; j <= i; j++) { att[j] = expf(scores[j] - mx); sm += att[j]; }
+            if (sm > 0) for (int j = 0; j <= i; j++) att[j] /= sm;
+            for (int d = 0; d < HD_LEN; d++) {
+                float o = 0.0f;
+                for (int j = 0; j <= i; j++)
+                    o += att[j] * v[j*OUT_DIM + h*HD_LEN + d];
+                expected[i*OUT_DIM + h*HD_LEN + d] = o;
+            }
+        }
+    }
     for (long i = 0; i < po->output->len; i++) {
-        float diff = fabsf(po->output->data[i] - 1.0f);
+        float diff = fabsf(po->output->data[i] - expected[i]);
         if (diff > max_diff) max_diff = diff;
         if (diff > 1e-3f) n_fail++;
     }
-    printf("  [sentinel] expected out[i]=1.0 (v=1, attn=1), max_diff=%.4e fails=%d\n",
+    free(expected);
+    printf("  [sentinel] expected vs op output (position-coded v), max_diff=%.4e fails=%d\n",
            max_diff, n_fail);
 
     nt_tape_clear();
