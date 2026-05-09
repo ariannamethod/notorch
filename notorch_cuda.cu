@@ -115,7 +115,7 @@ static gpu_cache_bucket g_alloc_cache[GPU_CACHE_BUCKETS];
 
 /* Side table: ptr → bucket. Bounded fixed-size open-addressed hash table.
  * 4096 slots is far more than realistic concurrent live alloc count. */
-#define GPU_PTR_MAP_SIZE 8192
+#define GPU_PTR_MAP_SIZE 65536
 typedef struct {
     float* ptr;
     int    bucket;

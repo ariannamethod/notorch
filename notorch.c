@@ -1907,9 +1907,10 @@ void nt_tape_backward(int loss_idx) {
                 int n_heads = D / head_dim;
 
                 float fb = (e->aux3 > 0.0f) ? e->aux3 : 10000.0f;
+                int split_half = (e->aux4 > 0.5f) ? 1 : 0;
                 int rope_done_gpu = 0;
 #ifdef USE_CUDA
-                if (g_use_gpu) {
+                if (g_use_gpu && !split_half) {  /* GPU only handles even/odd */
                     float* d_dout = nt_tensor_ensure_gpu(e->grad);
                     float* d_gx   = gpu_scratch(3, total);
                     if (d_dout && d_gx) {
@@ -1920,21 +1921,35 @@ void nt_tape_backward(int loss_idx) {
                 }
 #endif
                 if (rope_done_gpu) break;
+#ifdef USE_CUDA
+                nt_tensor_ensure_cpu(e->grad);
+#endif
                 float* gx = (float*)calloc(total, sizeof(float));
                 if (gx) {
+                    int half = head_dim / 2;
                     for (int t = 0; t < T; t++) {
                         for (int h = 0; h < n_heads; h++) {
                             int base = t * D + h * head_dim;
-                            for (int i = 0; i < head_dim / 2; i++) {
+                            for (int i = 0; i < half; i++) {
                                 float freq = 1.0f / powf(fb, 2.0f * i / head_dim);
                                 float angle = t * freq;
                                 float cos_a = cosf(angle);
                                 float sin_a = sinf(angle);
-                                float dx0 = dout[base + 2 * i];
-                                float dx1 = dout[base + 2 * i + 1];
-                                // Inverse rotation (transpose of rotation matrix)
-                                gx[base + 2 * i]     = dx0 * cos_a + dx1 * sin_a;
-                                gx[base + 2 * i + 1] = -dx0 * sin_a + dx1 * cos_a;
+                                int o0 = split_half ? (base + i)        : (base + 2 * i);
+                                int o1 = split_half ? (base + half + i) : (base + 2 * i + 1);
+                                float dx0 = dout[o0];
+                                float dx1 = dout[o1];
+                                if (split_half) {
+                                    /* Forward (Janus): n0 = x0*c + x1*s; n1 = -x0*s + x1*c
+                                     * Backward (transpose): dx0 = c*dn0 - s*dn1; dx1 = s*dn0 + c*dn1 */
+                                    gx[o0] =  dx0 * cos_a - dx1 * sin_a;
+                                    gx[o1] =  dx0 * sin_a + dx1 * cos_a;
+                                } else {
+                                    /* Forward (notorch even/odd): n0 = x0*c - x1*s; n1 = x0*s + x1*c
+                                     * Backward (transpose): dx0 = c*dn0 + s*dn1; dx1 = -s*dn0 + c*dn1 */
+                                    gx[o0] = dx0 * cos_a + dx1 * sin_a;
+                                    gx[o1] = -dx0 * sin_a + dx1 * cos_a;
+                                }
                             }
                         }
                     }
@@ -3663,6 +3678,16 @@ int nt_seq_cross_entropy_masked(int logits_idx, int targets_idx, int mask_idx, i
     nt_tape_entry* pl = &g_tape.entries[logits_idx];
     nt_tape_entry* pt = &g_tape.entries[targets_idx];
     nt_tape_entry* pm = &g_tape.entries[mask_idx];
+#ifdef USE_CUDA
+    /* CPU op — pull GPU mirrors back. Without these calls, when callers
+     * use GPU mode, logits arrive GPU-fresh / CPU-stale (zeros) →
+     * softmax(zeros) = uniform → loss = ln(V) every step regardless of
+     * input. Caught during heart.c phase 1 cal: loss exactly 9.7041 =
+     * ln(16384) on Resonance until this fix landed. */
+    nt_tensor_ensure_cpu(pl->output);
+    nt_tensor_ensure_cpu(pt->output);
+    nt_tensor_ensure_cpu(pm->output);
+#endif
     nt_tensor* out = nt_tensor_new(1);
     if (!out) return -1;
     float total_loss = 0;
@@ -3839,6 +3864,56 @@ int nt_rope_freq(int x_idx, int T, int head_dim, float freq_base) {
 
 int nt_rope(int x_idx, int T, int head_dim) {
     return nt_rope_freq(x_idx, T, head_dim, 10000.0f);
+}
+
+int nt_rope_split_half_freq(int x_idx, int T, int head_dim, float freq_base) {
+    /* Split-half RoPE: pairs (i, i+head_dim/2) instead of even/odd
+     * (2i, 2i+1). Used by nanochat / Janus v4 (infer_v4.c:35-49).
+     * Sign convention matches canonical Janus rope_pos:
+     *   q[i]      =  q0*cos + q1*sin
+     *   q[i+half] = -q0*sin + q1*cos
+     * (notorch's even/odd nt_rope_freq uses the inverse rotation.)
+     * CPU-only forward; dispatches via NT_OP_ROPE with aux4=1.0
+     * — backward case branches on aux4 for split-half formulas. */
+    if (x_idx < 0 || T <= 0 || head_dim <= 0) return -1;
+    if (freq_base <= 0.0f) freq_base = 10000.0f;
+    nt_tape_entry* px = &g_tape.entries[x_idx];
+    int total = px->output->len;
+    int D = total / T;
+    int n_heads = D / head_dim;
+    int half = head_dim / 2;
+    if (n_heads <= 0 || half <= 0) return -1;
+
+    nt_tensor* out = nt_tensor_new(total);
+    if (!out) return -1;
+    if (px->output->ndim > 0) nt_tensor_reshape(out, px->output->shape, px->output->ndim);
+
+#ifdef USE_CUDA
+    nt_tensor_ensure_cpu(px->output);
+#endif
+    memcpy(out->data, px->output->data, total * sizeof(float));
+    for (int t = 0; t < T; t++) {
+        for (int h = 0; h < n_heads; h++) {
+            int base = t * D + h * head_dim;
+            for (int i = 0; i < half; i++) {
+                float freq = 1.0f / powf(freq_base, 2.0f * i / head_dim);
+                float angle = t * freq;
+                float cos_a = cosf(angle);
+                float sin_a = sinf(angle);
+                float x0 = out->data[base + i];
+                float x1 = out->data[base + half + i];
+                out->data[base + i]        =  x0 * cos_a + x1 * sin_a;
+                out->data[base + half + i] = -x0 * sin_a + x1 * cos_a;
+            }
+        }
+    }
+#ifdef USE_CUDA
+    out->cpu_dirty = 0; out->gpu_valid = 0;
+#endif
+    int idx = nt_tape_record4(out, NT_OP_ROPE, x_idx, -1, -1,
+                              (float)T, (float)head_dim, freq_base, 1.0f /* split-half */);
+    nt_tensor_free(out);
+    return idx;
 }
 
 int nt_dropout(int x_idx, float p) {

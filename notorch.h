@@ -373,6 +373,15 @@ int nt_rope(int x_idx, int T, int head_dim);
 // RoPE with explicit freq_base — Qwen2 uses 1000000, Llama uses 10000
 int nt_rope_freq(int x_idx, int T, int head_dim, float freq_base);
 
+// Split-half RoPE — pairs (i, i+head_dim/2) instead of even/odd (2i, 2i+1).
+// Sign convention matches canonical Janus rope_pos (infer_v4.c:35-49):
+//   q[i]      =  q0*cos + q1*sin
+//   q[i+half] = -q0*sin + q1*cos
+// Used by nanochat / Janus v4 / similar split-half-trained bases.
+// CPU-only forward; GPU backward dispatches only for even/odd, split-half
+// falls back to CPU.
+int nt_rope_split_half_freq(int x_idx, int T, int head_dim, float freq_base);
+
 // Dropout: zero random elements with probability p (training only)
 int nt_dropout(int x_idx, float p);
 

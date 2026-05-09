@@ -277,10 +277,16 @@ static int sample(float* logits, float temperature, int top_k) {
 }
 
 int main(int argc, char** argv) {
+    setvbuf(stdout, NULL, _IONBF, 0);
     const char* weights_path = argc > 1 ? argv[1] : "llama3_bpe.bin";
     const char* merges_path = argc > 2 ? argv[2] : "examples/bpe_2048_merges.txt";
 
-    srand((unsigned)time(NULL));
+    /* env-controlled sampling for sweep grids: INFER_TEMP, INFER_TOPK (0 = no top_k) */
+    float infer_temp = getenv("INFER_TEMP") ? atof(getenv("INFER_TEMP")) : 0.8f;
+    int   infer_topk = getenv("INFER_TOPK") ? atoi(getenv("INFER_TOPK")) : 40;
+    unsigned int seed = getenv("INFER_SEED") ? (unsigned)atoi(getenv("INFER_SEED")) : (unsigned)time(NULL);
+    srand(seed);
+    fprintf(stderr, "[infer] temp=%.2f top_k=%d seed=%u\n", infer_temp, infer_topk, seed);
 
     printf("════════════════════════════════════════════════════════\n");
     printf("  notorch — LLaMA 3 BPE chat (15.7M, MHA + RoPE + SwiGLU)\n");
@@ -331,7 +337,7 @@ int main(int argc, char** argv) {
         /* Decode */
         int pos = n;
         for (int s = 0; s < CTX - n; s++) {
-            int next = sample(logits, 0.8f, 40);
+            int next = sample(logits, infer_temp, infer_topk);
             tokens[pos] = next;
 
             /* Decode token and print */
