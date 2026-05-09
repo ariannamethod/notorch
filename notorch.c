@@ -2929,6 +2929,10 @@ int nt_seq_linear(int w_idx, int x_idx, int T) {
     }
 #endif
     if (!done_gpu) {
+#ifdef USE_CUDA
+        nt_tensor_ensure_cpu(pw->output);
+        nt_tensor_ensure_cpu(px->output);
+#endif
         float* W = pw->output->data;
         float* X = px->output->data;
         float* Y = out->data;
