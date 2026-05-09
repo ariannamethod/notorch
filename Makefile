@@ -75,39 +75,39 @@ gpu: notorch.c notorch.h notorch_cuda.cu tests/test_notorch.c
 # Static library — bundles notorch.o + gguf.o so a single -lnotorch linkage
 # satisfies both tensor ops (nt_blas_mmT, nt_bpe_*) and GGUF reader
 # (gguf_open, gguf_dequant, gguf_get_kv).
-# GPU build flags (set USE_CUDA=1 to enable CUDA dispatch in libnotorch.a)
-ifeq ($(USE_CUDA),1)
-  GPU_FLAGS = -DUSE_CUDA -I/usr/local/cuda/include
-else
-  GPU_FLAGS =
-endif
+lib: libnotorch.a $(if $(filter 1,$(USE_CUDA)),libnotorch_gpu.a)
 
-lib: libnotorch.a
-
+# CPU-only library — always built, organism binaries link this (no CUDA deps).
 libnotorch.a: notorch.c notorch.h gguf.c gguf.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) $(GPU_FLAGS) -c notorch.c -o notorch.o
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf.o
-ifeq ($(USE_CUDA),1)
-	nvcc -O2 -DUSE_CUDA -c notorch_cuda.cu -o notorch_cuda.o
-	$(AR) rcs libnotorch.a notorch.o gguf.o notorch_cuda.o
-	@echo "Built: libnotorch.a (notorch + gguf + CUDA)"
-else
 	$(AR) rcs libnotorch.a notorch.o gguf.o
-	@echo "Built: libnotorch.a (notorch + gguf)"
-endif
+	@echo "Built: libnotorch.a (CPU + BLAS)"
+
+# GPU-enabled library — only when USE_CUDA=1. SFT trainer links this +
+# -lcudart -lcublas. Compiled with -DUSE_CUDA so #ifdef blocks activate.
+libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -DUSE_CUDA -I/usr/local/cuda/include -c notorch.c -o notorch_gpu.o
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf_gpu.o
+	nvcc -O2 -DUSE_CUDA -c notorch_cuda.cu -o notorch_cuda.o
+	$(AR) rcs libnotorch_gpu.a notorch_gpu.o gguf_gpu.o notorch_cuda.o
+	@echo "Built: libnotorch_gpu.a (CPU + BLAS + CUDA)"
 
 # ── Install — system-wide baseline at $PREFIX (default /opt/homebrew) ──
 PREFIX ?= /opt/homebrew
 
-install: libnotorch.a
+install: lib
 	install -d $(PREFIX)/lib $(PREFIX)/include/ariannamethod
 	install -m 0644 libnotorch.a $(PREFIX)/lib/libnotorch.a
 	install -m 0644 notorch.h    $(PREFIX)/include/ariannamethod/notorch.h
 	install -m 0644 gguf.h       $(PREFIX)/include/ariannamethod/gguf.h
 ifeq ($(USE_CUDA),1)
+	install -m 0644 libnotorch_gpu.a $(PREFIX)/lib/libnotorch_gpu.a
 	install -m 0644 notorch_cuda.h $(PREFIX)/include/ariannamethod/notorch_cuda.h
+	@echo "Installed: $(PREFIX)/lib/{libnotorch.a, libnotorch_gpu.a} + headers"
+else
+	@echo "Installed: $(PREFIX)/lib/libnotorch.a + headers"
 endif
-	@echo "Installed: $(PREFIX)/lib/libnotorch.a + $(PREFIX)/include/ariannamethod/{notorch,gguf$(if $(filter 1,$(USE_CUDA)),$(comma)notorch_cuda)}.h"
 
 # ── Inference ──
 
