@@ -366,6 +366,7 @@ int nt_tape_record4(nt_tensor* output, int op, int p1, int p2, int p3, float aux
     e->aux4 = aux4;
     e->is_param = 0;
     e->no_decay = 0;
+    e->frozen = 0;  /* clear leftover from prior tape session sharing this slot */
     g_tape.count++;
     return idx;
 }
@@ -384,6 +385,7 @@ int nt_tape_param(nt_tensor* param) {
     e->aux = 0;
     e->aux2 = 0;
     e->is_param = 1;
+    e->frozen = 0;  /* clear leftover from prior tape session sharing this slot */
     e->no_decay = 0;
 
     if (g_tape.n_params < NT_TAPE_MAX_PARAMS) {
@@ -1432,11 +1434,12 @@ void nt_tape_backward(int loss_idx) {
                 nt_tape_entry* px  = &g_tape.entries[e->parent2];
                 nt_tape_entry* pv  = &g_tape.entries[e->parent3];
                 int T = (int)e->aux; int n_embd = (int)e->aux2;
-                int nr = (int)e->aux3; int hd = (int)e->aux4;
+                int nr = (int)e->aux3;
+                int rank = (int)e->aux4;  /* aux4 = rank, head_dim = E/H */
+                int hd = n_embd / nr;
                 int out_dim = nr * hd;
-                int T_r = T;
                 long combined_len = pwr->output->len;
-                int rank = (int)(combined_len / ((long)nr * (n_embd + T_r)));
+                int ctx_T = (int)(combined_len / ((long)nr * rank) - n_embd);
                 long wra_total = (long)nr * n_embd * rank;
                 float sc = 1.0f / sqrtf((float)hd);
 
@@ -1453,10 +1456,10 @@ void nt_tape_backward(int loss_idx) {
 
                 float* mid_buf       = (float*)malloc(rank * sizeof(float));
                 float* d_mid_buf     = (float*)malloc(rank * sizeof(float));
-                float* all_scores    = (float*)malloc(T_r  * sizeof(float));
-                float* attn_buf      = (float*)malloc(T_r  * sizeof(float));
-                float* d_attn_buf    = (float*)malloc(T_r  * sizeof(float));
-                float* d_score_global= (float*)calloc(T_r,   sizeof(float));
+                float* all_scores    = (float*)malloc(T  * sizeof(float));
+                float* attn_buf      = (float*)malloc(T  * sizeof(float));
+                float* d_attn_buf    = (float*)malloc(T  * sizeof(float));
+                float* d_score_global= (float*)calloc(T,   sizeof(float));
 
                 float* dout = e->grad ? e->grad->data : NULL;
 
@@ -1464,7 +1467,7 @@ void nt_tape_backward(int loss_idx) {
                     attn_buf && d_attn_buf && d_score_global && dout) {
                     for (int h = 0; h < nr; h++) {
                         long wr_a_base = (long)h * n_embd * rank;
-                        long wr_b_base = wra_total + (long)h * rank * T_r;
+                        long wr_b_base = wra_total + (long)h * rank * ctx_T;
                         int  v_off     = h * hd;
 
                         for (int r = 0; r < rank; r++) mid_buf[r] = 0.0f;
@@ -1480,12 +1483,12 @@ void nt_tape_backward(int loss_idx) {
                         for (int j = 0; j < T; j++) {
                             float s = 0.0f;
                             for (int r = 0; r < rank; r++) {
-                                s += mid_buf[r] * pwr->output->data[wr_b_base + (long)r * T_r + j];
+                                s += mid_buf[r] * pwr->output->data[wr_b_base + (long)r * ctx_T + j];
                             }
                             all_scores[j] = s * sc;
                         }
 
-                        for (int j = 0; j < T_r; j++) d_score_global[j] = 0.0f;
+                        for (int j = 0; j < T; j++) d_score_global[j] = 0.0f;
 
                         for (int i = 0; i < T; i++) {
                             float mx = -1e30f;
@@ -1522,8 +1525,8 @@ void nt_tape_backward(int loss_idx) {
                             float ds = d_score_global[j] * sc;
                             if (ds == 0.0f) continue;
                             for (int r = 0; r < rank; r++) {
-                                d_mid_buf[r] += ds * pwr->output->data[wr_b_base + (long)r * T_r + j];
-                                dwr[wr_b_base + (long)r * T_r + j] += ds * mid_buf[r];
+                                d_mid_buf[r] += ds * pwr->output->data[wr_b_base + (long)r * ctx_T + j];
+                                dwr[wr_b_base + (long)r * ctx_T + j] += ds * mid_buf[r];
                             }
                         }
 
@@ -3509,8 +3512,10 @@ int nt_rrpram_lowrank_attention(int wr_combined_idx, int x_idx, int v_idx,
  *   out[i, h_off+d] = Σ_{j≤i} attn[h, i, j] · v[j, h_off+d]
  * ════════════════════════════════════════════════════════════════════════ */
 int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
-                                   int T, int n_embd, int nr_heads, int head_dim) {
+                                   int T, int n_embd, int nr_heads, int head_dim, int rank) {
     if (wr_combined_idx < 0 || x_idx < 0 || v_idx < 0) return -1;
+    if (rank < 1 || nr_heads < 1 || head_dim < 1 || n_embd < 1) return -1;
+    if (nr_heads * head_dim != n_embd) return -1;  /* invariant: H*D=E */
     int out_dim = nr_heads * head_dim;
     nt_tensor* out = nt_tensor_new(T * out_dim);
     if (!out) return -1;
@@ -3518,10 +3523,16 @@ int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
     nt_tape_entry* px  = &g_tape.entries[x_idx];
     nt_tape_entry* pv  = &g_tape.entries[v_idx];
 
-    int T_r = T;
+    /* Packed weight shape: H*E*R + H*R*ctx_T = H*R*(E+ctx_T).
+     * Derive ctx_T from combined_len / (H*R) - E (rank passed by caller). */
     long combined_len = pwr->output->len;
-    int rank = (int)(combined_len / ((long)nr_heads * (n_embd + T_r)));
-    if (rank < 1) { nt_tensor_free(out); return -1; }
+    long expected_per_head = (long)rank * (n_embd + 0);
+    int ctx_T = (int)(combined_len / ((long)nr_heads * rank) - n_embd);
+    if (ctx_T < T) { nt_tensor_free(out); return -1; }  /* runtime T must fit ctx */
+    if ((long)nr_heads * rank * ((long)n_embd + ctx_T) != combined_len) {
+        nt_tensor_free(out); return -1;  /* shape mismatch */
+    }
+    (void)expected_per_head;
     long wra_total = (long)nr_heads * n_embd * rank;
     /* Canonical Janus attention scale: 1/sqrt(D) per dario/infer_v4.c:239-244 */
     float sc = 1.0f / sqrtf((float)head_dim);
@@ -3533,15 +3544,15 @@ int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
 #endif
 
     float* mid_buf    = (float*)malloc(rank * sizeof(float));
-    float* all_scores = (float*)malloc(T_r  * sizeof(float));
-    float* attn_buf   = (float*)malloc(T_r  * sizeof(float));
+    float* all_scores = (float*)malloc(T  * sizeof(float));
+    float* attn_buf   = (float*)malloc(T  * sizeof(float));
     if (!mid_buf || !all_scores || !attn_buf) {
         free(mid_buf); free(all_scores); free(attn_buf); nt_tensor_free(out); return -1;
     }
 
     for (int h = 0; h < nr_heads; h++) {
         long wr_a_base = (long)h * n_embd * rank;
-        long wr_b_base = wra_total + (long)h * rank * T_r;
+        long wr_b_base = wra_total + (long)h * rank * ctx_T;
         int  v_off     = h * head_dim;
 
         for (int r = 0; r < rank; r++) mid_buf[r] = 0.0f;
@@ -3557,7 +3568,7 @@ int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
         for (int j = 0; j < T; j++) {
             float s = 0.0f;
             for (int r = 0; r < rank; r++) {
-                s += mid_buf[r] * pwr->output->data[wr_b_base + (long)r * T_r + j];
+                s += mid_buf[r] * pwr->output->data[wr_b_base + (long)r * ctx_T + j];
             }
             all_scores[j] = s * sc;
         }
@@ -3586,8 +3597,10 @@ int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
 
     free(mid_buf); free(all_scores); free(attn_buf);
 
+    /* aux4 stores RANK (not head_dim) — head_dim derivable at backward as E/H.
+     * ctx_T is derivable from combined_len / (H*rank) - n_embd. */
     int idx = nt_tape_record4(out, NT_OP_RRPRAM_BCAST, wr_combined_idx, x_idx, v_idx,
-                              (float)T, (float)n_embd, (float)nr_heads, (float)head_dim);
+                              (float)T, (float)n_embd, (float)nr_heads, (float)rank);
     nt_tensor_free(out);
     return idx;
 }

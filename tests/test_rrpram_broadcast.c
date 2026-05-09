@@ -1,18 +1,22 @@
 /*
- * test_rrpram_broadcast.c — synthetic gradient check for nt_rrpram_broadcast_attention.
+ * test_rrpram_broadcast.c — gradient check for nt_rrpram_broadcast_attention.
  *
- * Tiny dims (T=4, E=8, R=2, H=2, hd=4) keep ε-sweep cheap.
- * For every element of Wr_combined / x / v we compute analytic gradient
- * (one backward pass with grad-of-loss = ones into out) and finite-difference
- * gradient ((L(x+ε) - L(x-ε)) / 2ε), where L = Σ out. They must match
- * within 1e-3 absolute error, else the broadcast op is wrong.
+ * Adversarial config: T_input=3 < ctx_T=7 (packed weight size > runtime sequence).
+ * This is the regression case that the original test missed (T_packed == T_input
+ * synthetic shape coincidentally produced the right answer with the old buggy
+ * rank/stride inference).
+ *
+ * Layout: Wr_combined = [H,E,R] concat [H,R,ctx_T] — packed at full ctx, sliced
+ * at runtime to T_input columns of Wr_b. New API takes `rank` explicitly,
+ * derives `ctx_T` from combined_len / (H*rank) - n_embd.
  *
  * Build (CPU only):
  *   cc -O2 -I. tests/test_rrpram_broadcast.c notorch.c -o /tmp/test_rrpram_bcast -lm
+ * Run:  /tmp/test_rrpram_bcast  ; exits 0 if all gates pass, 1 otherwise.
  *
- * Run:
- *   /tmp/test_rrpram_bcast
- *   exits 0 if all gates pass, 1 otherwise.
+ * Negative control: revert notorch broadcast op fix, rebuild, run — must FAIL.
+ * Re-apply fix, rebuild, run — must PASS. If both PASS, test has no diagnostic
+ * power (the original failure mode).
  */
 
 #include "notorch.h"
@@ -21,12 +25,14 @@
 #include <string.h>
 #include <math.h>
 
-#define T_LEN   4
-#define E_LEN   8
-#define R_LEN   2
-#define H_LEN   2
-#define HD_LEN  4
-#define OUT_DIM (H_LEN * HD_LEN)
+/* Adversarial: T_input < CTX_T (packed > runtime), H*HD=E invariant. */
+#define T_LEN    3
+#define CTX_T    7
+#define E_LEN    8
+#define R_LEN    2
+#define H_LEN    2
+#define HD_LEN   4
+#define OUT_DIM  (H_LEN * HD_LEN)
 
 #define EPS_FD     1e-3f
 #define TOL_ABS    1e-3f
@@ -57,7 +63,7 @@ static float forward_only(const float* wr_data, long wr_len,
     nt_tape_freeze_param(v_idx);
 
     int out_idx = nt_rrpram_broadcast_attention(wr_idx, x_idx, v_idx,
-                                                 t_len, e_len, H_LEN, HD_LEN);
+                                                 t_len, e_len, H_LEN, HD_LEN, R_LEN);
     if (out_idx < 0) { nt_tape_clear(); return NAN; }
 
     nt_tape_entry* po = &nt_tape_get()->entries[out_idx];
@@ -90,7 +96,7 @@ static int analytic_grads(const float* wr_data, long wr_len,
     nt_tape_no_decay(v_idx);
 
     int out_idx = nt_rrpram_broadcast_attention(wr_idx, x_idx, v_idx,
-                                                 t_len, e_len, H_LEN, HD_LEN);
+                                                 t_len, e_len, H_LEN, HD_LEN, R_LEN);
     if (out_idx < 0) { nt_tape_clear(); return -1; }
 
     nt_tape_entry* po = &nt_tape_get()->entries[out_idx];
@@ -166,11 +172,82 @@ static int compare_grads(const char* name, const float* analytic,
     return n_fail;
 }
 
+/* Sentinel-coded check: pack Wr_b with position-tag values so that wrong stride
+ * (T_input vs ctx_T) produces dramatically different output. Independently
+ * compute expected output via direct formula, compare to op output. */
+static int sentinel_layout_check(void) {
+    long wr_len = (long)H_LEN * E_LEN * R_LEN + (long)H_LEN * R_LEN * CTX_T;
+    float* wr = (float*)calloc(wr_len, sizeof(float));
+    float* x  = (float*)calloc(T_LEN * E_LEN, sizeof(float));
+    float* v  = (float*)calloc(T_LEN * OUT_DIM, sizeof(float));
+    if (!wr || !x || !v) { free(wr); free(x); free(v); return -1; }
+
+    /* Wr_a[h,e,r] = 1 only for r==0, else 0. So mid[h,r=0] = Σ_t,e x[t,e]. */
+    long wra_total = (long)H_LEN * E_LEN * R_LEN;
+    for (int h = 0; h < H_LEN; h++)
+        for (int e = 0; e < E_LEN; e++)
+            wr[(long)h*E_LEN*R_LEN + (long)e*R_LEN + 0] = 1.0f;
+
+    /* Wr_b[h,r=0,j] = (j+1) * 100 + h*10. Sentinel = position-coded.
+     * Wrong stride (T_input=3 vs ctx_T=7) reads from wr_a region or earlier
+     * positions, producing distinct output values. */
+    for (int h = 0; h < H_LEN; h++)
+        for (int j = 0; j < CTX_T; j++)
+            wr[wra_total + (long)h*R_LEN*CTX_T + (long)0*CTX_T + j] = (j+1)*100.0f + h*10.0f;
+
+    /* x[t,e] = 1 for all (so mid[h,0] = T_LEN * E_LEN regardless of h). */
+    for (int t = 0; t < T_LEN; t++)
+        for (int e = 0; e < E_LEN; e++)
+            x[t*E_LEN+e] = 1.0f;
+    /* v[t,h_off+d] = 1 for all (so attention weighted sum = sum of weights = 1). */
+    for (long i = 0; i < T_LEN * OUT_DIM; i++) v[i] = 1.0f;
+
+    /* Expected: mid[h,r=0] = T_LEN*E_LEN = 24. mid[h,r=1] = 0.
+     * score[h,j] = mid[h,0] * Wr_b[h,0,j] + 0 = 24 * ((j+1)*100 + h*10).
+     * scaled by sc=1/sqrt(hd)=0.5. Then softmax over j ≤ i across positions [0..T_LEN-1].
+     * Output[i] = Σ_{j<=i} attn[i,j]*v[j] = Σ_{j<=i} attn[i,j]*1 = 1 (since v=1, attn sums to 1).
+     * So out[i, h_off+d] = 1 for all (i,h,d) when v all ones.
+     * Check op output matches this; mismatch implies wrong stride/rank read. */
+    nt_tape_start();
+    nt_tensor* tw = nt_tensor_new(wr_len);
+    memcpy(tw->data, wr, (size_t)wr_len * sizeof(float));
+    int wr_idx = nt_tape_param(tw); nt_tape_freeze_param(wr_idx);
+    nt_tensor* tx = nt_tensor_new(T_LEN * E_LEN);
+    memcpy(tx->data, x, (size_t)T_LEN * E_LEN * sizeof(float));
+    int x_idx = nt_tape_param(tx); nt_tape_freeze_param(x_idx);
+    nt_tensor* tv = nt_tensor_new(T_LEN * OUT_DIM);
+    memcpy(tv->data, v, (size_t)T_LEN * OUT_DIM * sizeof(float));
+    int v_idx = nt_tape_param(tv); nt_tape_freeze_param(v_idx);
+
+    int out_idx = nt_rrpram_broadcast_attention(wr_idx, x_idx, v_idx,
+                                                 T_LEN, E_LEN, H_LEN, HD_LEN, R_LEN);
+    if (out_idx < 0) {
+        printf("  [sentinel] op returned -1 (likely shape mismatch reject — investigate)\n");
+        nt_tape_clear(); free(wr); free(x); free(v);
+        return -1;
+    }
+
+    nt_tape_entry* po = &nt_tape_get()->entries[out_idx];
+    int n_fail = 0;
+    float max_diff = 0.0f;
+    for (long i = 0; i < po->output->len; i++) {
+        float diff = fabsf(po->output->data[i] - 1.0f);
+        if (diff > max_diff) max_diff = diff;
+        if (diff > 1e-3f) n_fail++;
+    }
+    printf("  [sentinel] expected out[i]=1.0 (v=1, attn=1), max_diff=%.4e fails=%d\n",
+           max_diff, n_fail);
+
+    nt_tape_clear();
+    free(wr); free(x); free(v);
+    return n_fail;
+}
+
 int main(void) {
     srand(42);
     nt_seed(42);
 
-    long wr_len = (long)H_LEN * E_LEN * R_LEN + (long)H_LEN * R_LEN * T_LEN;
+    long wr_len = (long)H_LEN * E_LEN * R_LEN + (long)H_LEN * R_LEN * CTX_T;
     float* wr   = (float*)malloc(wr_len * sizeof(float));
     float* x    = (float*)malloc(T_LEN * E_LEN * sizeof(float));
     float* v    = (float*)malloc(T_LEN * OUT_DIM * sizeof(float));
@@ -179,21 +256,28 @@ int main(void) {
     for (long i = 0; i < T_LEN * E_LEN; i++) x[i] = 0.5f * frand_unit();
     for (long i = 0; i < T_LEN * OUT_DIM; i++) v[i] = 0.5f * frand_unit();
 
-    printf("=== nt_rrpram_broadcast_attention gradient check ===\n");
-    printf("dims: T=%d E=%d R=%d H=%d hd=%d  wr_len=%ld\n",
-           T_LEN, E_LEN, R_LEN, H_LEN, HD_LEN, wr_len);
+    printf("=== nt_rrpram_broadcast_attention gradient check (adversarial) ===\n");
+    printf("dims: T_input=%d ctx_T=%d E=%d R=%d H=%d hd=%d  wr_len=%ld\n",
+           T_LEN, CTX_T, E_LEN, R_LEN, H_LEN, HD_LEN, wr_len);
+    printf("(T_input != ctx_T — exposes rank/stride layout bugs)\n");
 
+    int n_fail = 0;
+
+    printf("\n--- sentinel layout check ---\n");
+    int sentinel = sentinel_layout_check();
+    n_fail += (sentinel < 0) ? 1 : sentinel;
+
+    printf("\n--- finite-diff gradient check ---\n");
     float *dwr = NULL, *dx = NULL, *dv = NULL;
     if (analytic_grads(wr, wr_len, x, T_LEN, E_LEN, v, OUT_DIM,
                        &dwr, &dx, &dv) < 0) {
         printf("FAIL: analytic forward returned error\n");
+        free(wr); free(x); free(v);
         return 1;
     }
 
     float L0 = forward_only(wr, wr_len, x, T_LEN, E_LEN, v, OUT_DIM);
     printf("L0 = %.6f (loss = sum(out))\n", L0);
-
-    int n_fail = 0;
 
     float* wr_copy = (float*)malloc(wr_len * sizeof(float));
     memcpy(wr_copy, wr, wr_len * sizeof(float));
