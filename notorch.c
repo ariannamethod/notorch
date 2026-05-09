@@ -1403,14 +1403,16 @@ void nt_tape_backward(int loss_idx) {
         }
 
         case NT_OP_RRPRAM_BCAST: {
-            /* Broadcast RRPRAM backward.
-             * Forward: mid = Σ_t x·Wr_a (broadcast); score = mid·Wr_b (per layer);
+            /* Broadcast RRPRAM backward (canonical Janus scale included).
+             * Forward: mid = Σ_t x·Wr_a (broadcast); raw_s = mid·Wr_b (per layer);
+             *          score = raw_s * sc, sc = 1/sqrt(D);
              *          attn[i,:] = softmax_causal(score)[0..i]; out[i] = Σ attn·v.
              * d_v[j,h,d] += Σ_i attn[i,j] · dout[i,h,d]
              * d_attn[i,j] = Σ_d dout[i,h,d] · v[j,h,d]
              * d_score[j] = Σ_i softmax_bwd(attn[i],d_attn[i])[j]   (only j ≤ i)
-             * d_mid[r] = Σ_j d_score[j] · Wr_b[h,r,j]
-             * d_Wr_b[h,r,j] = mid[r] · d_score[j]
+             * d_raw_s[j] = d_score[j] * sc                          (chain rule through scale)
+             * d_mid[r] = Σ_j d_raw_s[j] · Wr_b[h,r,j]
+             * d_Wr_b[h,r,j] = mid[r] · d_raw_s[j]
              * d_x[t,e] += Σ_r d_mid[r] · Wr_a[h,e,r]   (broadcast — same dxe added to every t)
              * d_Wr_a[h,e,r] += Σ_t x[t,e] · d_mid[r]
              */
@@ -1425,6 +1427,7 @@ void nt_tape_backward(int loss_idx) {
                 long combined_len = pwr->output->len;
                 int rank = (int)(combined_len / ((long)nr * (n_embd + T_r)));
                 long wra_total = (long)nr * n_embd * rank;
+                float sc = 1.0f / sqrtf((float)hd);
 
 #ifdef USE_CUDA
                 nt_tensor_ensure_cpu(pwr->output);
@@ -1468,7 +1471,7 @@ void nt_tape_backward(int loss_idx) {
                             for (int r = 0; r < rank; r++) {
                                 s += mid_buf[r] * pwr->output->data[wr_b_base + (long)r * T_r + j];
                             }
-                            all_scores[j] = s;
+                            all_scores[j] = s * sc;
                         }
 
                         for (int j = 0; j < T_r; j++) d_score_global[j] = 0.0f;
@@ -1504,7 +1507,8 @@ void nt_tape_backward(int loss_idx) {
 
                         for (int r = 0; r < rank; r++) d_mid_buf[r] = 0.0f;
                         for (int j = 0; j < T; j++) {
-                            float ds = d_score_global[j];
+                            /* Chain rule through forward scale: d_raw_s[j] = d_score[j] * sc. */
+                            float ds = d_score_global[j] * sc;
                             if (ds == 0.0f) continue;
                             for (int r = 0; r < rank; r++) {
                                 d_mid_buf[r] += ds * pwr->output->data[wr_b_base + (long)r * T_r + j];
@@ -3508,6 +3512,8 @@ int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
     int rank = (int)(combined_len / ((long)nr_heads * (n_embd + T_r)));
     if (rank < 1) { nt_tensor_free(out); return -1; }
     long wra_total = (long)nr_heads * n_embd * rank;
+    /* Canonical Janus attention scale: 1/sqrt(D) per dario/infer_v4.c:239-244 */
+    float sc = 1.0f / sqrtf((float)head_dim);
 
 #ifdef USE_CUDA
     nt_tensor_ensure_cpu(pwr->output);
@@ -3542,7 +3548,7 @@ int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
             for (int r = 0; r < rank; r++) {
                 s += mid_buf[r] * pwr->output->data[wr_b_base + (long)r * T_r + j];
             }
-            all_scores[j] = s;
+            all_scores[j] = s * sc;
         }
 
         for (int i = 0; i < T; i++) {
