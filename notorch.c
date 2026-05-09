@@ -103,6 +103,17 @@ static void nt_tensor_mark_cpu_dirty(nt_tensor* t) {
 }
 #endif
 
+/* Public sync wrapper for external callers (e.g. nanoarianna LoRA trainer that
+ * needs to read a parameter's CPU data after Chuck step). On non-USE_CUDA build
+ * this is a no-op since CPU is always authoritative. */
+void nt_tensor_sync_cpu(nt_tensor* t) {
+#ifdef USE_CUDA
+    nt_tensor_ensure_cpu(t);
+#else
+    (void)t;
+#endif
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // RNG
 // ═══════════════════════════════════════════════════════════════════════════════
