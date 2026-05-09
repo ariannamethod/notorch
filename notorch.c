@@ -2988,6 +2988,10 @@ int nt_seq_linear_t(int w_idx, int x_idx, int T) {
     }
 #endif
     if (!done_gpu) {
+#ifdef USE_CUDA
+        nt_tensor_ensure_cpu(pw->output);
+        nt_tensor_ensure_cpu(px->output);
+#endif
         float* W = pw->output->data;
         float* X = px->output->data;
         float* Y = out->data;
@@ -3067,6 +3071,13 @@ int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
     }
 #endif
     if (!done_gpu) {
+#ifdef USE_CUDA
+        nt_tensor_ensure_cpu(px->output);
+        if (gamma_idx >= 0 && gamma_idx < g_tape.count) {
+            nt_tape_entry* pg = &g_tape.entries[gamma_idx];
+            nt_tensor_ensure_cpu(pg->output);
+        }
+#endif
         for (int t = 0; t < T; t++) {
             float* x_t = px->output->data + t * D;
             float* o_t = out->data + t * D;
@@ -3264,6 +3275,11 @@ int nt_mh_causal_attention(int q_idx, int k_idx, int v_idx, int T, int head_dim)
     }
 #endif
 
+#ifdef USE_CUDA
+    nt_tensor_ensure_cpu(pq->output);
+    nt_tensor_ensure_cpu(pk->output);
+    nt_tensor_ensure_cpu(pv->output);
+#endif
     float* scores_buf = (float*)malloc(T * sizeof(float));
     for (int h = 0; h < n_heads; h++) {
         int ho = h * head_dim;
@@ -3905,6 +3921,10 @@ int nt_seq_cross_entropy(int logits_idx, int targets_idx, int T, int V) {
     }
 #endif
     if (!done_gpu) {
+#ifdef USE_CUDA
+        nt_tensor_ensure_cpu(pl->output);
+        nt_tensor_ensure_cpu(pt->output);
+#endif
         float total_loss = 0;
         for (int t = 0; t < T; t++) {
             float* logits_t = pl->output->data + t * V;
