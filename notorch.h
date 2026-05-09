@@ -66,6 +66,11 @@ void nt_tensor_rand(nt_tensor* t, float scale);
 // Fill with Xavier/Kaiming init
 void nt_tensor_xavier(nt_tensor* t, int fan_in, int fan_out);
 
+// Kaiming uniform initialization (variance = 1 / fan_in).
+// Uniform in [-sqrt(3/fan_in), +sqrt(3/fan_in)] — variance a²/3 = 1/fan_in.
+// Used for LoRA A matrix init (per-fan_in scale, NOT per-rank).
+void nt_kaiming_uniform_init(nt_tensor* t, int fan_in);
+
 // Reshape in-place (total elements must match). Returns 0 on success.
 int nt_tensor_reshape(nt_tensor* t, const int* new_shape, int new_ndim);
 
@@ -218,7 +223,18 @@ int  nt_tape_record3(nt_tensor* output, int op, int p1, int p2, int p3, float au
 int  nt_tape_record4(nt_tensor* output, int op, int p1, int p2, int p3, float aux, float aux2, float aux3, float aux4);
 int  nt_tape_param(nt_tensor* param);
 void nt_tape_no_decay(int idx);   // mark param as no-decay (embeddings)
-void nt_tape_freeze_param(int param_idx);  // freeze param (Chuck skips it) — for LoRA
+void nt_tape_freeze_param(int param_idx);  // post-registration freeze: entry + Chuck slot
+
+// Register a tape entry for `param` WITHOUT allocating a Chuck optimizer slot.
+// Sets entry->frozen=1 so backward skips dw accumulation. Use this for base
+// weights when downstream LoRA A,B (or other adapters) are the actual trainable
+// params: keeps Chuck's chuck_params[] array 1:1 with TRULY trainable entries
+// only, so optimizer slot indexing stays correct.
+//
+// Returns the tape entry index (mirrors nt_tape_param's return contract).
+// Contrast with nt_tape_param() + nt_tape_freeze_param() which still consume
+// a Chuck slot and can mis-route LoRA grads in current Chuck step indexing.
+int  nt_tape_param_frozen(nt_tensor* param);
 
 // Backward pass
 void nt_tape_backward(int loss_idx);
@@ -588,6 +604,75 @@ nt_tensor** nt_load(const char* path, int* n_params);
 void nt_hebbian_step(float* A, float* B, int out_dim, int in_dim, int rank,
                      const float* x, const float* dy, float signal,
                      float lr, float decay);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NOTORCH LoRA — low-rank adapters on a frozen base weight
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Classic LoRA: y = W_frozen @ x + (alpha/rank) * B @ (A @ x).
+// A : [rank, in_dim] — kaiming_uniform_(fan_in=in_dim) init, trainable
+// B : [out_dim, rank] — zeros init, trainable
+// W : [out_dim, in_dim] — frozen base weight, registered separately via
+//                         nt_tape_param_frozen() so it does not consume a
+//                         Chuck optimizer slot.
+//
+// LoRA pair owns persistent A,B tensors on the heap. The trainer's per-step
+// loop calls nt_lora_forward() which registers A,B into THAT step's tape via
+// nt_tape_param() (allocating Chuck slots ONLY for A,B — clean indexing).
+// Chuck step then advances A,B's optimizer state correctly while base entries
+// are skipped (they have no Chuck slots).
+
+typedef struct {
+    nt_tensor* A;          // [rank, in_dim] persistent, trainable
+    nt_tensor* B;          // [out_dim, rank] persistent, trainable
+    int        rank;
+    float      alpha;
+    float      scaling;    // alpha / rank
+    int        in_dim;
+    int        out_dim;
+} nt_lora_pair;
+
+// Allocate persistent A, B; init A ~ kaiming_uniform_(fan_in=in_dim), B = 0.
+// Returns 0 on success, -1 on alloc fail.
+int  nt_lora_init(nt_lora_pair* lora, int in_dim, int out_dim, int rank, float alpha);
+
+// Free persistent A, B. Call once at trainer shutdown.
+void nt_lora_free(nt_lora_pair* lora);
+
+// Per-step forward: registers persistent A,B as trainable into the active tape
+// (via nt_tape_param), then composes
+//     y = nt_seq_linear(w_idx, x_idx, T) + scaling * nt_seq_linear(b_tape_idx,
+//                                              nt_seq_linear(a_tape_idx, x_idx, T), T)
+// Returns the tape entry index of y (final sum). Must be called inside an
+// active nt_tape_start()/nt_tape_clear() pair. -1 on failure.
+int  nt_lora_forward(int w_idx, nt_lora_pair* lora, int x_idx, int T);
+
+// Single-artifact save: writes ALL targets × all layers into one file.
+// `pairs` is flat-indexed [layer * num_targets + target_idx].
+// Calls nt_tensor_ensure_cpu(A,B) before reading host buffers (GPU-safe).
+// Returns 0 on success, -1 on I/O / format fail.
+//
+// File format:
+//   [u32 magic 0x4C4F5241 'LORA'][u32 version=1]
+//   [u32 num_targets][per-target: u8 namelen, name bytes]
+//   [u32 num_layers][u32 rank][u32 alpha_int][u32 in_dim][u32 out_dim]
+//   [for each L in [0,num_layers): for each T in [0,num_targets):
+//       A floats (rank × in_dim), B floats (out_dim × rank)]
+int  nt_lora_save(const nt_lora_pair* pairs, int num_layers, int num_targets,
+                  const char* const* target_names, const char* path);
+
+// Single-artifact load. Caller pre-allocates pairs (init'd via nt_lora_init).
+// Verifies magic/version/dims/rank/alpha and target_names against caller's,
+// then reads A,B into caller's persistent tensors. -1 on mismatch / I/O fail.
+int  nt_lora_load(nt_lora_pair* pairs, int num_layers, int num_targets,
+                  const char* const* target_names, const char* path);
+
+// Merge LoRA delta into a CPU float buffer:
+//     W_dst[i,j] = W_frozen[i,j] + scaling * sum_k B[i,k] * A[k,j]
+// Calls nt_tensor_ensure_cpu(lora->A,B) internally. W_frozen and W_dst may
+// alias for in-place merge. Layout: row-major [out_dim, in_dim].
+void nt_lora_merge_into(float* W_dst, const float* W_frozen,
+                        const nt_lora_pair* lora, int in_dim, int out_dim);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES

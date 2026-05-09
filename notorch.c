@@ -238,6 +238,13 @@ void nt_tensor_xavier(nt_tensor* t, int fan_in, int fan_out) {
     nt_tensor_rand(t, scale);
 }
 
+void nt_kaiming_uniform_init(nt_tensor* t, int fan_in) {
+    // Uniform in [-sqrt(3/fan_in), +sqrt(3/fan_in)] → variance a²/3 = 1/fan_in.
+    if (!t || fan_in <= 0) return;
+    float scale = sqrtf(3.0f / (float)fan_in);
+    nt_tensor_rand(t, scale);
+}
+
 int nt_tensor_reshape(nt_tensor* t, const int* new_shape, int new_ndim) {
     if (!t || new_ndim <= 0 || new_ndim > NT_MAX_DIMS) return -1;
     int total = 1;
@@ -385,6 +392,9 @@ int nt_tape_param(nt_tensor* param) {
     e->aux2 = 0;
     e->is_param = 1;
     e->no_decay = 0;
+    e->frozen = 0;       // explicit reset — prevents sticky frozen flag from
+                         // a previous nt_tape_param_frozen() that reused this slot.
+                         // Per Codex notorch-pass-1 P2 #1.
 
     if (g_tape.n_params < NT_TAPE_MAX_PARAMS) {
         int pi = g_tape.n_params;
@@ -422,6 +432,30 @@ void nt_tape_freeze_param(int param_idx) {
     // Note: param_idx in this API is the *tape entry index*, returned by nt_tape_param().
     if (param_idx >= 0 && param_idx < g_tape.count)
         g_tape.entries[param_idx].frozen = 1;
+}
+
+int nt_tape_param_frozen(nt_tensor* param) {
+    // Mirror nt_tape_param body, but DO NOT allocate a Chuck optimizer slot.
+    // Set entry->frozen=1 so backward skips dw accumulation.
+    if (!g_tape.active || g_tape.count >= NT_TAPE_MAX_ENTRIES) return -1;
+    int idx = g_tape.count;
+    nt_tape_entry* e = &g_tape.entries[idx];
+    e->output = param;
+    nt_tensor_ref(param);
+    e->grad = NULL;
+    e->op = NT_OP_NONE;
+    e->parent1 = -1;
+    e->parent2 = -1;
+    e->parent3 = -1;
+    e->aux = 0;
+    e->aux2 = 0;
+    e->is_param = 1;
+    e->no_decay = 0;
+    e->frozen = 1;            // backward skips dw via this flag (notorch.c:845 path)
+    // INTENTIONAL: do NOT increment g_tape.n_params, do NOT touch g_tape.adam[].
+    // Chuck slots stay 1:1 with truly trainable params registered via nt_tape_param().
+    g_tape.count++;
+    return idx;
 }
 
 // Find tape entry by tensor pointer
@@ -4455,4 +4489,241 @@ void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n) {
         out[i] = s;
     }
 #endif
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NOTORCH LoRA — low-rank adapter implementation
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Forward:  y = W @ x + (alpha/rank) * B @ (A @ x)
+// A: [rank, in_dim]  → kaiming_uniform_(fan_in=in_dim) init
+// B: [out_dim, rank] → zeros init  (so initial Δ output = 0)
+// W is supplied externally (via existing tape entry), frozen via nt_tape_param_frozen().
+
+#define NT_LORA_MAGIC   0x4C4F5241u  // 'LORA'
+#define NT_LORA_VERSION 1u
+
+int nt_lora_init(nt_lora_pair* lora, int in_dim, int out_dim, int rank, float alpha) {
+    if (!lora || in_dim <= 0 || out_dim <= 0 || rank <= 0) return -1;
+    int a_shape[2] = { rank, in_dim };
+    int b_shape[2] = { out_dim, rank };
+    lora->A = nt_tensor_new_shape(a_shape, 2);
+    lora->B = nt_tensor_new_shape(b_shape, 2);
+    if (!lora->A || !lora->B) {
+        if (lora->A) nt_tensor_free(lora->A);
+        if (lora->B) nt_tensor_free(lora->B);
+        lora->A = NULL; lora->B = NULL;
+        return -1;
+    }
+    nt_kaiming_uniform_init(lora->A, in_dim);
+    // B already zero from nt_tensor_new_shape (calloc-backed), but be explicit:
+    for (int i = 0; i < lora->B->len; i++) lora->B->data[i] = 0.0f;
+    lora->rank    = rank;
+    lora->alpha   = alpha;
+    lora->scaling = alpha / (float)rank;
+    lora->in_dim  = in_dim;
+    lora->out_dim = out_dim;
+    return 0;
+}
+
+void nt_lora_free(nt_lora_pair* lora) {
+    if (!lora) return;
+    if (lora->A) { nt_tensor_free(lora->A); lora->A = NULL; }
+    if (lora->B) { nt_tensor_free(lora->B); lora->B = NULL; }
+}
+
+int nt_lora_forward(int w_idx, nt_lora_pair* lora, int x_idx, int T) {
+    if (!lora || !lora->A || !lora->B) return -1;
+    if (w_idx < 0 || x_idx < 0) return -1;
+    // Register persistent A,B as trainable in this step's tape — Chuck slot
+    // allocation for them happens here, AFTER any base nt_tape_param_frozen()
+    // calls, so Chuck slot indices stay clean for the optimizer.
+    int a_idx = nt_tape_param(lora->A);
+    int b_idx = nt_tape_param(lora->B);
+    if (a_idx < 0 || b_idx < 0) return -1;
+
+    // Compose y = nt_seq_linear(w, x, T) + scaling * nt_seq_linear(b, nt_seq_linear(a, x, T), T)
+    int wx_idx = nt_seq_linear(w_idx, x_idx, T);     // base: W @ x
+    if (wx_idx < 0) return -1;
+    int ax_idx = nt_seq_linear(a_idx, x_idx, T);     // A @ x  → [T, rank]
+    if (ax_idx < 0) return -1;
+    int bax_idx = nt_seq_linear(b_idx, ax_idx, T);   // B @ (A @ x)  → [T, out_dim]
+    if (bax_idx < 0) return -1;
+    int scaled_idx = nt_scale(bax_idx, lora->scaling);
+    if (scaled_idx < 0) return -1;
+    int y_idx = nt_add(wx_idx, scaled_idx);
+    return y_idx;
+}
+
+// ── LoRA file I/O ──
+//
+// Format (little-endian, packed):
+//   [u32 magic 0x4C4F5241 'LORA']
+//   [u32 version=1]
+//   [u32 num_targets]
+//   [for each target T in [0,num_targets): u8 namelen, namelen × ascii bytes]
+//   [u32 num_layers][u32 rank][u32 alpha_int (= (uint32_t)(alpha*1000))]
+//   [u32 in_dim][u32 out_dim]
+//   [for each layer L in [0,num_layers), for each target T in [0,num_targets):
+//       A floats (rank × in_dim), B floats (out_dim × rank)]
+
+int nt_lora_save(const nt_lora_pair* pairs, int num_layers, int num_targets,
+                 const char* const* target_names, const char* path) {
+    if (!pairs || !target_names || !path || num_layers <= 0 || num_targets <= 0) return -1;
+
+    // Validate ALL pairs FIRST (per Codex notorch-pass-1 P2 #2 — fopen 'wb' truncates,
+    // so checking dimensions before opening keeps any pre-existing checkpoint safe).
+    int rank = pairs[0].rank;
+    int in_dim = pairs[0].in_dim;
+    int out_dim = pairs[0].out_dim;
+    float alpha = pairs[0].alpha;
+    for (int i = 0; i < num_layers * num_targets; i++) {
+        if (pairs[i].rank != rank || pairs[i].in_dim != in_dim ||
+            pairs[i].out_dim != out_dim || pairs[i].alpha != alpha) {
+            return -1;  // fail before touching the destination file
+        }
+        if (!pairs[i].A || !pairs[i].B) return -1;
+    }
+
+    // Write to a temp file first, then atomically rename — guards against partial
+    // writes leaving a corrupt checkpoint if the process is killed mid-save.
+    char tmp_path[2048];
+    int n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+    if (n < 0 || n >= (int)sizeof(tmp_path)) return -1;
+    FILE* f = fopen(tmp_path, "wb");
+    if (!f) return -1;
+
+    uint32_t magic = NT_LORA_MAGIC, version = NT_LORA_VERSION;
+    uint32_t nt_targets = (uint32_t)num_targets;
+    uint32_t nt_layers = (uint32_t)num_layers;
+    uint32_t nt_rank = (uint32_t)rank;
+    // Store alpha as raw float bytes (per Codex notorch-pass-1 P3 #4 — int-milli
+    // is lossy for non-rounded alpha values like 16.5 / 13.7 / etc).
+    union { float f; uint32_t u; } alpha_bits = { .f = alpha };
+    uint32_t nt_alpha_bits = alpha_bits.u;
+    uint32_t nt_in = (uint32_t)in_dim;
+    uint32_t nt_out = (uint32_t)out_dim;
+
+    if (fwrite(&magic, 4, 1, f) != 1) { fclose(f); remove(tmp_path); return -1; }
+    if (fwrite(&version, 4, 1, f) != 1) { fclose(f); remove(tmp_path); return -1; }
+    if (fwrite(&nt_targets, 4, 1, f) != 1) { fclose(f); remove(tmp_path); return -1; }
+
+    for (int t = 0; t < num_targets; t++) {
+        const char* name = target_names[t];
+        size_t nl = name ? strlen(name) : 0;
+        if (nl > 255) nl = 255;
+        uint8_t bnl = (uint8_t)nl;
+        if (fwrite(&bnl, 1, 1, f) != 1) { fclose(f); remove(tmp_path); return -1; }
+        if (nl > 0 && fwrite(name, 1, nl, f) != nl) { fclose(f); remove(tmp_path); return -1; }
+    }
+
+    if (fwrite(&nt_layers, 4, 1, f) != 1) { fclose(f); remove(tmp_path); return -1; }
+    if (fwrite(&nt_rank, 4, 1, f) != 1) { fclose(f); remove(tmp_path); return -1; }
+    if (fwrite(&nt_alpha_bits, 4, 1, f) != 1) { fclose(f); remove(tmp_path); return -1; }
+    if (fwrite(&nt_in, 4, 1, f) != 1) { fclose(f); remove(tmp_path); return -1; }
+    if (fwrite(&nt_out, 4, 1, f) != 1) { fclose(f); remove(tmp_path); return -1; }
+
+    int a_n = rank * in_dim;
+    int b_n = out_dim * rank;
+    for (int L = 0; L < num_layers; L++) {
+        for (int T = 0; T < num_targets; T++) {
+            const nt_lora_pair* p = &pairs[L * num_targets + T];
+            // Sync GPU mirror to CPU before reading host buffer (per Codex Pass 3 P1 #5)
+#ifdef USE_CUDA
+            nt_tensor_ensure_cpu(p->A);
+            nt_tensor_ensure_cpu(p->B);
+#endif
+            if ((int)fwrite(p->A->data, sizeof(float), a_n, f) != a_n) { fclose(f); remove(tmp_path); return -1; }
+            if ((int)fwrite(p->B->data, sizeof(float), b_n, f) != b_n) { fclose(f); remove(tmp_path); return -1; }
+        }
+    }
+    if (fflush(f) != 0) { fclose(f); remove(tmp_path); return -1; }
+    fclose(f);
+    // Atomic rename: only on Unix; on Windows rename(2) fails if dest exists.
+    // For our pod-side flow this is Linux/macOS, so rename(2) is atomic.
+    if (rename(tmp_path, path) != 0) { remove(tmp_path); return -1; }
+    return 0;
+}
+
+int nt_lora_load(nt_lora_pair* pairs, int num_layers, int num_targets,
+                 const char* const* target_names, const char* path) {
+    if (!pairs || !target_names || !path || num_layers <= 0 || num_targets <= 0) return -1;
+    FILE* f = fopen(path, "rb");
+    if (!f) return -1;
+    uint32_t magic, version, nt_targets, nt_layers, nt_rank, nt_in, nt_out;
+    if (fread(&magic, 4, 1, f) != 1 || magic != NT_LORA_MAGIC) { fclose(f); return -1; }
+    if (fread(&version, 4, 1, f) != 1 || version != NT_LORA_VERSION) { fclose(f); return -1; }
+    if (fread(&nt_targets, 4, 1, f) != 1 || (int)nt_targets != num_targets) { fclose(f); return -1; }
+
+    char buf[256];
+    for (int t = 0; t < num_targets; t++) {
+        uint8_t bnl;
+        if (fread(&bnl, 1, 1, f) != 1) { fclose(f); return -1; }
+        if (bnl > 0 && fread(buf, 1, bnl, f) != bnl) { fclose(f); return -1; }
+        buf[bnl] = '\0';
+        if (target_names[t] && strcmp(buf, target_names[t]) != 0) { fclose(f); return -1; }
+    }
+
+    if (fread(&nt_layers, 4, 1, f) != 1 || (int)nt_layers != num_layers) { fclose(f); return -1; }
+    if (fread(&nt_rank, 4, 1, f) != 1) { fclose(f); return -1; }
+    uint32_t nt_alpha_bits;
+    if (fread(&nt_alpha_bits, 4, 1, f) != 1) { fclose(f); return -1; }
+    if (fread(&nt_in, 4, 1, f) != 1) { fclose(f); return -1; }
+    if (fread(&nt_out, 4, 1, f) != 1) { fclose(f); return -1; }
+
+    int rank = (int)nt_rank, in_dim = (int)nt_in, out_dim = (int)nt_out;
+    union { uint32_t u; float f; } alpha_bits = { .u = nt_alpha_bits };
+    float alpha = alpha_bits.f;
+    // Compare alpha with tolerance — float exact equality is brittle even when
+    // load round-trips raw bytes (compiler / fp env may diverge).
+    for (int i = 0; i < num_layers * num_targets; i++) {
+        if (pairs[i].rank != rank || pairs[i].in_dim != in_dim ||
+            pairs[i].out_dim != out_dim) {
+            fclose(f); return -1;
+        }
+        float diff = pairs[i].alpha - alpha;
+        if (diff < 0) diff = -diff;
+        if (diff > 1e-4f) { fclose(f); return -1; }
+    }
+
+    int a_n = rank * in_dim, b_n = out_dim * rank;
+    for (int L = 0; L < num_layers; L++) {
+        for (int T = 0; T < num_targets; T++) {
+            nt_lora_pair* p = &pairs[L * num_targets + T];
+            if ((int)fread(p->A->data, sizeof(float), a_n, f) != a_n) { fclose(f); return -1; }
+            if ((int)fread(p->B->data, sizeof(float), b_n, f) != b_n) { fclose(f); return -1; }
+#ifdef USE_CUDA
+            // Mark CPU mirror authoritative; next nt_tensor_ensure_gpu uploads.
+            p->A->gpu_valid = 0;
+            p->B->gpu_valid = 0;
+#endif
+        }
+    }
+    fclose(f);
+    return 0;
+}
+
+void nt_lora_merge_into(float* W_dst, const float* W_frozen,
+                        const nt_lora_pair* lora, int in_dim, int out_dim) {
+    if (!W_dst || !W_frozen || !lora || !lora->A || !lora->B) return;
+    if (in_dim <= 0 || out_dim <= 0) return;
+    if (lora->in_dim != in_dim || lora->out_dim != out_dim) return;
+#ifdef USE_CUDA
+    nt_tensor_ensure_cpu(lora->A);
+    nt_tensor_ensure_cpu(lora->B);
+#endif
+    int rank = lora->rank;
+    float scale = lora->scaling;
+    // W_dst[i,j] = W_frozen[i,j] + scale * sum_k B[i,k] * A[k,j]
+    // Compute Δ = B @ A first (out × in), then add to W_frozen → W_dst.
+    // Use existing nt_blas_mm: C[m,n] = A[m,k] @ B[k,n].
+    float* delta = (float*)malloc((size_t)out_dim * in_dim * sizeof(float));
+    if (!delta) return;
+    nt_blas_mm(delta, lora->B->data, lora->A->data, out_dim, rank, in_dim);
+    for (int i = 0; i < out_dim; i++) {
+        for (int j = 0; j < in_dim; j++) {
+            W_dst[i * in_dim + j] = W_frozen[i * in_dim + j] + scale * delta[i * in_dim + j];
+        }
+    }
+    free(delta);
 }
