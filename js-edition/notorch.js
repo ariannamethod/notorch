@@ -74,6 +74,19 @@ export class Tensor {
     this.shape = newShape.slice();
     return this;
   }
+
+  /**
+   * In-place Kaiming uniform init (mirrors C nt_kaiming_uniform_init).
+   * Samples uniformly from [-sqrt(3/fanIn), +sqrt(3/fanIn)] so Var = 1/fanIn.
+   * Note: scale is per fan_in, NOT per rank — this matches PyTorch's
+   * `kaiming_uniform_(a=sqrt(5))` convention used for LoRA A init.
+   */
+  kaimingUniform_(fanIn) {
+    if (fanIn <= 0) throw new Error(`kaimingUniform_: fanIn must be > 0, got ${fanIn}`);
+    const scale = Math.sqrt(3 / fanIn);
+    for (let i = 0; i < this.len; i++) this.data[i] = (Math.random() * 2 - 1) * scale;
+    return this;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -189,6 +202,25 @@ export class Tape {
       gradHist: new Float32Array(NT_CHUCK_WINDOW),
       dampen: 1.0, frozen: 0, pos: 0, full: 0, stag: 0,
     });
+    return idx;
+  }
+
+  /**
+   * Mark a leaf as a FROZEN parameter (mirrors C nt_tape_param_frozen).
+   * Like param() but does NOT allocate an optimizer slot — Chuck/SGD slots
+   * stay 1:1 with truly trainable params. Backward also skips dw accumulation
+   * for frozen entries (see accGrad guard on e.frozen above).
+   *
+   * Use for LoRA base weights: nt_tape_param_frozen(W) before nt_tape_param(A),
+   * so A,B occupy clean leading Chuck slots while W stays read-only.
+   */
+  paramFrozen(tensor) {
+    const idx = this.leaf(tensor);
+    const e = this.entries[idx];
+    e.isParam = true;
+    e.frozen = true;
+    // INTENTIONAL: do NOT push to adamState / chuckParams. Optimizer loops
+    // skip via `!e.grad || e.frozen` and never consume an optimizer slot.
     return idx;
   }
 
@@ -1299,6 +1331,7 @@ export class Notorch {
   // ═════════════════════════════════════════════════════════════════════════
 
   param(tensor) { return this.tape.param(tensor); }
+  paramFrozen(tensor) { return this.tape.paramFrozen(tensor); }
   leaf(tensor) { return this.tape.leaf(tensor); }
   noDecay(idx) { this.tape.noDecay(idx); }
   freezeParam(idx) { this.tape.freezeParam(idx); }
@@ -2091,6 +2124,319 @@ export class KVCache {
   Vtensor() { return new Tensor(this.V.subarray(0, this.length * this.dim), [this.length, this.dim]); }
 
   reset() { this.length = 0; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOTORCH LoRA — low-rank adapters on a frozen base weight
+// Mirrors notorch.c nt_lora_* (commit f995aae / 1de7c69, branch
+// lora-primitives-restore-2026-05-10). File format is byte-compatible with
+// the C side so checkpoints cross-load between C trainers and JS inference.
+//
+// Forward:  y = W_frozen @ x + (alpha/rank) * B @ (A @ x)
+//   A : [rank, in_dim]   — kaimingUniform_(fanIn=inDim) init, trainable
+//   B : [out_dim, rank]  — zeros init  (so initial Δ output = 0)
+//   W : [out_dim, in_dim] — supplied externally via tape.paramFrozen(W)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const NT_LORA_MAGIC   = 0x4C4F5241;  // 'LORA'
+const NT_LORA_VERSION = 1;
+
+/**
+ * LoRA pair: persistent A, B tensors plus rank / alpha / scaling metadata.
+ * Owns its tensors across training steps; forward() re-registers A and B
+ * into each step's tape so Chuck advances their optimizer state correctly.
+ */
+export class LoRAPair {
+  /**
+   * @param {number} inDim   input feature dim
+   * @param {number} outDim  output feature dim
+   * @param {number} rank    low-rank dim (typically 8..64)
+   * @param {number} alpha   LoRA alpha (scaling = alpha / rank)
+   */
+  constructor(inDim, outDim, rank, alpha) {
+    if (inDim <= 0 || outDim <= 0 || rank <= 0) {
+      throw new Error(`LoRAPair: dims must be > 0 (in=${inDim}, out=${outDim}, rank=${rank})`);
+    }
+    this.inDim   = inDim;
+    this.outDim  = outDim;
+    this.rank    = rank;
+    this.alpha   = alpha;
+    this.scaling = alpha / rank;
+    this.A = Tensor.zeros([rank, inDim]).kaimingUniform_(inDim);
+    this.B = Tensor.zeros([outDim, rank]);   // zeros init — Δ output = 0 at step 0
+  }
+
+  /**
+   * Per-step forward: registers A,B as trainable in the active tape, then
+   * composes y = seqLinear(W,x,T) + scaling * seqLinear(B, seqLinear(A,x,T), T).
+   *
+   * MUST be called inside an active tape (caller's responsibility), and the
+   * base weight W identified by `wIdx` MUST have been registered via
+   * `tape.paramFrozen(W)` so optimizer slot indexing stays clean.
+   *
+   * @param {Notorch} engine  notorch engine (provides tape + seqLinear + add + scale)
+   * @param {number}  wIdx    tape entry index of the frozen base weight W
+   * @param {number}  xIdx    tape entry index of input x [T, inDim]
+   * @param {number}  T       sequence length
+   * @returns {number} tape entry index of y (the final sum)
+   */
+  forward(engine, wIdx, xIdx, T) {
+    if (wIdx < 0 || xIdx < 0) throw new Error("LoRAPair.forward: invalid wIdx/xIdx");
+    // Register persistent A,B as trainable in THIS step's tape. Chuck slot
+    // allocation for them happens here, AFTER any base paramFrozen() calls,
+    // so Chuck slot indices stay clean for the optimizer.
+    const aIdx = engine.tape.param(this.A);
+    const bIdx = engine.tape.param(this.B);
+    // Compose y = W@x + scaling * B@(A@x)
+    const wxIdx     = engine.seqLinear(wIdx, xIdx, T);    // [T, outDim]
+    const axIdx     = engine.seqLinear(aIdx, xIdx, T);    // [T, rank]
+    const baxIdx    = engine.seqLinear(bIdx, axIdx, T);   // [T, outDim]
+    const scaledIdx = engine.scale(baxIdx, this.scaling);
+    return engine.add(wxIdx, scaledIdx);
+  }
+}
+
+/**
+ * Serialize all LoRA pairs into a single binary blob (mirrors C nt_lora_save).
+ * `pairs` is flat-indexed [layer * numTargets + targetIdx]; all pairs must
+ * share rank / alpha / inDim / outDim (single-shape per artifact — see
+ * notorch/CLAUDE.md "Single-shape nt_lora_save per file").
+ *
+ * File format (little-endian, byte-compatible with C):
+ *   [u32 magic 'LORA'][u32 version=1]
+ *   [u32 num_targets]
+ *   [per-target: u8 namelen, namelen × ASCII bytes]
+ *   [u32 num_layers][u32 rank]
+ *   [f32 alpha (raw IEEE-754 bytes — NOT alpha*1000; header docstring stale)]
+ *   [u32 in_dim][u32 out_dim]
+ *   [for L in [0,num_layers): for T in [0,num_targets):
+ *       A floats (rank*in_dim), B floats (out_dim*rank)]
+ *
+ * @param {LoRAPair[]} pairs       flat-indexed [layer * numTargets + targetIdx]
+ * @param {number}     numLayers
+ * @param {number}     numTargets
+ * @param {string[]}   targetNames length=numTargets, ASCII, ≤255 bytes each
+ * @returns {Uint8Array} binary blob; caller persists (e.g. fs.writeFileSync in Node)
+ */
+export function saveLoRA(pairs, numLayers, numTargets, targetNames) {
+  if (!Array.isArray(pairs) || !Array.isArray(targetNames)) {
+    throw new Error("saveLoRA: pairs and targetNames must be arrays");
+  }
+  if (numLayers <= 0 || numTargets <= 0) {
+    throw new Error(`saveLoRA: numLayers/numTargets must be > 0 (got ${numLayers}, ${numTargets})`);
+  }
+  if (targetNames.length !== numTargets) {
+    throw new Error(`saveLoRA: targetNames.length=${targetNames.length} != numTargets=${numTargets}`);
+  }
+  if (pairs.length !== numLayers * numTargets) {
+    throw new Error(`saveLoRA: pairs.length=${pairs.length} != numLayers*numTargets=${numLayers * numTargets}`);
+  }
+
+  // Validate ALL pairs first (matches C: dimension check pre-fopen to avoid
+  // truncating a destination file on shape mismatch — JS has no destination
+  // yet, but the discipline catches the bug at the same point).
+  const rank   = pairs[0].rank;
+  const inDim  = pairs[0].inDim;
+  const outDim = pairs[0].outDim;
+  const alpha  = pairs[0].alpha;
+  for (let i = 0; i < pairs.length; i++) {
+    const p = pairs[i];
+    if (!p || !p.A || !p.B) throw new Error(`saveLoRA: pair[${i}] missing A/B`);
+    if (p.rank !== rank || p.inDim !== inDim || p.outDim !== outDim || p.alpha !== alpha) {
+      throw new Error(`saveLoRA: pair[${i}] shape/alpha mismatch (single-shape per artifact)`);
+    }
+  }
+
+  // Pre-encode names so we know the total byte size up front.
+  const encoder = new TextEncoder();
+  const nameBytes = new Array(numTargets);
+  let namesByteLen = 0;
+  for (let t = 0; t < numTargets; t++) {
+    const name = targetNames[t] || "";
+    let bytes = encoder.encode(name);
+    if (bytes.length > 255) bytes = bytes.subarray(0, 255);   // C clamps to u8
+    nameBytes[t] = bytes;
+    namesByteLen += 1 + bytes.length;   // u8 namelen + bytes
+  }
+
+  const aN = rank * inDim;
+  const bN = outDim * rank;
+  const headerBytes = 4 + 4 + 4 + namesByteLen + 4 + 4 + 4 + 4 + 4;   // magic..outDim
+  const tensorBytes = numLayers * numTargets * (aN + bN) * 4;
+  const totalBytes  = headerBytes + tensorBytes;
+
+  const buf = new ArrayBuffer(totalBytes);
+  const dv  = new DataView(buf);
+  const u8  = new Uint8Array(buf);
+  let off = 0;
+
+  dv.setUint32(off, NT_LORA_MAGIC, true);  off += 4;
+  dv.setUint32(off, NT_LORA_VERSION, true); off += 4;
+  dv.setUint32(off, numTargets, true);     off += 4;
+  for (let t = 0; t < numTargets; t++) {
+    const nb = nameBytes[t];
+    u8[off++] = nb.length;
+    u8.set(nb, off);
+    off += nb.length;
+  }
+  dv.setUint32(off, numLayers, true);      off += 4;
+  dv.setUint32(off, rank, true);           off += 4;
+  // Alpha as raw f32 little-endian (NOT alpha*1000 — see notorch/CLAUDE.md;
+  // we verified empirically that nt_lora_save writes float bits).
+  dv.setFloat32(off, alpha, true);         off += 4;
+  dv.setUint32(off, inDim, true);          off += 4;
+  dv.setUint32(off, outDim, true);         off += 4;
+
+  // Tensor payload — A then B per pair, layer-major.
+  // Use Float32Array view at correct offset for fast bulk copy.
+  // NOTE: the offset is always 4-byte aligned because everything before
+  // the tensor block sums to (3*4 + namesByteLen + 5*4) bytes; the only
+  // odd-sized chunks are the name bytes themselves, but the C side writes
+  // them with no padding and reads them back the same way — so any padding
+  // here would break cross-load. We must write floats by setFloat32 per
+  // element OR pre-copy the whole tensor block to a temp aligned buffer.
+  // The names sum to (numTargets * 1) + sum(name_bytes), which is generally
+  // NOT a multiple of 4 → use DataView.setFloat32 per-element to stay safe
+  // across all alignments.
+  for (let L = 0; L < numLayers; L++) {
+    for (let T = 0; T < numTargets; T++) {
+      const p = pairs[L * numTargets + T];
+      const aData = p.A.data;
+      for (let k = 0; k < aN; k++) { dv.setFloat32(off, aData[k], true); off += 4; }
+      const bData = p.B.data;
+      for (let k = 0; k < bN; k++) { dv.setFloat32(off, bData[k], true); off += 4; }
+    }
+  }
+
+  return new Uint8Array(buf);
+}
+
+/**
+ * Deserialize a LoRA artifact (mirrors C nt_lora_load). Caller pre-allocates
+ * `pairs` (via `new LoRAPair(...)`) so dims/rank/alpha can be validated
+ * against the file header before any A/B bytes are read.
+ *
+ * Validates magic, version, numTargets, numLayers, dims, rank, alpha
+ * (tolerance 1e-4 — float exact equality is brittle even across raw-byte
+ * round-trips), and target names. Throws on any mismatch.
+ *
+ * @param {Uint8Array} blob        binary artifact (e.g. fs.readFileSync output)
+ * @param {LoRAPair[]} pairs       flat-indexed, length=numLayers*numTargets
+ * @param {number}     numLayers
+ * @param {number}     numTargets
+ * @param {string[]}   targetNames length=numTargets
+ */
+export function loadLoRA(blob, pairs, numLayers, numTargets, targetNames) {
+  if (!(blob instanceof Uint8Array)) throw new Error("loadLoRA: blob must be Uint8Array");
+  if (!Array.isArray(pairs) || !Array.isArray(targetNames)) {
+    throw new Error("loadLoRA: pairs and targetNames must be arrays");
+  }
+  if (numLayers <= 0 || numTargets <= 0) {
+    throw new Error(`loadLoRA: numLayers/numTargets must be > 0`);
+  }
+  if (pairs.length !== numLayers * numTargets) {
+    throw new Error(`loadLoRA: pairs.length=${pairs.length} != ${numLayers * numTargets}`);
+  }
+  if (targetNames.length !== numTargets) {
+    throw new Error(`loadLoRA: targetNames.length=${targetNames.length} != numTargets=${numTargets}`);
+  }
+
+  const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+  let off = 0;
+  const decoder = new TextDecoder("utf-8");
+
+  const magic = dv.getUint32(off, true); off += 4;
+  if (magic !== NT_LORA_MAGIC) throw new Error(`loadLoRA: bad magic 0x${magic.toString(16)}`);
+  const version = dv.getUint32(off, true); off += 4;
+  if (version !== NT_LORA_VERSION) throw new Error(`loadLoRA: unsupported version ${version}`);
+  const fileNumTargets = dv.getUint32(off, true); off += 4;
+  if (fileNumTargets !== numTargets) {
+    throw new Error(`loadLoRA: numTargets mismatch (file=${fileNumTargets}, caller=${numTargets})`);
+  }
+
+  for (let t = 0; t < numTargets; t++) {
+    const nl = blob[off]; off += 1;
+    const nameBytes = blob.subarray(off, off + nl);
+    off += nl;
+    const name = decoder.decode(nameBytes);
+    if (targetNames[t] != null && name !== targetNames[t]) {
+      throw new Error(`loadLoRA: target[${t}] name mismatch (file="${name}", caller="${targetNames[t]}")`);
+    }
+  }
+
+  const fileNumLayers = dv.getUint32(off, true); off += 4;
+  if (fileNumLayers !== numLayers) {
+    throw new Error(`loadLoRA: numLayers mismatch (file=${fileNumLayers}, caller=${numLayers})`);
+  }
+  const rank   = dv.getUint32(off, true);  off += 4;
+  const alpha  = dv.getFloat32(off, true); off += 4;
+  const inDim  = dv.getUint32(off, true);  off += 4;
+  const outDim = dv.getUint32(off, true);  off += 4;
+
+  // Validate caller's pre-allocated pairs against the header (matches C).
+  for (let i = 0; i < pairs.length; i++) {
+    const p = pairs[i];
+    if (p.rank !== rank || p.inDim !== inDim || p.outDim !== outDim) {
+      throw new Error(`loadLoRA: pair[${i}] dim mismatch (file rank=${rank} in=${inDim} out=${outDim})`);
+    }
+    if (Math.abs(p.alpha - alpha) > 1e-4) {
+      throw new Error(`loadLoRA: pair[${i}] alpha mismatch (file=${alpha}, caller=${p.alpha})`);
+    }
+  }
+
+  const aN = rank * inDim;
+  const bN = outDim * rank;
+  for (let L = 0; L < numLayers; L++) {
+    for (let T = 0; T < numTargets; T++) {
+      const p = pairs[L * numTargets + T];
+      // Per-element setFloat32 on save → per-element getFloat32 on load.
+      // (Cannot use Float32Array view because `off` is rarely 4-byte aligned
+      // relative to blob.byteOffset after the variable-length name section.)
+      for (let k = 0; k < aN; k++) { p.A.data[k] = dv.getFloat32(off, true); off += 4; }
+      for (let k = 0; k < bN; k++) { p.B.data[k] = dv.getFloat32(off, true); off += 4; }
+    }
+  }
+}
+
+/**
+ * Merge LoRA delta into a CPU float buffer (mirrors C nt_lora_merge_into):
+ *     W_dst[i,j] = W_frozen[i,j] + scaling * sum_k B[i,k] * A[k,j]
+ * Layout: row-major [outDim, inDim]. WDst and WFrozen MAY alias for in-place.
+ *
+ * @param {Float32Array} WDst     destination buffer, length outDim*inDim
+ * @param {Float32Array} WFrozen  source frozen weight, length outDim*inDim
+ * @param {LoRAPair}     pair
+ * @param {number}       inDim
+ * @param {number}       outDim
+ */
+export function mergeLoRAInto(WDst, WFrozen, pair, inDim, outDim) {
+  if (!(WDst instanceof Float32Array) || !(WFrozen instanceof Float32Array)) {
+    throw new Error("mergeLoRAInto: WDst and WFrozen must be Float32Array");
+  }
+  if (!pair || !pair.A || !pair.B) throw new Error("mergeLoRAInto: pair missing A/B");
+  if (inDim <= 0 || outDim <= 0) throw new Error("mergeLoRAInto: dims must be > 0");
+  if (pair.inDim !== inDim || pair.outDim !== outDim) {
+    throw new Error(`mergeLoRAInto: pair dim mismatch (pair in=${pair.inDim} out=${pair.outDim}, caller in=${inDim} out=${outDim})`);
+  }
+  const need = outDim * inDim;
+  if (WDst.length < need || WFrozen.length < need) {
+    throw new Error(`mergeLoRAInto: buffers too small (need ${need})`);
+  }
+  const rank  = pair.rank;
+  const scale = pair.scaling;
+  const A = pair.A.data;  // [rank, inDim]
+  const B = pair.B.data;  // [outDim, rank]
+  // Δ[i,j] = sum_k B[i,k] * A[k,j], then W_dst[i,j] = W_frozen[i,j] + scale*Δ[i,j].
+  // Fuse the two: accumulate Δ into a scalar, write once. Saves the temp.
+  for (let i = 0; i < outDim; i++) {
+    const bRow = i * rank;
+    const wRow = i * inDim;
+    for (let j = 0; j < inDim; j++) {
+      let d = 0;
+      for (let k = 0; k < rank; k++) d += B[bRow + k] * A[k * inDim + j];
+      WDst[wRow + j] = WFrozen[wRow + j] + scale * d;
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
