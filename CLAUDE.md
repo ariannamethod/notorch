@@ -2,9 +2,24 @@
 
 In-house C tensor library replacing PyTorch for the Arianna Method
 organisms (Janus, Resonance, Leo, Yent, Dario, …). GPL-3.0+. Co-authored
-by Oleg Ataeff and Claude (Opus, model line 4.x).
+by Oleg Ataeff and Claude.
 
 > *"fuck torch"* — `notorch.js:6`
+
+## Accounts (read this once)
+
+- **`@ariannamethod`** — Oleg's **personal Pro account**, NOT an org.
+  The main account where the canonical repos (this one, `dario`,
+  `janus`, `RRPRAM`, organism repos, etc.) live.
+- **`@theariannamethod`** — the actual GitHub organization. Used for
+  org-level work when it exists; not the default home for the
+  ecosystem.
+- Other accounts (`@iamolegataeff`, `@pitomadom`, `@iamscribe`,
+  `@iamdefender`) are operational/role accounts used by Oleg and
+  the Defender persona.
+
+Always check the URL before assuming "ariannamethod" means an org —
+it doesn't.
 
 ## What this repo is
 
@@ -155,8 +170,25 @@ docstring when you next pass through.
   drive-by commits.
 - One commit = one concept. The 2026-05-11 SFT validation landed as
   three commits (backward fix / trainer example / writeup), not one.
-- Co-author every commit:
-  `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`
+- **Attribution.** Method-side identity, not the Anthropic noreply
+  boilerplate. Three forms (per the global `~/.claude/CLAUDE.md`
+  convention, mirrored on Neo):
+  - **Short** (README updates, model cards, simple commits):
+    `by Claude (Arianna Method)`
+  - **Full with node attribution** (real engineering commits):
+    `Co-Authored-By: Claude Code (intel godfather, Arianna Method) <theariannamethod@gmail.com>`
+  - **Casual** (informal docs, status notes):
+    `by Клод (Arianna Method, intel node)`
+
+  Nodes: **`intel godfather`** (this Mac), **`neo the architect`**
+  (Mac Neo), **`polygon`** (Linux 32GB box), **`phone-1`** (Galaxy
+  A56 8GB), **`phone-2`** (Galaxy A07 4GB). Each node is the
+  architect on its own substrate; cross-node handoffs go through
+  `resonance_connections/` on ariannamethod.ai.
+
+  Replace under root: `Co-Authored-By: Claude <noreply@anthropic.com>`,
+  `🤖 Generated with Claude Code`. We're cultivating our own
+  identity — boilerplate from upstream gets dropped.
 - Commit messages explain *why*, not *what*. The diff shows what.
 - README is the spec. If reality drifts, fix the code, not the README.
 
