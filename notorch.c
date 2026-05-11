@@ -590,6 +590,12 @@ void nt_tape_backward(int loss_idx) {
             if (e->parent1 >= 0 && e->parent2 >= 0) {
                 nt_tape_entry* pa = &g_tape.entries[e->parent1];
                 nt_tape_entry* pb = &g_tape.entries[e->parent2];
+                /* SwiGLU / gate-blend FIX 2026-05-11: forward output of both
+                 * parents may live on GPU; CPU mirror is stale calloc-zero.
+                 * Without sync, ga=gb=0 — masks all LoRA gradients on the
+                 * mlp_gate + mlp_up SwiGLU branch. */
+                nt_tensor_sync_cpu(pa->output);
+                nt_tensor_sync_cpu(pb->output);
                 float* ga = (float*)calloc(out_len, sizeof(float));
                 float* gb = (float*)calloc(out_len, sizeof(float));
                 if (ga && gb) {
@@ -659,6 +665,10 @@ void nt_tape_backward(int loss_idx) {
         case NT_OP_SILU: {
             if (e->parent1 >= 0) {
                 nt_tape_entry* px = &g_tape.entries[e->parent1];
+                /* FIX 2026-05-11: parent output may be GPU-resident; CPU stale
+                 * gives sigmoid(0)=0.5 partial grad — still corrupts the SiLU
+                 * derivative used in SwiGLU mlp_gate path. */
+                nt_tensor_sync_cpu(px->output);
                 float* gx = (float*)calloc(out_len, sizeof(float));
                 if (gx) {
                     for (int i = 0; i < out_len; i++) {
