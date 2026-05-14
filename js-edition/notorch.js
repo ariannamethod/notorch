@@ -1051,6 +1051,54 @@ export class Tape {
         return;
       }
 
+      case OP.GEGLU: {
+        // y[t,i] = GELU(gate[t,i]) * val[t,i], gate = x @ W1^T, val = x @ W2^T.
+        // Recompute gate/val/GELU(gate) and propagate to x, W1, W2.
+        if (e.parent1 >= 0 && e.parent2 >= 0 && e.parent3 >= 0) {
+          const x = this.entries[e.parent1].output;
+          const W1 = this.entries[e.parent2].output;
+          const W2 = this.entries[e.parent3].output;
+          const D_out = W1.shape[0];
+          const D_in = W1.shape.length >= 2 ? W1.shape[1] : (W1.len / D_out);
+          const T = (x.len / D_in) | 0;
+          const k = 0.7978845608;  // sqrt(2/pi)
+          const dx = new Float32Array(x.len);
+          const dW1 = new Float32Array(W1.len);
+          const dW2 = new Float32Array(W2.len);
+          for (let t = 0; t < T; t++) {
+            const xOff = t * D_in;
+            const yOff = t * D_out;
+            for (let i = 0; i < D_out; i++) {
+              const wRow = i * D_in;
+              let gate = 0, val = 0;
+              for (let j = 0; j < D_in; j++) {
+                gate += W1.data[wRow + j] * x.data[xOff + j];
+                val  += W2.data[wRow + j] * x.data[xOff + j];
+              }
+              const g3 = gate * gate * gate;
+              const inner = k * (gate + 0.044715 * g3);
+              const th = Math.tanh(inner);
+              const geluGate = 0.5 * gate * (1 + th);
+              const dy = dout[yOff + i];
+              const dVal = dy * geluGate;
+              const geluGrad = 0.5 * (1 + th)
+                + 0.5 * gate * (1 - th * th) * k * (1 + 3 * 0.044715 * gate * gate);
+              const dGate = dy * val * geluGrad;
+              for (let j = 0; j < D_in; j++) {
+                const xj = x.data[xOff + j];
+                dW1[wRow + j] += dGate * xj;
+                dW2[wRow + j] += dVal * xj;
+                dx[xOff + j] += dGate * W1.data[wRow + j] + dVal * W2.data[wRow + j];
+              }
+            }
+          }
+          this.accGrad(e.parent1, dx);
+          this.accGrad(e.parent2, dW1);
+          this.accGrad(e.parent3, dW2);
+        }
+        return;
+      }
+
       default: return;
     }
   }
@@ -1901,6 +1949,41 @@ export class Notorch {
       out.data[i] = (gi * sig) * u.data[i];
     }
     return this.tape.record(out, OP.SWIGLU, gateIdx, upIdx);
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // GEGLU FFN — fused: y = GELU(x @ W1^T) * (x @ W2^T). Gemma-3 style FFN.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Fused GEGLU. x:[T, D_in], W1/W2:[D_out, D_in], output [T, D_out].
+   * Mirrors C nt_geglu (notorch.c:3090). Tanh GELU approximation matches
+   * PyTorch `gelu(approximate="tanh")` and the C path bit-for-bit
+   * (constants 0.7978845608, 0.044715).
+   */
+  geglu(xIdx, w1Idx, w2Idx, T, dIn, dOut) {
+    const x = this.tape.entries[xIdx].output;
+    const W1 = this.tape.entries[w1Idx].output;
+    const W2 = this.tape.entries[w2Idx].output;
+    const out = Tensor.zeros([T, dOut]);
+    const k = 0.7978845608;
+    for (let t = 0; t < T; t++) {
+      const xOff = t * dIn;
+      const yOff = t * dOut;
+      for (let i = 0; i < dOut; i++) {
+        const wRow = i * dIn;
+        let gate = 0, val = 0;
+        for (let j = 0; j < dIn; j++) {
+          gate += W1.data[wRow + j] * x.data[xOff + j];
+          val  += W2.data[wRow + j] * x.data[xOff + j];
+        }
+        const g3 = gate * gate * gate;
+        const inner = k * (gate + 0.044715 * g3);
+        const gelu = 0.5 * gate * (1 + Math.tanh(inner));
+        out.data[yOff + i] = Math.fround(gelu * val);
+      }
+    }
+    return this.tape.record(out, OP.GEGLU, xIdx, w1Idx, w2Idx);
   }
 
   // ═════════════════════════════════════════════════════════════════════════
