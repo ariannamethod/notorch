@@ -117,9 +117,17 @@ export const OP = Object.freeze({
   LAYERNORM: 20,
   SEQ_LAYERNORM: 21,
   GELU: 22,
+  GQA_ATTN: 23,
+  RRPRAM_ATTN: 24,
   CONCAT: 25,
+  SEQ_MATVEC_T: 26,
   SIGMOID: 27,
+  SCALE_BY_T: 28,
   SWIGLU: 29,
+  BIT_LINEAR: 30,
+  BIT_SEQ_LINEAR: 31,
+  SEQ_CROSSENT_MASKED: 32,
+  RRPRAM_LR: 33,
   // JS-specific extensions
   SUB: 100,
   DIV: 101,
@@ -959,6 +967,21 @@ export class Tape {
         return;
       }
 
+      case OP.SCALE_BY_T: {
+        // y = a[0] * x ; gx = a[0] * dout ; ga = sum(dout * x)
+        if (e.parent1 >= 0 && e.parent2 >= 0) {
+          const x = this.entries[e.parent1].output.data;
+          const aVal = this.entries[e.parent2].output.data[0];
+          const gx = new Float32Array(outLen);
+          for (let i = 0; i < outLen; i++) gx[i] = aVal * dout[i];
+          this.accGrad(e.parent1, gx);
+          let ga = 0;
+          for (let i = 0; i < outLen; i++) ga += dout[i] * x[i];
+          this.accGrad(e.parent2, new Float32Array([ga]));
+        }
+        return;
+      }
+
       default: return;
     }
   }
@@ -1404,6 +1427,21 @@ export class Notorch {
     const f = Math.fround(factor);
     for (let i = 0; i < a.len; i++) out.data[i] = Math.fround(a.data[i] * f);
     return this.tape.record(out, OP.SCALE, aIdx, -1, -1, factor);
+  }
+
+  /**
+   * Scale-by-tensor: y[i] = a[0] * x[i] where `a` is a scalar tensor [1].
+   * Mirrors C nt_scale_by_t (notorch.c:3075). Gradient flows to both `x`
+   * and the scalar `a` (single scalar grad = sum(dout * x)).
+   */
+  scaleByT(xIdx, aIdx) {
+    const x = this.tape.entries[xIdx].output;
+    const a = this.tape.entries[aIdx].output;
+    if (a.len !== 1) throw new Error(`scaleByT: a must be scalar [1], got len=${a.len}`);
+    const out = Tensor.zeros(x.shape);
+    const aVal = a.data[0];
+    for (let i = 0; i < x.len; i++) out.data[i] = Math.fround(aVal * x.data[i]);
+    return this.tape.record(out, OP.SCALE_BY_T, xIdx, aIdx);
   }
 
   // ═════════════════════════════════════════════════════════════════════════
