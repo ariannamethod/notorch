@@ -1119,6 +1119,68 @@ export class Tape {
         return;
       }
 
+      case OP.RRPRAM_ATTN: {
+        // RRPRAM positional attention. scores[j] = Σ_d x[i,d] · Wr[h,d,j] (no
+        // sqrt-D scaling). Used by Resonance/Janus architectures.
+        if (e.parent1 >= 0 && e.parent2 >= 0 && e.parent3 >= 0) {
+          const Wr = this.entries[e.parent1].output;
+          const x = this.entries[e.parent2].output;
+          const v = this.entries[e.parent3].output;
+          const T = e.aux | 0;
+          const nEmbd = e.aux2 | 0;
+          const nrHeads = e.aux3 | 0;
+          const headDim = e.aux4 | 0;
+          const outDim = nrHeads * headDim;
+          const ctx = (Wr.len / (nrHeads * nEmbd)) | 0;
+          const dWr = new Float32Array(Wr.len);
+          const dx = new Float32Array(T * nEmbd);
+          const dv = new Float32Array(T * outDim);
+          for (let h = 0; h < nrHeads; h++) {
+            const wrBase = h * nEmbd * ctx;
+            const vOff = h * headDim;
+            for (let i = 0; i < T; i++) {
+              const xiOff = i * nEmbd;
+              const doutiOff = i * outDim + vOff;
+              const scores = new Float32Array(i + 1);
+              const attn = new Float32Array(i + 1);
+              let mx = -Infinity;
+              for (let j = 0; j <= i; j++) {
+                let dot = 0;
+                for (let d = 0; d < nEmbd; d++) dot += x.data[xiOff + d] * Wr.data[wrBase + d * ctx + j];
+                scores[j] = dot;
+                if (dot > mx) mx = dot;
+              }
+              let sm = 0;
+              for (let j = 0; j <= i; j++) { attn[j] = Math.exp(scores[j] - mx); sm += attn[j]; }
+              if (sm > 0) for (let j = 0; j <= i; j++) attn[j] /= sm;
+              const dAttn = new Float32Array(i + 1);
+              for (let j = 0; j <= i; j++) {
+                const vjOff = j * outDim + vOff;
+                for (let d = 0; d < headDim; d++) dAttn[j] += dout[doutiOff + d] * v.data[vjOff + d];
+              }
+              for (let j = 0; j <= i; j++) {
+                const dvjOff = j * outDim + vOff;
+                const aj = attn[j];
+                for (let d = 0; d < headDim; d++) dv[dvjOff + d] += aj * dout[doutiOff + d];
+              }
+              let dotDa = 0;
+              for (let j = 0; j <= i; j++) dotDa += dAttn[j] * attn[j];
+              for (let j = 0; j <= i; j++) {
+                const ds = attn[j] * (dAttn[j] - dotDa);
+                for (let d = 0; d < nEmbd; d++) {
+                  dx[xiOff + d] += ds * Wr.data[wrBase + d * ctx + j];
+                  dWr[wrBase + d * ctx + j] += ds * x.data[xiOff + d];
+                }
+              }
+            }
+          }
+          this.accGrad(e.parent1, dWr);
+          this.accGrad(e.parent2, dx);
+          this.accGrad(e.parent3, dv);
+        }
+        return;
+      }
+
       case OP.BIT_LINEAR: {
         // STE backward — treat ternary/int8 quantization as identity.
         // dW[i,j] = dout[i] * x[j] ; dx[j] = Σ_i W[i,j] * dout[i].
@@ -2130,6 +2192,51 @@ export class Notorch {
   // ═════════════════════════════════════════════════════════════════════════
   // GEGLU FFN — fused: y = GELU(x @ W1^T) * (x @ W2^T). Gemma-3 style FFN.
   // ═════════════════════════════════════════════════════════════════════════
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // RRPRAM ATTENTION — Resonance/Janus positional attention.
+  // scores[j] = Σ_d x[i,d] · Wr[h,d,j] (no sqrt-D scaling — see notorch.c).
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * RRPRAM positional attention. Wr:[nrHeads, nEmbd, ctx] flat, x:[T, nEmbd],
+   * v:[T, nrHeads * headDim]. ctx is derived from Wr.len/(nrHeads·nEmbd).
+   * Mirrors C nt_rrpram_attention (notorch.c:3291).
+   */
+  rrpramAttention(wrIdx, xIdx, vIdx, T, nEmbd, nrHeads, headDim) {
+    const Wr = this.tape.entries[wrIdx].output;
+    const x = this.tape.entries[xIdx].output;
+    const v = this.tape.entries[vIdx].output;
+    const outDim = nrHeads * headDim;
+    const ctx = (Wr.len / (nrHeads * nEmbd)) | 0;
+    const out = Tensor.zeros([T, outDim]);
+    for (let h = 0; h < nrHeads; h++) {
+      const wrBase = h * nEmbd * ctx;
+      const vOff = h * headDim;
+      for (let i = 0; i < T; i++) {
+        const xiOff = i * nEmbd;
+        const scores = new Float32Array(i + 1);
+        let mx = -Infinity;
+        for (let j = 0; j <= i; j++) {
+          let dot = 0;
+          for (let d = 0; d < nEmbd; d++) dot += x.data[xiOff + d] * Wr.data[wrBase + d * ctx + j];
+          scores[j] = dot;
+          if (dot > mx) mx = dot;
+        }
+        let sm = 0;
+        for (let j = 0; j <= i; j++) { scores[j] = Math.exp(scores[j] - mx); sm += scores[j]; }
+        if (sm > 0) for (let j = 0; j <= i; j++) scores[j] /= sm;
+        const oiOff = i * outDim + vOff;
+        for (let d = 0; d < headDim; d++) out.data[oiOff + d] = 0;
+        for (let j = 0; j <= i; j++) {
+          const vjOff = j * outDim + vOff;
+          const aj = scores[j];
+          for (let d = 0; d < headDim; d++) out.data[oiOff + d] += aj * v.data[vjOff + d];
+        }
+      }
+    }
+    return this.tape.record(out, OP.RRPRAM_ATTN, wrIdx, xIdx, vIdx, T, nEmbd, nrHeads, headDim);
+  }
 
   // ═════════════════════════════════════════════════════════════════════════
   // BITLINEAR — BitNet 1.58: ternary W (-1, 0, +1) per-row · int8 x.
