@@ -1147,8 +1147,12 @@ void nt_tape_backward(int loss_idx) {
                  *   0 silu, 1 mh-attn scores, 2 cross_ent losses,
                  *   3,4 seq_matvec_bw d_dx/d_dw,
                  *   5,6 mh_bw scratch_TT/scratch_TT2, 7 mh recompute out,
-                 *   8,9,10 mh_bw d_dQ/d_dK/d_dV. */
-                if (g_use_gpu && dq && dk && dv) {
+                 *   8,9,10 mh_bw d_dQ/d_dK/d_dV.
+                 *
+                 * Diagnostic: env NT_DISABLE_MH_GPU=1 forces CPU fallback,
+                 * for isolating nanollama-on-GPU NaN hypothesis 2026-05-14. */
+                int mh_gpu_disabled = getenv("NT_DISABLE_MH_GPU") != NULL;
+                if (g_use_gpu && !mh_gpu_disabled && dq && dk && dv) {
                     float* d_Q = nt_tensor_ensure_gpu(pq->output);
                     float* d_K = nt_tensor_ensure_gpu(pk->output);
                     float* d_V = nt_tensor_ensure_gpu(pv->output);
