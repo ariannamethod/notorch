@@ -1051,6 +1051,74 @@ export class Tape {
         return;
       }
 
+      case OP.GQA_ATTN: {
+        // Grouped-query causal attention. Q:[T, n_heads*head_dim],
+        // K/V:[T, n_kv_heads*head_dim]. gqa_ratio = n_heads / n_kv_heads.
+        // Each Q-head h shares K/V with kv_head = h // gqa_ratio.
+        if (e.parent1 >= 0 && e.parent2 >= 0 && e.parent3 >= 0) {
+          const Q = this.entries[e.parent1].output.data;
+          const K = this.entries[e.parent2].output.data;
+          const V = this.entries[e.parent3].output.data;
+          const T = e.aux | 0;
+          const headDim = e.aux2 | 0;
+          const nHeads = e.aux3 | 0;
+          const nKvHeads = e.aux4 | 0;
+          const Q_D = nHeads * headDim;
+          const KV_D = nKvHeads * headDim;
+          const gqaRatio = nHeads / nKvHeads;
+          const sc = 1 / Math.sqrt(headDim);
+          const dQ = new Float32Array(T * Q_D);
+          const dK = new Float32Array(T * KV_D);
+          const dV = new Float32Array(T * KV_D);
+          for (let h = 0; h < nHeads; h++) {
+            const kvH = Math.floor(h / gqaRatio);
+            const qOff = h * headDim;
+            const kvOff = kvH * headDim;
+            for (let i = 0; i < T; i++) {
+              const qiOff = i * Q_D + qOff;
+              const doutiOff = i * Q_D + qOff;
+              const scores = new Float32Array(i + 1);
+              const attn = new Float32Array(i + 1);
+              let mx = -Infinity;
+              for (let j = 0; j <= i; j++) {
+                const kjOff = j * KV_D + kvOff;
+                let dot = 0;
+                for (let d = 0; d < headDim; d++) dot += Q[qiOff + d] * K[kjOff + d];
+                scores[j] = dot * sc;
+                if (scores[j] > mx) mx = scores[j];
+              }
+              let sm = 0;
+              for (let j = 0; j <= i; j++) { attn[j] = Math.exp(scores[j] - mx); sm += attn[j]; }
+              if (sm > 0) for (let j = 0; j <= i; j++) attn[j] /= sm;
+              const dAttn = new Float32Array(i + 1);
+              for (let j = 0; j <= i; j++) {
+                const vjOff = j * KV_D + kvOff;
+                for (let d = 0; d < headDim; d++) dAttn[j] += dout[doutiOff + d] * V[vjOff + d];
+              }
+              for (let j = 0; j <= i; j++) {
+                const dvjOff = j * KV_D + kvOff;
+                const aj = attn[j];
+                for (let d = 0; d < headDim; d++) dV[dvjOff + d] += aj * dout[doutiOff + d];
+              }
+              let dotDa = 0;
+              for (let j = 0; j <= i; j++) dotDa += dAttn[j] * attn[j];
+              for (let j = 0; j <= i; j++) {
+                const ds = attn[j] * (dAttn[j] - dotDa) * sc;
+                const kjOff = j * KV_D + kvOff;
+                for (let d = 0; d < headDim; d++) {
+                  dQ[i * Q_D + qOff + d] += ds * K[kjOff + d];
+                  dK[j * KV_D + kvOff + d] += ds * Q[qiOff + d];
+                }
+              }
+            }
+          }
+          this.accGrad(e.parent1, dQ);
+          this.accGrad(e.parent2, dK);
+          this.accGrad(e.parent3, dV);
+        }
+        return;
+      }
+
       case OP.GEGLU: {
         // y[t,i] = GELU(gate[t,i]) * val[t,i], gate = x @ W1^T, val = x @ W2^T.
         // Recompute gate/val/GELU(gate) and propagate to x, W1, W2.
@@ -1920,6 +1988,55 @@ export class Notorch {
       }
     }
     return this.tape.record(out, OP.MH_CAUSAL_ATTN, qIdx, kIdx, vIdx, T, headDim);
+  }
+
+  /**
+   * Grouped-query causal self-attention (Llama-3+). Q:[T, n_heads*head_dim],
+   * K/V:[T, n_kv_heads*head_dim]. Each Q-head shares K/V with
+   * kv_head = floor(q_head / gqa_ratio), gqa_ratio = n_heads/n_kv_heads.
+   * Mirrors C nt_gqa_causal_attention (notorch.c:3244).
+   */
+  gqaCausalAttention(qIdx, kIdx, vIdx, T, headDim, nHeads, nKvHeads) {
+    if (nHeads % nKvHeads !== 0) {
+      throw new Error(`gqaCausalAttention: nHeads=${nHeads} must be divisible by nKvHeads=${nKvHeads}`);
+    }
+    const Q = this.tape.entries[qIdx].output.data;
+    const K = this.tape.entries[kIdx].output.data;
+    const V = this.tape.entries[vIdx].output.data;
+    const Q_D = nHeads * headDim;
+    const KV_D = nKvHeads * headDim;
+    const gqaRatio = nHeads / nKvHeads;
+    const sc = 1 / Math.sqrt(headDim);
+    const out = Tensor.zeros([T, Q_D]);
+    const Yd = out.data;
+    for (let h = 0; h < nHeads; h++) {
+      const kvH = Math.floor(h / gqaRatio);
+      const qOff = h * headDim;
+      const kvOff = kvH * headDim;
+      for (let i = 0; i < T; i++) {
+        const qiOff = i * Q_D + qOff;
+        const scores = new Float32Array(i + 1);
+        let mx = -Infinity;
+        for (let j = 0; j <= i; j++) {
+          const kjOff = j * KV_D + kvOff;
+          let dot = 0;
+          for (let d = 0; d < headDim; d++) dot += Q[qiOff + d] * K[kjOff + d];
+          scores[j] = dot * sc;
+          if (scores[j] > mx) mx = scores[j];
+        }
+        let sum = 0;
+        for (let j = 0; j <= i; j++) { scores[j] = Math.exp(scores[j] - mx); sum += scores[j]; }
+        if (sum > 0) for (let j = 0; j <= i; j++) scores[j] /= sum;
+        const yiOff = i * Q_D + qOff;
+        for (let d = 0; d < headDim; d++) Yd[yiOff + d] = 0;
+        for (let j = 0; j <= i; j++) {
+          const vjOff = j * KV_D + kvOff;
+          const aj = scores[j];
+          for (let d = 0; d < headDim; d++) Yd[yiOff + d] += aj * V[vjOff + d];
+        }
+      }
+    }
+    return this.tape.record(out, OP.GQA_ATTN, qIdx, kIdx, vIdx, T, headDim, nHeads, nKvHeads);
   }
 
   // ═════════════════════════════════════════════════════════════════════════
