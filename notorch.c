@@ -1184,6 +1184,16 @@ void nt_tape_backward(int loss_idx) {
                     free(dq); free(dk); free(dv);
                     break;
                 }
+                /* GPU/CPU mirror discipline (6th instance): CPU fallback below
+                 * reads pq/pk/pv ->output->data to compute scores, d_attn,
+                 * ds, dq, dk. Without sync, GPU-resident mirrors are stale
+                 * (calloc-zero) → ds = attn * (d_attn - dot_da) * sc = 0 →
+                 * dq, dk accumulate zero → wq, wk LoRA targets receive no
+                 * grad (verified neo 2026-05-14 with NT_DISABLE_MH_GPU=1).
+                 * dv survives because it uses dout, not q/k. */
+                nt_tensor_sync_cpu(pq->output);
+                nt_tensor_sync_cpu(pk->output);
+                nt_tensor_sync_cpu(pv->output);
                 if (dq && dk && dv) {
                     for (int h = 0; h < n_heads; h++) {
                         int ho = h * head_dim;
