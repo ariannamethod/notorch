@@ -982,6 +982,42 @@ export class Tape {
         return;
       }
 
+      case OP.SEQ_MATVEC_T: {
+        // Y[t] = W^T @ X[t] ; W:[W_rows, W_cols] ; X[t]:[W_rows] ; Y[t]:[W_cols]
+        // dX[t][i] = Σ_j W[i,j] * dout[t][j]   → dX[t] = W @ dout[t]
+        // dW[i][j] = Σ_t X[t][i] * dout[t][j]  → dW = X^T @ dout
+        if (e.parent1 >= 0 && e.parent2 >= 0) {
+          const W = this.entries[e.parent1].output;
+          const X = this.entries[e.parent2].output;
+          const T = e.aux | 0;
+          const W_rows = W.shape[0];
+          const W_cols = W.shape.length >= 2 ? W.shape[1] : (W.len / W_rows);
+          const dW = new Float32Array(W_rows * W_cols);
+          const dX = new Float32Array(T * W_rows);
+          for (let t = 0; t < T; t++) {
+            const doutOff = t * W_cols;
+            const xOff = t * W_rows;
+            const dxOff = t * W_rows;
+            // dX[t] = W @ dout[t]
+            for (let i = 0; i < W_rows; i++) {
+              let s = 0;
+              const wRow = i * W_cols;
+              for (let j = 0; j < W_cols; j++) s += W.data[wRow + j] * dout[doutOff + j];
+              dX[dxOff + i] = s;
+            }
+            // dW[i,j] += x_t[i] * dout[t][j]
+            for (let i = 0; i < W_rows; i++) {
+              const xi = X.data[xOff + i];
+              const wRow = i * W_cols;
+              for (let j = 0; j < W_cols; j++) dW[wRow + j] += xi * dout[doutOff + j];
+            }
+          }
+          this.accGrad(e.parent1, dW);
+          this.accGrad(e.parent2, dX);
+        }
+        return;
+      }
+
       default: return;
     }
   }
@@ -1582,6 +1618,31 @@ export class Notorch {
       }
     }
     return this.tape.record(out, OP.SEQ_MATVEC, wIdx, xIdx, -1, T);
+  }
+
+  /**
+   * Transposed sequence linear: Y[t] = W^T @ X[t]. W:[W_rows, W_cols],
+   * X[t] has W_rows elements, Y[t] has W_cols elements. Mirrors C
+   * nt_seq_linear_t (notorch.c:2899) — used by Janus Echo and other
+   * patterns that need W^T projection without an explicit transpose op.
+   */
+  seqLinearT(wIdx, xIdx, T) {
+    const W = this.tape.entries[wIdx].output;
+    const X = this.tape.entries[xIdx].output;
+    const W_rows = W.shape[0];
+    const W_cols = W.shape.length >= 2 ? W.shape[1] : (W.len / W_rows);
+    const out = Tensor.zeros([T, W_cols]);
+    const Wd = W.data, Xd = X.data, Yd = out.data;
+    for (let t = 0; t < T; t++) {
+      const xOff = t * W_rows;
+      const yOff = t * W_cols;
+      for (let j = 0; j < W_cols; j++) {
+        let s = 0;
+        for (let i = 0; i < W_rows; i++) s += Wd[i * W_cols + j] * Xd[xOff + i];
+        Yd[yOff + j] = Math.fround(s);
+      }
+    }
+    return this.tape.record(out, OP.SEQ_MATVEC_T, wIdx, xIdx, -1, T);
   }
 
   // ═════════════════════════════════════════════════════════════════════════
