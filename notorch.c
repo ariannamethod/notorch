@@ -740,6 +740,14 @@ void nt_tape_backward(int loss_idx) {
             // parent1 = x, parent2 = gamma (-1 if none)
             if (e->parent1 >= 0) {
                 nt_tape_entry* px = &g_tape.entries[e->parent1];
+                /* GPU/CPU mirror discipline (4th instance of this bug class
+                 * after CE 3d46007 + MUL/SILU 8ab5062): backward below reads
+                 * px->output->data and gamma_data on CPU side. In GPU mode
+                 * the mirror is stale → garbage gx → NaN explosion. Verified
+                 * neo 2026-05-14 on nanollama-notorch SFT: 27 RMSNorms per
+                 * forward exploded at step ~40, lr=1e-4 (same shape as
+                 * Resonance pre-fix lr=1e-4 step 60 explosion). */
+                nt_tensor_sync_cpu(px->output);
                 int n = out_len;
                 float ss = 0;
                 for (int i = 0; i < n; i++) ss += px->output->data[i] * px->output->data[i];
@@ -752,6 +760,7 @@ void nt_tape_backward(int loss_idx) {
                 int has_gamma = (e->parent2 >= 0 && e->parent2 < g_tape.count);
                 if (has_gamma) {
                     nt_tape_entry* pg = &g_tape.entries[e->parent2];
+                    nt_tensor_sync_cpu(pg->output);
                     gamma_data = pg->output->data;
                     dout_eff = (float*)calloc(n, sizeof(float));
                     if (dout_eff) {
