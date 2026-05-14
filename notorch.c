@@ -3928,7 +3928,8 @@ int nt_rope_freq(int x_idx, int T, int head_dim, float freq_base) {
 
     int done_gpu = 0;
 #ifdef USE_CUDA
-    if (g_use_gpu) {
+    int rope_gpu_disabled = getenv("NT_DISABLE_ROPE_GPU") != NULL;
+    if (g_use_gpu && !rope_gpu_disabled) {
         float* d_X = nt_tensor_ensure_gpu(px->output);
         float* d_Y = nt_tensor_ensure_gpu(out);
         if (d_X && d_Y) {
