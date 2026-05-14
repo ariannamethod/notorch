@@ -1119,6 +1119,102 @@ export class Tape {
         return;
       }
 
+      case OP.RRPRAM_LR: {
+        // Low-rank RRPRAM. Wr = [Wr_a | Wr_b] packed:
+        //   Wr_a: H·E·R floats, [h,d,r] = h·E·R + d·R + r
+        //   Wr_b: H·R·T_r floats (T_r==T), [h,r,j] = wraTotal + h·R·T_r + r·T_r + j
+        // Forward: u = X[i,:] @ Wr_a[h]; scores = u @ Wr_b[h]; attn = softmax(causal);
+        //          out = Σ attn · V. Backward: recompute u and scores, then
+        //          d_attn → ds → d_u/dWr_b → dx/dWr_a/dv (notorch.c:1321).
+        if (e.parent1 >= 0 && e.parent2 >= 0 && e.parent3 >= 0) {
+          const Wr = this.entries[e.parent1].output;
+          const x = this.entries[e.parent2].output;
+          const v = this.entries[e.parent3].output;
+          const T = e.aux | 0;
+          const nEmbd = e.aux2 | 0;
+          const nrHeads = e.aux3 | 0;
+          const headDim = e.aux4 | 0;
+          const outDim = nrHeads * headDim;
+          const T_r = T;
+          const combinedLen = Wr.len;
+          const rank = (combinedLen / (nrHeads * (nEmbd + T_r))) | 0;
+          if (rank < 1) return;
+          const wraTotal = nrHeads * nEmbd * rank;
+          const dWr = new Float32Array(combinedLen);
+          const dx = new Float32Array(T * nEmbd);
+          const dv = new Float32Array(T * outDim);
+          const uBuf = new Float32Array(rank);
+          const duBuf = new Float32Array(rank);
+          const scoresBuf = new Float32Array(T_r);
+          const attnBuf = new Float32Array(T_r);
+          const dAttnBuf = new Float32Array(T_r);
+          const dScoreBuf = new Float32Array(T_r);
+          for (let h = 0; h < nrHeads; h++) {
+            const wrABase = h * nEmbd * rank;
+            const wrBBase = wraTotal + h * rank * T_r;
+            const vOff = h * headDim;
+            for (let i = 0; i < T; i++) {
+              const xiOff = i * nEmbd;
+              const doutiOff = i * outDim + vOff;
+              // Recompute u and scores/attn
+              for (let r = 0; r < rank; r++) uBuf[r] = 0;
+              for (let d = 0; d < nEmbd; d++) {
+                const xd = x.data[xiOff + d];
+                const waRow = wrABase + d * rank;
+                for (let r = 0; r < rank; r++) uBuf[r] += xd * Wr.data[waRow + r];
+              }
+              let mx = -Infinity;
+              for (let j = 0; j <= i; j++) {
+                let s = 0;
+                for (let r = 0; r < rank; r++) s += uBuf[r] * Wr.data[wrBBase + r * T_r + j];
+                scoresBuf[j] = s;
+                if (s > mx) mx = s;
+              }
+              let sm = 0;
+              for (let j = 0; j <= i; j++) { attnBuf[j] = Math.exp(scoresBuf[j] - mx); sm += attnBuf[j]; }
+              if (sm > 0) for (let j = 0; j <= i; j++) attnBuf[j] /= sm;
+              // d_attn[j] = Σ_d dout · v ; d_v += attn · dout
+              for (let j = 0; j <= i; j++) dAttnBuf[j] = 0;
+              for (let j = 0; j <= i; j++) {
+                const vjOff = j * outDim + vOff;
+                for (let d = 0; d < headDim; d++) {
+                  dAttnBuf[j] += dout[doutiOff + d] * v.data[vjOff + d];
+                  dv[vjOff + d] += attnBuf[j] * dout[doutiOff + d];
+                }
+              }
+              // softmax backward
+              let dotDa = 0;
+              for (let j = 0; j <= i; j++) dotDa += dAttnBuf[j] * attnBuf[j];
+              for (let j = 0; j <= i; j++) dScoreBuf[j] = attnBuf[j] * (dAttnBuf[j] - dotDa);
+              // du[r] = Σ_j d_score[j] · Wr_b[h,r,j] ; dWr_b += d_score · u
+              for (let r = 0; r < rank; r++) duBuf[r] = 0;
+              for (let j = 0; j <= i; j++) {
+                const ds = dScoreBuf[j];
+                for (let r = 0; r < rank; r++) {
+                  duBuf[r] += ds * Wr.data[wrBBase + r * T_r + j];
+                  dWr[wrBBase + r * T_r + j] += ds * uBuf[r];
+                }
+              }
+              // dx[i,d] += Σ_r du[r] · Wr_a[h,d,r] ; dWr_a += du · x
+              for (let d = 0; d < nEmbd; d++) {
+                const waRow = wrABase + d * rank;
+                const xd = x.data[xiOff + d];
+                let dxd = 0;
+                for (let r = 0; r < rank; r++) {
+                  dxd += duBuf[r] * Wr.data[waRow + r];
+                  dWr[waRow + r] += duBuf[r] * xd;
+                }
+                dx[xiOff + d] += dxd;
+              }
+            }
+          }
+          this.accGrad(e.parent1, dWr);
+          this.accGrad(e.parent2, dx);
+          this.accGrad(e.parent3, dv);
+        }
+        return;
+      }
+
       case OP.RRPRAM_ATTN: {
         // RRPRAM positional attention. scores[j] = Σ_d x[i,d] · Wr[h,d,j] (no
         // sqrt-D scaling). Used by Resonance/Janus architectures.
@@ -2197,6 +2293,65 @@ export class Notorch {
   // RRPRAM ATTENTION — Resonance/Janus positional attention.
   // scores[j] = Σ_d x[i,d] · Wr[h,d,j] (no sqrt-D scaling — see notorch.c).
   // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Low-rank RRPRAM attention with packed Wr_a × Wr_b. wr_combined is laid out
+   * as [Wr_a flat | Wr_b flat]:
+   *   Wr_a (H·E·R) — [h,d,r] = h·E·R + d·R + r
+   *   Wr_b (H·R·T) — [h,r,j] = wraTotal + h·R·T + r·T + j
+   * Rank is derived from Wr.len / (nrHeads · (nEmbd + T)). Mirrors C
+   * nt_rrpram_lowrank_attention at notorch.c:3349.
+   */
+  rrpramLowrankAttention(wrCombinedIdx, xIdx, vIdx, T, nEmbd, nrHeads, headDim) {
+    const Wr = this.tape.entries[wrCombinedIdx].output;
+    const x = this.tape.entries[xIdx].output;
+    const v = this.tape.entries[vIdx].output;
+    const outDim = nrHeads * headDim;
+    const T_r = T;
+    const combinedLen = Wr.len;
+    const rank = (combinedLen / (nrHeads * (nEmbd + T_r))) | 0;
+    if (rank < 1) {
+      throw new Error(`rrpramLowrankAttention: derived rank=${rank} (Wr.len=${combinedLen}, nrHeads=${nrHeads}, nEmbd+T=${nEmbd + T_r})`);
+    }
+    const wraTotal = nrHeads * nEmbd * rank;
+    const out = Tensor.zeros([T, outDim]);
+    const uBuf = new Float32Array(rank);
+    const scoresBuf = new Float32Array(T_r);
+    for (let h = 0; h < nrHeads; h++) {
+      const wrABase = h * nEmbd * rank;
+      const wrBBase = wraTotal + h * rank * T_r;
+      const vOff = h * headDim;
+      for (let i = 0; i < T; i++) {
+        const xiOff = i * nEmbd;
+        // u[r] = Σ_d xi[d] · Wr_a[h,d,r]
+        for (let r = 0; r < rank; r++) uBuf[r] = 0;
+        for (let d = 0; d < nEmbd; d++) {
+          const xd = x.data[xiOff + d];
+          const waRow = wrABase + d * rank;
+          for (let r = 0; r < rank; r++) uBuf[r] += xd * Wr.data[waRow + r];
+        }
+        // scores[j] = Σ_r u[r] · Wr_b[h,r,j] for j ≤ i
+        let mx = -Infinity;
+        for (let j = 0; j <= i; j++) {
+          let s = 0;
+          for (let r = 0; r < rank; r++) s += uBuf[r] * Wr.data[wrBBase + r * T_r + j];
+          scoresBuf[j] = s;
+          if (s > mx) mx = s;
+        }
+        let sm = 0;
+        for (let j = 0; j <= i; j++) { scoresBuf[j] = Math.exp(scoresBuf[j] - mx); sm += scoresBuf[j]; }
+        if (sm > 0) for (let j = 0; j <= i; j++) scoresBuf[j] /= sm;
+        const oiOff = i * outDim + vOff;
+        for (let d = 0; d < headDim; d++) out.data[oiOff + d] = 0;
+        for (let j = 0; j <= i; j++) {
+          const vjOff = j * outDim + vOff;
+          const aj = scoresBuf[j];
+          for (let d = 0; d < headDim; d++) out.data[oiOff + d] += aj * v.data[vjOff + d];
+        }
+      }
+    }
+    return this.tape.record(out, OP.RRPRAM_LR, wrCombinedIdx, xIdx, vIdx, T, nEmbd, nrHeads, headDim);
+  }
 
   /**
    * RRPRAM positional attention. Wr:[nrHeads, nEmbd, ctx] flat, x:[T, nEmbd],
