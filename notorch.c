@@ -3183,7 +3183,12 @@ int nt_mh_causal_attention(int q_idx, int k_idx, int v_idx, int T, int head_dim)
     nt_tape_entry* pv = &g_tape.entries[v_idx];
 
 #ifdef USE_CUDA
-    if (g_use_gpu) {
+    /* NT_DISABLE_MH_GPU env-guard also gates forward (extends prior backward
+     * guard). Diagnostic for nanollama-Llama-3 forward kernel suspected NaN
+     * source — Resonance bypassed plain MH via RRPRAM dual-attn, never
+     * production-tested gpu_multi_head_attention forward on this shape. */
+    int mh_gpu_disabled = getenv("NT_DISABLE_MH_GPU") != NULL;
+    if (g_use_gpu && !mh_gpu_disabled) {
         float* d_Q = nt_tensor_ensure_gpu(pq->output);
         float* d_K = nt_tensor_ensure_gpu(pk->output);
         float* d_V = nt_tensor_ensure_gpu(pv->output);
@@ -3198,6 +3203,11 @@ int nt_mh_causal_attention(int q_idx, int k_idx, int v_idx, int T, int head_dim)
             return idx;
         }
     }
+    /* CPU fallback reads pq/pk/pv mirrors — sync first when GPU forward is on
+     * for those parents (q/k/v come from nt_rope which is GPU-aware). */
+    nt_tensor_sync_cpu(pq->output);
+    nt_tensor_sync_cpu(pk->output);
+    nt_tensor_sync_cpu(pv->output);
 #endif
 
     float* scores_buf = (float*)malloc(T * sizeof(float));
