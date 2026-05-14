@@ -1018,6 +1018,39 @@ export class Tape {
         return;
       }
 
+      case OP.SEQ_CROSSENT_MASKED: {
+        // Masked sequence cross-entropy. parent3 = mask [T] (0=skip).
+        // dlogits[t,j] = (softmax[j] - 1{j==target}) * (mask[t] * dout[0] / n_active)
+        if (e.parent1 >= 0 && e.parent2 >= 0 && e.parent3 >= 0) {
+          const logits = this.entries[e.parent1].output.data;
+          const targets = this.entries[e.parent2].output.data;
+          const mask = this.entries[e.parent3].output.data;
+          const T = e.aux | 0;
+          const V = e.aux2 | 0;
+          let nActive = 0;
+          for (let t = 0; t < T; t++) nActive += mask[t];
+          if (nActive <= 0) return;
+          const dl = new Float32Array(T * V);
+          for (let t = 0; t < T; t++) {
+            const m = mask[t];
+            if (m === 0) continue;
+            const off = t * V;
+            let tgt = targets[t] | 0;
+            if (tgt < 0 || tgt >= V) tgt = 0;
+            let mx = logits[off];
+            for (let j = 1; j < V; j++) if (logits[off + j] > mx) mx = logits[off + j];
+            let sum = 0;
+            for (let j = 0; j < V; j++) { dl[off + j] = Math.exp(logits[off + j] - mx); sum += dl[off + j]; }
+            for (let j = 0; j < V; j++) dl[off + j] /= sum;
+            dl[off + tgt] -= 1;
+            const s = m * dout[0] / nActive;
+            for (let j = 0; j < V; j++) dl[off + j] *= s;
+          }
+          this.accGrad(e.parent1, dl);
+        }
+        return;
+      }
+
       default: return;
     }
   }
@@ -1995,6 +2028,37 @@ export class Notorch {
     }
     const out = new Tensor(new Float32Array([lossSum / T]), [1]);
     return this.tape.record(out, OP.SEQ_CROSSENT, logitsIdx, targetsIdx, -1, T, V);
+  }
+
+  /**
+   * Masked sequence cross-entropy — assistant-only SFT loss.
+   * logits:[T,V], targets:[T] (int), mask:[T] (float, 0=skip). Loss is
+   * averaged over the `mask[t] > 0` positions only, so prompt tokens with
+   * mask=0 contribute neither to forward nor backward. Mirrors C
+   * nt_seq_cross_entropy_masked at notorch.c:3778; sister of
+   * `seqCrossEntropyLoss`.
+   */
+  seqCrossEntropyLossMasked(logitsIdx, targetsIdx, maskIdx, T, V) {
+    const logits = this.tape.entries[logitsIdx].output;
+    const targets = this.tape.entries[targetsIdx].output.data;
+    const mask = this.tape.entries[maskIdx].output.data;
+    let totalLoss = 0;
+    let nActive = 0;
+    for (let t = 0; t < T; t++) {
+      const m = mask[t];
+      if (m === 0) continue;
+      const off = t * V;
+      let mx = logits.data[off];
+      for (let j = 1; j < V; j++) if (logits.data[off + j] > mx) mx = logits.data[off + j];
+      let sum = 0;
+      for (let j = 0; j < V; j++) sum += Math.exp(logits.data[off + j] - mx);
+      let tgt = targets[t] | 0;
+      if (tgt < 0 || tgt >= V) tgt = 0;
+      totalLoss += m * -(logits.data[off + tgt] - mx - Math.log(sum));
+      nActive += m;
+    }
+    const out = new Tensor(new Float32Array([nActive > 0 ? totalLoss / nActive : 0]), [1]);
+    return this.tape.record(out, OP.SEQ_CROSSENT_MASKED, logitsIdx, targetsIdx, maskIdx, T, V);
   }
 
   /** Mean-squared error. pred and target both Tensors of same shape. */
