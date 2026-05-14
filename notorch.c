@@ -1684,6 +1684,20 @@ void nt_tape_backward(int loss_idx) {
                 nt_tape_entry* pl = &g_tape.entries[e->parent1];
                 nt_tape_entry* pt = &g_tape.entries[e->parent2];
                 nt_tape_entry* pm = &g_tape.entries[e->parent3];
+                /* GPU/CPU mirror discipline (5th instance — sibling of 3d46007
+                 * which fixed non-masked NT_OP_CROSS_ENT). Masked variant was
+                 * never synced. In GPU mode pl->output->data (logits, line 1697)
+                 * is stale (CPU mirror untouched since the GPU output linear).
+                 * dl computed via softmax(stale_logits) - target produces a
+                 * gradient pointing at the wrong direction → feeds garbage up
+                 * 13 layers → Chuck oscillates → NaN at step 40-220 regardless
+                 * of LoRA scale. Verified neo 2026-05-14 nanollama-notorch SFT.
+                 * Matches Olego «не из-за оптимайзера» and Intel POST_SFT note
+                 * that lr=1e-5/3e-5 plateau is lr-independent (= zero/garbage
+                 * grad somewhere upstream). */
+                nt_tensor_sync_cpu(pl->output);
+                nt_tensor_sync_cpu(pm->output);
+                nt_tensor_sync_cpu(pt->output);
                 int T = (int)e->aux;
                 int V = (int)e->aux2;
                 float n_active = 0;
