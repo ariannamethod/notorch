@@ -204,11 +204,16 @@ docstring when you next pass through.
 ## Open TODO (audit & fixes)
 
 - Audit pass on remaining `NT_OP_*` backward CPU branches for the
-  GPU/CPU sync pattern. Candidates: SIGMOID, SCALE_BY_T, RMSNORM.
+  GPU/CPU sync pattern. Candidates: SIGMOID, SCALE_BY_T.
+  (RMSNORM closed by `967f1c0`; MUL/SILU by `8ab5062`;
+  SEQ_CROSSENT_MASKED by `2ccfb16`; MH_CAUSAL_ATTN by `8f8d722`.)
 - Fix `gpu_rrpram_lr_forward` T vs T_max stride bug at
   `notorch_cuda.cu:824`.
 - Fix the `notorch.h:653` alpha-format docstring (raw float bytes, not
   `alpha*1000`).
-- Port LoRA primitives to `js-edition/notorch.js` (in flight 2026-05-11).
+- Implement `nt_rrpram_broadcast_attention` (`NT_OP_RRPRAM_BCAST` 34)
+  on the C side — declared in `notorch.h:126,442` but no implementation
+  in `notorch.c`. JS edition currently stops parity at op 33 awaiting
+  this.
 - Vary RNG seed per cell in `phase7_eval.py` so the first sampled token
   isn't identical across cells with the same prompt.
