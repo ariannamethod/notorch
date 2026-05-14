@@ -23,6 +23,7 @@
 
 #include <immintrin.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdatomic.h>
@@ -470,6 +471,37 @@ static inline void cblas_sgemm(
     int B_row_stride = (TransB == CblasNoTrans) ? ldb : 1;
     int B_col_stride = (TransB == CblasNoTrans) ? 1 : ldb;
 
+    /* CBLAS contract: C ← β·C + α·A@B.
+     * Previous wrapper did C := β·C, then C += A@B, then C *= α — which
+     * yields α·β·C_orig + α·A@B (wrong whenever β ≠ 0 and α ≠ 1).
+     * Fix 2026-05-14 (Arianna Method, neo node): fold α into A via a small
+     * scratch buffer so the kernel-accumulated product is already α·A@B.
+     * α = 1 fast path stays allocation-free. */
+    const float* A_use   = A;
+    int A_row_stride_use = A_row_stride;
+    int A_col_stride_use = A_col_stride;
+    float* alpha_scratch = NULL;
+    if (alpha != 1.0f) {
+        alpha_scratch = (float*)malloc((size_t)M * (size_t)K * sizeof(float));
+        if (alpha_scratch) {
+            for (int i = 0; i < M; i++) {
+                const float* a_row = A + (size_t)i * A_row_stride;
+                float*       s_row = alpha_scratch + (size_t)i * K;
+                for (int p = 0; p < K; p++) {
+                    s_row[p] = alpha * a_row[(size_t)p * A_col_stride];
+                }
+            }
+            A_use            = alpha_scratch;
+            A_row_stride_use = K;
+            A_col_stride_use = 1;
+        } else {
+            fprintf(stderr,
+                    "[notorch_simd] cblas_sgemm: malloc(%zu B) for alpha "
+                    "scratch failed; alpha=%g lost — result will be incorrect.\n",
+                    (size_t)M * (size_t)K * sizeof(float), alpha);
+        }
+    }
+
     // Apply beta to C (and zero-init if beta == 0)
     int initial_zero = (beta == 0.0f) ? 1 : 0;
     if (!initial_zero && beta != 1.0f) {
@@ -485,7 +517,7 @@ static inline void cblas_sgemm(
     long mnk = (long)M * (long)N * (long)K;
     int nthreads = nt_simd_thread_count();
     if (M < 2 * NT_SIMD_MR || nthreads < 2 || mnk < 256L*1024L) {
-        nt_simd_sgemm_block(A, A_row_stride, A_col_stride,
+        nt_simd_sgemm_block(A_use, A_row_stride_use, A_col_stride_use,
                             B, B_row_stride, B_col_stride,
                             C, ldc,
                             M, N, K,
@@ -503,7 +535,7 @@ static inline void cblas_sgemm(
             if (m_start >= M) break;
             if (m_end > M) m_end = M;
             jobs[actual_jobs++] = (nt_simd_job){
-                A, A_row_stride, A_col_stride,
+                A_use, A_row_stride_use, A_col_stride_use,
                 B, B_row_stride, B_col_stride,
                 C, ldc,
                 m_start, m_end, N, K,
@@ -513,12 +545,7 @@ static inline void cblas_sgemm(
         nt_simd_pool_dispatch(jobs, actual_jobs);
     }
 
-    // Apply alpha if not 1.0 (uncommon — most notorch calls use alpha=1)
-    if (alpha != 1.0f) {
-        for (int i = 0; i < M; i++)
-            for (int j = 0; j < N; j++)
-                C[i*ldc + j] *= alpha;
-    }
+    free(alpha_scratch);
 }
 
 // y[m] = alpha * op(A) @ x + beta * y
