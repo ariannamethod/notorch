@@ -1119,6 +1119,65 @@ export class Tape {
         return;
       }
 
+      case OP.BIT_LINEAR: {
+        // STE backward — treat ternary/int8 quantization as identity.
+        // dW[i,j] = dout[i] * x[j] ; dx[j] = Σ_i W[i,j] * dout[i].
+        if (e.parent1 >= 0 && e.parent2 >= 0) {
+          const W = this.entries[e.parent1].output;
+          const x = this.entries[e.parent2].output;
+          const rows = W.shape[0];
+          const cols = W.shape.length >= 2 ? W.shape[1] : (W.len / rows);
+          const dW = new Float32Array(rows * cols);
+          const dx = new Float32Array(cols);
+          for (let i = 0; i < rows; i++) {
+            const dyi = dout[i];
+            const wRow = i * cols;
+            for (let j = 0; j < cols; j++) dW[wRow + j] = dyi * x.data[j];
+          }
+          for (let j = 0; j < cols; j++) {
+            let acc = 0;
+            for (let i = 0; i < rows; i++) acc += W.data[i * cols + j] * dout[i];
+            dx[j] = acc;
+          }
+          this.accGrad(e.parent1, dW);
+          this.accGrad(e.parent2, dx);
+        }
+        return;
+      }
+
+      case OP.BIT_SEQ_LINEAR: {
+        // STE backward over T positions: dW = Σ_t dout[t]⊗x[t]; dx[t] = W^T @ dout[t]
+        if (e.parent1 >= 0 && e.parent2 >= 0) {
+          const W = this.entries[e.parent1].output;
+          const x = this.entries[e.parent2].output;
+          const T = e.aux | 0;
+          const rows = W.shape[0];
+          const cols = W.shape.length >= 2 ? W.shape[1] : (W.len / rows);
+          const dW = new Float32Array(rows * cols);
+          const dx = new Float32Array(T * cols);
+          for (let t = 0; t < T; t++) {
+            const doutOff = t * rows;
+            const xOff = t * cols;
+            // dW += dout_t ⊗ x_t
+            for (let i = 0; i < rows; i++) {
+              const dyi = dout[doutOff + i];
+              const wRow = i * cols;
+              for (let j = 0; j < cols; j++) dW[wRow + j] += dyi * x.data[xOff + j];
+            }
+            // dx[t] = W^T @ dout_t
+            const dxOff = t * cols;
+            for (let j = 0; j < cols; j++) {
+              let acc = 0;
+              for (let i = 0; i < rows; i++) acc += W.data[i * cols + j] * dout[doutOff + i];
+              dx[dxOff + j] = acc;
+            }
+          }
+          this.accGrad(e.parent1, dW);
+          this.accGrad(e.parent2, dx);
+        }
+        return;
+      }
+
       case OP.GEGLU: {
         // y[t,i] = GELU(gate[t,i]) * val[t,i], gate = x @ W1^T, val = x @ W2^T.
         // Recompute gate/val/GELU(gate) and propagate to x, W1, W2.
@@ -2071,6 +2130,99 @@ export class Notorch {
   // ═════════════════════════════════════════════════════════════════════════
   // GEGLU FFN — fused: y = GELU(x @ W1^T) * (x @ W2^T). Gemma-3 style FFN.
   // ═════════════════════════════════════════════════════════════════════════
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // BITLINEAR — BitNet 1.58: ternary W (-1, 0, +1) per-row · int8 x.
+  // Forward quantizes W (γ_W = mean|W|) and x (γ_x = max|x|), then
+  // recovers scale via output_scale = γ_W · γ_x / 127. Backward uses STE
+  // (treats quant as identity, propagates full-precision W and x).
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /** BitLinear single-vector: y = output_scale · (Wq @ xq). Mirrors C nt_bit_linear (notorch.c:3534). */
+  bitLinear(wIdx, xIdx) {
+    const W = this.tape.entries[wIdx].output;
+    const x = this.tape.entries[xIdx].output;
+    const rows = W.shape[0];
+    const cols = W.shape.length >= 2 ? W.shape[1] : (W.len / rows);
+    // γ_W = mean(|W|)
+    let absSum = 0;
+    for (let i = 0; i < W.len; i++) absSum += Math.abs(W.data[i]);
+    let gamma_w = absSum / W.len;
+    if (gamma_w < 1e-8) gamma_w = 1e-8;
+    const inv_gw = 1 / gamma_w;
+    // γ_x = max(|x|)
+    let xmax = 0;
+    for (let j = 0; j < cols; j++) { const v = Math.abs(x.data[j]); if (v > xmax) xmax = v; }
+    if (xmax < 1e-8) xmax = 1e-8;
+    const inv_sx = 127 / xmax;
+    const outputScale = gamma_w * xmax / 127;
+    // Quantize x → int8
+    const xq = new Int8Array(cols);
+    for (let j = 0; j < cols; j++) {
+      let q = Math.round(x.data[j] * inv_sx);
+      if (q > 127) q = 127; else if (q < -128) q = -128;
+      xq[j] = q;
+    }
+    const out = Tensor.zeros([rows]);
+    for (let i = 0; i < rows; i++) {
+      let acc = 0;
+      const wRow = i * cols;
+      for (let j = 0; j < cols; j++) {
+        let q = Math.round(W.data[wRow + j] * inv_gw);
+        if (q > 1) q = 1; else if (q < -1) q = -1;
+        acc += q * xq[j];
+      }
+      out.data[i] = Math.fround(outputScale * acc);
+    }
+    return this.tape.record(out, OP.BIT_LINEAR, wIdx, xIdx, -1, gamma_w);
+  }
+
+  /**
+   * BitLinear sequence variant: Y[t] = output_scale_t · (Wq @ xq_t),
+   * with γ_x recomputed per position. Mirrors C nt_bit_seq_linear
+   * (notorch.c:3573).
+   */
+  bitSeqLinear(wIdx, xIdx, T) {
+    const W = this.tape.entries[wIdx].output;
+    const x = this.tape.entries[xIdx].output;
+    const rows = W.shape[0];
+    const cols = W.shape.length >= 2 ? W.shape[1] : (W.len / rows);
+    let absSum = 0;
+    for (let i = 0; i < W.len; i++) absSum += Math.abs(W.data[i]);
+    let gamma_w = absSum / W.len;
+    if (gamma_w < 1e-8) gamma_w = 1e-8;
+    const inv_gw = 1 / gamma_w;
+    // Pre-ternarize W (re-used across all T positions)
+    const Wq = new Int8Array(rows * cols);
+    for (let i = 0; i < rows * cols; i++) {
+      let q = Math.round(W.data[i] * inv_gw);
+      if (q > 1) q = 1; else if (q < -1) q = -1;
+      Wq[i] = q;
+    }
+    const out = Tensor.zeros([T, rows]);
+    const xq = new Int8Array(cols);
+    for (let t = 0; t < T; t++) {
+      const xOff = t * cols;
+      let xmax = 0;
+      for (let j = 0; j < cols; j++) { const v = Math.abs(x.data[xOff + j]); if (v > xmax) xmax = v; }
+      if (xmax < 1e-8) xmax = 1e-8;
+      const inv_sx = 127 / xmax;
+      const outputScale = gamma_w * xmax / 127;
+      for (let j = 0; j < cols; j++) {
+        let q = Math.round(x.data[xOff + j] * inv_sx);
+        if (q > 127) q = 127; else if (q < -128) q = -128;
+        xq[j] = q;
+      }
+      const yOff = t * rows;
+      for (let i = 0; i < rows; i++) {
+        let acc = 0;
+        const wRow = i * cols;
+        for (let j = 0; j < cols; j++) acc += Wq[wRow + j] * xq[j];
+        out.data[yOff + i] = Math.fround(outputScale * acc);
+      }
+    }
+    return this.tape.record(out, OP.BIT_SEQ_LINEAR, wIdx, xIdx, -1, T, gamma_w);
+  }
 
   /**
    * Fused GEGLU. x:[T, D_in], W1/W2:[D_out, D_in], output [T, D_out].
