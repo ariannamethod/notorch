@@ -138,6 +138,12 @@ Out of scope on phone CPU:
 - 1 B+ params (no realistic memory budget without aggressive quantization + sharding)
 - Anything that would normally demand multi-GPU
 
+## Status after Intel 2026-05-11 CPU-sync audit
+
+Intel's `8ab5062` (NT_OP_MUL / NT_OP_SILU backward CPU-sync) and the parallel AML-side fix `ff7fb97` (16 ops) both gate behind `#ifdef USE_CUDA`. Termux builds CPU-only — `nt_tensor_sync_cpu()` is compiled out, zero runtime delta on aarch64. notorch `8e6658b` rebuilt clean on phone-1, `make notorch_test` → 47/47 pass post-update. README and recipe above unchanged.
+
+For an AML system-wide install on the same Termux substrate, see the sibling [`ariannamethod.ai/termux-edition/`](https://github.com/ariannamethod/ariannamethod.ai/tree/main/termux-edition) — it carries the `pkg-config` Makefile patch that AML's upstream Makefile still needs for `make BLAS=1` on Termux.
+
 ## Files in this folder
 
 - `README.md` — this document
