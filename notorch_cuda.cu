@@ -19,6 +19,7 @@
 
 static cublasHandle_t g_cublas = NULL;
 static int g_gpu_ready = 0;
+static long long g_gpu_dispatch = 0;  // cuBLAS GEMM dispatch count — criterion 4 (GPU-use proof)
 static GPU_WeightSlot g_wcache[GPU_MAX_WEIGHTS];
 static int g_wcache_count = 0;
 
@@ -42,6 +43,7 @@ static int g_wcache_count = 0;
 
 #define CUBLAS_CHECK(call) do { \
     cublasStatus_t st = (call); \
+    g_gpu_dispatch++; \
     if (st != CUBLAS_STATUS_SUCCESS) { \
         fprintf(stderr, "[cuBLAS ERROR] %s:%d: status %d\n", __FILE__, __LINE__, st); \
     } \
@@ -95,6 +97,13 @@ extern "C" void gpu_shutdown(void) {
     g_gpu_ready = 0;
     printf("[GPU] shutdown\n");
 }
+
+// ── GPU dispatch counter — proof that training matvecs reached cuBLAS
+// (criterion 4). Every cuBLAS call routes through CUBLAS_CHECK, which
+// increments g_gpu_dispatch. molequla resets it before a smoke and reads
+// it after to confirm the training tape dispatched to the device.
+extern "C" long long nt_gpu_dispatch_count(void) { return g_gpu_dispatch; }
+extern "C" void      nt_gpu_dispatch_reset(void) { g_gpu_dispatch = 0; }
 
 // ═══════════════════════════════════════════════════════════════════
 // Memory management

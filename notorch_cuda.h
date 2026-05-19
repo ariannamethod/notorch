@@ -18,6 +18,8 @@ extern "C" {
 // ── Init / Shutdown ────────────────────────────────────────────────
 int   gpu_init(void);           // Returns 0 on success
 void  gpu_shutdown(void);
+long long nt_gpu_dispatch_count(void);  // cuBLAS dispatch count — criterion 4
+void      nt_gpu_dispatch_reset(void);  // reset the dispatch counter
 
 // ── Memory management ──────────────────────────────────────────────
 // GPU memory pool: weights stay on GPU, activations are transient
