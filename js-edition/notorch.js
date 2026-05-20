@@ -3298,6 +3298,121 @@ export function saveNotorchBin(tensors) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// GGUF LOADER — read llama.cpp GGUF v3 (header + metadata + tensors).
+// Handles F32 (type 0) and F16 (type 1); quantized types (Q4_K / Q6_K /
+// Q8_0 …) throw — block dequant is a TODO. Mirrors the writer in metaharmonix
+// examples/nanollama-sft/notorch_to_gguf.py: alignment 32, dims stored
+// innermost-first (reversed back to row-major here), arch + tokenizer
+// metadata embedded. A GGUF gives weights AND config AND vocab in one file.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const GGUF_MAGIC = 0x46554747;  // 'GGUF'
+const GGML_TYPE_F32 = 0, GGML_TYPE_F16 = 1;
+
+/** IEEE-754 half (u16 bits) → JS number. */
+function ggufHalfToFloat(h) {
+  const s = (h & 0x8000) ? -1 : 1;
+  const e = (h >> 10) & 0x1F;
+  const f = h & 0x3FF;
+  if (e === 0) return s * Math.pow(2, -14) * (f / 1024);
+  if (e === 0x1F) return f ? NaN : s * Infinity;
+  return s * Math.pow(2, e - 15) * (1 + f / 1024);
+}
+
+/**
+ * Load a GGUF v3 file. Returns { metadata: Map, tensors: Map<name, Tensor> }.
+ * `metadata` holds arch keys (`llama.block_count`, `llama.embedding_length`,
+ * `llama.attention.head_count`, `llama.feed_forward_length`,
+ * `llama.rope.freq_base`, `llama.attention.layer_norm_rms_epsilon`, …) and
+ * tokenizer keys (`tokenizer.ggml.tokens` string array, `.scores`,
+ * `.token_type`, bos/eos ids). Tensor names follow llama.cpp convention
+ * (`token_embd.weight`, `blk.{i}.attn_q.weight`, `output.weight`, …); shapes
+ * are row-major. F16 tensors are expanded to F32 on load.
+ */
+export function loadGGUF(arrayBuffer) {
+  const dv = new DataView(arrayBuffer);
+  const u8 = new Uint8Array(arrayBuffer);
+  const dec = new TextDecoder('utf-8');
+  let off = 0;
+  const u32 = () => { const v = dv.getUint32(off, true); off += 4; return v; };
+  const i32 = () => { const v = dv.getInt32(off, true);  off += 4; return v; };
+  const u64 = () => { const v = Number(dv.getBigUint64(off, true)); off += 8; return v; };
+  const i64 = () => { const v = Number(dv.getBigInt64(off, true));  off += 8; return v; };
+  const f32v = () => { const v = dv.getFloat32(off, true); off += 4; return v; };
+  const f64v = () => { const v = dv.getFloat64(off, true); off += 8; return v; };
+  const gstr = () => { const n = u64(); const s = dec.decode(u8.subarray(off, off + n)); off += n; return s; };
+
+  if (u32() !== GGUF_MAGIC) throw new Error('loadGGUF: bad magic (not a GGUF file)');
+  const version = u32();
+  if (version !== 3) throw new Error(`loadGGUF: unsupported GGUF version ${version} (expect 3)`);
+  const tensorCount = u64();
+  const kvCount = u64();
+
+  const readValue = (vtype) => {
+    switch (vtype) {
+      case 0:  { const v = dv.getUint8(off); off += 1; return v; }        // UINT8
+      case 1:  { const v = dv.getInt8(off);  off += 1; return v; }        // INT8
+      case 2:  { const v = dv.getUint16(off, true); off += 2; return v; } // UINT16
+      case 3:  { const v = dv.getInt16(off, true);  off += 2; return v; } // INT16
+      case 4:  return u32();   // UINT32
+      case 5:  return i32();   // INT32
+      case 6:  return f32v();  // FLOAT32
+      case 7:  { const v = dv.getUint8(off) !== 0; off += 1; return v; }  // BOOL
+      case 8:  return gstr();  // STRING
+      case 9: {                // ARRAY
+        const elemType = u32();
+        const count = u64();
+        const arr = new Array(count);
+        for (let i = 0; i < count; i++) arr[i] = readValue(elemType);
+        return arr;
+      }
+      case 10: return u64();   // UINT64
+      case 11: return i64();   // INT64
+      case 12: return f64v();  // FLOAT64
+      default: throw new Error(`loadGGUF: unknown metadata value type ${vtype}`);
+    }
+  };
+
+  const metadata = new Map();
+  for (let i = 0; i < kvCount; i++) {
+    const key = gstr();
+    metadata.set(key, readValue(u32()));
+  }
+
+  const infos = [];
+  for (let i = 0; i < tensorCount; i++) {
+    const name = gstr();
+    const nDims = u32();
+    const dims = [];
+    for (let d = 0; d < nDims; d++) dims.push(u64());
+    dims.reverse();   // GGML stores dims innermost-first → row-major
+    const gtype = u32();
+    const offset = u64();
+    infos.push({ name, dims, gtype, offset });
+  }
+
+  const align = metadata.get('general.alignment') || 32;
+  const dataStart = Math.ceil(off / align) * align;
+
+  const tensors = new Map();
+  for (const info of infos) {
+    const base = dataStart + info.offset;
+    const len = info.dims.reduce((a, b) => a * b, 1);
+    const data = new Float32Array(len);
+    if (info.gtype === GGML_TYPE_F32) {
+      for (let i = 0; i < len; i++) data[i] = dv.getFloat32(base + i * 4, true);
+    } else if (info.gtype === GGML_TYPE_F16) {
+      for (let i = 0; i < len; i++) data[i] = ggufHalfToFloat(dv.getUint16(base + i * 2, true));
+    } else {
+      throw new Error(`loadGGUF: tensor "${info.name}" ggml type ${info.gtype} unsupported (only F32/F16; quant dequant is TODO)`);
+    }
+    tensors.set(info.name, new Tensor(data, info.dims));
+  }
+
+  return { metadata, tensors };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TOKENIZERS
 // ═══════════════════════════════════════════════════════════════════════════
 
