@@ -1,11 +1,10 @@
-// notorch.h — PyTorch replacement in pure C
+// notorch.h — Neural Networks in pure C
 // Train and run neural networks without Python.
 //
 // Extracted from ariannamethod.ai/core/ (Arianna Method)
 // Copyright (C) 2026 Oleg Ataeff & Arianna Method contributors
 // SPDX-License-Identifier: LGPL-3.0-or-later
-//
-// "fuck torch"
+
 
 #ifndef NOTORCH_H
 #define NOTORCH_H
