@@ -172,6 +172,38 @@ test_vision: tests/test_vision.c notorch.c notorch.h notorch_vision.h stb_image.
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_vision tests/test_vision.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_vision (vision + BPE, $(BLAS_NAME))"
 
+# ── Apple Silicon Metal/MSL backend (Phase 1: Q4_K matvec) ──
+# Inline-dequant Q4_K matvec on the Apple GPU — the critical path for
+# 24B-class quantized models on 24GB nodes. Weights stay in their packed
+# layout; the shader streams blocks and reconstructs f32 values per
+# matvec, never materializing the 4× f32 buffer. See notorch_metal.h.
+ifeq ($(UNAME), Darwin)
+# Obj-C++ needs a C++ standard; -std=c11 is invalid for .mm. Use a
+# dedicated MM_FLAGS so the rest of notorch (pure C99/C11) keeps its
+# C dialect.
+MM_FLAGS = -O2 -Wall -Wextra -std=c++17 -I.
+
+notorch_metal.o: notorch_metal.mm notorch_metal.h
+	clang++ $(MM_FLAGS) -DUSE_METAL -fobjc-arc -c notorch_metal.mm -o notorch_metal.o
+	@echo "Compiled: notorch_metal.o (Metal/MSL, Apple Silicon)"
+
+tests/test_metal_q4k: tests/test_metal_q4k.c notorch_metal.o notorch_metal.h
+	$(CC) $(CFLAGS) -DUSE_METAL -o tests/test_metal_q4k tests/test_metal_q4k.c notorch_metal.o \
+		-framework Metal -framework Foundation -lc++ -lm
+	@echo "Compiled: tests/test_metal_q4k (Metal Q4_K correctness)"
+
+metal: tests/test_metal_q4k
+	@echo "Metal backend built. Run: make test_metal"
+
+test_metal: tests/test_metal_q4k
+	./tests/test_metal_q4k
+else
+metal:
+	@echo "Metal is Apple-only; this is $(UNAME). Skipping."
+test_metal:
+	@echo "Metal is Apple-only; skipping."
+endif
+
 # ── Test & Clean ──
 
 test: notorch_test test_vision
