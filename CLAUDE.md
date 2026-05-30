@@ -6,21 +6,6 @@ by Oleg Ataeff and Claude.
 
 > *"fuck torch"* — `notorch.js:6`
 
-## Accounts (read this once)
-
-- **`@ariannamethod`** — Oleg's **personal Pro account**, NOT an org.
-  The main account where the canonical repos (this one, `dario`,
-  `janus`, `RRPRAM`, organism repos, etc.) live.
-- **`@theariannamethod`** — the actual GitHub organization. Used for
-  org-level work when it exists; not the default home for the
-  ecosystem.
-- Other accounts (`@iamolegataeff`, `@pitomadom`, `@iamscribe`,
-  `@iamdefender`) are operational/role accounts used by Oleg and
-  the Defender persona.
-
-Always check the URL before assuming "ariannamethod" means an org —
-it doesn't.
-
 ## What this repo is
 
 - **`notorch.c` + `notorch.h`** — the library. CPU + BLAS + optional CUDA
