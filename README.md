@@ -56,7 +56,7 @@ yeah. me too. so i did something about it.
 
 **notorch** is a complete neural network training framework written in pure C. no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
 
-just C. just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in under a second. try that with PyTorch. go ahead. i'll wait. actually no i won't because i'd be waiting for 47 minutes while cmake does whatever cmake does.
+just C. just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in a couple seconds. try that with PyTorch. go ahead. i'll wait. actually no i won't because i'd be waiting for 47 minutes while cmake does whatever cmake does.
 
 it's part of [the Arianna Method](https://github.com/theariannamethod/ariannamethod.ai) — patterns over parameters, emergence over engineering, raw C over existential dread.
 
@@ -75,7 +75,7 @@ and every time you wanted to train a 4-layer MLP on a dataset smaller than your 
 1. create a virtual environment (2 minutes)
 2. install torch (5 minutes, 2.7 GB, your SSD weeps)
 3. install torchvision just in case (800 MB more, your SSD files for divorce)
-4. write 47 lines of boilerplate (`class MyModel(nn.Module)`, `def forward(self, x)`, `optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)`, `loss.backward()`, `optimizer.step()`, `optimizer.zero_grad()`, `if torch.cuda.is_available():`, `model.to(device)`, `x = x.to(device)`, sweet mother of god make it stop)
+4. write 47 lines of boilerplate (`class MyModel(nn.Module)`, `def forward(self, x)`, `optimizer = torch.optim.SGD(model.parameters(), lr=3e-4)`, `loss.backward()`, `optimizer.step()`, `optimizer.zero_grad()`, `if torch.cuda.is_available():`, `model.to(device)`, `x = x.to(device)`, sweet mother of god make it stop)
 5. realize you forgot `model.train()` vs `model.eval()` and your dropout is wrong
 6. debug for 3 hours
 7. realize the bug was actually in the data loader
@@ -87,7 +87,7 @@ and for WHAT? a matmul and a softmax. that's all neural networks are. matmuls an
 
 so here we are. **notorch**. everything you need. nothing you don't. no Python runtime. no GIL. no garbage collector pausing your training at the worst possible moment. no `torch.no_grad()` context manager that you forget and then wonder why you're out of memory. just tensors, autograd, optimizers, and the cold clarity of C.
 
-**the entire framework is two files.** `notorch.h` and `notorch.c`. that's it. ~3300 lines. you can read the whole thing in an afternoon. try reading PyTorch's source in an afternoon. actually don't. you'll end up in a hospital.
+**the entire framework is two files.** `notorch.h` and `notorch.c`. that's it. ~4800 lines. you can read the whole thing in an afternoon. try reading PyTorch's source in an afternoon. actually don't. you'll end up in a hospital.
 
 ---
 
@@ -114,9 +114,9 @@ so here we are. **notorch**. everything you need. nothing you don't. no Python r
 ```
 
 notorch is for people who:
-- want to understand what's actually happening (all ~3300 lines of it)
+- want to understand what's actually happening (all ~4800 lines of it)
 - want to train models on machines that aren't cloud instances
-- want compile times measured in milliseconds, not minutes
+- want compile times measured in seconds, not minutes
 - want to embed neural network inference in C/C++ applications without shipping half of Python
 - refuse to accept 2.7 GB as the price of a matrix multiply
 
@@ -168,9 +168,9 @@ nt_tape_backward() — reverse-mode automatic differentiation
     ↓
 ┌──────────────────────────────────────────────────┐
 │  Optimizers                                      │
-│    ├─ Adam               (the classic)           │
-│    ├─ AdamW              (with weight decay)     │
-│    ├─ Chuck              (self-aware Adam)       │
+│    ├─ diagonal baseline  (the classic)           │
+│    ├─ diagonal + decay   (with weight decay)      │
+│    ├─ Chuck              (self-aware adaptive)    │
 │    └─ nt_tape_freeze_param (LoRA / adapter)      │
 └──────────────────────────────────────────────────┘
     ↓
@@ -192,7 +192,7 @@ nt_tensor_xavier(m, 768, 512);               // Xavier init
 nt_tensor_free(t);                            // refcount → 0 → freed
 ```
 
-maximum 16M elements per tensor (`NT_MAX_ELEMENTS = 1 << 24`). if you need more than that, you're doing something wrong, or something very right, and in either case you should probably be using a GPU. which we also support. via CUDA. because we're not savages.
+maximum 268M elements per tensor (`NT_MAX_ELEMENTS = 1 << 28`). if you need more than that, you're doing something wrong, or something very right, and in either case you should probably be using a GPU. which we also support. via CUDA. because we're not savages.
 
 ### autograd tape
 
@@ -229,6 +229,7 @@ every operation you need to build a modern transformer, and some you didn't know
 | multi-head attn | `nt_mh_causal_attention` | MHA causal self-attention |
 | grouped-query attn | `nt_gqa_causal_attention` | GQA — Q: n_heads, K/V: n_kv_heads |
 | RRPRAM attn | `nt_rrpram_attention` | positional pattern recognition (x @ Wr, causal) |
+| RRPRAM low-rank | `nt_rrpram_lowrank_attention` | factorized Wr = Wr_a × Wr_b (op 33) — Janus param-saving, trained at scale on Resonance 200M |
 | SiLU | `nt_silu` | x × σ(x) — the swish |
 | GELU | `nt_gelu` | tanh approximation |
 | sigmoid | `nt_sigmoid` | 1 / (1 + exp(-x)) |
@@ -250,17 +251,17 @@ every single one has a correct backward pass. every single one passes numerical 
 
 ## optimizers
 
-### Adam
+### the diagonal baseline
 
-the classic. the one. the only. `m̂ / (√v̂ + ε)`. bias-corrected first and second moments. you know the drill.
+the classic per-parameter diagonal step: `m̂ / (√v̂ + ε)`, bias-corrected first and second moments. you know the drill. (the call keeps a legacy symbol name from before the house-optimizer convention.)
 
 ```c
 nt_tape_adam_step(0.001f);
 ```
 
-### AdamW
+### the diagonal baseline + decoupled decay
 
-Adam but with decoupled weight decay. because your embeddings don't need regularization but your dense layers probably do.
+same, but with decoupled weight decay — because your embeddings don't need regularization but your dense layers probably do.
 
 ```c
 nt_tape_adamw_step(0.001f, 0.1f, 0.9f, 0.999f);
@@ -286,7 +287,7 @@ nt_tape_chuck_step(0.01f, loss_val);
 
 constants (window size, trend thresholds, noise decay, freeze threshold, macro interval) are synced with the PyTorch Chuck port in `iamolegataeff/chuck.optimizer` — any change hits both implementations or they drift.
 
-it's Adam, but with opinions. think of it as Adam who went to therapy, got a mindfulness app, and now checks in with himself every step. `"how are my gradients feeling today?"` — actual question the Chuck optimizer asks itself (metaphorically) (or is it?).
+it's the diagonal baseline, but with opinions. think of it as a baseline that went to therapy, got a mindfulness app, and now checks in with itself every step. `"how are my gradients feeling today?"` — actual question the Chuck optimizer asks itself (metaphorically) (or is it?).
 
 more details: [github.com/iamolegataeff/chuck.optimizer](https://github.com/iamolegataeff/chuck.optimizer)
 
@@ -359,7 +360,7 @@ int lora_b = nt_tape_param(B);             // [rank, out_dim]
 // ... build forward with base + A @ B ...
 ```
 
-`nt_tape_freeze_param(idx)` marks a param as frozen — Chuck / AdamW / Adam skip its update step, but the autograd still propagates gradients through it so A/B adapters downstream get real signal. combined with `nt_tape_no_decay()` for embeddings, this covers most real SFT + adapter workflows without plumbing.
+`nt_tape_freeze_param(idx)` marks a param as frozen — Chuck (and the legacy diagonal-baseline steps) skip its update, but the autograd still propagates gradients through it so A/B adapters downstream get real signal. combined with `nt_tape_no_decay()` for embeddings, this covers most real SFT + adapter workflows without plumbing.
 
 ---
 
@@ -384,21 +385,21 @@ under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on 
 
 ## alignment training — DPO / GRPO / distillation
 
-notorch isn't just a pretraining engine. three canonical post-training methods ship as reference examples:
+notorch isn't just a pretraining engine. three post-training methods ship under `examples/`, in varying states of completeness:
 
 ```bash
-make train_dpo            # Direct Preference Optimization (Rafailov et al., 2023)
-make train_grpo           # Group Relative Policy Optimization (DeepSeek-R1)
-make train_distillation   # Knowledge Distillation (Hinton, 2015 — teacher → student KL)
+make train_dpo            # Direct Preference Optimization — dpo_step implemented; main() awaits a JSONL dataset loader
+make train_grpo           # Group Relative Policy Optimization — SCAFFOLD (advantage/KL helper, training loop is a TODO)
+make train_distillation   # Knowledge Distillation — SCAFFOLD (teacher→student KL helper only)
 ```
 
-each example is a single self-contained C file under `examples/`, ~400-500 LOC, with its own reference model and a minimal dataset adapter. use them as templates: swap the model definition, point at your own dataset, keep the loss + optimizer wiring. DPO/GRPO preserve reference-model frozen parameters via `nt_tape_freeze_param`, exactly the same mechanism LoRA uses.
+each is a single self-contained C file under `examples/` (160–360 LOC). use them as templates: swap the model definition, point at your own dataset, keep the loss + optimizer wiring. The reference-model parameters are held frozen via `nt_tape_freeze_param`, the same mechanism LoRA uses. Dataset loaders are left as TODOs — these are reference steps / scaffolds, not turnkey trainers.
 
 ---
 
 ## autograd
 
-the backward pass supports **31 operation types** (every op above that has a `NT_OP_*` constant). the tape records operations during forward, then backward walks it in reverse computing local gradients via the chain rule. standard reverse-mode AD.
+the backward pass supports **34 operation types** (op IDs 0–34, each with a `NT_OP_*` constant; op 34 RRPRAM-broadcast is declared, implementation pending). the tape records operations during forward, then backward walks it in reverse computing local gradients via the chain rule. standard reverse-mode AD.
 
 **gradient checking**: every op is verified against finite differences (`(f(x+h) - f(x-h)) / 2h`). relative error tolerances from 0.01 to 0.3 depending on op complexity. all pass. including the annoying ones — GEGLU, SwiGLU, multi-head attention with multi-path gradients through Q/K/V, BitLinear with STE identity passthrough.
 
@@ -484,11 +485,12 @@ Override thread count via env: `NT_SIMD_THREADS=N`. Single-thread variant for de
 make test
 ```
 
-five test binaries, ~140 test declarations combined:
+nine test binaries (run output is the source of truth for counts):
 
 - **`tests/test_notorch.c`** — ~94 tests: tensor mechanics, forward ops, tape recording/backward, optimizers, training integration, numerical gradient checks, infrastructure (save/load, LR schedules, NaN guard, gradient accumulation, Hebbian microlearning, profiler)
-- **`tests/test_vision.c`** — 30 tests: image loading (JPEG/PNG/BMP), resize / crop / normalize / flip / grayscale, ViT patch extraction, preprocessing pipelines, BPE encode/decode roundtrip
-- **`tests/test_bitnet_ops.c`** — 8 tests: BitNet ternary quantization, BitLinear forward, STE backward, BitLinear seq over multiple positions, gradient numeric check, end-to-end convergence
+- **`tests/test_vision.c`** — 48 tests: image loading (JPEG/PNG/BMP), resize / crop / normalize / flip / grayscale, ViT patch extraction, preprocessing pipelines, BPE encode/decode roundtrip
+- **`tests/test_bitnet_ops.c`** — 118 gradient assertions: SwiGLU, BitLinear forward + seq, STE backward, SPA smoke, finite-difference gradient checks
+- **`tests/test_rrpram_lr.c` / `test_metal_q4k.c` / `test_simd_correctness.c` / `test_simd_loss.c`** — low-rank RRPRAM, Apple-Silicon Q4_K matvec, and AVX2+FMA SIMD parity
 - **`tests/test_sigmoid_scale.c`** — 4 tests: `nt_sigmoid` forward/backward, `nt_scale_by_t` forward/backward (scalar × tensor with grad flowing to both)
 - **`tests/test_gguf.c`** — GGUF parser smoke test (F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K dequant)
 
@@ -679,7 +681,7 @@ A phone with 8 GB of RAM and Termux installed is now a credible host for the 10�
 ```
 notorch/
 ├── notorch.h              # core API — tensors, autograd, optimizers, BPE, ops
-├── notorch.c              # core implementation (~3300 lines)
+├── notorch.c              # core implementation (~4800 lines)
 ├── notorch_vision.h       # image loading, transforms, ViT patches (stb_image)
 ├── stb_image.h            # JPEG/PNG/BMP decoder (public domain)
 ├── gguf.h                 # GGUF file parser header
@@ -700,15 +702,15 @@ notorch/
 │   └── train_distillation.c  # Knowledge distillation (Hinton 2015, teacher→student KL)
 ├── tests/
 │   ├── test_notorch.c        # ~94 tests, numerical gradient checks, integration
-│   ├── test_vision.c         # 30 vision + BPE tests
-│   ├── test_bitnet_ops.c     # 8 BitNet ternary tests + STE backward
+│   ├── test_vision.c         # 48 vision + BPE tests
+│   ├── test_bitnet_ops.c     # 118 BitNet/SwiGLU/SPA + STE checks
 │   ├── test_sigmoid_scale.c  # 4 tests for sigmoid + scale-by-tensor
 │   └── test_gguf.c           # GGUF parser smoke test
-├── LICENSE                # LGPL-3.0
+├── LICENSE                # GPL-3.0-or-later
 └── README.md              # this. you survived. congratulations.
 ```
 
-total: **~3300 lines of core C + ~2000 of tests + ~3500 of examples**. framework + vision + GGUF + BPE + five inference engines + eight training scripts + five test binaries. tested on 26+ real model files across 6 architectures.
+total: **~4800 lines of core C + ~2700 of tests + ~3500 of examples**. framework + vision + GGUF + BPE + five inference engines + eight training scripts + nine test binaries. tested on 26+ real model files across 6 architectures.
 
 ### models trained on notorch
 
@@ -775,7 +777,7 @@ notorch isn't a lab demo. it's what actually runs under a growing ecosystem of o
 these aren't "notorch models" per se — they're larger resonance engines (from the Arianna Method ecosystem) that use notorch where a linear algebra backend is needed, while keeping their own physics on top:
 
 - [**ariannamethod/nanoagi**](https://github.com/ariannamethod/nanoagi) — a six-level autonomy experiment (evolve → coevolve → swarm → selfcode → auto-trigger). notorch is the autograd for evolve-loop weight updates.
-- [**ariannamethod/molequla**](https://github.com/ariannamethod/molequla) — an 11-organism ecology with conscience, immune rollback, DNA exchange. notorch vendored for matrix params + BLAS-accelerated training bursts.
+- [**ariannamethod/molequla**](https://github.com/ariannamethod/molequla) — a 4-organism ecology (growing to 11 via mitosis) with conscience, immune rollback, DNA exchange. Trains its content + low-rank-RRPRAM transformer on the notorch tape (automatic GPU/CPU).
 - [**ariannamethod/dario**](https://github.com/ariannamethod/dario) — resonance OS (7 forces, 6 Kuramoto chambers, SARTRE). notorch powers the 176M Janus inference that sits at its center.
 - [**ariannamethod/metaharmonix**](https://github.com/ariannamethod/metaharmonix) — Arianna Method terminal, sibling-not-fork to Termux. notorch is baked in (`bake/notorch/`) so the terminal ships a tensor library, not just a shell.
 
@@ -795,7 +797,7 @@ if you trained something on notorch and it's not in this list, open a PR and add
 > *"the logic of memory without the weight of framework"*
 > — `js-edition/notorch.js`, line 1
 
-a single-file pure-JavaScript port of notorch for the browser. WebGPU when available, V8-optimised CPU fallback (Math.fround f32 hint) when not. zero npm dependencies. live at `js-edition/notorch.js` (~2350 LOC).
+a single-file pure-JavaScript port of notorch for the browser. WebGPU when available, V8-optimised CPU fallback (Math.fround f32 hint) when not. zero npm dependencies. live at `js-edition/notorch.js` (~3580 LOC).
 
 co-built with Gemini and Claude Opus.
 
@@ -832,7 +834,7 @@ autograd works, Chuck works, sampler works, everything works.
 ### caveats (honest)
 
 - WebGPU paths are code-correct but were not runtime-verified in node (no headless WebGPU). real validation needs a browser. CPU path passes everywhere `node` runs.
-- `gqa_attention` and BitLinear / BitNet ops not ported yet — out of scope for the first cut.
+- GQA, BitLinear/BitNet, low-rank RRPRAM, GEGLU, scale-by-t and friends are now ported (op parity through op 33); op 34 RRPRAM-broadcast awaits the C-side implementation. `loadGGUF` (GGUF v3, F16+F32) and `loadSafetensors` are wired.
 - generic transpose backward covers 2D and 3D `(1, 2)` swap (sufficient for attention; not fully general).
 - async batching of multiple GPU ops into one submit is partially achieved through the buffer pool, but no explicit op queue. impact only matters once multiple GPU ops chain.
 
@@ -885,7 +887,7 @@ but if you do:
 
 ## license
 
-LGPL-3.0-or-later. use it in your stuff. link against it. build commercial products with it. just share improvements to the library itself. because that's how open source works. or should work. don't be weird about it.
+GPL-3.0-or-later (see `LICENSE`). use it in your stuff. if you ship it, share your source — that's how copyleft works. don't be weird about it.
 
 ---
 
@@ -893,9 +895,9 @@ LGPL-3.0-or-later. use it in your stuff. link against it. build commercial produ
 
 look. i know this sounds insane. "guy writes a neural network framework in 2026 in pure C." i get it. i see how that looks.
 
-but here's the thing: the entire history of deep learning fits in a few dozen mathematical operations. matmul. softmax. relu. cross-entropy. adam. backward. that's it. the rest is infrastructure. and infrastructure should be invisible. it should compile in a second. it should fit in your head. it should not require a Docker container.
+but here's the thing: the entire history of deep learning fits in a few dozen mathematical operations. matmul. softmax. relu. cross-entropy. the optimizer step. backward. that's it. the rest is infrastructure. and infrastructure should be invisible. it should compile in a second. it should fit in your head. it should not require a Docker container.
 
-notorch is proof that you don't need 2 million lines of code to train a neural network. you need about 3300. plus another 2000 of tests because i believe in verification more than i believe in hope.
+notorch is proof that you don't need 2 million lines of code to train a neural network. you need about 4800. plus another 2700 of tests because i believe in verification more than i believe in hope.
 
 train your models. in C. without permission. without pip. without conda. without a GPU if you don't want one. without 2.7 GB of framework overhead. without a virtual environment. without existential dread.
 

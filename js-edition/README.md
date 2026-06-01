@@ -272,8 +272,8 @@ copy the GPU output back into the CPU mirror **before** calling
 - `saveNotorchBin(tensors)` — writes a `Map<name, Tensor>` to the
   native `.bin` format.
 
-GGUF support lives on the C side (`gguf.c`, `gguf.h`) and is not yet
-ported to JS. Use `loadSafetensors` if your weights come from HF.
+GGUF is supported in JS via `loadGGUF(arrayBuffer)` — a GGUF v3 reader
+(F16 + F32 dequant). `loadSafetensors` also works for HF F32 weights.
 
 ---
 
