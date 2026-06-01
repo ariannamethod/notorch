@@ -703,6 +703,11 @@ void nt_tape_backward(int loss_idx) {
             if (e->parent1 >= 0 && e->parent2 >= 0) {
                 nt_tape_entry* px = &g_tape.entries[e->parent1];
                 nt_tape_entry* pa = &g_tape.entries[e->parent2];
+                /* GPU-sync FIX (2026-06-02): px (the scaled tensor) is often a
+                 * GPU-fresh attention output; without sync ga = Σ dout·x reads
+                 * stale calloc-zero and the gate gradient vanishes. */
+                nt_tensor_sync_cpu(px->output);
+                nt_tensor_sync_cpu(pa->output);
                 float a_val = pa->output->data[0];
                 float* gx = (float*)calloc(out_len, sizeof(float));
                 if (gx) {
@@ -3060,6 +3065,11 @@ int nt_sigmoid(int x_idx) {
     int n = px->output->len;
     nt_tensor* out = nt_tensor_new(n);
     if (!out) return -1;
+    /* GPU-sync FIX (2026-06-02): the parent's forward output may live on GPU
+     * with a stale calloc-zero CPU mirror; without this sync the sigmoid reads
+     * zeros and a learnable gate sits frozen at sigmoid(0). Same bug class as
+     * MUL/SILU/RMSNORM/CE. */
+    nt_tensor_sync_cpu(px->output);
     for (int i = 0; i < n; i++) {
         float x = px->output->data[i];
         /* numerically stable */
@@ -3079,6 +3089,11 @@ int nt_scale_by_t(int x_idx, int a_idx) {
     int n = px->output->len;
     nt_tensor* out = nt_tensor_new(n);
     if (!out) return -1;
+    /* GPU-sync FIX (2026-06-02): both parents' forward outputs may be GPU-fresh
+     * with stale CPU mirrors — without sync the scaled output is computed from
+     * calloc-zero. Same bug class as MUL/SILU/RMSNORM/CE. */
+    nt_tensor_sync_cpu(px->output);
+    nt_tensor_sync_cpu(pa->output);
     float a_val = pa->output->data[0];
     for (int i = 0; i < n; i++) out->data[i] = a_val * px->output->data[i];
     int idx = nt_tape_record3(out, NT_OP_SCALE_BY_T, x_idx, a_idx, -1, 0, 0);

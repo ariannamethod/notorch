@@ -90,14 +90,17 @@ backward branch that reads `parent->output->data` directly must call
 Without the sync, GPU-resident forward outputs are read as their stale
 CPU mirror (calloc-zero by default) and the backward computes zeros.
 
-Three known instances of this bug class, all fixed:
+Known instances of this bug class, all fixed:
 
 - `3d46007` — `nt_seq_cross_entropy_masked` (Defender, 2026-05-09)
 - `8ab5062` — `NT_OP_MUL`, `NT_OP_SILU` backward (2026-05-11)
+- `967f1c0` — `NT_OP_RMSNORM` backward
+- 2026-06-02 — `nt_sigmoid` + `nt_scale_by_t` forward & `NT_OP_SCALE_BY_T`
+  backward (surfaced by the molequla Inc2 RRPRAM-gate review; a learnable
+  sigmoid gate sat frozen at sigmoid(0) on GPU without the parent sync).
 
-If you find a fourth, **add it to this list** when you commit the fix.
-Likely remaining candidates: `NT_OP_SIGMOID`, `NT_OP_SCALE_BY_T`,
-`NT_OP_RMSNORM` backward CPU branches. An audit pass is on the open
+If you find another, **add it to this list** when you commit the fix.
+No known remaining candidates. An audit pass is on the open
 TODO list.
 
 **The `ptr_map full — buffer leak` warning is not the leak.** It's a
@@ -188,10 +191,10 @@ docstring when you next pass through.
 
 ## Open TODO (audit & fixes)
 
-- Audit pass on remaining `NT_OP_*` backward CPU branches for the
-  GPU/CPU sync pattern. Candidates: SIGMOID, SCALE_BY_T.
-  (RMSNORM closed by `967f1c0`; MUL/SILU by `8ab5062`;
-  SEQ_CROSSENT_MASKED by `2ccfb16`; MH_CAUSAL_ATTN by `8f8d722`.)
+- Audit pass on `NT_OP_*` backward CPU branches for the GPU/CPU sync
+  pattern — DONE. (RMSNORM `967f1c0`; MUL/SILU `8ab5062`;
+  SEQ_CROSSENT_MASKED `2ccfb16`; MH_CAUSAL_ATTN `8f8d722`;
+  SIGMOID/SCALE_BY_T fwd+bwd 2026-06-02.) No known remaining candidates.
 - Fix `gpu_rrpram_lr_forward` T vs T_max stride bug at
   `notorch_cuda.cu:824`.
 - Fix the `notorch.h:653` alpha-format docstring (raw float bytes, not
