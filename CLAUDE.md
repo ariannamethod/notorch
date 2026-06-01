@@ -31,11 +31,31 @@ CPU-only (default — organisms build against this):
 make                # libnotorch.a (CPU + BLAS, no CUDA refs)
 ```
 
-CPU + GPU (SFT trainers, GPU smoke tests):
+CPU + CUDA GPU (SFT trainers, GPU smoke tests):
 
 ```
 make USE_CUDA=1     # libnotorch.a + libnotorch_gpu.a + notorch_cuda.o
 ```
+
+In-house SIMD (AVX2+FMA cblas shim, x86_64 — no OpenBLAS dependency):
+
+```
+make simd           # notorch_test_simd (notorch_simd.h, -mavx2 -mfma + pthread)
+```
+
+Apple Silicon Metal/MSL — **active development front**. Q4_K inline-dequant
+matvec: 24B-class quantized models on a 24GB Mac without the 4× f32 blow-up
+(weights stay packed, dequantized in-shader per block). Phase 1 = correct
+naive matvec (one thread/row); Phase 2 (planned) = tiled threadgroup dispatch
++ simdgroup reductions. See `notorch_metal.{h,mm}`.
+
+```
+make metal          # tests/test_metal_q4k (notorch_metal.mm, -DUSE_METAL, Darwin)
+```
+
+So the backend matrix is four-wide: **CPU/BLAS · AVX2-SIMD · CUDA · Metal**.
+Keep this section current as backends land — it is the first thing a new
+session reads.
 
 The split exists because amlc-generated organism builds use `-lnotorch`
 without `-lcudart`/`-lcublas`. If CUDA symbols leak into `libnotorch.a`,
