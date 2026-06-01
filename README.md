@@ -385,15 +385,15 @@ under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on 
 
 ## alignment training — DPO / GRPO / distillation
 
-notorch isn't just a pretraining engine. three post-training methods ship under `examples/`, in varying states of completeness:
+notorch isn't just a pretraining engine. three post-training methods ship as **runnable reference trainers** — each self-contained: with no args they random-init a model and train on a tiny in-code synthetic dataset; point them at real weights + a dataset file and they train that.
 
 ```bash
-make train_dpo            # Direct Preference Optimization — dpo_step implemented; main() awaits a JSONL dataset loader
-make train_grpo           # Group Relative Policy Optimization — SCAFFOLD (advantage/KL helper, training loop is a TODO)
-make train_distillation   # Knowledge Distillation — SCAFFOLD (teacher→student KL helper only)
+make train_dpo            # Direct Preference Optimization (Rafailov 2023) — ref-relative loss, JSONL {chosen,rejected}
+make train_grpo           # Group Relative Policy Optimization (DeepSeek-R1) — rollout + rule-based reward + group advantage
+make train_distillation   # Knowledge Distillation (Hinton 2015) — analytic soft-KD (τ²) + hard-CE
 ```
 
-each is a single self-contained C file under `examples/` (160–360 LOC). use them as templates: swap the model definition, point at your own dataset, keep the loss + optimizer wiring. The reference-model parameters are held frozen via `nt_tape_freeze_param`, the same mechanism LoRA uses. Dataset loaders are left as TODOs — these are reference steps / scaffolds, not turnkey trainers.
+each is a single self-contained C file under `examples/` (~550–610 LOC) with its own reference model and a minimal dataset adapter. use them as templates: swap the model, point at your dataset, keep the loss + optimizer wiring. Reference-model parameters are held frozen via `nt_tape_freeze_param`, the same mechanism LoRA uses. These are reference implementations — GRPO does a single on-policy (REINFORCE-style) update with a scalar KL proxy, distillation injects the exact KD gradient (no soft-CE tape op needed); a production RLHF stack would add batched rollouts and a learned reward model.
 
 ---
 
