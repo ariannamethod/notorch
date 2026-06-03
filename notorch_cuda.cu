@@ -828,17 +828,17 @@ extern "C" void gpu_rrpram_lr_forward(
     int  out_dim = H * hd;
     float alpha = 1.0f, beta = 0.0f;
 
-    for (int h = 0; h < H; h++) {
-        const float* Wra_h = d_Wr_combined + (long)h * E * R;          /* [E,R] row-major */
-        const float* Wrb_h = d_Wr_combined + wra_total + (long)h * R * T;/* [R,T] row-major */
-        float* U_h     = d_U + (long)h * T * R;                         /* [T,R] row-major */
-        float* S_h     = d_scores + (long)h * T * T;                    /* [T,T] row-major */
-
-        /* U_h[T,R] = X[T,E] @ Wra_h[E,R] — NN gemm */
-        gpu_sgemm_nn(T, R, E, d_X, Wra_h, U_h);
-        /* S_h[T,T] = U_h[T,R] @ Wrb_h[R,T] — NN gemm */
-        gpu_sgemm_nn(T, T, R, U_h, Wrb_h, S_h);
-    }
+    /* U[h][T,R] = X[T,E] @ Wra[h][E,R] — batched NN; X shared across heads (strideA=0),
+     * Wra block at offset 0 (strideB=E*R), U strideC=T*R. */
+    gpu_sgemm_nn_batched(T, R, E,
+        d_X, 0L,
+        d_Wr_combined, (long)E * R,
+        d_U, (long)T * R, 0.0f, H);
+    /* S[h][T,T] = U[h][T,R] @ Wrb[h][R,T] — batched NN; Wrb block at offset wra_total. */
+    gpu_sgemm_nn_batched(T, T, R,
+        d_U, (long)T * R,
+        d_Wr_combined + wra_total, (long)R * T,
+        d_scores, (long)T * T, 0.0f, H);
 
     /* Causal softmax in-place over [H, T, T]. */
     dim3 grid(H, T);
@@ -848,19 +848,18 @@ extern "C" void gpu_rrpram_lr_forward(
      * V_h is a sub-tensor of V[T, H*hd] starting at column h*hd, ld=H*hd
      * (row-major). Use cublasSgemm directly with strided V.
      * Col-major view: Out_h^T(hd,T) = V_h^T(hd,T) × A_h^T(T,T). */
-    for (int h = 0; h < H; h++) {
-        const float* S_h = d_scores + (long)h * T * T;
-        const float* Vh  = d_V   + h * hd;
-        float*       Oh  = d_out + h * hd;
-        CUBLAS_CHECK(cublasSgemm(g_cublas,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            hd, T, T,
-            &alpha,
-            Vh,  out_dim,
-            S_h, T,
-            &beta,
-            Oh,  out_dim));
-    }
+    /* O[h][T,hd] = A[h][T,T] @ V[h][T,hd] — batched; V/O col-strided in [T, H*hd]
+     * (ld=out_dim, per-head stride=hd), scores stride T*T. Identical layout to
+     * gpu_multi_head_attention's attn*V batched call. */
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        hd, T, T,
+        &alpha,
+        d_V,      out_dim, (long long)hd,
+        d_scores, T,       (long long)T * T,
+        &beta,
+        d_out,    out_dim, (long long)hd,
+        H));
 }
 
 /* Softmax backward kernel (Jacobian-vector product) for general H heads.
@@ -908,6 +907,61 @@ static void gpu_sgemm_tn_beta(int M, int N, int K,
         d_C, N));
 }
 
+/* ---- Strided-batched variants (one cuBLAS launch for all H heads) ----
+ * Mirror the row-major→col-major swap of the non-batched helpers above, adding
+ * per-head batch strides. Replaces the per-head op-33 GEMM loops that flooded
+ * the launch queue (~96 cuBLAS/step at child, 0% util). Same TF32 math mode
+ * (set globally :78) and identical per-GEMM accumulation order as the per-head
+ * calls they replace → numerics match to fp32 noise. (2026-06-03 batching.) */
+
+/* Batched row-major C_b(M,N) = A_b(M,K) × B_b(K,N), beta. strideX in ELEMENTS. */
+static void gpu_sgemm_nn_batched(int M, int N, int K,
+                                 const float* dA, long sA, const float* dB, long sB,
+                                 float* dC, long sC, float beta, int batch) {
+    float alpha = 1.0f;
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        N, M, K,
+        &alpha,
+        dB, N, sB,
+        dA, K, sA,
+        &beta,
+        dC, N, sC,
+        batch));
+}
+
+/* Batched row-major C_b(M,N) = A_b(M,K) × B_b^T(N,K), beta. */
+static void gpu_sgemm_nt_beta_batched(int M, int N, int K,
+                                      const float* dA, long sA, const float* dB, long sB,
+                                      float* dC, long sC, float beta, int batch) {
+    float alpha = 1.0f;
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_T, CUBLAS_OP_N,
+        N, M, K,
+        &alpha,
+        dB, K, sB,
+        dA, K, sA,
+        &beta,
+        dC, N, sC,
+        batch));
+}
+
+/* Batched row-major C_b(M,N) = A_b^T(K,M) × B_b(K,N), beta. */
+static void gpu_sgemm_tn_beta_batched(int M, int N, int K,
+                                      const float* dA, long sA, const float* dB, long sB,
+                                      float* dC, long sC, float beta, int batch) {
+    float alpha = 1.0f;
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_N, CUBLAS_OP_T,
+        N, M, K,
+        &alpha,
+        dB, N, sB,
+        dA, M, sA,
+        &beta,
+        dC, N, sC,
+        batch));
+}
+
 extern "C" void gpu_rrpram_lr_backward(
     const float* d_X, const float* d_Wr_combined, const float* d_V,
     const float* d_U, const float* d_scores,
@@ -928,35 +982,29 @@ extern "C" void gpu_rrpram_lr_backward(
 
     /* Phase 1: per-head, compute d_attn[H,T,T] (no V_h gradient yet — accumulate later)
      * and d_V partial via softmaxed scores. */
-    for (int h = 0; h < H; h++) {
-        const float* dout_h= d_dout + h * hd;
-        const float* V_h   = d_V    + h * hd;
-        const float* S_h   = d_scores + (long)h * T * T;
-        float* d_attn_h    = d_d_attn  + (long)h * T * T;
-
-        /* d_attn_h[T,T] = dout_h[T,hd] @ V_h^T[hd,T] — row-major NT gemm with strided V_h.
-         * V_h^T is V_h transposed; V_h is [T,hd] inside V[T,H*hd] with col-stride out_dim.
-         * Direct cublas: col-major view → C^T(T,T) = V_h(T,hd) viewed col-major → V_h is
-         * column-major [hd,T] with ld=out_dim → CUBLAS_OP_N. dout_h same. */
-        CUBLAS_CHECK(cublasSgemm(g_cublas,
-            CUBLAS_OP_T, CUBLAS_OP_N,
-            T, T, hd,
-            &alpha,
-            V_h,    out_dim,
-            dout_h, out_dim,
-            &beta_zero,
-            d_attn_h, T));
-
-        /* d_V_h[T,hd] += A_h^T[T,T] × dout_h[T,hd] — strided row-major TN gemm. */
-        CUBLAS_CHECK(cublasSgemm(g_cublas,
-            CUBLAS_OP_N, CUBLAS_OP_T,
-            hd, T, T,
-            &alpha,
-            dout_h, out_dim,
-            S_h,    T,
-            &beta_acc,
-            d_dV + h * hd, out_dim));
-    }
+    /* d_attn[h][T,T] = dout[h][T,hd] @ V[h]^T[hd,T] — batched. V/dout col-strided in
+     * [T,H*hd] (ld=out_dim, per-head stride=hd); d_attn separate T*T slabs; beta=0.
+     * Same V layout as gpu_multi_head_attention. */
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_T, CUBLAS_OP_N,
+        T, T, hd,
+        &alpha,
+        d_V,    out_dim, (long long)hd,
+        d_dout, out_dim, (long long)hd,
+        &beta_zero,
+        d_d_attn, T, (long long)T * T,
+        H));
+    /* d_V[h][T,hd] += A[h]^T[T,T] × dout[h][T,hd] — batched; d_V col-disjoint
+     * blocks (ld=out_dim, stride=hd), scores stride T*T, beta=1. */
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_N, CUBLAS_OP_T,
+        hd, T, T,
+        &alpha,
+        d_dout,   out_dim, (long long)hd,
+        d_scores, T,       (long long)T * T,
+        &beta_acc,
+        d_dV,     out_dim, (long long)hd,
+        H));
 
     /* Causal softmax backward across all heads. */
     dim3 grid(H, T);
@@ -964,29 +1012,35 @@ extern "C" void gpu_rrpram_lr_backward(
 
     /* Phase 2: per-head compute d_U_h, then dWrb_h, dWra_h, accumulate into dX.
      * Reuse d_d_attn buffer for d_U scratch (no longer needed). */
+    /* d_U[h][T,R] = d_score[h][T,T] @ Wrb[h]^T[T,R] — batched NT, beta=0.
+     * Scratch in d_d_attn (T*R ≤ T*T per slab, stride T*T), Wrb at offset wra_total. */
+    gpu_sgemm_nt_beta_batched(T, R, T,
+        d_d_score, (long)T * T,
+        d_Wr_combined + wra_total, (long)R * T,
+        d_d_attn, (long)T * T, 0.0f, H);
+
+    /* d_Wrb[h][R,T] += U[h]^T[R,T] @ d_score[h][T,T] — batched TN, beta=1; Wrb
+     * blocks head-disjoint (stride R*T), U from forward (stride T*R). */
+    gpu_sgemm_tn_beta_batched(R, T, T,
+        d_U, (long)T * R,
+        d_d_score, (long)T * T,
+        d_dWr_combined + wra_total, (long)R * T, 1.0f, H);
+
+    /* d_X[T,E] += d_U[h][T,R] @ Wra[h]^T[R,E] — CROSS-HEAD reduction into the shared
+     * d_dX (beta=1). cublasSgemmStridedBatched does NOT sum across the batch dim, so
+     * this one stays a per-head loop (safe; +H dispatches). */
     for (int h = 0; h < H; h++) {
-        const float* Wra_h = d_Wr_combined + (long)h * E * R;
-        const float* Wrb_h = d_Wr_combined + wra_total + (long)h * R * T;
-        const float* U_h   = d_U      + (long)h * T * R;
-        const float* d_score_h = d_d_score + (long)h * T * T;
-        float* dWra_h = d_dWr_combined + (long)h * E * R;
-        float* dWrb_h = d_dWr_combined + wra_total + (long)h * R * T;
-
-        /* Reuse d_d_attn[h*T*T...] as d_U_h scratch (size T*R ≤ T*T). */
-        float* d_U_h_buf = d_d_attn + (long)h * T * T;
-
-        /* d_U_h[T,R] = d_score[T,T] @ Wrb_h^T[T,R] — NT gemm, beta=0 */
-        gpu_sgemm_nt_beta(T, R, T, d_score_h, Wrb_h, d_U_h_buf, 0.0f);
-
-        /* d_Wrb_h[R,T] += U_h^T[R,T] @ d_score[T,T] — TN gemm, beta=1 */
-        gpu_sgemm_tn_beta(R, T, T, U_h, d_score_h, dWrb_h, 1.0f);
-
-        /* d_X[T,E] += d_U_h[T,R] @ Wra_h^T[R,E] — NT gemm, beta=1 */
+        const float* Wra_h     = d_Wr_combined + (long)h * E * R;
+        const float* d_U_h_buf = d_d_attn + (long)h * T * T;
         gpu_sgemm_nt_beta(T, E, R, d_U_h_buf, Wra_h, d_dX, 1.0f);
-
-        /* d_Wra_h[E,R] += X^T[E,T] @ d_U_h[T,R] — TN gemm, beta=1 */
-        gpu_sgemm_tn_beta(E, R, T, d_X, d_U_h_buf, dWra_h, 1.0f);
     }
+
+    /* d_Wra[h][E,R] += X^T[E,T] @ d_U[h][T,R] — batched TN, beta=1; X shared
+     * (strideA=0), Wra blocks head-disjoint (stride E*R), d_U scratch stride T*T. */
+    gpu_sgemm_tn_beta_batched(E, R, T,
+        d_X, 0L,
+        d_d_attn, (long)T * T,
+        d_dWr_combined, (long)E * R, 1.0f, H);
 }
 
 // ═══════════════════════════════════════════════════════════════════
