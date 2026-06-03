@@ -356,6 +356,31 @@ extern "C" float gpu_nrm2(const float* d_x, int n) {
     return result;
 }
 
+/* Batched L2-norms of k device vectors into a HOST array, WITHOUT the per-call
+ * host stall plain gpu_nrm2 incurs. cuBLAS default pointer mode is HOST, so
+ * cublasSnrm2 drains the stream to copy each scalar to host — ~84 such stalls/
+ * step (clip+Chuck per-param) were the molequla teen 0%-util cause. Here we flip
+ * to DEVICE mode for the batch (results stay device-side, no per-call drain),
+ * then ONE D->H copy. Mode is restored to HOST so all GEMM/axpy/scal (which pass
+ * host &alpha/&beta) are unaffected. (2026-06-03 launch-bound fix L1.) */
+extern "C" void gpu_nrm2_batch(const float** d_xs, const int* ns, int k, float* host_out) {
+    for (int i = 0; i < k; i++) host_out[i] = 0.0f;
+    if (!g_cublas || k <= 0) return;
+    static float* d_norms = NULL; static int cap = 0;
+    if (cap < k) {
+        if (d_norms) cudaFree(d_norms);
+        cudaMalloc((void**)&d_norms, (size_t)k * sizeof(float));
+        cap = k;
+    }
+    cudaMemset(d_norms, 0, (size_t)k * sizeof(float));
+    cublasSetPointerMode(g_cublas, CUBLAS_POINTER_MODE_DEVICE);
+    for (int i = 0; i < k; i++) {
+        if (d_xs[i] && ns[i] > 0) cublasSnrm2(g_cublas, ns[i], d_xs[i], 1, d_norms + i);
+    }
+    cublasSetPointerMode(g_cublas, CUBLAS_POINTER_MODE_HOST);
+    cudaMemcpy(host_out, d_norms, (size_t)k * sizeof(float), cudaMemcpyDeviceToHost);
+}
+
 extern "C" void gpu_sscal(float* d_x, int n, float alpha) {
     if (!g_cublas || !d_x || n <= 0) return;
     CUBLAS_CHECK(cublasSscal(g_cublas, n, &alpha, d_x, 1));

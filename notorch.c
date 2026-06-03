@@ -2358,6 +2358,32 @@ void nt_tape_chuck_step(float lr, float loss_val) {
     float noise_mag = cs->noise;
 
     // ── Level 2: Per-param gradient norm + Adam update ──
+#ifdef USE_CUDA
+    /* L1 (2026-06-03): pre-compute ALL per-param grad norms in ONE batched device
+     * readback (DEVICE pointer-mode, no per-call stall) instead of a blocking
+     * cublasSnrm2-to-host per param in the loop below — the teen 0%-util sync
+     * storm. Indexed by the same is_param+grad counter the update loop uses, so
+     * chuck_gnorms[param_idx] aligns. n matches the loop's min(output,m) for the
+     * params that use it → bit-identical norms. */
+    float chuck_gnorms[NT_TAPE_MAX_PARAMS]; int chuck_gn_have = 0;
+    if (g_use_gpu) {
+        extern void gpu_nrm2_batch(const float**, const int*, int, float*);
+        const float* d_gs[NT_TAPE_MAX_PARAMS]; int ns_arr[NT_TAPE_MAX_PARAMS];
+        int pj = 0;
+        for (int i = 0; i < g_tape.count && pj < g_tape.n_params; i++) {
+            nt_tape_entry* e = &g_tape.entries[i];
+            if (!e->is_param || !e->grad) continue;
+            int n = e->output->len;
+            nt_adam_state* as = &g_tape.adam[pj];
+            if (as->m && as->m->len < n) n = as->m->len;
+            float* d_g = nt_tensor_ensure_gpu(e->grad);
+            d_gs[pj] = d_g; ns_arr[pj] = d_g ? n : 0;
+            pj++;
+        }
+        gpu_nrm2_batch(d_gs, ns_arr, pj, chuck_gnorms);
+        chuck_gn_have = 1;
+    }
+#endif
     int param_idx = 0;
     for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
@@ -2375,7 +2401,7 @@ void nt_tape_chuck_step(float lr, float loss_val) {
         if (g_use_gpu) {
             float* d_g = nt_tensor_ensure_gpu(e->grad);
             if (d_g) {
-                gnorm = gpu_nrm2(d_g, n);
+                gnorm = chuck_gn_have ? chuck_gnorms[param_idx] : gpu_nrm2(d_g, n); /* L1 batched readback */
             } else {
                 nt_tensor_ensure_cpu(e->grad);
                 for (int j = 0; j < n; j++) gnorm += e->grad->data[j] * e->grad->data[j];
@@ -2477,25 +2503,43 @@ void nt_tape_chuck_step(float lr, float loss_val) {
 
 float nt_tape_clip_grads(float max_norm) {
     float total_norm_sq = 0.0f;
-    for (int i = 0; i < g_tape.count; i++) {
-        nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param || !e->grad) continue;
-        int n = e->output->len;
-        if (e->grad->len < n) n = e->grad->len;
 #ifdef USE_CUDA
-        if (g_use_gpu) {
+    if (g_use_gpu) {
+        /* L1 (2026-06-03): batch all per-param grad norms into ONE device readback
+         * instead of one blocking cublasSnrm2-to-host per param. Plain gpu_nrm2
+         * drains the stream every call (~42 here + 42 in Chuck = the 0%-util sync
+         * storm). Numerically identical — same L2 norms, just read once. */
+        extern void gpu_nrm2_batch(const float**, const int*, int, float*);
+        const float* d_gs[NT_TAPE_MAX_PARAMS]; int ns_arr[NT_TAPE_MAX_PARAMS]; int k = 0;
+        for (int i = 0; i < g_tape.count && k < NT_TAPE_MAX_PARAMS; i++) {
+            nt_tape_entry* e = &g_tape.entries[i];
+            if (!e->is_param || !e->grad) continue;
+            int n = e->output->len;
+            if (e->grad->len < n) n = e->grad->len;
             float* d_g = nt_tensor_ensure_gpu(e->grad);
-            if (d_g) {
-                float nrm = gpu_nrm2(d_g, n);
-                total_norm_sq += nrm * nrm;
-                continue;
+            if (d_g) { d_gs[k] = d_g; ns_arr[k] = n; k++; }
+            else {
+                nt_tensor_ensure_cpu(e->grad);
+                for (int j = 0; j < n; j++) { float g = e->grad->data[j]; total_norm_sq += g * g; }
             }
         }
-        nt_tensor_ensure_cpu(e->grad);
+        if (k > 0) {
+            float norms[NT_TAPE_MAX_PARAMS];
+            gpu_nrm2_batch(d_gs, ns_arr, k, norms);
+            for (int i = 0; i < k; i++) total_norm_sq += norms[i] * norms[i];
+        }
+    } else
 #endif
-        for (int j = 0; j < n; j++) {
-            float g = e->grad->data[j];
-            total_norm_sq += g * g;
+    {
+        for (int i = 0; i < g_tape.count; i++) {
+            nt_tape_entry* e = &g_tape.entries[i];
+            if (!e->is_param || !e->grad) continue;
+            int n = e->output->len;
+            if (e->grad->len < n) n = e->grad->len;
+            for (int j = 0; j < n; j++) {
+                float g = e->grad->data[j];
+                total_norm_sq += g * g;
+            }
         }
     }
     float total_norm = sqrtf(total_norm_sq);
