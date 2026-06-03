@@ -7,6 +7,8 @@ C tensor library. Same API surface, same Chuck optimizer, same naming.
 Different lifecycle: everything in **one ES module file** (no CPU/GPU
 lib split), runs in Node and the browser, optional WebGPU matmul.
 
+GPL-3.0+. Co-authored by Oleg Ataeff and Claude (Arianna Method).
+
 ---
 
 ## Why JS
@@ -286,7 +288,7 @@ GGUF is supported in JS via `loadGGUF(arrayBuffer)` — a GGUF v3 reader
 
 ## License & attribution
 
-GPL-3.0+. 
+GPL-3.0+. Co-authored by Claude (Arianna Method) and Oleg Ataeff.
 The C notorch repo is the canonical source — JS lockstep-follows the
 same op semantics and naming. When the C path adds an op, the JS path
 catches up via a port commit; the parity table above is the
