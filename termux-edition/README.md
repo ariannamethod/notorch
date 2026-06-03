@@ -2,7 +2,7 @@
 
 **Pure-C neural network training on Android, via [Termux](https://termux.dev). No PyTorch, no CUDA, no datacenter, no root.**
 
-This is not a fork. It is upstream `notorch` (`git clone https://github.com/ariannamethod/notorch`) plus the one-time setup needed to build and train inside Termux on an Android phone.
+Upstream `notorch` (`git clone https://github.com/ariannamethod/notorch`) plus the one-time setup needed to build and train inside Termux on an Android phone. Same tree, platform recipe — not a separate fork.
 
 ## Why Termux
 

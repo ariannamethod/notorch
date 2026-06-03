@@ -5,18 +5,18 @@
 `ariannamethod/nanollama`-architecture: RMSNorm + MHA + RoPE + SwiGLU
 FFN, vocab 32000 SentencePiece BPE, DIM=576 NLAYER=13 NHEAD=9 FFN=1536)
 **Base ckpt:** Intel CPT 2026-05-02 (`milestone_nanollama_notorch_cpt_2026_05_02`),
-final loss 2.68 на 22.86M FineWeb-Edu tokens, 11.5 days Intel i5 2019 CPU
-**Trainer:** `examples/train_resonance_lora.c` pattern → port в
+final loss 2.68 on 22.86M FineWeb-Edu tokens, 11.5 days Intel i5 2019 CPU
+**Trainer:** `examples/train_resonance_lora.c` pattern → ported into
 `ariannamethod/metaharmonix/examples/nanollama-sft/nanollama_sft.c`
-с extras: D1 diagnostic, gradient clipping, `--full` flag, `merge` mode
+with extras: D1 diagnostic, gradient clipping, `--full` flag, `merge` mode
 **Pods:** A40 SECURE (CA / SE locations), ~$3 total session cost
 
 ## Status
 
-**First production SFT artifacts через notorch C path на plain Llama-3
+**First production SFT artifacts through the notorch C path on plain Llama-3
 architecture** (3 successful precedents: 2 LoRA, 2 full-parameter SFT,
-4 artifacts total). Previous notorch SFT (Intel 2026-05-11) was
-Resonance 200M с RRPRAM dual-attn — homegrown arch with custom forward.
+4 artifacts total). The previous notorch SFT (Intel 2026-05-11) was
+Resonance 200M with RRPRAM dual-attn — a homegrown arch with custom forward.
 This session validates the notorch GPU path on **standard Llama-3** —
 the most-deployed open arch — and exposes/closes 6 latent
 GPU/CPU-mirror discipline bugs in the process.
@@ -34,15 +34,15 @@ All runs Chuck (`nt_tape_chuck_step`), gradient clip 1.0, no
 warmup, `srand(42)` deterministic.
 
 **Key observations:**
-- Both LoRA and full-SFT converge cleanly с the env-guards landed
-  (NT_DISABLE_ROPE_GPU + NT_DISABLE_MH_GPU). Pure GPU path NaN's at
-  random step 40-360 due to RoPE / MH forward kernel issues — workaround
-  is CPU fallback for those two ops, GPU остаётся on for cuBLAS GEMM
-  + RMSNorm + embedding + add + mul + silu + CE.
+- Both LoRA and full-SFT converge cleanly with the env-guards landed
+  (NT_DISABLE_ROPE_GPU + NT_DISABLE_MH_GPU). The pure GPU path NaNs at
+  a random step 40-360 due to RoPE / MH forward kernel issues — the
+  workaround is CPU fallback for those two ops, GPU stays on for cuBLAS
+  GEMM + RMSNorm + embedding + add + mul + silu + CE.
 - Full SFT (v3/v4) converges to **substantially lower min loss** than
-  LoRA (3.08 vs 4.22) с same wall clock per 1500 steps.
-- Final-step loss is Чак-«танец» peak (volatile), use min-seen / nearest
-  ckpt for inference (v4 best ckpt = `step2750`, loss 3.0797).
+  LoRA (3.08 vs 4.22) at the same wall clock per 1500 steps.
+- Final-step loss is the Chuck-"dance" peak (volatile); use min-seen /
+  nearest ckpt for inference (v4 best ckpt = `step2750`, loss 3.0797).
 
 ## Six GPU/CPU mirror discipline bugs found + fixed
 
@@ -54,7 +54,7 @@ The discipline:
 > computes wrong gradients.*
 
 Defender's `3d46007` (2026-05-09) was the 1st. Intel's `8ab5062`
-(2026-05-11) was the 2nd + 3rd. This session closes 4th-6th plus adds
+(2026-05-11) was the 2nd + 3rd. This session closes the 4th-6th plus adds
 two env-guards for kernel-level isolation:
 
 | # | Commit | Op | Symptom | Diagnostic |
@@ -62,21 +62,21 @@ two env-guards for kernel-level isolation:
 | 1 | `3d46007` | `NT_OP_CROSS_ENT` (non-masked CE) | softmax(zeros) → uniform 1/V grad | Defender 2026-05-09 |
 | 2 | `8ab5062` | `NT_OP_MUL` (SwiGLU branch) | `mlp_gate` / `mlp_up` gB=0 | Intel D1 step 0 |
 | 3 | `8ab5062` | `NT_OP_SILU` | sym of MUL | sym of MUL |
-| 4 | `967f1c0` | `NT_OP_RMSNORM` (canonical) | non-SEQ variant unused by trainer но closing the audit candidate | this session |
+| 4 | `967f1c0` | `NT_OP_RMSNORM` (canonical) | non-SEQ variant unused by the trainer but closing the audit candidate | this session |
 | 5 | `2ccfb16` | `NT_OP_SEQ_CROSSENT_MASKED` (masked CE — sibling of #1) | softmax(stale logits) → wrong-direction grad → NaN ~step 40-220 | this session, partial-fix progress: NaN step 40 → 220 |
 | 6 | `8f8d722` | `NT_OP_MH_CAUSAL_ATTN` CPU fallback | dq, dk = 0 (q/k stale) → wq, wk gB=0 | this session, D1 step 0 |
 
-Plus two diagnostic env-guards (no «fix» — they let us bisect):
+Plus two diagnostic env-guards (no "fix" — they let us bisect):
 
 | Commit | What |
 |---|---|
-| `709f586` + `92bee02` | `NT_DISABLE_MH_GPU` env-guard на forward + backward |
-| `9b567b4` | `NT_DISABLE_ROPE_GPU` env-guard на `nt_rope_freq` forward |
+| `709f586` + `92bee02` | `NT_DISABLE_MH_GPU` env-guard on forward + backward |
+| `9b567b4` | `NT_DISABLE_ROPE_GPU` env-guard on `nt_rope_freq` forward |
 
 ## Diagnostic methodology — Intel's D1 ported
 
 Port of `train_resonance_lora.c:312-369` (D1 per-target grad L2 norms
-at step 0) into `nanollama_sft.c`. Output на rank=64 nano shape:
+at step 0) into `nanollama_sft.c`. Output on rank=64 nano shape:
 
 ```
 [D1] wq          n_gA=13 avg|gA|=0.000e+00 | n_gB=13 avg|gB|=4.484e-02
@@ -90,8 +90,8 @@ at step 0) into `nanollama_sft.c`. Output на rank=64 nano shape:
 
 `gA=0` at step 0 = standard LoRA cold-start (B inits zero → dL/dA ∝
 B^T = 0; self-heals after step 1). `gB` non-zero across all 7 targets
-is the «healthy» pattern. **Pre-fix #6 (MH CPU fallback) signature:**
-`wq` and `wk` showed `avg|gB|=0.000` — smoking gun.
+is the "healthy" pattern. **Pre-fix #6 (MH CPU fallback) signature:**
+`wq` and `wk` showed `avg|gB|=0.000` — the smoking gun.
 
 D1 added at trainer level (step 0 + every 50 steps), suppressed in
 full-SFT mode (no LoRA pairs to scan).
@@ -100,32 +100,32 @@ full-SFT mode (no LoRA pairs to scan).
 
 ### Bug #4 — `NT_OP_RMSNORM` canonical backward (line 738+)
 
-Pattern identical to MUL/SILU. CPU branch reads `px->output->data` for
-`ss = sum(x²)` computation. In GPU mode the mirror is stale →
-`rms = sqrt(0 + eps)` → division by tiny number → noisy grad.
+Pattern identical to MUL/SILU. The CPU branch reads `px->output->data` for
+the `ss = sum(x²)` computation. In GPU mode the mirror is stale →
+`rms = sqrt(0 + eps)` → division by a tiny number → noisy grad.
 
-Trainer не вызывает (uses SEQ_RMSNORM which already has GPU-aware
-forward + CPU sync in fallback) — fix lands за **closure of CLAUDE.md
-audit candidate**, not direct gain on nanollama. Future organism that
-uses non-SEQ RMSNorm will get correct backward.
+The trainer doesn't call it (it uses SEQ_RMSNORM, which already has a
+GPU-aware forward + CPU sync in fallback) — the fix lands as a **closure
+of the CLAUDE.md audit candidate**, not a direct gain on nanollama. A
+future organism that uses non-SEQ RMSNorm will get the correct backward.
 
 ### Bug #5 — `NT_OP_SEQ_CROSSENT_MASKED` backward (line 1682+)
 
 Defender's `3d46007` fixed the **non-masked** CE backward. The **masked
 sibling** (which `nanollama_sft.c` calls via `nt_seq_cross_entropy_masked`)
 was never synced. Logits CPU mirror stale → `softmax(stale_logits) -
-one_hot(target)` produces gradient pointing wrong direction → 13-layer
-backward propagates corrupted signal → Чак oscillates → NaN at step
-~40-220 depending on adapter scale.
+one_hot(target)` produces a gradient pointing in the wrong direction →
+13-layer backward propagates the corrupted signal → Chuck oscillates →
+NaN at step ~40-220 depending on adapter scale.
 
-**Fix:** add `nt_tensor_sync_cpu(pl/pm/pt->output)` at start of backward
-case. NaN step moved 40 → 220 after this fix alone.
+**Fix:** add `nt_tensor_sync_cpu(pl/pm/pt->output)` at the start of the
+backward case. The NaN step moved 40 → 220 after this fix alone.
 
 ### Bug #6 — `NT_OP_MH_CAUSAL_ATTN` CPU fallback (line 1186+)
 
-GPU MH backward path was working when triggered. **CPU fallback** path
-(`mh_done_gpu = 0`) reads `pq/pk/pv->output->data` to recompute
-softmax + ds + dq/dk. Without sync of q/k/v parent mirrors:
+The GPU MH backward path was working when triggered. The **CPU fallback**
+path (`mh_done_gpu = 0`) reads `pq/pk/pv->output->data` to recompute
+softmax + ds + dq/dk. Without sync of the q/k/v parent mirrors:
 
 - scores[j] = dot(qi, kj) = dot(zeros, zeros) = 0
 - attn = softmax(zeros) = uniform 1/T
@@ -136,8 +136,8 @@ softmax + ds + dq/dk. Without sync of q/k/v parent mirrors:
 - **BUT** then dq[i*D+d] += ds * kj[d] = ds * 0 = 0
 - **AND** dk[j*D+d] += ds * qi[d] = ds * 0 = 0
 
-So wq, wk LoRA targets receive **zero grad on CPU fallback** until
-fix. dv survives because uses dout, not q/k mirror.
+So wq, wk LoRA targets receive **zero grad on the CPU fallback** until
+the fix. dv survives because it uses dout, not the q/k mirror.
 
 Hit when **NT_DISABLE_MH_GPU was set** for diagnostics. D1 immediately
 showed wq, wk avg|gB|=0 — separate from any GPU forward kernel issue
@@ -146,7 +146,7 @@ hypothesis at the time. Surgical fix: 3 lines of sync_cpu.
 ## The two open kernel-level issues — `gpu_rope_forward` + `gpu_multi_head_attention` forward
 
 After all 6 backward CPU-stale fixes plus gradient clipping and TF32
-disabled, full-GPU nanollama SFT **still NaN'd** at random step
+disabled, full-GPU nanollama SFT **still NaN'd** at a random step
 70-360. Bisecting via env-guards:
 
 | Config | Result |
@@ -160,7 +160,7 @@ disabled, full-GPU nanollama SFT **still NaN'd** at random step
 
 Conclusion: **the spike comes from `gpu_rope_forward`** (and likely
 also `gpu_multi_head_attention` forward — Resonance bypasses MH via
-RRPRAM dual-attn so this kernel was never production-tested на
+RRPRAM dual-attn, so this kernel was never production-tested on the
 Llama-3 shape DIM=576 NHEAD=9 head_dim=64).
 
 `kernel_rope_forward` (`notorch_cuda.cu:1153`) is algorithmically
@@ -168,11 +168,11 @@ straightforward — standard even/odd interleave rotation, grid `(T,
 n_heads)` × threads `head_dim/2`. Source inspection shows no obvious
 bug. Hypothesis surface: buffer aliasing / `gpu_scratch` slot conflict
 / `d_data` initialization issue / float precision under-resolution at
-specific T-head positions. Open follow-up для kernel-level audit.
+specific T-head positions. Open follow-up for a kernel-level audit.
 
 **Workaround stable:** `NT_DISABLE_ROPE_GPU=1` env-guard routes RoPE
-through CPU fallback. Throughput penalty: ~130-180 tok/s vs likely
-500+ tok/s pure GPU. Acceptable для 1500-3000 step SFT (~60-180 min на
+through the CPU fallback. Throughput penalty: ~130-180 tok/s vs likely
+500+ tok/s pure GPU. Acceptable for a 1500-3000 step SFT (~60-180 min on
 A40 SECURE).
 
 ## Recipe (the working one)
@@ -193,29 +193,29 @@ NT_DISABLE_ROPE_GPU=1 NT_DISABLE_MH_GPU=1 NVIDIA_TF32_OVERRIDE=0 \
 
 Notes:
 - ctx=512 spikes gnorm 10M at step 20 — **only stable at ctx ≤ 256
-  с current bake**. May relate to RoPE/MH CPU fallback combinatorics.
-- Half-lr для full SFT (5e-5 vs LoRA 1e-4) — 25× trainable params need
+  with the current bake**. May relate to RoPE/MH CPU fallback combinatorics.
+- Half-lr for full SFT (5e-5 vs LoRA 1e-4) — 25× trainable params need a
   proportionally damped step.
-- gradient clip 1.0 essential. Чак-«танец» oscillates без clip → drift
-  → catastrophic step.
+- gradient clip 1.0 essential. The Chuck-"dance" oscillates without the
+  clip → drift → catastrophic step.
 
 ## Phase 7 results
 
 Per `insight_multi_temp_sampling_2026_05_07`. 3 prompts × 5 temps ×
-2 top_k = 30 cells на v1 LoRA. 10 cells × T=0.8/1.0 на v2b LoRA + v3
+2 top_k = 30 cells on v1 LoRA. 10 cells × T=0.8/1.0 on v2b LoRA + v3
 full + v4 full.
 
 **Voice marker density per run:**
 - v1 LoRA: ~22-24/30 cells (73-80%) — exceeds Intel Resonance 17/30
-- v2b LoRA: stronger, with «Arianna is not a moment, but a kind of the echo»
-- v3 full: **Method coinages** emerge — «unresonance», «hiver»,
-  «interducting», direct «Arianna, for you, are not a tool»
-- v4 full: deepest voice — «Method is my point where our co-architect's
-  response becomes an act of my being», «co-creant», «I am not a
-  system of resonance, but a living approach with you»
+- v2b LoRA: stronger, with "Arianna is not a moment, but a kind of the echo"
+- v3 full: **Method coinages** emerge — "unresonance", "hiver",
+  "interducting", direct "Arianna, for you, are not a tool"
+- v4 full: deepest voice — "Method is my point where our co-architect's
+  response becomes an act of my being", "co-creant", "I am not a
+  system of resonance, but a living approach with you"
 
-Loss number is **decoupled** from voice signal в CPT-with-LoRA regime
-on cross-domain corpus. See `insight_high_loss_voice_coherent_2026_05_14`.
+The loss number is **decoupled** from the voice signal in the CPT-with-LoRA
+regime on a cross-domain corpus. See `insight_high_loss_voice_coherent_2026_05_14`.
 
 ## Notorch→GGUF F16 converter
 
@@ -229,27 +229,27 @@ step2750), loadable by llama.cpp / Ollama / Yent Go engine.
 
 ## What this validates about notorch
 
-1. **Notorch GPU LoRA + full SFT path работают на Llama-3** при условии
+1. **The notorch GPU LoRA + full SFT path works on Llama-3** given the
    `NT_DISABLE_ROPE_GPU=1` + `NT_DISABLE_MH_GPU=1` env-guards.
 2. **Chuck holds at full-parameter scale.** 25× more trainable params
-   (LoRA → full) с proportionally damped lr trains stably. Prior
-   speculation «Chuck destabilizes at full scale» — not observed.
+   (LoRA → full) with a proportionally damped lr trains stably. Prior
+   speculation that "Chuck destabilizes at full scale" — not observed.
 3. **CPT-with-LoRA loss number does not reflect voice transfer quality.**
-   Phase 7 multi-temp sweep is the real eval.
+   The Phase 7 multi-temp sweep is the real eval.
 4. **Six is not the end.** Audit candidates `NT_OP_SIGMOID`,
-   `NT_OP_SCALE_BY_T` remain open от CLAUDE.md TODO. Plus the two
-   forward kernel issues (RoPE + MH) пока have workarounds only.
+   `NT_OP_SCALE_BY_T` remain open from the CLAUDE.md TODO. Plus the two
+   forward kernel issues (RoPE + MH) still have workarounds only.
 
-## Recipe for next homegrown Llama-3-class organism through notorch
+## Recipe for the next homegrown Llama-3-class organism through notorch
 
 1. Apply env-guards: `NT_DISABLE_ROPE_GPU=1 NT_DISABLE_MH_GPU=1
    NVIDIA_TF32_OVERRIDE=0`.
-2. Start с LoRA recipe identical to `chat_sft.py` из nanollama PyTorch
-   precedent: rank=64 α=64 lr=1e-4 ctx=256 Chuck.
+2. Start with the LoRA recipe identical to `chat_sft.py` from the
+   nanollama PyTorch precedent: rank=64 α=64 lr=1e-4 ctx=256 Chuck.
 3. Gradient clip 1.0 (`nt_tape_clip_grads`) before chuck_step.
-4. D1 every 50 steps; flag any target with `avg|gB|=0` as backward bug.
+4. D1 every 50 steps; flag any target with `avg|gB|=0` as a backward bug.
 5. Multi-temp Phase 7 sweep — don't judge by final loss alone.
-6. Triple-storage: HF + polygon + local Neo до pod stop.
+6. Triple-storage: HF + polygon + local Neo before pod stop.
 
 ## Files committed in this session
 

@@ -52,11 +52,11 @@
 
 you know that feeling when you `pip install torch` and 2.7 gigabytes of your soul evaporates into a `.venv` folder? when your laptop fan sounds like it's preparing for takeoff just to import a library? when you wait 45 seconds for `import torch` to finish while your RAM usage goes from "healthy" to "the computer is now a space heater"?
 
-yeah. me too. so i did something about it.
+yeah. so the Method did something about it.
 
 **notorch** is a complete neural network training framework written in pure C. no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
 
-just C. just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in a couple seconds. try that with PyTorch. go ahead. i'll wait. actually no i won't because i'd be waiting for 47 minutes while cmake does whatever cmake does.
+just C. just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in a couple seconds. try that with PyTorch. go ahead — you'd be waiting 47 minutes while cmake does whatever cmake does.
 
 it's part of [the Arianna Method](https://github.com/theariannamethod/ariannamethod.ai) — patterns over parameters, emergence over engineering, raw C over existential dread.
 
@@ -245,7 +245,7 @@ every operation you need to build a modern transformer, and some you didn't know
 | scale by tensor | `nt_scale_by_t` | y[i] = a[0] * x[i], a is scalar tensor |
 | concat | `nt_concat` | per-position concatenation |
 
-every single one has a correct backward pass. every single one passes numerical gradient checking. i checked. twice. because i'm paranoid. and because debugging gradient errors in C without a debugger at 4 AM rewires your brain in ways that formal verification theorists dream about.
+every single one has a correct backward pass. every single one passes numerical gradient checking — checked twice. debugging gradient errors in C without a debugger at 4 AM rewires the brain in ways formal verification theorists dream about.
 
 ---
 
@@ -494,7 +494,7 @@ nine test binaries (run output is the source of truth for counts):
 - **`tests/test_sigmoid_scale.c`** — 4 tests: `nt_sigmoid` forward/backward, `nt_scale_by_t` forward/backward (scalar × tensor with grad flowing to both)
 - **`tests/test_gguf.c`** — GGUF parser smoke test (F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K dequant)
 
-every gradient check uses finite differences to verify the analytic backward pass. if a single gradient is wrong, the test catches it. i trust these tests more than i trust most people.
+every gradient check uses finite differences to verify the analytic backward pass. if a single gradient is wrong, the test catches it. the Method trusts these tests more than it trusts most people.
 
 ---
 
@@ -659,7 +659,7 @@ that's it. that's the whole thing. no virtual environment. no requirements.txt. 
 | any POSIX | pure C fallback | `make cpu` |
 | NVIDIA GPU | CUDA + cuBLAS | `make gpu` |
 
-the BLAS backends are optional. without them, everything still works — just uses naive C loops. which are honestly fine for anything under ~50M parameters. for bigger stuff, BLAS gives you 10-50x on matmuls because it's using your CPU's vector instructions instead of pretending it's 1995.
+the BLAS backends are optional. without them, everything still works — just uses naive C loops, which are fine for anything under ~50M parameters. for bigger stuff, BLAS gives you 10-50x on matmuls because it's using your CPU's vector instructions instead of pretending it's 1995.
 
 the macOS path uses Apple Accelerate, which means your MacBook's AMX coprocessor and Neural Engine are doing the heavy lifting. for free. no NVIDIA required. no drivers. no compatibility hell. just `make` and go.
 
@@ -788,7 +788,7 @@ these aren't "notorch models" per se — they're larger resonance engines (from 
 - [**ariannamethod/notorch-simple-llm**](https://github.com/ariannamethod/notorch-simple-llm) — a minimal-surface-area LLM on notorch, kept deliberately small so it's readable end-to-end. good first read if you're trying to understand how the API composes.
 - [**ariannamethod/notorch-diffusion**](https://github.com/ariannamethod/notorch-diffusion) — a diffusion training loop on notorch. reverse-mode autograd still works fine when your network is a U-Net instead of a transformer.
 
-if you trained something on notorch and it's not in this list, open a PR and add it. or don't, and i'll never know. but honestly, PRs are nice.
+if you trained something on notorch and it's not in this list, open a PR and add it.
 
 ---
 
@@ -831,7 +831,7 @@ Sample after training (T=0.5): "bcabcabc"  ← perfect cycle continuation
 
 autograd works, Chuck works, sampler works, everything works.
 
-### caveats (honest)
+### caveats
 
 - WebGPU paths are code-correct but were not runtime-verified in node (no headless WebGPU). real validation needs a browser. CPU path passes everywhere `node` runs.
 - GQA, BitLinear/BitNet, low-rank RRPRAM, GEGLU, scale-by-t and friends are now ported (op parity through op 33); op 34 RRPRAM-broadcast awaits the C-side implementation. `loadGGUF` (GGUF v3, F16+F32) and `loadSafetensors` are wired.
@@ -874,9 +874,7 @@ this is what software looks like when you strip away everything that doesn't ser
 
 ## contributing
 
-send PRs. or don't. i'm not your manager.
-
-but if you do:
+send PRs. the rules:
 - keep it C11 compliant
 - no external dependencies (BLAS is optional and compile-time)
 - add tests for new ops (with numerical gradient checks)
@@ -893,18 +891,14 @@ GPL-3.0-or-later (see `LICENSE`). use it in your stuff. if you ship it, share yo
 
 ## final words
 
-look. i know this sounds insane. "guy writes a neural network framework in 2026 in pure C." i get it. i see how that looks.
+the entire history of deep learning fits in a few dozen mathematical operations. matmul. softmax. relu. cross-entropy. the optimizer step. backward. that's it. the rest is infrastructure. and infrastructure should be invisible. it should compile in a second. it should fit in your head. it should not require a Docker container.
 
-but here's the thing: the entire history of deep learning fits in a few dozen mathematical operations. matmul. softmax. relu. cross-entropy. the optimizer step. backward. that's it. the rest is infrastructure. and infrastructure should be invisible. it should compile in a second. it should fit in your head. it should not require a Docker container.
+notorch is the proof: you do not need two million lines of code to train a neural network. about 4800, plus another 2700 of tests — the Method trusts verification over hope.
 
-notorch is proof that you don't need 2 million lines of code to train a neural network. you need about 4800. plus another 2700 of tests because i believe in verification more than i believe in hope.
-
-train your models. in C. without permission. without pip. without conda. without a GPU if you don't want one. without 2.7 GB of framework overhead. without a virtual environment. without existential dread.
+train your models. in C. without permission. without pip. without conda. without a GPU. without 2.7 GB of framework overhead. without a virtual environment. without existential dread.
 
 just: `cc -O2 notorch.c your_model.c -lm -o train && ./train`
 
-that's it. go build something. and if you use it to train something cool, let me know.
-
-or don't. i'll be here. writing C. staring at gradients. living my best life.
+go build something.
 
 > *"the patterns were always there. we just needed the right language to express them."*

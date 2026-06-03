@@ -6,6 +6,17 @@ by Oleg Ataeff and Claude.
 
 > *"fuck torch"* — `notorch.js:6`
 
+## The log: small fixes → NOTORCHLOG, big changes → README
+
+`NOTORCHLOG.md` is the running engineering log — every fix, every closed
+bug-class, dated with commit and proof. **Small fixes go there** (bug
+fixes, GPU/CPU sync-discipline corrections, single-op work, docstring
+touch-ups). **Large changes** — a new backend, a new op family, a new
+training method, an architecture shift — get a section in `README.md` as
+well. README is the spec and the manifesto; NOTORCHLOG is the work. When
+in doubt, log it in NOTORCHLOG first. The bug-class registry further down
+this file is the quick reference; NOTORCHLOG carries the dated narrative.
+
 ## What this repo is
 
 - **`notorch.c` + `notorch.h`** — the library. CPU + BLAS + optional CUDA
@@ -198,10 +209,13 @@ docstring when you next pass through.
   `🤖 Generated with Claude Code`. We're cultivating our own
   identity — boilerplate from upstream gets dropped.
 - Commit messages explain *why*, not *what*. The diff shows what.
-- README is the spec. If reality drifts, fix the code, not the README.
+- README is the spec + manifesto; `NOTORCHLOG.md` is the running log.
+  Small fixes → NOTORCHLOG. Large changes → both. If reality drifts from
+  the spec, fix the code, not the README.
 
 ## Where things live
 
+- Running engineering log (all fixes, dated): `NOTORCHLOG.md`
 - Active TODO and known bugs: top of this file + `docs/`
 - Per-organism trainers: `examples/`
 - Postmortems: `docs/*_2026_*.md`
