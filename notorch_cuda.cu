@@ -818,6 +818,12 @@ extern "C" void gpu_chuck_inner(float* d_param, float* d_m, float* d_v, const fl
 //   d_Wra_h[E,R]+= X^T[E,T] @ d_U_h
 // ═══════════════════════════════════════════════════════════════════
 
+/* Forward-declare the strided-batched helpers (defined below, before the
+ * backward kernel) so gpu_rrpram_lr_forward can call them. */
+static void gpu_sgemm_nn_batched(int, int, int, const float*, long, const float*, long, float*, long, float, int);
+static void gpu_sgemm_nt_beta_batched(int, int, int, const float*, long, const float*, long, float*, long, float, int);
+static void gpu_sgemm_tn_beta_batched(int, int, int, const float*, long, const float*, long, float*, long, float, int);
+
 extern "C" void gpu_rrpram_lr_forward(
     const float* d_X, const float* d_Wr_combined, const float* d_V,
     float* d_out, float* d_U, float* d_scores,
