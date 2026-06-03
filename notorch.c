@@ -589,6 +589,28 @@ void nt_tape_backward(int loss_idx) {
             if (e->parent1 >= 0 && e->parent2 >= 0) {
                 nt_tape_entry* pa = &g_tape.entries[e->parent1];
                 nt_tape_entry* pb = &g_tape.entries[e->parent2];
+#ifdef USE_CUDA
+                /* L2 (2026-06-03): GPU mul backward — gpu_mul_backward existed but
+                 * was unused, so each MUL did a D2H sync (SwiGLU + gate-blend = 3
+                 * MULs/hybrid layer → ~30 mid-backward stalls/step, the residual
+                 * 0%-util cause after L1). GPU path reads parent outputs on-device
+                 * (NO sync_cpu — that download is exactly what the CPU path guards;
+                 * tape_acc_grad_gpu sets gpu_valid/cpu_dirty, mirroring NT_OP_SCALE). */
+                if (g_use_gpu) {
+                    extern void gpu_mul_backward(float*, float*, const float*, const float*, const float*, int);
+                    float* d_dout = nt_tensor_ensure_gpu(e->grad);
+                    float* d_a = nt_tensor_ensure_gpu(pa->output);
+                    float* d_b = nt_tensor_ensure_gpu(pb->output);
+                    float* d_ga = gpu_scratch(3, out_len);
+                    float* d_gb = gpu_scratch(4, out_len);
+                    if (d_dout && d_a && d_b && d_ga && d_gb) {
+                        gpu_mul_backward(d_ga, d_gb, d_dout, d_a, d_b, out_len);
+                        tape_acc_grad_gpu(e->parent1, d_ga, out_len);
+                        tape_acc_grad_gpu(e->parent2, d_gb, out_len);
+                        break;
+                    }
+                }
+#endif
                 /* SwiGLU / gate-blend FIX 2026-05-11: forward output of both
                  * parents may live on GPU; CPU mirror is stale calloc-zero.
                  * Without sync, ga=gb=0 — masks all LoRA gradients on the
@@ -664,6 +686,21 @@ void nt_tape_backward(int loss_idx) {
         case NT_OP_SILU: {
             if (e->parent1 >= 0) {
                 nt_tape_entry* px = &g_tape.entries[e->parent1];
+#ifdef USE_CUDA
+                /* L2 (2026-06-03): GPU silu backward — kernel existed, was unused
+                 * (one D2H sync/SiLU/hybrid layer). GPU path reads x on-device. */
+                if (g_use_gpu) {
+                    extern void gpu_silu_backward(float*, const float*, const float*, int);
+                    float* d_dout = nt_tensor_ensure_gpu(e->grad);
+                    float* d_x = nt_tensor_ensure_gpu(px->output);
+                    float* d_gx = gpu_scratch(3, out_len);
+                    if (d_dout && d_x && d_gx) {
+                        gpu_silu_backward(d_gx, d_dout, d_x, out_len);
+                        tape_acc_grad_gpu(e->parent1, d_gx, out_len);
+                        break;
+                    }
+                }
+#endif
                 /* FIX 2026-05-11: parent output may be GPU-resident; CPU stale
                  * gives sigmoid(0)=0.5 partial grad — still corrupts the SiLU
                  * derivative used in SwiGLU mlp_gate path. */
