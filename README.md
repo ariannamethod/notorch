@@ -169,8 +169,8 @@ nt_tape_backward() — reverse-mode automatic differentiation
 ┌──────────────────────────────────────────────────┐
 │  Optimizers                                      │
 │    ├─ diagonal baseline  (the classic)           │
-│    ├─ diagonal + decay   (with weight decay)      │
-│    ├─ Chuck              (self-aware adaptive)    │
+│    ├─ diagonal + decay   (with weight decay)     │
+│    ├─ Chuck              (self-aware adaptive)   │
 │    └─ nt_tape_freeze_param (LoRA / adapter)      │
 └──────────────────────────────────────────────────┘
     ↓
