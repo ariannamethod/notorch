@@ -799,8 +799,6 @@ if you trained something on notorch and it's not in this list, open a PR and add
 
 a single-file pure-JavaScript port of notorch for the browser. WebGPU when available, V8-optimised CPU fallback (Math.fround f32 hint) when not. zero npm dependencies. live at `js-edition/notorch.js` (~3580 LOC).
 
-co-built with Gemini and Claude Opus.
-
 ### what it ships (feature parity with the C lib at small scale)
 
 **inference primitives** — `add / sub / mul / div / neg / scale / transpose / softmax / silu / sigmoid / tanh / relu / gelu / swiglu / swigluFFN / layernorm / rmsnorm / embedding / attention (multi-head causal, fused) / rope / dropout / concat / slice / linear / argmax / sample (temperature + top-k + top-p) / KVCache`.
