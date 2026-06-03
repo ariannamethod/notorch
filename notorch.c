@@ -589,6 +589,28 @@ void nt_tape_backward(int loss_idx) {
             if (e->parent1 >= 0 && e->parent2 >= 0) {
                 nt_tape_entry* pa = &g_tape.entries[e->parent1];
                 nt_tape_entry* pb = &g_tape.entries[e->parent2];
+#ifdef USE_CUDA
+                /* L2 (2026-06-03): GPU mul backward — gpu_mul_backward existed but
+                 * was unused, so each MUL did a D2H sync (SwiGLU + gate-blend = 3
+                 * MULs/hybrid layer → ~30 mid-backward stalls/step, the residual
+                 * 0%-util cause after L1). GPU path reads parent outputs on-device
+                 * (NO sync_cpu — that download is exactly what the CPU path guards;
+                 * tape_acc_grad_gpu sets gpu_valid/cpu_dirty, mirroring NT_OP_SCALE). */
+                if (g_use_gpu) {
+                    extern void gpu_mul_backward(float*, float*, const float*, const float*, const float*, int);
+                    float* d_dout = nt_tensor_ensure_gpu(e->grad);
+                    float* d_a = nt_tensor_ensure_gpu(pa->output);
+                    float* d_b = nt_tensor_ensure_gpu(pb->output);
+                    float* d_ga = gpu_scratch(3, out_len);
+                    float* d_gb = gpu_scratch(4, out_len);
+                    if (d_dout && d_a && d_b && d_ga && d_gb) {
+                        gpu_mul_backward(d_ga, d_gb, d_dout, d_a, d_b, out_len);
+                        tape_acc_grad_gpu(e->parent1, d_ga, out_len);
+                        tape_acc_grad_gpu(e->parent2, d_gb, out_len);
+                        break;
+                    }
+                }
+#endif
                 /* SwiGLU / gate-blend FIX 2026-05-11: forward output of both
                  * parents may live on GPU; CPU mirror is stale calloc-zero.
                  * Without sync, ga=gb=0 — masks all LoRA gradients on the
@@ -664,6 +686,21 @@ void nt_tape_backward(int loss_idx) {
         case NT_OP_SILU: {
             if (e->parent1 >= 0) {
                 nt_tape_entry* px = &g_tape.entries[e->parent1];
+#ifdef USE_CUDA
+                /* L2 (2026-06-03): GPU silu backward — kernel existed, was unused
+                 * (one D2H sync/SiLU/hybrid layer). GPU path reads x on-device. */
+                if (g_use_gpu) {
+                    extern void gpu_silu_backward(float*, const float*, const float*, int);
+                    float* d_dout = nt_tensor_ensure_gpu(e->grad);
+                    float* d_x = nt_tensor_ensure_gpu(px->output);
+                    float* d_gx = gpu_scratch(3, out_len);
+                    if (d_dout && d_x && d_gx) {
+                        gpu_silu_backward(d_gx, d_dout, d_x, out_len);
+                        tape_acc_grad_gpu(e->parent1, d_gx, out_len);
+                        break;
+                    }
+                }
+#endif
                 /* FIX 2026-05-11: parent output may be GPU-resident; CPU stale
                  * gives sigmoid(0)=0.5 partial grad — still corrupts the SiLU
                  * derivative used in SwiGLU mlp_gate path. */
@@ -2358,6 +2395,32 @@ void nt_tape_chuck_step(float lr, float loss_val) {
     float noise_mag = cs->noise;
 
     // ── Level 2: Per-param gradient norm + Adam update ──
+#ifdef USE_CUDA
+    /* L1 (2026-06-03): pre-compute ALL per-param grad norms in ONE batched device
+     * readback (DEVICE pointer-mode, no per-call stall) instead of a blocking
+     * cublasSnrm2-to-host per param in the loop below — the teen 0%-util sync
+     * storm. Indexed by the same is_param+grad counter the update loop uses, so
+     * chuck_gnorms[param_idx] aligns. n matches the loop's min(output,m) for the
+     * params that use it → bit-identical norms. */
+    float chuck_gnorms[NT_TAPE_MAX_PARAMS]; int chuck_gn_have = 0;
+    if (g_use_gpu) {
+        extern void gpu_nrm2_batch(const float**, const int*, int, float*);
+        const float* d_gs[NT_TAPE_MAX_PARAMS]; int ns_arr[NT_TAPE_MAX_PARAMS];
+        int pj = 0;
+        for (int i = 0; i < g_tape.count && pj < g_tape.n_params; i++) {
+            nt_tape_entry* e = &g_tape.entries[i];
+            if (!e->is_param || !e->grad) continue;
+            int n = e->output->len;
+            nt_adam_state* as = &g_tape.adam[pj];
+            if (as->m && as->m->len < n) n = as->m->len;
+            float* d_g = nt_tensor_ensure_gpu(e->grad);
+            d_gs[pj] = d_g; ns_arr[pj] = d_g ? n : 0;
+            pj++;
+        }
+        gpu_nrm2_batch(d_gs, ns_arr, pj, chuck_gnorms);
+        chuck_gn_have = 1;
+    }
+#endif
     int param_idx = 0;
     for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
@@ -2375,7 +2438,7 @@ void nt_tape_chuck_step(float lr, float loss_val) {
         if (g_use_gpu) {
             float* d_g = nt_tensor_ensure_gpu(e->grad);
             if (d_g) {
-                gnorm = gpu_nrm2(d_g, n);
+                gnorm = chuck_gn_have ? chuck_gnorms[param_idx] : gpu_nrm2(d_g, n); /* L1 batched readback */
             } else {
                 nt_tensor_ensure_cpu(e->grad);
                 for (int j = 0; j < n; j++) gnorm += e->grad->data[j] * e->grad->data[j];
@@ -2477,25 +2540,43 @@ void nt_tape_chuck_step(float lr, float loss_val) {
 
 float nt_tape_clip_grads(float max_norm) {
     float total_norm_sq = 0.0f;
-    for (int i = 0; i < g_tape.count; i++) {
-        nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param || !e->grad) continue;
-        int n = e->output->len;
-        if (e->grad->len < n) n = e->grad->len;
 #ifdef USE_CUDA
-        if (g_use_gpu) {
+    if (g_use_gpu) {
+        /* L1 (2026-06-03): batch all per-param grad norms into ONE device readback
+         * instead of one blocking cublasSnrm2-to-host per param. Plain gpu_nrm2
+         * drains the stream every call (~42 here + 42 in Chuck = the 0%-util sync
+         * storm). Numerically identical — same L2 norms, just read once. */
+        extern void gpu_nrm2_batch(const float**, const int*, int, float*);
+        const float* d_gs[NT_TAPE_MAX_PARAMS]; int ns_arr[NT_TAPE_MAX_PARAMS]; int k = 0;
+        for (int i = 0; i < g_tape.count && k < NT_TAPE_MAX_PARAMS; i++) {
+            nt_tape_entry* e = &g_tape.entries[i];
+            if (!e->is_param || !e->grad) continue;
+            int n = e->output->len;
+            if (e->grad->len < n) n = e->grad->len;
             float* d_g = nt_tensor_ensure_gpu(e->grad);
-            if (d_g) {
-                float nrm = gpu_nrm2(d_g, n);
-                total_norm_sq += nrm * nrm;
-                continue;
+            if (d_g) { d_gs[k] = d_g; ns_arr[k] = n; k++; }
+            else {
+                nt_tensor_ensure_cpu(e->grad);
+                for (int j = 0; j < n; j++) { float g = e->grad->data[j]; total_norm_sq += g * g; }
             }
         }
-        nt_tensor_ensure_cpu(e->grad);
+        if (k > 0) {
+            float norms[NT_TAPE_MAX_PARAMS];
+            gpu_nrm2_batch(d_gs, ns_arr, k, norms);
+            for (int i = 0; i < k; i++) total_norm_sq += norms[i] * norms[i];
+        }
+    } else
 #endif
-        for (int j = 0; j < n; j++) {
-            float g = e->grad->data[j];
-            total_norm_sq += g * g;
+    {
+        for (int i = 0; i < g_tape.count; i++) {
+            nt_tape_entry* e = &g_tape.entries[i];
+            if (!e->is_param || !e->grad) continue;
+            int n = e->output->len;
+            if (e->grad->len < n) n = e->grad->len;
+            for (int j = 0; j < n; j++) {
+                float g = e->grad->data[j];
+                total_norm_sq += g * g;
+            }
         }
     }
     float total_norm = sqrtf(total_norm_sq);

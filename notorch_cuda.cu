@@ -332,6 +332,17 @@ __global__ void kernel_rmsnorm(float* out, const float* in, int T, int D) {
 
 static int gpu_blocks(int n, int threads) { return (n + threads - 1) / threads; }
 
+/* L5: thread count for the one-block-per-row reduction kernels (causal
+ * softmax, cross-entropy, seq-CE). The block-reduce helpers require a
+ * power-of-two blockDim.x. Pick the largest power of two <= n, clamped to
+ * [32, cap]. cap=256 for CE-over-V (V is large); the caller passes cap. */
+static int reduce_threads(int n, int cap) {
+    int t = 1;
+    while ((t << 1) <= n && (t << 1) <= cap) t <<= 1;
+    if (t < 32) t = 32;          /* one warp minimum; strided loops guard n<32 */
+    return t;
+}
+
 extern "C" void gpu_add(float* d_out, const float* d_a, const float* d_b, int n) {
     kernel_add<<<gpu_blocks(n, 256), 256>>>(d_out, d_a, d_b, n);
 }
@@ -354,6 +365,31 @@ extern "C" float gpu_nrm2(const float* d_x, int n) {
     float result = 0.0f;
     CUBLAS_CHECK(cublasSnrm2(g_cublas, n, d_x, 1, &result));
     return result;
+}
+
+/* Batched L2-norms of k device vectors into a HOST array, WITHOUT the per-call
+ * host stall plain gpu_nrm2 incurs. cuBLAS default pointer mode is HOST, so
+ * cublasSnrm2 drains the stream to copy each scalar to host — ~84 such stalls/
+ * step (clip+Chuck per-param) were the molequla teen 0%-util cause. Here we flip
+ * to DEVICE mode for the batch (results stay device-side, no per-call drain),
+ * then ONE D->H copy. Mode is restored to HOST so all GEMM/axpy/scal (which pass
+ * host &alpha/&beta) are unaffected. (2026-06-03 launch-bound fix L1.) */
+extern "C" void gpu_nrm2_batch(const float** d_xs, const int* ns, int k, float* host_out) {
+    for (int i = 0; i < k; i++) host_out[i] = 0.0f;
+    if (!g_cublas || k <= 0) return;
+    static float* d_norms = NULL; static int cap = 0;
+    if (cap < k) {
+        if (d_norms) cudaFree(d_norms);
+        cudaMalloc((void**)&d_norms, (size_t)k * sizeof(float));
+        cap = k;
+    }
+    cudaMemset(d_norms, 0, (size_t)k * sizeof(float));
+    cublasSetPointerMode(g_cublas, CUBLAS_POINTER_MODE_DEVICE);
+    for (int i = 0; i < k; i++) {
+        if (d_xs[i] && ns[i] > 0) cublasSnrm2(g_cublas, ns[i], d_xs[i], 1, d_norms + i);
+    }
+    cublasSetPointerMode(g_cublas, CUBLAS_POINTER_MODE_HOST);
+    cudaMemcpy(host_out, d_norms, (size_t)k * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 extern "C" void gpu_sscal(float* d_x, int n, float alpha) {
@@ -528,6 +564,44 @@ extern "C" float* gpu_scratch(int slot, int n_floats) {
 
 
 // ═══════════════════════════════════════════════════════════════════
+// Block reduction helpers (L5: one block per row/token, threads cooperate)
+// ═══════════════════════════════════════════════════════════════════
+//
+// Tree reduction in shared memory, matching kernel_rmsnorm's convention.
+// REQUIRES blockDim.x to be a power of two (all launch sites below pass a
+// power-of-two thread count). `sdata` must be at least blockDim.x floats.
+// Every thread in the block calls these and hits every __syncthreads(), so
+// there is no divergence-deadlock. The reduced value is broadcast via
+// sdata[0] and read by all threads after the final sync.
+
+__device__ __forceinline__ float block_reduce_max(float val, float* sdata) {
+    sdata[threadIdx.x] = val;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (threadIdx.x < s) {
+            float other = sdata[threadIdx.x + s];
+            if (other > sdata[threadIdx.x]) sdata[threadIdx.x] = other;
+        }
+        __syncthreads();
+    }
+    float r = sdata[0];
+    __syncthreads();   // ensure all threads read before sdata is reused
+    return r;
+}
+
+__device__ __forceinline__ float block_reduce_sum(float val, float* sdata) {
+    sdata[threadIdx.x] = val;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (threadIdx.x < s) sdata[threadIdx.x] += sdata[threadIdx.x + s];
+        __syncthreads();
+    }
+    float r = sdata[0];
+    __syncthreads();   // ensure all threads read before sdata is reused
+    return r;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Multi-head causal attention — GPU kernel
 // ═══════════════════════════════════════════════════════════════════
 //
@@ -536,34 +610,43 @@ extern "C" float* gpu_scratch(int slot, int n_floats) {
 // Uses cublasSgemm per head for QK^T and attn*V
 // Custom kernel for causal softmax
 
+// L5: one BLOCK per (h, i) row; blockDim.x threads cooperate.
+// Numerically equivalent to the serial version: same causal mask (j<=i),
+// same row-max (over j in [0,i]), same Σ exp(row[j]-mx) over j in [0,i].
 __global__ void kernel_causal_softmax(float* scores, int T, int n_heads) {
     // scores[h * T * T + i * T + j]
-    // Apply causal mask (j > i -> -inf) then softmax per row
     int h = blockIdx.x;
     int i = blockIdx.y;
     if (h >= n_heads || i >= T) return;
 
     float* row = scores + h * T * T + i * T;
+    extern __shared__ float sdata[];
 
-    // Causal mask
-    for (int j = i + 1; j < T; j++)
+    // Causal mask: zero out the strictly-upper part (j > i) in parallel.
+    for (int j = i + 1 + threadIdx.x; j < T; j += blockDim.x)
         row[j] = -1e10f;
+    __syncthreads();
 
-    // Find max
-    float mx = row[0];
-    for (int j = 1; j <= i; j++)
-        if (row[j] > mx) mx = row[j];
+    // Max over the causal window j in [0, i]. Each thread reduces its strided
+    // slice into local_mx, then a block reduction. Threads with no element keep
+    // -inf (the identity for max), so the guarded reduction is correct for any T.
+    float local_mx = -INFINITY;
+    for (int j = threadIdx.x; j <= i; j += blockDim.x)
+        if (row[j] > local_mx) local_mx = row[j];
+    float mx = block_reduce_max(local_mx, sdata);
 
-    // Exp and sum
-    float sum = 0;
-    for (int j = 0; j <= i; j++) {
-        row[j] = expf(row[j] - mx);
-        sum += row[j];
+    // exp in place over [0, i] + partial sum; threads outside the window add 0.
+    float local_sum = 0.0f;
+    for (int j = threadIdx.x; j <= i; j += blockDim.x) {
+        float e = expf(row[j] - mx);
+        row[j] = e;
+        local_sum += e;
     }
+    float sum = block_reduce_sum(local_sum, sdata);
 
-    // Normalize
+    // Normalize: scale [0, i], zero the rest (matches serial j>i -> 0).
     float inv_sum = 1.0f / (sum + 1e-10f);
-    for (int j = 0; j < T; j++)
+    for (int j = threadIdx.x; j < T; j += blockDim.x)
         row[j] = (j <= i) ? row[j] * inv_sum : 0.0f;
 }
 
@@ -590,9 +673,11 @@ extern "C" void gpu_multi_head_attention(
         d_scores, T, (long long)T * T,
         n_heads));
 
-    // Causal softmax
+    // Causal softmax — L5: one block per (h,i) row, threads cooperate.
     dim3 grid(n_heads, T);
-    kernel_causal_softmax<<<grid, 1>>>(d_scores, T, n_heads);
+    int sm_threads = reduce_threads(T, 256);
+    size_t sm_bytes = sm_threads * sizeof(float);
+    kernel_causal_softmax<<<grid, sm_threads, sm_bytes>>>(d_scores, T, n_heads);
 
     // Batched attn * V
     float alpha_v = 1.0f;
@@ -611,6 +696,8 @@ extern "C" void gpu_multi_head_attention(
 // Attention backward
 // ═══════════════════════════════════════════════════════════════════
 
+// L5: one BLOCK per (h, i) row; blockDim.x threads cooperate on the dot.
+// Numerically equivalent: same dot = Σ_{j<=i} attn[j]*dout[j], same masked write.
 __global__ void kernel_softmax_backward(float* d_grad_scores,
                                          const float* d_scores,
                                          const float* d_grad_out_scores,
@@ -622,12 +709,16 @@ __global__ void kernel_softmax_backward(float* d_grad_scores,
     const float* attn_row = d_scores + h * T * T + i * T;
     const float* dout_row = d_grad_out_scores + h * T * T + i * T;
     float* grad_row = d_grad_scores + h * T * T + i * T;
+    extern __shared__ float sdata[];
 
-    float dot = 0;
-    for (int j = 0; j <= i; j++)
-        dot += attn_row[j] * dout_row[j];
+    // Partial dot over the causal window [0, i]; threads outside add 0.
+    float local_dot = 0.0f;
+    for (int j = threadIdx.x; j <= i; j += blockDim.x)
+        local_dot += attn_row[j] * dout_row[j];
+    float dot = block_reduce_sum(local_dot, sdata);
 
-    for (int j = 0; j < T; j++)
+    // Strided masked write over the full row (j>i -> 0, matches serial).
+    for (int j = threadIdx.x; j < T; j += blockDim.x)
         grad_row[j] = (j <= i) ? attn_row[j] * (dout_row[j] - dot) : 0.0f;
 }
 
@@ -657,9 +748,11 @@ extern "C" void gpu_multi_head_attention_backward(
         d_scratch_TT2, T, S_TT,
         n_heads));
 
-    // Step 2: softmax backward
+    // Step 2: softmax backward — L5: block-per-row dot reduction.
     dim3 grid(n_heads, T);
-    kernel_softmax_backward<<<grid, 1>>>(d_scratch_TT, d_scores, d_scratch_TT2, T, n_heads);
+    int sm_threads = reduce_threads(T, 256);
+    size_t sm_bytes = sm_threads * sizeof(float);
+    kernel_softmax_backward<<<grid, sm_threads, sm_bytes>>>(d_scratch_TT, d_scores, d_scratch_TT2, T, n_heads);
 
     // Step 3: dV_h(T,hd) = scores_h^T(T,T) * dout_h(T,hd)  (batched)
     gpu_zero(d_dV, T * D);
@@ -702,6 +795,8 @@ extern "C" void gpu_multi_head_attention_backward(
 // Cross-entropy — GPU kernel
 // ═══════════════════════════════════════════════════════════════════
 
+// L5: one BLOCK per token; blockDim.x threads cooperate over the vocab V.
+// Numerically equivalent: same max over V, same Σ exp(l[j]-mx) over V.
 __global__ void kernel_cross_entropy_forward(const float* logits, const float* targets,
                                               float* losses, int T, int V) {
     int t = blockIdx.x;
@@ -710,18 +805,26 @@ __global__ void kernel_cross_entropy_forward(const float* logits, const float* t
     const float* l = logits + t * V;
     int target = (int)targets[t];
     if (target < 0 || target >= V) target = 0;
+    extern __shared__ float sdata[];
 
-    float mx = l[0];
-    for (int j = 1; j < V; j++)
-        if (l[j] > mx) mx = l[j];
+    // Max over V (strided). Threads with no element keep -inf (max identity).
+    float local_mx = -INFINITY;
+    for (int j = threadIdx.x; j < V; j += blockDim.x)
+        if (l[j] > local_mx) local_mx = l[j];
+    float mx = block_reduce_max(local_mx, sdata);
 
-    float sum = 0;
-    for (int j = 0; j < V; j++)
-        sum += expf(l[j] - mx);
+    // Σ exp(l[j]-mx) over V (strided); threads with no element add 0.
+    float local_sum = 0.0f;
+    for (int j = threadIdx.x; j < V; j += blockDim.x)
+        local_sum += expf(l[j] - mx);
+    float sum = block_reduce_sum(local_sum, sdata);
 
-    losses[t] = -((l[target] - mx) - logf(sum + 1e-10f));
+    if (threadIdx.x == 0)
+        losses[t] = -((l[target] - mx) - logf(sum + 1e-10f));
 }
 
+// L5: one BLOCK per token; threads cooperate on max+sum, then parallel writes.
+// Numerically equivalent: same max/sum over V, same softmax-minus-onehot grad.
 __global__ void kernel_cross_entropy_backward(float* grad_logits,
                                                const float* logits,
                                                const float* targets,
@@ -733,17 +836,20 @@ __global__ void kernel_cross_entropy_backward(float* grad_logits,
     float* gl = grad_logits + t * V;
     int target = (int)targets[t];
     if (target < 0 || target >= V) target = 0;
+    extern __shared__ float sdata[];
 
-    float mx = l[0];
-    for (int j = 1; j < V; j++)
-        if (l[j] > mx) mx = l[j];
+    float local_mx = -INFINITY;
+    for (int j = threadIdx.x; j < V; j += blockDim.x)
+        if (l[j] > local_mx) local_mx = l[j];
+    float mx = block_reduce_max(local_mx, sdata);
 
-    float sum = 0;
-    for (int j = 0; j < V; j++)
-        sum += expf(l[j] - mx);
+    float local_sum = 0.0f;
+    for (int j = threadIdx.x; j < V; j += blockDim.x)
+        local_sum += expf(l[j] - mx);
+    float sum = block_reduce_sum(local_sum, sdata);
 
     float inv_sum = 1.0f / (sum + 1e-10f);
-    for (int j = 0; j < V; j++) {
+    for (int j = threadIdx.x; j < V; j += blockDim.x) {
         float prob = expf(l[j] - mx) * inv_sum;
         gl[j] = scale * (prob - (j == target ? 1.0f : 0.0f));
     }
@@ -751,7 +857,10 @@ __global__ void kernel_cross_entropy_backward(float* grad_logits,
 
 extern "C" float gpu_cross_entropy(const float* d_logits, const float* d_targets,
                                     float* d_losses, int T, int V) {
-    kernel_cross_entropy_forward<<<T, 1>>>(d_logits, d_targets, d_losses, T, V);
+    /* L5: one block per token, threads cooperate over V. */
+    int ce_threads = reduce_threads(V, 256);
+    size_t ce_bytes = ce_threads * sizeof(float);
+    kernel_cross_entropy_forward<<<T, ce_threads, ce_bytes>>>(d_logits, d_targets, d_losses, T, V);
     /* Reduce on GPU via cuBLAS Sasum (Σ |x|; losses are ≥ 0 so this is a sum). */
     float total = 0.0f;
     if (g_cublas) {
@@ -770,7 +879,10 @@ extern "C" void gpu_cross_entropy_backward(float* d_grad_logits,
                                             const float* d_targets,
                                             int T, int V) {
     float scale = 1.0f / T;
-    kernel_cross_entropy_backward<<<T, 1>>>(d_grad_logits, d_logits, d_targets, T, V, scale);
+    /* L5: one block per token, threads cooperate over V. */
+    int ce_threads = reduce_threads(V, 256);
+    size_t ce_bytes = ce_threads * sizeof(float);
+    kernel_cross_entropy_backward<<<T, ce_threads, ce_bytes>>>(d_grad_logits, d_logits, d_targets, T, V, scale);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -818,6 +930,12 @@ extern "C" void gpu_chuck_inner(float* d_param, float* d_m, float* d_v, const fl
 //   d_Wra_h[E,R]+= X^T[E,T] @ d_U_h
 // ═══════════════════════════════════════════════════════════════════
 
+/* Forward-declare the strided-batched helpers (defined below, before the
+ * backward kernel) so gpu_rrpram_lr_forward can call them. */
+static void gpu_sgemm_nn_batched(int, int, int, const float*, long, const float*, long, float*, long, float, int);
+static void gpu_sgemm_nt_beta_batched(int, int, int, const float*, long, const float*, long, float*, long, float, int);
+static void gpu_sgemm_tn_beta_batched(int, int, int, const float*, long, const float*, long, float*, long, float, int);
+
 extern "C" void gpu_rrpram_lr_forward(
     const float* d_X, const float* d_Wr_combined, const float* d_V,
     float* d_out, float* d_U, float* d_scores,
@@ -828,39 +946,40 @@ extern "C" void gpu_rrpram_lr_forward(
     int  out_dim = H * hd;
     float alpha = 1.0f, beta = 0.0f;
 
-    for (int h = 0; h < H; h++) {
-        const float* Wra_h = d_Wr_combined + (long)h * E * R;          /* [E,R] row-major */
-        const float* Wrb_h = d_Wr_combined + wra_total + (long)h * R * T;/* [R,T] row-major */
-        float* U_h     = d_U + (long)h * T * R;                         /* [T,R] row-major */
-        float* S_h     = d_scores + (long)h * T * T;                    /* [T,T] row-major */
+    /* U[h][T,R] = X[T,E] @ Wra[h][E,R] — batched NN; X shared across heads (strideA=0),
+     * Wra block at offset 0 (strideB=E*R), U strideC=T*R. */
+    gpu_sgemm_nn_batched(T, R, E,
+        d_X, 0L,
+        d_Wr_combined, (long)E * R,
+        d_U, (long)T * R, 0.0f, H);
+    /* S[h][T,T] = U[h][T,R] @ Wrb[h][R,T] — batched NN; Wrb block at offset wra_total. */
+    gpu_sgemm_nn_batched(T, T, R,
+        d_U, (long)T * R,
+        d_Wr_combined + wra_total, (long)R * T,
+        d_scores, (long)T * T, 0.0f, H);
 
-        /* U_h[T,R] = X[T,E] @ Wra_h[E,R] — NN gemm */
-        gpu_sgemm_nn(T, R, E, d_X, Wra_h, U_h);
-        /* S_h[T,T] = U_h[T,R] @ Wrb_h[R,T] — NN gemm */
-        gpu_sgemm_nn(T, T, R, U_h, Wrb_h, S_h);
-    }
-
-    /* Causal softmax in-place over [H, T, T]. */
+    /* Causal softmax in-place over [H, T, T]. L5: block-per-row reduction. */
     dim3 grid(H, T);
-    kernel_causal_softmax<<<grid, 1>>>(d_scores, T, H);
+    int sm_threads = reduce_threads(T, 256);
+    size_t sm_bytes = sm_threads * sizeof(float);
+    kernel_causal_softmax<<<grid, sm_threads, sm_bytes>>>(d_scores, T, H);
 
     /* Out_h[T,hd] = A_h[T,T] @ V_h[T,hd]; V_h has stride out_dim = H*hd.
      * V_h is a sub-tensor of V[T, H*hd] starting at column h*hd, ld=H*hd
      * (row-major). Use cublasSgemm directly with strided V.
      * Col-major view: Out_h^T(hd,T) = V_h^T(hd,T) × A_h^T(T,T). */
-    for (int h = 0; h < H; h++) {
-        const float* S_h = d_scores + (long)h * T * T;
-        const float* Vh  = d_V   + h * hd;
-        float*       Oh  = d_out + h * hd;
-        CUBLAS_CHECK(cublasSgemm(g_cublas,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            hd, T, T,
-            &alpha,
-            Vh,  out_dim,
-            S_h, T,
-            &beta,
-            Oh,  out_dim));
-    }
+    /* O[h][T,hd] = A[h][T,T] @ V[h][T,hd] — batched; V/O col-strided in [T, H*hd]
+     * (ld=out_dim, per-head stride=hd), scores stride T*T. Identical layout to
+     * gpu_multi_head_attention's attn*V batched call. */
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        hd, T, T,
+        &alpha,
+        d_V,      out_dim, (long long)hd,
+        d_scores, T,       (long long)T * T,
+        &beta,
+        d_out,    out_dim, (long long)hd,
+        H));
 }
 
 /* Softmax backward kernel (Jacobian-vector product) for general H heads.
@@ -908,6 +1027,61 @@ static void gpu_sgemm_tn_beta(int M, int N, int K,
         d_C, N));
 }
 
+/* ---- Strided-batched variants (one cuBLAS launch for all H heads) ----
+ * Mirror the row-major→col-major swap of the non-batched helpers above, adding
+ * per-head batch strides. Replaces the per-head op-33 GEMM loops that flooded
+ * the launch queue (~96 cuBLAS/step at child, 0% util). Same TF32 math mode
+ * (set globally :78) and identical per-GEMM accumulation order as the per-head
+ * calls they replace → numerics match to fp32 noise. (2026-06-03 batching.) */
+
+/* Batched row-major C_b(M,N) = A_b(M,K) × B_b(K,N), beta. strideX in ELEMENTS. */
+static void gpu_sgemm_nn_batched(int M, int N, int K,
+                                 const float* dA, long sA, const float* dB, long sB,
+                                 float* dC, long sC, float beta, int batch) {
+    float alpha = 1.0f;
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        N, M, K,
+        &alpha,
+        dB, N, sB,
+        dA, K, sA,
+        &beta,
+        dC, N, sC,
+        batch));
+}
+
+/* Batched row-major C_b(M,N) = A_b(M,K) × B_b^T(N,K), beta. */
+static void gpu_sgemm_nt_beta_batched(int M, int N, int K,
+                                      const float* dA, long sA, const float* dB, long sB,
+                                      float* dC, long sC, float beta, int batch) {
+    float alpha = 1.0f;
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_T, CUBLAS_OP_N,
+        N, M, K,
+        &alpha,
+        dB, K, sB,
+        dA, K, sA,
+        &beta,
+        dC, N, sC,
+        batch));
+}
+
+/* Batched row-major C_b(M,N) = A_b^T(K,M) × B_b(K,N), beta. */
+static void gpu_sgemm_tn_beta_batched(int M, int N, int K,
+                                      const float* dA, long sA, const float* dB, long sB,
+                                      float* dC, long sC, float beta, int batch) {
+    float alpha = 1.0f;
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_N, CUBLAS_OP_T,
+        N, M, K,
+        &alpha,
+        dB, N, sB,
+        dA, M, sA,
+        &beta,
+        dC, N, sC,
+        batch));
+}
+
 extern "C" void gpu_rrpram_lr_backward(
     const float* d_X, const float* d_Wr_combined, const float* d_V,
     const float* d_U, const float* d_scores,
@@ -928,65 +1102,67 @@ extern "C" void gpu_rrpram_lr_backward(
 
     /* Phase 1: per-head, compute d_attn[H,T,T] (no V_h gradient yet — accumulate later)
      * and d_V partial via softmaxed scores. */
-    for (int h = 0; h < H; h++) {
-        const float* dout_h= d_dout + h * hd;
-        const float* V_h   = d_V    + h * hd;
-        const float* S_h   = d_scores + (long)h * T * T;
-        float* d_attn_h    = d_d_attn  + (long)h * T * T;
+    /* d_attn[h][T,T] = dout[h][T,hd] @ V[h]^T[hd,T] — batched. V/dout col-strided in
+     * [T,H*hd] (ld=out_dim, per-head stride=hd); d_attn separate T*T slabs; beta=0.
+     * Same V layout as gpu_multi_head_attention. */
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_T, CUBLAS_OP_N,
+        T, T, hd,
+        &alpha,
+        d_V,    out_dim, (long long)hd,
+        d_dout, out_dim, (long long)hd,
+        &beta_zero,
+        d_d_attn, T, (long long)T * T,
+        H));
+    /* d_V[h][T,hd] += A[h]^T[T,T] × dout[h][T,hd] — batched; d_V col-disjoint
+     * blocks (ld=out_dim, stride=hd), scores stride T*T, beta=1. */
+    CUBLAS_CHECK(cublasSgemmStridedBatched(g_cublas,
+        CUBLAS_OP_N, CUBLAS_OP_T,
+        hd, T, T,
+        &alpha,
+        d_dout,   out_dim, (long long)hd,
+        d_scores, T,       (long long)T * T,
+        &beta_acc,
+        d_dV,     out_dim, (long long)hd,
+        H));
 
-        /* d_attn_h[T,T] = dout_h[T,hd] @ V_h^T[hd,T] — row-major NT gemm with strided V_h.
-         * V_h^T is V_h transposed; V_h is [T,hd] inside V[T,H*hd] with col-stride out_dim.
-         * Direct cublas: col-major view → C^T(T,T) = V_h(T,hd) viewed col-major → V_h is
-         * column-major [hd,T] with ld=out_dim → CUBLAS_OP_N. dout_h same. */
-        CUBLAS_CHECK(cublasSgemm(g_cublas,
-            CUBLAS_OP_T, CUBLAS_OP_N,
-            T, T, hd,
-            &alpha,
-            V_h,    out_dim,
-            dout_h, out_dim,
-            &beta_zero,
-            d_attn_h, T));
-
-        /* d_V_h[T,hd] += A_h^T[T,T] × dout_h[T,hd] — strided row-major TN gemm. */
-        CUBLAS_CHECK(cublasSgemm(g_cublas,
-            CUBLAS_OP_N, CUBLAS_OP_T,
-            hd, T, T,
-            &alpha,
-            dout_h, out_dim,
-            S_h,    T,
-            &beta_acc,
-            d_dV + h * hd, out_dim));
-    }
-
-    /* Causal softmax backward across all heads. */
+    /* Causal softmax backward across all heads. L5: block-per-row reduction. */
     dim3 grid(H, T);
-    kernel_softmax_backward<<<grid, 1>>>(d_d_score, d_scores, d_d_attn, T, H);
+    int sm_threads = reduce_threads(T, 256);
+    size_t sm_bytes = sm_threads * sizeof(float);
+    kernel_softmax_backward<<<grid, sm_threads, sm_bytes>>>(d_d_score, d_scores, d_d_attn, T, H);
 
     /* Phase 2: per-head compute d_U_h, then dWrb_h, dWra_h, accumulate into dX.
      * Reuse d_d_attn buffer for d_U scratch (no longer needed). */
+    /* d_U[h][T,R] = d_score[h][T,T] @ Wrb[h]^T[T,R] — batched NT, beta=0.
+     * Scratch in d_d_attn (T*R ≤ T*T per slab, stride T*T), Wrb at offset wra_total. */
+    gpu_sgemm_nt_beta_batched(T, R, T,
+        d_d_score, (long)T * T,
+        d_Wr_combined + wra_total, (long)R * T,
+        d_d_attn, (long)T * T, 0.0f, H);
+
+    /* d_Wrb[h][R,T] += U[h]^T[R,T] @ d_score[h][T,T] — batched TN, beta=1; Wrb
+     * blocks head-disjoint (stride R*T), U from forward (stride T*R). */
+    gpu_sgemm_tn_beta_batched(R, T, T,
+        d_U, (long)T * R,
+        d_d_score, (long)T * T,
+        d_dWr_combined + wra_total, (long)R * T, 1.0f, H);
+
+    /* d_X[T,E] += d_U[h][T,R] @ Wra[h]^T[R,E] — CROSS-HEAD reduction into the shared
+     * d_dX (beta=1). cublasSgemmStridedBatched does NOT sum across the batch dim, so
+     * this one stays a per-head loop (safe; +H dispatches). */
     for (int h = 0; h < H; h++) {
-        const float* Wra_h = d_Wr_combined + (long)h * E * R;
-        const float* Wrb_h = d_Wr_combined + wra_total + (long)h * R * T;
-        const float* U_h   = d_U      + (long)h * T * R;
-        const float* d_score_h = d_d_score + (long)h * T * T;
-        float* dWra_h = d_dWr_combined + (long)h * E * R;
-        float* dWrb_h = d_dWr_combined + wra_total + (long)h * R * T;
-
-        /* Reuse d_d_attn[h*T*T...] as d_U_h scratch (size T*R ≤ T*T). */
-        float* d_U_h_buf = d_d_attn + (long)h * T * T;
-
-        /* d_U_h[T,R] = d_score[T,T] @ Wrb_h^T[T,R] — NT gemm, beta=0 */
-        gpu_sgemm_nt_beta(T, R, T, d_score_h, Wrb_h, d_U_h_buf, 0.0f);
-
-        /* d_Wrb_h[R,T] += U_h^T[R,T] @ d_score[T,T] — TN gemm, beta=1 */
-        gpu_sgemm_tn_beta(R, T, T, U_h, d_score_h, dWrb_h, 1.0f);
-
-        /* d_X[T,E] += d_U_h[T,R] @ Wra_h^T[R,E] — NT gemm, beta=1 */
+        const float* Wra_h     = d_Wr_combined + (long)h * E * R;
+        const float* d_U_h_buf = d_d_attn + (long)h * T * T;
         gpu_sgemm_nt_beta(T, E, R, d_U_h_buf, Wra_h, d_dX, 1.0f);
-
-        /* d_Wra_h[E,R] += X^T[E,T] @ d_U_h[T,R] — TN gemm, beta=1 */
-        gpu_sgemm_tn_beta(E, R, T, d_X, d_U_h_buf, dWra_h, 1.0f);
     }
+
+    /* d_Wra[h][E,R] += X^T[E,T] @ d_U[h][T,R] — batched TN, beta=1; X shared
+     * (strideA=0), Wra blocks head-disjoint (stride E*R), d_U scratch stride T*T. */
+    gpu_sgemm_tn_beta_batched(E, R, T,
+        d_X, 0L,
+        d_d_attn, (long)T * T,
+        d_dWr_combined, (long)E * R, 1.0f, H);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1281,6 +1457,11 @@ extern "C" void gpu_seq_embedding_backward(float* d_dwte, const float* d_dout,
 //   Skipped positions: dlogits[t,j] = 0.
 // ═══════════════════════════════════════════════════════════════════
 
+// L5: one BLOCK per token; threads cooperate over V. The ignore/invalid early
+// exit is UNIFORM across the block (all threads share blockIdx.x => same t =>
+// same target), so every thread takes the same branch — no thread reaches a
+// __syncthreads() that another skips. Numerically equivalent to serial:
+// same valid-mask, same max+sum over V.
 __global__ void kernel_seq_cross_entropy_forward(const float* logits,
                                                   const float* tokens,
                                                   float* losses, int* valid_flags,
@@ -1289,19 +1470,30 @@ __global__ void kernel_seq_cross_entropy_forward(const float* logits,
     if (t >= T) return;
     int target = (int)tokens[t];
     if (target == ignore || target < 0 || target >= V) {
-        losses[t] = 0.0f;
-        valid_flags[t] = 0;
+        if (threadIdx.x == 0) { losses[t] = 0.0f; valid_flags[t] = 0; }
         return;
     }
-    valid_flags[t] = 1;
+    if (threadIdx.x == 0) valid_flags[t] = 1;
     const float* l = logits + t * V;
-    float mx = l[0];
-    for (int j = 1; j < V; j++) if (l[j] > mx) mx = l[j];
-    float sum = 0;
-    for (int j = 0; j < V; j++) sum += expf(l[j] - mx);
-    losses[t] = -((l[target] - mx) - logf(sum + 1e-10f));
+    extern __shared__ float sdata[];
+
+    float local_mx = -INFINITY;
+    for (int j = threadIdx.x; j < V; j += blockDim.x)
+        if (l[j] > local_mx) local_mx = l[j];
+    float mx = block_reduce_max(local_mx, sdata);
+
+    float local_sum = 0.0f;
+    for (int j = threadIdx.x; j < V; j += blockDim.x)
+        local_sum += expf(l[j] - mx);
+    float sum = block_reduce_sum(local_sum, sdata);
+
+    if (threadIdx.x == 0)
+        losses[t] = -((l[target] - mx) - logf(sum + 1e-10f));
 }
 
+// L5: one BLOCK per token; threads cooperate. Same uniform early-exit reasoning
+// as forward. Numerically equivalent: zeroed grad for skipped positions, same
+// softmax-minus-onehot * scale otherwise.
 __global__ void kernel_seq_cross_entropy_backward(float* grad_logits,
                                                    const float* logits,
                                                    const float* tokens,
@@ -1312,16 +1504,24 @@ __global__ void kernel_seq_cross_entropy_backward(float* grad_logits,
     float* gl = grad_logits + t * V;
     int target = (int)tokens[t];
     if (target == ignore || target < 0 || target >= V) {
-        for (int j = 0; j < V; j++) gl[j] = 0.0f;
+        for (int j = threadIdx.x; j < V; j += blockDim.x) gl[j] = 0.0f;
         return;
     }
     const float* l = logits + t * V;
-    float mx = l[0];
-    for (int j = 1; j < V; j++) if (l[j] > mx) mx = l[j];
-    float sum = 0;
-    for (int j = 0; j < V; j++) sum += expf(l[j] - mx);
+    extern __shared__ float sdata[];
+
+    float local_mx = -INFINITY;
+    for (int j = threadIdx.x; j < V; j += blockDim.x)
+        if (l[j] > local_mx) local_mx = l[j];
+    float mx = block_reduce_max(local_mx, sdata);
+
+    float local_sum = 0.0f;
+    for (int j = threadIdx.x; j < V; j += blockDim.x)
+        local_sum += expf(l[j] - mx);
+    float sum = block_reduce_sum(local_sum, sdata);
+
     float inv_sum = 1.0f / (sum + 1e-10f);
-    for (int j = 0; j < V; j++) {
+    for (int j = threadIdx.x; j < V; j += blockDim.x) {
         float prob = expf(l[j] - mx) * inv_sum;
         gl[j] = scale * (prob - (j == target ? 1.0f : 0.0f));
     }
@@ -1330,7 +1530,10 @@ __global__ void kernel_seq_cross_entropy_backward(float* grad_logits,
 extern "C" float gpu_seq_cross_entropy(const float* d_logits, const float* d_tokens,
                                         float* d_losses, int* d_valid,
                                         int T, int V, int ignore) {
-    kernel_seq_cross_entropy_forward<<<T, 1>>>(d_logits, d_tokens, d_losses, d_valid, T, V, ignore);
+    /* L5: one block per token, threads cooperate over V. */
+    int ce_threads = reduce_threads(V, 256);
+    size_t ce_bytes = ce_threads * sizeof(float);
+    kernel_seq_cross_entropy_forward<<<T, ce_threads, ce_bytes>>>(d_logits, d_tokens, d_losses, d_valid, T, V, ignore);
     float* h_losses = (float*)malloc(T * sizeof(float));
     int* h_valid = (int*)malloc(T * sizeof(int));
     cudaMemcpy(h_losses, d_losses, T * sizeof(float), cudaMemcpyDeviceToHost);
@@ -1348,6 +1551,9 @@ extern "C" void gpu_seq_cross_entropy_backward(float* d_grad_logits,
                                                 int T, int V, int ignore,
                                                 int n_valid) {
     float scale = n_valid > 0 ? 1.0f / n_valid : 0.0f;
-    kernel_seq_cross_entropy_backward<<<T, 1>>>(d_grad_logits, d_logits, d_tokens,
+    /* L5: one block per token, threads cooperate over V. */
+    int ce_threads = reduce_threads(V, 256);
+    size_t ce_bytes = ce_threads * sizeof(float);
+    kernel_seq_cross_entropy_backward<<<T, ce_threads, ce_bytes>>>(d_grad_logits, d_logits, d_tokens,
                                                 T, V, ignore, scale);
 }
