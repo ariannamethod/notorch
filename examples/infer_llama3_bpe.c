@@ -13,6 +13,9 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#ifdef USE_BLAS
+#include <cblas.h>
+#endif
 
 #define DIM       384
 #define NLAYERS   8
@@ -155,11 +158,18 @@ static void rmsnorm(float* out, const float* x, const float* w, int d) {
 }
 
 static void matmul(float* out, const float* x, const float* w, int out_d, int in_d) {
+#ifdef USE_BLAS
+    /* out = W @ x  (W is [out_d x in_d] row-major). Real BLAS matvec —
+       Accelerate on macOS, OpenBLAS on Linux. No scalar loop in the hot path. */
+    cblas_sgemv(CblasRowMajor, CblasNoTrans, out_d, in_d,
+                1.0f, w, in_d, x, 1, 0.0f, out, 1);
+#else
     for (int o = 0; o < out_d; o++) {
         float s = 0;
         for (int i = 0; i < in_d; i++) s += w[o * in_d + i] * x[i];
         out[o] = s;
     }
+#endif
 }
 
 static void rope(float* x, int pos, int dim, int head_dim) {
