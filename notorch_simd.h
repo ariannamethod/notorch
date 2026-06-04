@@ -99,18 +99,20 @@ static inline void nt_simd_micro_6x16(
             _mm_prefetch((const char*)(B + (p+8)*16 + 8), _MM_HINT_T0);
         }
 
+        // A is MR-interleaved: the 6 values for this k-step are contiguous.
+        const float* ap = A + p*NT_SIMD_MR;
         __m256 a;
-        a = _mm256_broadcast_ss(A + 0*k + p);
+        a = _mm256_broadcast_ss(ap + 0);
         c00 = _mm256_fmadd_ps(a, b0, c00);  c01 = _mm256_fmadd_ps(a, b1, c01);
-        a = _mm256_broadcast_ss(A + 1*k + p);
+        a = _mm256_broadcast_ss(ap + 1);
         c10 = _mm256_fmadd_ps(a, b0, c10);  c11 = _mm256_fmadd_ps(a, b1, c11);
-        a = _mm256_broadcast_ss(A + 2*k + p);
+        a = _mm256_broadcast_ss(ap + 2);
         c20 = _mm256_fmadd_ps(a, b0, c20);  c21 = _mm256_fmadd_ps(a, b1, c21);
-        a = _mm256_broadcast_ss(A + 3*k + p);
+        a = _mm256_broadcast_ss(ap + 3);
         c30 = _mm256_fmadd_ps(a, b0, c30);  c31 = _mm256_fmadd_ps(a, b1, c31);
-        a = _mm256_broadcast_ss(A + 4*k + p);
+        a = _mm256_broadcast_ss(ap + 4);
         c40 = _mm256_fmadd_ps(a, b0, c40);  c41 = _mm256_fmadd_ps(a, b1, c41);
-        a = _mm256_broadcast_ss(A + 5*k + p);
+        a = _mm256_broadcast_ss(ap + 5);
         c50 = _mm256_fmadd_ps(a, b0, c50);  c51 = _mm256_fmadd_ps(a, b1, c51);
     }
 
@@ -144,31 +146,43 @@ static inline void nt_simd_edge_scalar(
     }
 }
 
-// ── Pack A panel [Mc, Kc] into row-major contig buffer for kernel ─────────
-// A_strided is the source. row_stride / col_stride are its access strides.
-// Output: row-major [m, k] where each row of MR contiguous elements is what
-// the micro-kernel reads (it reads A + r*k + p).
+// ── Pack A panel [Mc, Kc] into MR-interleaved panels for the kernel ───────
+// A_src is the source; row_stride / col_stride are its access strides.
+// Output layout: a sequence of MR-row blocks, each stored [Kc][MR] so that the
+// MR=6 A-values needed for one k-step are CONTIGUOUS (one cache line), not
+// strided by k. Block b lives at A_pack + b*k*MR; the kernel reads
+// A_block + p*MR + r. Tail block (rows < MR) is zero-padded. This is the BLIS
+// packing that makes the micro-kernel's 6 broadcasts per k-step hit one line.
 
 static inline void nt_simd_pack_A(
     const float* A_src, int row_stride, int col_stride,
     float* A_pack, int m, int k)
 {
-    if (col_stride == 1) {
-        // Fast path: copy contiguous rows via AVX2.
-        for (int i = 0; i < m; i++) {
-            const float* src = A_src + i*row_stride;
-            float* dst = A_pack + i*k;
-            int p = 0;
-            for (; p + 8 <= k; p += 8) {
-                _mm256_storeu_ps(dst + p, _mm256_loadu_ps(src + p));
-            }
-            for (; p < k; p++) dst[p] = src[p];
-        }
-    } else {
-        // Strided fallback (Trans-A: A is accessed column-major).
-        for (int i = 0; i < m; i++) {
+    int nblocks = (m + NT_SIMD_MR - 1) / NT_SIMD_MR;
+    for (int b = 0; b < nblocks; b++) {
+        int r0 = b * NT_SIMD_MR;
+        int rows = (m - r0 < NT_SIMD_MR) ? (m - r0) : NT_SIMD_MR;
+        float* blk = A_pack + (size_t)b * k * NT_SIMD_MR;
+        if (col_stride == 1 && rows == NT_SIMD_MR) {
+            // Contiguous-row fast path: gather 6 rows, interleave per k.
+            const float* s0 = A_src + (r0+0)*row_stride;
+            const float* s1 = A_src + (r0+1)*row_stride;
+            const float* s2 = A_src + (r0+2)*row_stride;
+            const float* s3 = A_src + (r0+3)*row_stride;
+            const float* s4 = A_src + (r0+4)*row_stride;
+            const float* s5 = A_src + (r0+5)*row_stride;
             for (int p = 0; p < k; p++) {
-                A_pack[i*k + p] = A_src[i*row_stride + p*col_stride];
+                float* d = blk + p*NT_SIMD_MR;
+                d[0]=s0[p]; d[1]=s1[p]; d[2]=s2[p];
+                d[3]=s3[p]; d[4]=s4[p]; d[5]=s5[p];
+            }
+        } else {
+            for (int p = 0; p < k; p++) {
+                int r;
+                for (r = 0; r < rows; r++)
+                    blk[p*NT_SIMD_MR + r] = A_src[(r0+r)*row_stride + p*col_stride];
+                for (; r < NT_SIMD_MR; r++)
+                    blk[p*NT_SIMD_MR + r] = 0.0f;
             }
         }
     }
@@ -277,7 +291,7 @@ static void nt_simd_sgemm_block(
                     for (int i = 0; i < mc_size; i += NT_SIMD_MR) {
                         int i_size = (mc_size - i < NT_SIMD_MR) ?
                                      (mc_size - i) : NT_SIMD_MR;
-                        const float* A_block = A_pack + i * kc_size;
+                        const float* A_block = A_pack + (i / NT_SIMD_MR) * kc_size * NT_SIMD_MR;
                         float* C_block = C + (mc + i) * ldc + (nc + j_base);
 
                         if (i_size == NT_SIMD_MR && j_size == NT_SIMD_NR) {
@@ -291,7 +305,7 @@ static void nt_simd_sgemm_block(
                                 for (int jj = 0; jj < j_size; jj++) {
                                     float s = C_block[ii*ldc + jj];
                                     for (int p = 0; p < kc_size; p++) {
-                                        s += A_block[ii*kc_size + p] *
+                                        s += A_block[p*NT_SIMD_MR + ii] *
                                              B_strip[p*NT_SIMD_NR + jj];
                                     }
                                     C_block[ii*ldc + jj] = s;
