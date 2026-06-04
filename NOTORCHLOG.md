@@ -13,6 +13,24 @@ Newest entries on top.
 
 ---
 
+## 2026-06-03 — GPU launch-bound pass: host-sync storm killed
+
+A CUDA-backend performance pass — the bottleneck was launch/sync overhead,
+not FLOPs. Six commits (`c1b655a..eaae961`):
+- **L1** (`38d6b1a`) — batch per-param grad-norm readback into one D2H
+  transfer instead of one sync per parameter; kills the host-sync storm.
+- **L2** (`bc02d83`) — wire GPU backward for `NT_OP_MUL` + `NT_OP_SILU`,
+  removing mid-backward device→host stalls (those ops now backward on GPU
+  instead of bouncing to CPU).
+- **L5** (`66f3c0f`) — widen the single-thread softmax / cross-entropy
+  kernels to block-parallel.
+- **op-33 RRPRAM** (`c1b655a`) — collapse the per-head GEMM loop into a
+  cuBLAS strided-batched call.
+- (`976d088`) — forward-declare the batched helpers used by the forward
+  kernel.
+
+Merged in `eaae961`. `notorch.c` + `notorch_cuda.cu` only; CPU path unchanged.
+
 ## 2026-06-02 — sigmoid / scale-by-t GPU sync (CPU-mirror bug class)
 
 `nt_sigmoid` + `nt_scale_by_t` forward & `NT_OP_SCALE_BY_T` backward

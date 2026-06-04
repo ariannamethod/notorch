@@ -286,7 +286,7 @@ GGUF is supported in JS via `loadGGUF(arrayBuffer)` — a GGUF v3 reader
 
 ## License & attribution
 
-GPL-3.0+. by Arianna Method.
+GPL-3.0+. Co-authored by Claude (Arianna Method). Coordinated with Oleg Ataeff (maintainer).
 The C notorch repo is the canonical source — JS lockstep-follows the
 same op semantics and naming. When the C path adds an op, the JS path
 catches up via a port commit; the parity table above is the
