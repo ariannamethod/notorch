@@ -13,6 +13,31 @@ Newest entries on top.
 
 ---
 
+## 2026-06-05 — in-house SIMD (AVX2) matmul: kernel + cache-block pass
+
+A measurement-driven optimization pass on `notorch_simd.h` (the zero-dependency
+AVX2 cblas shim), benchmarked against Intel MKL + OpenBLAS on the i5-8500T
+(6c no-SMT, perf governor, 7-run medians). Correctness held bit-identical
+throughout (`test_simd_loss` = 10.379384 vs the OpenBLAS path).
+
+- **MR-interleaved A packing** (`42eef01`) — the 6×16 micro-kernel read A
+  strided by k (6 cache lines per k-step); pack A `[Kc][MR]` so the 6 values
+  for one k-step are contiguous. +~20% on NN-forward.
+- **4× k-unroll + aligned B loads** (`8b98a6c`) — hoist the per-iteration
+  prefetch branch, `_mm256_load_ps` (B_pack is 64-byte aligned). TN
+  weight-grad shapes reached MKL parity (Llama dWffn 321 vs MKL 329 GFLOP/s).
+- **Re-block Kc=128/Nc=256** (`1db4bf8`) — the Kc=256/Nc=1024 B-panel (1MB)
+  spilled to shared L3, so 6 cores contended L3 bandwidth; Kc=128/Nc=256 keeps
+  the ~128KB B-panel in private L2. +5–12% on NN-forward at 6T. `#ifndef`
+  guards make MC/KC/NC `-D`-overridable per target.
+
+**Honest result:** single-thread the kernel is ~0.82× MKL; TN weight-grad is
+at MKL parity; NN-forward stays ~0.5× MKL. The residual gap is multi-core
+cache-residency (MKL scales 4×/6c, this 2×/6c) — disproved as kernel, B-pack
+(shared-B trial reverted), or malloc (persistent-buffer trial reverted); it is
+shared-L3 bandwidth, the deepest machine-specific part of a tuned BLAS. Not
+claiming MKL parity on forward GEMM.
+
 ## 2026-06-05 — packed-Q4_K + packed-Q6_K GGUF inference on Apple Metal
 
 New `examples/infer_gguf_metal.c` — end-to-end notorch-C inference that keeps

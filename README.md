@@ -457,17 +457,17 @@ Design:
 - AVX2 `_mm_prefetch` ahead of the kernel inner loop, AVX2 vectorized panel packing for `col_stride==1` paths (forward + input-grad)
 - Edge tiles (m mod 6 ≠ 0 or n mod 16 ≠ 0) handled via scalar fallback within the same buffer layout
 
-Bench at training-relevant shapes on Intel i5-8500T (6c, no AVX-512) vs OpenBLAS 0.3.26, both at 6 threads (`bench/bench_simd` vs `bench/bench_blas`; ±10-15% run-to-run on this desktop part):
+Bench at training-relevant shapes on Intel i5-8500T (6c, no AVX-512) vs OpenBLAS 0.3.26, both at 6 threads (`bench/bench_simd` vs `bench/bench_blas`). Absolute GFLOP/s swing ±20% run-to-run on this desktop part, so the **Ratio** (SIMD ÷ OpenBLAS, same run) is the stable signal:
 
 | Shape | OpenBLAS 6T | in-house SIMD 6T | Ratio |
 |---|---|---|---|
-| Llama dW (E×E, TN, 512 ctx) | 449 GFLOP/s | 325 GFLOP/s | 0.72× |
-| Llama dWffn (h×E, TN, 512 ctx) | 461 GFLOP/s | 336 GFLOP/s | 0.73× |
-| Llama FFN-down (NN, 512 ctx) | 386 GFLOP/s | 167 GFLOP/s | 0.43× |
-| Janus forward QKV (NN, 1024 ctx) | 310 GFLOP/s | 152 GFLOP/s | 0.49× |
-| Janus FFN-down (NN, 1024 ctx) | 424 GFLOP/s | 173 GFLOP/s | 0.41× |
+| Llama dW (E×E, TN, 512 ctx) | 386 GFLOP/s | 269 GFLOP/s | 0.70× |
+| Llama dWffn (h×E, TN, 512 ctx) | 268 GFLOP/s | 247 GFLOP/s | 0.92× |
+| Llama FFN-down (NN, 512 ctx) | 318 GFLOP/s | 177 GFLOP/s | 0.56× |
+| Janus forward QKV (NN, 1024 ctx) | 348 GFLOP/s | 188 GFLOP/s | 0.54× |
+| Janus FFN-down (NN, 1024 ctx) | 372 GFLOP/s | 195 GFLOP/s | 0.52× |
 
-Roughly 0.4–0.75× of fully-threaded OpenBLAS — closest on the TN weight-gradient GEMMs (~0.7×), widest on large NN forward/FFN shapes (~0.4×). The in-house SIMD does not beat a 6-thread OpenBLAS; its point is hundreds of GFLOP/s with **zero external math library** — pure C + AVX2 + pthreads, nothing to install. On a box without OpenBLAS or Accelerate, this is the accelerated path.
+Roughly 0.5–0.9× of fully-threaded OpenBLAS — closest on the TN weight-gradient GEMMs (~0.7–0.9×), widest on large NN forward/FFN shapes (~0.5×). The in-house SIMD does not beat a fully-threaded OpenBLAS or MKL: single-thread it is ~0.8× MKL (the kernel is competitive), and the residual multi-thread gap is shared-cache residency — the part a tuned BLAS spends a decade on. Its point is hundreds of GFLOP/s with **zero external math library** — pure C + AVX2 + pthreads, nothing to install. On a box without OpenBLAS or Accelerate, this is the accelerated path.
 
 **Correctness validated** end-to-end under `make simd`: notorch_test 47/47 (incl. all 13 gradient/training checks), test_vision 48/48, test_bitnet_ops 118 assertions, test_sigmoid_scale 4/4. `test_simd_loss.c` produces bit-identical 10.379384 at lm_head shape vs the OpenBLAS path, and a real nanollama 89M training step 1 gives train loss 10.3876 — bit-identical to the OpenBLAS baseline. `test_simd_correctness.c` agrees with the scalar path to <1e-3 on small shapes; on large GEMM shapes a few outputs exceed the strict 1e-3 bound from FMA accumulation order — harmless, since the end-to-end loss is bit-identical.
 
