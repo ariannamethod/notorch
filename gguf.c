@@ -179,6 +179,41 @@ const gguf_kv* gguf_get_kv(const gguf_file* gf, const char* key) {
     return NULL;
 }
 
+// Read a GGUF type-9 array of strings (e.g. tokenizer.ggml.tokens / .merges) by key.
+// Arrays are skipped during gguf_open, so this re-scans the file. Returns a malloc'd
+// char** of *out_n strdup'd strings, or NULL if the key/array is absent. Caller frees
+// each string and the array.
+char** gguf_read_str_array(const char* path, const char* key, int* out_n) {
+    if (out_n) *out_n = 0;
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    uint32_t magic;
+    if (!read_u32(f, &magic) || magic != GGUF_MAGIC) { fclose(f); return NULL; }
+    uint32_t version; uint64_t n_tensors, n_kv;
+    read_u32(f, &version); read_u64(f, &n_tensors); read_u64(f, &n_kv);
+    char** result = NULL;
+    for (uint64_t i = 0; i < n_kv; i++) {
+        char k[512] = {0};
+        uint32_t vtype;
+        if (!read_string(f, k, sizeof(k)) || !read_u32(f, &vtype)) break;
+        if (strcmp(k, key) == 0 && vtype == 9) {
+            uint32_t atype; uint64_t alen;
+            if (!read_u32(f, &atype) || !read_u64(f, &alen) || atype != 8) break;
+            result = (char**)calloc(alen ? alen : 1, sizeof(char*));
+            for (uint64_t j = 0; j < alen; j++) {
+                char buf[2048] = {0};
+                if (!read_string(f, buf, sizeof(buf))) break;
+                result[j] = strdup(buf);
+            }
+            if (out_n) *out_n = (int)alen;
+            break;
+        }
+        if (!skip_value(f, vtype)) break;
+    }
+    fclose(f);
+    return result;
+}
+
 // ── Dequantization ───────────────────────────────────────────────────────────
 
 // F16 → F32 conversion

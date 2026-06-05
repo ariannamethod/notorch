@@ -90,6 +90,11 @@ float* gguf_dequant(const gguf_file* gf, int tensor_idx);
 // Get metadata value by key. Returns NULL if not found.
 const gguf_kv* gguf_get_kv(const gguf_file* gf, const char* key);
 
+// Read a GGUF type-9 string array (e.g. "tokenizer.ggml.tokens" / ".merges") by key.
+// Re-scans the file (arrays are skipped during gguf_open). Returns malloc'd char**
+// of *out_n strdup'd strings, or NULL if absent. Caller frees each string + the array.
+char** gguf_read_str_array(const char* path, const char* key, int* out_n);
+
 // Print GGUF summary
 void gguf_print_info(const gguf_file* gf);
 
