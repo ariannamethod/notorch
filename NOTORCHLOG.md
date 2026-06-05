@@ -13,6 +13,17 @@ Newest entries on top.
 
 ---
 
+## 2026-06-06 — JS edition: full GGUF RUN (tokenizer + forward + generate), matches C
+
+After the dequant-load landed, `js-edition/infer_gguf.mjs` runs a GGUF end-to-end in pure
+JS: a byte-level BPE built **from the GGUF** (mirror of `examples/bpe.c`) + the llama/mistral
+forward on notorch.js tape ops (embed / RMSNorm / q-k-v / interleaved-RoPE / GQA-attn /
+SwiGLU FFN / tied output) + greedy generate. **Verified vs the C engine:** SmolLM2-135M-Q4_K_M
+greedy produces *"The capital of France is Paris. Paris is a city"* — **token-for-token
+identical** to `examples/infer_gguf_metal`. The JS edition now loads AND runs real quantized
+models with no Python and no llama.cpp. CPU path today; packed/WebGPU quant matvec and the
+qwen3 NEOX + per-head q/k-norm arch are the next steps.
+
 ## 2026-06-06 — JS edition: GGUF quantized dequant + C-parity test
 
 `js-edition/notorch.js` `loadGGUF` threw on every quantized tensor (F16/F32 only) while the

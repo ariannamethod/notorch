@@ -288,6 +288,26 @@ cc -O2 -I. tests/gguf_dequant_ref.c gguf.c -lm -o /tmp/gguf_dequant_ref
 node js-edition/test_gguf_dequant.mjs model.gguf ref.json   # → JS_DEQUANT_OK
 ```
 
+### Running a GGUF end-to-end (`infer_gguf.mjs`)
+
+`infer_gguf.mjs` is the full RUN on notorch.js: load a quantized GGUF, build the
+byte-level BPE tokenizer **from the GGUF**, run the llama/mistral transformer
+forward (embed → RMSNorm → q/k/v → interleaved RoPE → GQA causal attention →
+SwiGLU FFN → tied/output projection), and generate. Same module the browser
+loads — no Python, no llama.cpp.
+
+```bash
+node js-edition/infer_gguf.mjs model.gguf "The capital of France is" 6 0
+```
+
+**Verified against the C engine** (`examples/infer_gguf_metal`): on
+SmolLM2-135M-Q4_K_M, greedy, the JS RUN produces *"The capital of France is
+Paris. Paris is a city"* — **token-for-token identical** to the C output. The
+forward runs on the CPU path today; a packed / WebGPU quant matvec (mirroring
+the C Metal `nt_metal_q4k_matvec`) is the next step, so very large models still
+favour the C edition. RoPE is interleaved — correct for llama/mistral; qwen2/qwen3
+(NEOX RoPE + per-head q/k-norm) is the next arch to wire in.
+
 ---
 
 ## Cross-references
