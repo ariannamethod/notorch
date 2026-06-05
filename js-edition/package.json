@@ -1,0 +1,8 @@
+{
+  "name": "notorch-js",
+  "version": "0.1.0",
+  "description": "notorch.js — pure-JavaScript port of notorch (browser + Node, ESM)",
+  "type": "module",
+  "main": "notorch.js",
+  "license": "GPL-3.0-or-later"
+}

@@ -3299,15 +3299,17 @@ export function saveNotorchBin(tensors) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GGUF LOADER — read llama.cpp GGUF v3 (header + metadata + tensors).
-// Handles F32 (type 0) and F16 (type 1); quantized types (Q4_K / Q6_K /
-// Q8_0 …) throw — block dequant is a TODO. Mirrors the writer in metaharmonix
+// Handles F32, F16, and the quantized families Q4_0 / Q5_0 / Q8_0 / Q4_K /
+// Q6_K — dequantized to f32 on load via block routines that mirror gguf.c
+// byte-for-byte (verified numerically against the C path). Mirrors the writer in metaharmonix
 // examples/nanollama-sft/notorch_to_gguf.py: alignment 32, dims stored
 // innermost-first (reversed back to row-major here), arch + tokenizer
 // metadata embedded. A GGUF gives weights AND config AND vocab in one file.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const GGUF_MAGIC = 0x46554747;  // 'GGUF'
-const GGML_TYPE_F32 = 0, GGML_TYPE_F16 = 1;
+const GGML_TYPE_F32 = 0, GGML_TYPE_F16 = 1, GGML_TYPE_Q4_0 = 2,
+      GGML_TYPE_Q5_0 = 6, GGML_TYPE_Q8_0 = 8, GGML_TYPE_Q4_K = 12, GGML_TYPE_Q6_K = 14;
 
 /** IEEE-754 half (u16 bits) → JS number. */
 function ggufHalfToFloat(h) {
@@ -3317,6 +3319,94 @@ function ggufHalfToFloat(h) {
   if (e === 0) return s * Math.pow(2, -14) * (f / 1024);
   if (e === 0x1F) return f ? NaN : s * Infinity;
   return s * Math.pow(2, e - 15) * (1 + f / 1024);
+}
+
+// ── GGML block dequant → f32, byte-for-byte mirrors of gguf.c ────────────────
+// Each fills `out` (Float32Array, length = n elements) from packed bytes at
+// `base` in the DataView `dv`. Used by loadGGUF for quantized tensors.
+
+/** Q4_0 — 18 bytes / 32 values (gguf.c:245). */
+function ggufDequantQ4_0(dv, base, n, out) {
+  for (let b = 0; b < n / 32; b++) {
+    const blk = base + b * 18, d = ggufHalfToFloat(dv.getUint16(blk, true));
+    for (let i = 0; i < 16; i++) {
+      const byte = dv.getUint8(blk + 2 + i);
+      out[b*32 + i]      = ((byte & 0x0F) - 8) * d;
+      out[b*32 + i + 16] = ((byte >> 4)   - 8) * d;
+    }
+  }
+}
+
+/** Q5_0 — 22 bytes / 32 values (gguf.c:326). */
+function ggufDequantQ5_0(dv, base, n, out) {
+  for (let b = 0; b < n / 32; b++) {
+    const blk = base + b * 22, d = ggufHalfToFloat(dv.getUint16(blk, true));
+    const qh = dv.getUint32(blk + 2, true) >>> 0;
+    for (let j = 0; j < 16; j++) {
+      const byte = dv.getUint8(blk + 6 + j), lo = byte & 0x0F, hi = byte >> 4;
+      const hbit0 = (qh >>> j) & 1, hbit1 = (qh >>> (j + 16)) & 1;
+      out[b*32 + j]      = ((lo | (hbit0 << 4)) - 16) * d;
+      out[b*32 + j + 16] = ((hi | (hbit1 << 4)) - 16) * d;
+    }
+  }
+}
+
+/** Q8_0 — 34 bytes / 32 values (gguf.c:262). */
+function ggufDequantQ8_0(dv, base, n, out) {
+  for (let b = 0; b < n / 32; b++) {
+    const blk = base + b * 34, d = ggufHalfToFloat(dv.getUint16(blk, true));
+    for (let i = 0; i < 32; i++) out[b*32 + i] = dv.getInt8(blk + 2 + i) * d;
+  }
+}
+
+/** Q4_K get_scale_min_k4 (gguf.c:275) → [scale, min]. */
+function ggufScaleMinK4(j, dv, scBase) {
+  const sc = (k) => dv.getUint8(scBase + k);
+  if (j < 4) return [sc(j) & 63, sc(j + 4) & 63];
+  return [(sc(j+4) & 0x0F) | ((sc(j-4) >> 6) << 4), (sc(j+4) >> 4) | ((sc(j) >> 6) << 4)];
+}
+
+/** Q4_K — 144 bytes / 256 values (gguf.c:280). */
+function ggufDequantQ4_K(dv, base, n, out) {
+  for (let i = 0; i < n / 256; i++) {
+    const b = base + i * 144;
+    const d = ggufHalfToFloat(dv.getUint16(b, true));
+    const dmin = ggufHalfToFloat(dv.getUint16(b + 2, true));
+    const scBase = b + 4, qsBase = b + 16, oi = i * 256;
+    let is = 0, qi = 0;
+    for (let j = 0; j < 256; j += 64) {
+      const [sc0, m0] = ggufScaleMinK4(is, dv, scBase);
+      const d1 = d * sc0, mm1 = dmin * m0;
+      const [sc1, m1v] = ggufScaleMinK4(is + 1, dv, scBase);
+      const d2 = d * sc1, mm2 = dmin * m1v;
+      for (let l = 0; l < 32; l++) out[oi + j + l]      = d1 * (dv.getUint8(qsBase + qi + l) & 0x0F) - mm1;
+      for (let l = 0; l < 32; l++) out[oi + j + 32 + l] = d2 * (dv.getUint8(qsBase + qi + l) >> 4)   - mm2;
+      qi += 32; is += 2;
+    }
+  }
+}
+
+/** Q6_K — 210 bytes / 256 values (gguf.c:298). */
+function ggufDequantQ6_K(dv, base, n, out) {
+  for (let i = 0; i < n / 256; i++) {
+    const b = base + i * 210, qlB = b, qhB = b + 128, scB = b + 192;
+    const d = ggufHalfToFloat(dv.getUint16(b + 208, true));
+    for (let nn = 0; nn < 256; nn += 128) {
+      const qlh = qlB + (nn / 128) * 64, qhh = qhB + (nn / 128) * 32, sch = scB + (nn / 128) * 8;
+      for (let l = 0; l < 32; l++) {
+        const is = (l / 16) | 0;
+        const qlL = dv.getUint8(qlh + l), qlL32 = dv.getUint8(qlh + l + 32), qhL = dv.getUint8(qhh + l);
+        const q1 = ((qlL   & 0x0F) | (((qhL >> 0) & 3) << 4)) - 32;
+        const q2 = ((qlL32 & 0x0F) | (((qhL >> 2) & 3) << 4)) - 32;
+        const q3 = ((qlL   >> 4)   | (((qhL >> 4) & 3) << 4)) - 32;
+        const q4 = ((qlL32 >> 4)   | (((qhL >> 6) & 3) << 4)) - 32;
+        out[i*256 + nn + l]      = d * dv.getInt8(sch + is + 0) * q1;
+        out[i*256 + nn + l + 32] = d * dv.getInt8(sch + is + 2) * q2;
+        out[i*256 + nn + l + 64] = d * dv.getInt8(sch + is + 4) * q3;
+        out[i*256 + nn + l + 96] = d * dv.getInt8(sch + is + 6) * q4;
+      }
+    }
+  }
 }
 
 /**
@@ -3403,8 +3493,13 @@ export function loadGGUF(arrayBuffer) {
       for (let i = 0; i < len; i++) data[i] = dv.getFloat32(base + i * 4, true);
     } else if (info.gtype === GGML_TYPE_F16) {
       for (let i = 0; i < len; i++) data[i] = ggufHalfToFloat(dv.getUint16(base + i * 2, true));
-    } else {
-      throw new Error(`loadGGUF: tensor "${info.name}" ggml type ${info.gtype} unsupported (only F32/F16; quant dequant is TODO)`);
+    } else if (info.gtype === GGML_TYPE_Q4_K) { ggufDequantQ4_K(dv, base, len, data); }
+    else if (info.gtype === GGML_TYPE_Q6_K) { ggufDequantQ6_K(dv, base, len, data); }
+    else if (info.gtype === GGML_TYPE_Q8_0) { ggufDequantQ8_0(dv, base, len, data); }
+    else if (info.gtype === GGML_TYPE_Q4_0) { ggufDequantQ4_0(dv, base, len, data); }
+    else if (info.gtype === GGML_TYPE_Q5_0) { ggufDequantQ5_0(dv, base, len, data); }
+    else {
+      throw new Error(`loadGGUF: tensor "${info.name}" ggml type ${info.gtype} unsupported (have F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K)`);
     }
     tensors.set(info.name, new Tensor(data, info.dims));
   }

@@ -270,11 +270,23 @@ copy the GPU output back into the CPU mirror **before** calling
 - `saveNotorchBin(tensors)` — writes a `Map<name, Tensor>` to the
   native `.bin` format.
 
-GGUF in JS via `loadGGUF(arrayBuffer)` is a GGUF v3 reader for **F16 + F32
-only** — quantized types (Q4_K/Q6_K/Q8_0/…) currently throw. Porting the
-block-dequant from `gguf.c` (and a packed-quant matvec, mirroring the C
-Metal path) is the open upgrade; until then the C edition is the route for
-real quantized GGUF inference. `loadSafetensors` works for HF F32 weights.
+GGUF in JS via `loadGGUF(arrayBuffer)` reads GGUF v3 and dequantizes
+**F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K** to f32 on load. the block routines
+mirror `gguf.c` byte-for-byte and are verified against the C path by
+`test_gguf_dequant.mjs` — Q4_K/Q6_K/Q8_0/Q4_0 match C to ~5e-9 across real
+models (Qwen3-0.6B, smallcoder Q8_0, wtf360 Q4_0); Q5_0 is mirrored from
+`gguf.c` but had no local Q5_0 file to run against yet. weights are f32 after
+load, so a real quantized GGUF loads in the browser today; the packed /
+WebGPU quant matvec (mirroring the C Metal `nt_metal_q4k_matvec`) is the next
+step, so very large models still want the C edition for now.
+`loadSafetensors` works for HF F32 weights.
+
+To run the parity test:
+```bash
+cc -O2 -I. tests/gguf_dequant_ref.c gguf.c -lm -o /tmp/gguf_dequant_ref
+/tmp/gguf_dequant_ref model.gguf token_embd.weight blk.0.attn_q.weight > ref.json
+node js-edition/test_gguf_dequant.mjs model.gguf ref.json   # → JS_DEQUANT_OK
+```
 
 ---
 

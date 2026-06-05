@@ -13,6 +13,19 @@ Newest entries on top.
 
 ---
 
+## 2026-06-06 — JS edition: GGUF quantized dequant + C-parity test
+
+`js-edition/notorch.js` `loadGGUF` threw on every quantized tensor (F16/F32 only) while the
+JS README claimed "F16 + F32 dequant" — a prophetic debt. Ported the five GGML block-dequant
+routines from `gguf.c` **byte-for-byte** (Q4_0, Q5_0, Q8_0, Q4_K, Q6_K) into `loadGGUF`; a
+real quantized GGUF now loads in browser/Node. **Verified** against the C path with a new test
+— `tests/gguf_dequant_ref.c` dumps C `gguf_dequant` values, `js-edition/test_gguf_dequant.mjs`
+compares: Q4_K/Q6_K/Q8_0/Q4_0 match C to **~5e-9** across Qwen3-0.6B, smallcoder-Q8_0,
+wtf360-Q4_0 → `JS_DEQUANT_OK`. Q5_0 is mirrored from `gguf.c` but had no local Q5_0 file to run
+against. Added `js-edition/package.json` (`type:module`) so Node imports the ESM. JS README
+corrected to the true state. Open next: a packed / WebGPU quant matvec so big models don't
+expand to f32 in-browser.
+
 ## 2026-06-05 — README rework: inference is first-class; models split refs vs organisms
 
 The README sold notorch as a training framework; it is training AND inference. Added
