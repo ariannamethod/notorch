@@ -26,6 +26,8 @@
 #include <string.h>
 #include <math.h>
 #include <sys/time.h>
+#include <pthread.h>
+#include <unistd.h>
 
 /* ── weight: packed Q4_K (q4k) / packed Q6_K (q6k) / dequantized f32 ─────────── */
 typedef struct { const uint8_t *q4k; const uint8_t *q6k; float *f32; int m, k; } Weight;
@@ -41,9 +43,9 @@ static float f16f(uint16_t h) {
 
 /* y[m] = W_q6k @ x[k], dequantizing each 256-block on the fly (no f32 blow-up).
  * Mirrors gguf.c:dequant_q6_k (210 B/block: ql[128] qh[64] scales[16] d). */
-static void q6k_matvec(float *y, const uint8_t *W, const float *x, int m, int k) {
+static void q6k_rows(float *y, const uint8_t *W, const float *x, int r0, int r1, int k) {
     int nb = k / 256;
-    for (int row = 0; row < m; row++) {
+    for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 210;
         float acc = 0;
         for (int blk = 0; blk < nb; blk++) {
@@ -69,6 +71,24 @@ static void q6k_matvec(float *y, const uint8_t *W, const float *x, int m, int k)
         }
         y[row] = acc;
     }
+}
+
+/* q6k matvec parallelized across CPU cores — rows are independent, disjoint y[]. */
+typedef struct { float *y; const uint8_t *W; const float *x; int r0, r1, k; } q6k_job;
+static void *q6k_worker(void *p) { q6k_job *j = (q6k_job*)p; q6k_rows(j->y, j->W, j->x, j->r0, j->r1, j->k); return NULL; }
+static void q6k_matvec(float *y, const uint8_t *W, const float *x, int m, int k) {
+    int nt = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (nt < 1) nt = 1; if (nt > 16) nt = 16; if (nt > m) nt = m;
+    long work = (long)m * (k / 256);   /* total 256-blocks; thread only big tensors */
+    if (work < 100000 || nt <= 1) { q6k_rows(y, W, x, 0, m, k); return; }
+    pthread_t th[16]; q6k_job jobs[16];
+    int per = (m + nt - 1) / nt;
+    for (int t = 0; t < nt; t++) {
+        int r0 = t * per, r1 = (r0 + per > m) ? m : r0 + per;
+        jobs[t] = (q6k_job){ y, W, x, r0, r1, k };
+        pthread_create(&th[t], NULL, q6k_worker, &jobs[t]);
+    }
+    for (int t = 0; t < nt; t++) pthread_join(th[t], NULL);
 }
 
 /* y[m] = W @ x[k]. Q4_K -> Metal; Q6_K -> packed CPU per-row dequant; else CPU f32. */
