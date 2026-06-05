@@ -21,11 +21,12 @@ The CPU/BLAS/SIMD inference path dequantized every GGUF tensor to dense f32 (×6
 primitive, `nt_qmatvec(out, Wq, dtype, x, m, k)` (`notorch.c`, decl `notorch.h`), that keeps the
 weights packed in RAM and dequantizes each block inline in registers — the same math as
 `gguf_dequant → nt_blas_matvec`, a fraction of the memory and weight bandwidth. It dispatches by
-GGUF dtype over the full common quant set: Q4_0, Q5_0, Q8_0 (block-of-32), Q4_K, Q6_K
+GGUF dtype over the full set: F32, F16, Q4_0, Q5_0, Q8_0 (block-of-32), Q4_K, Q6_K
 (super-block-256); the Q6_K kernel is the proven `q6k_rows` lifted out of the example into the
-library. **Verified** by a new `tests/test_qmatvec` against the dequant→cblas oracle: all five
-formats agree to relative error ~1e-6 (f32 summation-order noise, not unpack error); `notorch_test`
-stays 47/47. This is the foundation of an agnostic packed CPU inference path — the CPU no longer
+library, and F16 alone halves the weight RAM vs dense f32 (converted per element, never
+materialized). **Verified** by a new `tests/test_qmatvec` against the dequant→cblas oracle: all
+seven dtypes agree to relative error ~1e-6 (f32 summation-order noise, not unpack error);
+`notorch_test` stays 47/47. This is the foundation of an agnostic packed CPU inference path — the CPU no longer
 has to blow Q4_0/Q8_0 up to f32. Phase 1 is single-threaded and correctness-first: the RAM win lands
 when a runner stops calling `gguf_dequant` and rides `nt_qmatvec` directly, and the speed path
 (pthread rows + MNN/llama.cpp-style int8 activation-quant with SDOT/VNNI integer dot) is next.
