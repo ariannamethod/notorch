@@ -707,9 +707,11 @@ the macOS path uses Apple Accelerate, which means your MacBook's AMX coprocessor
 
 notorch builds, tests, and trains end-to-end in this environment. Verified workload (Galaxy A56, Android 15, aarch64, 8 GB RAM): **9.5 M LLaMA 3 char-level model, 10 000 steps in 2 h 13 m, peak RSS 130–155 MB, val 1.15, 0 NaN.** No swap. OpenBLAS on aarch64 gives ~8× over the scalar fallback.
 
-A phone with 8 GB of RAM and Termux installed is now a credible host for the 10–100 M parameter regime — small LMs, persona LoRAs, narrow code-completion models, micro-translators. The substrate is the same as on a workstation; the platform is finally accessible.
+`nt_qmatvec` (packed quantized matvec, PR [#9](https://github.com/ariannamethod/notorch/pull/9) → `2755ab2`) is now verified on the same Termux substrate. `tests/test_qmatvec` passes for the full GGUF dtype set — F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K — bit-close to the dequant→cblas oracle (rel err ~1e-6 across the seven formats, 2.57 s build) on phone-1 NEON / OpenBLAS 0.3.30. Because the packed primitive keeps weights packed and dequantizes each block inline in registers, the ×6–8 RAM dequant scratch that GGUF inference previously needed above the packed footprint is gone — quantized models that did not fit on top of their packed weights inside the 8 GB envelope now do. Logged in [`termux-edition/README.md`](termux-edition/README.md) (2026-06-06).
 
-- [`termux-edition/`](termux-edition/) — setup walkthrough, training tutorial, hardware envelope
+A phone with 8 GB of RAM and Termux installed is now a credible host for the 10–100 M parameter regime — small LMs, persona LoRAs, narrow code-completion models, micro-translators — and, with packed GGUF matvec, a credible inference host for quantized models that previously needed a workstation. The substrate is the same as on a workstation; the platform is finally accessible.
+
+- [`termux-edition/`](termux-edition/) — setup walkthrough, training tutorial, hardware envelope, packed-matvec verification log
 - Portability patches landed in PR [#5](https://github.com/ariannamethod/notorch/pull/5) (TMPDIR honour + AR override + openblas via pkg-config; merged)
 
 ---
