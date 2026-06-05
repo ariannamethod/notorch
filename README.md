@@ -50,15 +50,13 @@
 
 ---
 
-## what is this
+## what
 
-you know that feeling when you `pip install torch` and 2.7 gigabytes of your soul evaporates into a `.venv` folder? your laptop fan sounds like it's preparing for takeoff just to import a library? and when you wait 45 seconds for `import torch` to finish while your RAM usage goes from "healthy" to "the computer is now a space heater"?
+**NOTORCH** is a complete neural network framework written in pure C — it **trains** models and it **runs** them, including quantized GGUFs (a 24B on a 24 GB Mac, weights never unpacked to f32). no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no handing the model to llama.cpp to actually generate. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
 
-yeah. so the Method did something about it.
+just no NOTORCH. just C.
 
-**notorch** is a complete neural network framework written in pure C — it **trains** models and it **runs** them, including other people's quantized GGUFs (a 24B on a 24 GB Mac, weights never unpacked to f32). no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no handing the model to llama.cpp to actually generate. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
-
-just C. just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in a couple seconds. try that with PyTorch. go ahead — you'd be waiting 47 minutes while cmake does whatever cmake does.
+just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in a couple seconds. try that with PyTorch. go ahead — you'd be waiting 47 minutes while cmake does whatever cmake does.
 
 it's part of [the Arianna Method](https://github.com/theariannamethod/ariannamethod.ai) — patterns over parameters, emergence over engineering, raw C over existential dread.
 
@@ -68,11 +66,8 @@ extracted from the core of [ariannamethod.ai](https://ariannamethod.ai) where it
 
 ## why
 
-let me tell you a story.
-
-once upon a time there was a framework called PyTorch. it had autograd. it had CUDA support. it had a build system that required a PhD in software engineering and a pact with ancient spirits.
-
-and every time you wanted to train a 4-layer MLP on a dataset smaller than your browser cache, you had to:
+a story:
+once upon a time there was a framework called PyTorch. it had autograd. it had CUDA support. it had a build system that required a PhD in software engineering and a pact with ancient spirits. and every time you wanted to train a 4-layer MLP on a dataset smaller than your browser cache, you had to:
 
 1. create a virtual environment (2 minutes)
 2. install torch (5 minutes, 2.7 GB, your SSD weeps)
@@ -84,7 +79,7 @@ and every time you wanted to train a 4-layer MLP on a dataset smaller than your 
 8. cry
 9. `pip install wandb` to log your tears
 10. realize torch updated and broke everything
-
+  
 and for WHAT? a matmul and a softmax. that's all neural networks are. matmuls and softmaxes and an unhealthy relationship with gradient descent.
 
 so here we are. **notorch**. everything you need. nothing you don't. no Python runtime. no GIL. no garbage collector pausing your training at the worst possible moment. no `torch.no_grad()` context manager that you forget and then wonder why you're out of memory. just tensors, autograd, optimizers, and the cold clarity of C.
