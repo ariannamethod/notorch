@@ -13,6 +13,33 @@ Newest entries on top.
 
 ---
 
+## 2026-06-05 — packed-Q4_K + packed-Q6_K GGUF inference on Apple Metal
+
+New `examples/infer_gguf_metal.c` — end-to-end notorch-C inference that keeps
+quantized weights **packed** and never materializes the full f32 tensor:
+- Q4_K → `nt_metal_q4k_matvec` (Metal, `53f38f2`).
+- Q6_K → new CPU per-row dequant matvec (mirrors `gguf.c:dequant_q6_k`), no f32
+  buffer. This is what lets a 24B model fit a 24 GB Mac.
+- byte-level BPE (`examples/bpe.{c,h}`) reads the tokenizer from the GGUF via new
+  `gguf_read_str_array` (gguf.c — `gguf_open` skips array-typed KVs).
+- one forward, two RoPE conventions auto-detected: llama/mistral interleaved
+  (weights pre-permuted by convert) and qwen2/qwen3 NEOX + per-head q/k-norm.
+
+**Why packed-Q6_K matters — measured on metal (Mac Mini M4 Pro, 24 GB), oyent
+(Mistral-Small-24B) Q4_K_M, greedy, `/usr/bin/time -l`:**
+- first cut, Q6_K→f32 at load: RSS 7.4 GB + **12.4 GB swap**, load 58.5 s — thrashes.
+- packed Q6_K (this pass): **swaps=0**, peak RSS 16.3 GB / footprint 17.3 GB,
+  load 3.63 s, coherent+correct → "The capital of France is Paris, and its
+  administrative center is the".
+
+Speed is now **compute-bound, not memory-bound**: 0.2 t/s (~4.7 s/token),
+dominated by the Q6_K per-row CPU dequant (output 131072×5120 + ~20 ffn_down)
+and the Metal Q4_K Phase-1 per-call weight upload. Next lift: a Q6_K Metal matvec
++ resident weights (Phase-2), both in `notorch_metal.mm`.
+
+Correctness regression (neo): Qwen3-0.6B-Q4_K greedy still "...Paris..." after the
+Q6_K-path change (it uses Q6_K tensors); Llama-3.2-3B-Q4_K greedy 5/5 capitals.
+
 ## 2026-06-03 — GPU launch-bound pass: host-sync storm killed
 
 A CUDA-backend performance pass — the bottleneck was launch/sync overhead,
