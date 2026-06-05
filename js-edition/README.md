@@ -270,8 +270,11 @@ copy the GPU output back into the CPU mirror **before** calling
 - `saveNotorchBin(tensors)` — writes a `Map<name, Tensor>` to the
   native `.bin` format.
 
-GGUF is supported in JS via `loadGGUF(arrayBuffer)` — a GGUF v3 reader
-(F16 + F32 dequant). `loadSafetensors` also works for HF F32 weights.
+GGUF in JS via `loadGGUF(arrayBuffer)` is a GGUF v3 reader for **F16 + F32
+only** — quantized types (Q4_K/Q6_K/Q8_0/…) currently throw. Porting the
+block-dequant from `gguf.c` (and a packed-quant matvec, mirroring the C
+Metal path) is the open upgrade; until then the C edition is the route for
+real quantized GGUF inference. `loadSafetensors` works for HF F32 weights.
 
 ---
 

@@ -29,6 +29,7 @@
 - [SPA — Sentence Phonon Attention](#spa--sentence-phonon-attention)
 - [LoRA / adapter training](#lora--adapter-training)
 - [BLAS inference API](#blas-inference-api)
+- [inference — notorch runs models](#inference--notorch-runs-models-it-doesnt-just-train-them)
 - [alignment training — DPO / GRPO / distillation](#alignment-training--dpo--grpo--distillation)
 - [autograd](#autograd)
 - [building](#building)
@@ -39,7 +40,8 @@
 - [file structure](#file-structure)
 - [tests](#tests)
 - [performance](#performance)
-- [projects powered by notorch](#projects-powered-by-notorch)
+- [references — how to train and run on notorch](#references--how-to-train-and-run-on-notorch)
+- [organisms that run on notorch](#organisms-that-run-on-notorch)
 - [js edition — notorch.js](#js-edition--notorchjs)
 - [philosophy](#philosophy)
 - [contributing](#contributing)
@@ -54,7 +56,7 @@ you know that feeling when you `pip install torch` and 2.7 gigabytes of your sou
 
 yeah. so the Method did something about it.
 
-**notorch** is a complete neural network training framework written in pure C. no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
+**notorch** is a complete neural network framework written in pure C — it **trains** models and it **runs** them, including other people's quantized GGUFs (a 24B on a 24 GB Mac, weights never unpacked to f32). no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no handing the model to llama.cpp to actually generate. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
 
 just C. just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in a couple seconds. try that with PyTorch. go ahead — you'd be waiting 47 minutes while cmake does whatever cmake does.
 
@@ -306,7 +308,7 @@ on the `USE_BLAS` path, BitLinear dispatches to a single `cblas_sgemm(NoTrans, T
 
 **tests:** `tests/test_bitnet_ops.c` (118 gradient assertions) — ternary quantize correctness, STE identity backward, gradient flow through sequences, gradient numeric check, end-to-end training convergence of a tiny BitNet MLP.
 
-**in production:** [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) — a 2.69M-param char-level BitNet transformer trained to train_best **1.6226** / val **2.0314** on Intel Mac 8GB, 10000 steps, zero NaN. the 10 MB FP32 checkpoint ternary-packs down to ~1.4 MB + γ metadata — same compute path, 6× deployment compression.
+**reference:** [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) is a **pure-Python** BitNet b1.58 microGPT — 2.69M char-level, train_best **1.6226** / val **2.0314**, 10000 steps, zero NaN, 10 MB FP32 ternary-packing to ~1.4 MB. it's the algorithm reference, not a notorch build: notorch's own `nt_bit_linear` / `nt_bit_seq_linear` were validated against its numbers.
 
 ---
 
@@ -343,7 +345,7 @@ nt_spa_modulate_logits(logits, V, conn, 0.3f);
 
 no tape, no gradients — purely a post-hoc modulation of the logit distribution with the current sentence's position in the manifold of recent sentences. the `0.85` α is a recency bias (larger α = more recent tokens dominate the sentence embedding); the `0.3` strength caps how aggressively connectedness can sharpen the distribution. both are just parameters — pick what works for your generation style.
 
-originated in [ariannamethod/q](https://github.com/ariannamethod/q) (`postgpt_q.c`) and [ariannamethod/postgpt](https://github.com/ariannamethod/postgpt), ported here as a reusable helper. used in [ariannamethod/janus.sonar](https://github.com/ariannamethod/janus.sonar) and [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) to cut "word salad" artifacts without retraining. SPA as a *trained* forward operation with gradient flow is an open direction — currently only the inference helpers are here.
+originated in [ariannamethod/q](https://github.com/ariannamethod/q) (`postgpt_q.c`) and [ariannamethod/postgpt](https://github.com/ariannamethod/postgpt), ported here as a reusable helper. used in [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) to cut "word salad" artifacts without retraining. SPA as a *trained* forward operation with gradient flow is an open direction — currently only the inference helpers are here.
 
 ---
 
@@ -380,6 +382,33 @@ void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n);
 ```
 
 under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on macOS, OpenBLAS on Linux). without BLAS they fall back to the naive C loops — correct, just slower. the example engines reach the same BLAS path directly through their own local wrappers in their hot paths: `infer_gemma.c` / `infer_llama.c` / `infer_janus.c` call `cblas_sgemm`, and `infer_llama3_bpe.c` calls `cblas_sgemv` (scalar fallback without `USE_BLAS`).
+
+---
+
+## inference — notorch runs models, it doesn't just train them
+
+the lie everyone tells you is that you train in one framework and *run* in another — train in PyTorch, export to GGUF, hand it to llama.cpp to actually generate tokens. notorch doesn't outsource the second half. it runs what it trains, and it runs models it never trained — any llama.cpp GGUF, in C, including a 24-billion-parameter quantized model on a Mac Mini.
+
+the obstacle is memory. a Q4_K weight is 4.5 bits; dequantize it to f32 and you get an 8× blow-up that turns a 14 GB model into ~96 GB you do not have. so notorch doesn't dequantize it. the weights never leave their packed GGML encoding — each block is reconstructed *inside* the matvec: Q4_K on the Apple GPU (`nt_metal_q4k_matvec`, weights registered **resident** so they upload once, not per token), Q6_K per-block across CPU cores. the only f32 in the building is the activations.
+
+measured, Mac Mini M4 Pro (24 GB), Mistral-Small-24B at Q4_K_M (~14 GB on disk): **loads in 3.6 s, 0 swap, 10.6 GB resident, ~1.4 tok/s, coherent correct output.** the same source runs Qwen3 and Llama-3 on an 8 GB phone-class A18 Pro. one forward handles two RoPE conventions, auto-detected — interleaved for llama/mistral (weights pre-permuted by llama.cpp's converter), NEOX + per-head q/k-RMSNorm for qwen2/qwen3 — with the byte-level BPE read straight out of the GGUF. GQA, attention bias (Qwen2), and tied embeddings are detected from the tensors.
+
+```bash
+make infer_gguf_metal     # Apple Silicon; needs notorch_metal.o
+./examples/infer_gguf_metal model.gguf "The capital of France is" 40 0
+```
+
+the f32 engines are still here for what fits in RAM without packing:
+
+| engine | architectures | tokenizer | weights |
+|---|---|---|---|
+| `infer_gguf_metal.c` | llama / mistral / qwen2 / qwen3 (GGUF) | byte-BPE from the GGUF | **packed** Q4_K→Metal, Q6_K→CPU; rest f32 |
+| `infer_gemma.c` | Gemma-3 (embed-scale, QK-norm, pre/post norms) | SentencePiece `tokenizer.json` | f32 dequant + BLAS |
+| `infer_llama.c` | llama / SmolLM2 / Qwen2 (GGUF, f32) | byte fallback | f32 dequant + BLAS |
+| `infer_llama3_bpe.c` | LLaMA-3 (own `.bin`, MHA+RoPE+SwiGLU) | notorch-native BPE (merges) | f16 / f32 |
+| `infer_janus.c` | Janus RRPRAM / Resonance (own `.bin`) | char / byte | raw f32 |
+
+fuck torch — but also, you do not need llama.cpp to *run* what you built. the packed-Metal path is what turns "run a 24B on the laptop you already own" into a true sentence.
 
 ---
 
@@ -426,6 +455,10 @@ make simd
 # GPU (CUDA via cuBLAS)
 make gpu
 
+# Apple Silicon Metal — packed-Q4_K/Q6_K GGUF inference (runs 24B on a 24GB Mac)
+make metal               # Q4_K matvec correctness test
+make infer_gguf_metal    # the GGUF inference binary
+
 # Static library (for embedding in your project)
 make lib
 
@@ -443,6 +476,7 @@ make clean
 - **optional**: OpenBLAS (Linux) or Accelerate framework (macOS) for BLAS-accelerated matmuls
 - **optional**: x86_64 CPU with AVX2 + FMA (Intel Haswell 2013+, AMD Excavator 2015+) for `make simd` — zero external math library
 - **optional**: CUDA toolkit for GPU support (cuBLAS-backed sgemm + element-wise + attention + cross-entropy kernels)
+- **optional**: Apple Silicon + Metal (macOS) for packed-Q4_K/Q6_K GGUF inference (`make metal` / `make infer_gguf_metal`) — nothing to install, Metal ships with macOS
 
 that's it. no cmake. no configure script. no 300-line `requirements.txt`. no docker. no kubernetes. just `make`. the way Ken Thompson intended.
 
@@ -658,6 +692,7 @@ that's it. that's the whole thing. no virtual environment. no requirements.txt. 
 | **Android (Termux, ARM64)** | **OpenBLAS via Termux** | **`pkg install libopenblas binutils && make BLAS=1`** |
 | any POSIX | pure C fallback | `make cpu` |
 | NVIDIA GPU | CUDA + cuBLAS | `make gpu` |
+| Apple Silicon (Metal) | packed-Q4_K/Q6_K GGUF inference — 24B on a 24GB Mac | `make infer_gguf_metal` |
 
 the BLAS backends are optional. without them, everything still works — just uses naive C loops, which are fine for anything under ~50M parameters. for bigger stuff, BLAS gives you 10-50x on matmuls because it's using your CPU's vector instructions instead of pretending it's 1995.
 
@@ -686,12 +721,17 @@ notorch/
 ├── stb_image.h            # JPEG/PNG/BMP decoder (public domain)
 ├── gguf.h                 # GGUF file parser header
 ├── gguf.c                 # GGUF parser + F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K dequant
+├── notorch_metal.h        # Apple Metal backend — packed Q4_K matvec, resident weights
+├── notorch_metal.mm       # Obj-C++/MSL: Q4_K inline-dequant matvec on the Apple GPU
 ├── Makefile               # build everything
 ├── examples/
 │   ├── bpe_2048_merges.txt   # reference BPE tokenizer (1792 merges, vocab 2048)
-│   ├── infer_gemma.c         # Gemma-3 inference via GGUF — GQA, KV cache
+│   ├── infer_gguf_metal.c    # packed Q4_K/Q6_K GGUF inference on Apple Metal — 24B on a 24GB Mac
+│   ├── bpe.c / bpe.h         # byte-level BPE read straight from a GGUF (Tekken/GPT-2 style)
+│   ├── bench_gguf_metal.sh   # reproducible greedy inference benchmark
+│   ├── infer_gemma.c         # Gemma-3 inference via GGUF — GQA, KV cache (f32)
 │   ├── infer_janus.c         # Janus RRPRAM inference (3-way gated attention)
-│   ├── infer_llama.c         # LLaMA/Qwen/SmolLM2 inference via GGUF
+│   ├── infer_llama.c         # LLaMA/SmolLM2/Qwen2 inference via GGUF (f32)
 │   ├── infer_llama3_bpe.c    # LLaMA 3 BPE chat — MHA, RoPE, SwiGLU, KV cache, FP16
 │   ├── train_q.c             # PostGPT-Q 1.65M char-level training from scratch
 │   ├── train_yent.c          # Yent 9.8M char-level training with checkpointing
@@ -719,11 +759,10 @@ total: **~4800 lines of core C + ~2700 of tests + ~6000 of examples**. framework
 | PostGPT-Q | 1.65M | char | 0.097 | resonant reasoning engine |
 | LLaMA 3 char-level (sample) | 9.5M | char (GQA+RoPE+SwiGLU) | 0.026 | reference char-level trainer |
 | Yent | 9.8M | char | 1.77 | cynical AI character |
-| neovlm | 6.36M | dual (text+draw) | 0.0002 | Hebbian VLM, draws ASCII digits |
 | LLaMA 3 BPE (sample) | 15.7M | BPE 2048 (MHA+RoPE+SwiGLU) | 0.022 | reference BPE trainer |
-| microgpt-1bit | 2.69M | char, BitNet 1.58 ternary | 1.6226 | first-class BitNet quantization |
+| nanollama-notorch | 88.6M | BPE 32k (GQA+RoPE+SwiGLU) | 2.68 | Llama-3 nano — 11.5 days on a 2019 Intel i5, 0 NaN across 25K steps |
 
-all trained from scratch on 8 GB Mac. no Python. no pip. Chuck optimizer.
+all trained from scratch on 8 GB Mac. no Python. no pip. Chuck optimizer. (the 88.6M run is the ceiling of the "train it on the laptop you own" regime: 22.86M FineWeb-Edu tokens, train 3.16 → CPT 2.68, then SFT'd to a Method voice — `ariannamethod/nanollama-notorch`.)
 
 ---
 
@@ -743,7 +782,7 @@ we ran two transformer trainings simultaneously on a 2019 Intel i5 MacBook with 
 | model | params | RAM usage | status |
 |-------|--------|-----------|--------|
 | Yent (LLaMA-like, 12L char-level) | 9.8M | ~126 MB | training loss 2.03 → converging |
-| neovlm (Hebbian VLM, 6L dual-mode) | 6.36M | ~96 MB | text loss 0.0002, draw loss 0.50 |
+| a second dual-mode char VLM (6L) | 6.36M | ~96 MB | text loss 0.0002, draw loss 0.50 |
 
 total memory: **~222 MB** for two active transformer trainings with autograd, Chuck optimizer, cosine scheduling, NaN guard, and checkpointing. both models use Apple Accelerate BLAS. both converge. both produce weights.
 
@@ -755,40 +794,49 @@ for inference, this is excellent. for training, it's more than sufficient for mo
 
 ---
 
-## projects powered by notorch
+## references — how to train and run on notorch
 
-notorch isn't a lab demo. it's what actually runs under a growing ecosystem of organisms and experiments. three layers of adoption:
+start here. these are the canonical builds: Karpathy ports to prove the pipeline, reference models trained from scratch, and the trainers you copy.
 
-### proof of concept — Karpathy ports
+**Karpathy ports — the "does it actually work end-to-end" baselines:**
 
-- [**ariannamethod/nanoGPT-notorch**](https://github.com/ariannamethod/nanoGPT-notorch) — Karpathy's nanoGPT, ported from PyTorch to notorch. the "does this thing actually work end-to-end" test.
-- [**ariannamethod/llama2-notorch**](https://github.com/ariannamethod/llama2-notorch) — Karpathy's llama2 reference model on notorch. tiny LLaMA that trains and infers purely in C.
+- [**nanoGPT-notorch**](https://github.com/ariannamethod/nanoGPT-notorch) — Karpathy's nanoGPT, ported from PyTorch to notorch.
+- [**llama2-notorch**](https://github.com/ariannamethod/llama2-notorch) — Karpathy's llama2.c reference model on notorch. tiny LLaMA that trains and infers purely in C.
 
-### models trained on notorch
+**reference models — trained from scratch on notorch:**
 
-- [**ariannamethod/nanodurov**](https://github.com/ariannamethod/nanodurov) — 15.7M BPE LLaMA (MHA + RoPE + SwiGLU + RMSNorm). also happens to be a Telegram client. trained on conversational corpora.
-- [**ariannamethod/doe**](https://github.com/ariannamethod/doe) — Distributed Organisms of Emergence. six architectures, weight emergence via ensemble.
-- [**ariannamethod/caveLLMan**](https://github.com/ariannamethod/caveLLMan) — a living colony of char-level LMs that speak to each other, reproduce by weight blending, and die under population pressure. uses notorch as the per-cave autograd + microtrain CPT backend.
-- [**ariannamethod/janus.sonar**](https://github.com/ariannamethod/janus.sonar) — 2.7M char-level BitNet transformer with a 3-way gated attention (MHA + RRPRAM + Janus Echo). Dario-field logit modulation at inference.
-- [**ariannamethod/microgpt-1bit**](https://github.com/ariannamethod/microgpt-1bit) — reference **BitNet b1.58** training + inference on notorch. char-level 2.7M, trained to train 1.6226 / val 2.0314 on Intel Mac 8GB. the BLAS BitLinear path in notorch was validated against this.
+- [**nanollama-notorch**](https://github.com/ariannamethod/nanollama-notorch) — Llama-3 nano, **88.6M**, no PyTorch. 25K steps on a 2019 Intel i5 8GB, train 3.16 → CPT 2.68, 0 NaN — the ceiling of train-it-on-your-own-laptop, then SFT'd to a Method voice. the reference Llama-3 run.
+- [**notorch-simple-llm**](https://github.com/ariannamethod/notorch-simple-llm) — minimal-surface-area LLM, notorch + Chuck, zero deps. read this first to see how the API composes.
+- [**minimind-v-notorch**](https://github.com/ariannamethod/minimind-v-notorch) — 67M VLM trained from scratch, notorch + Chuck. reference VLM.
+- [**notorch-vlm**](https://github.com/ariannamethod/notorch-vlm) — 1.5M VLM on `notorch_vision.h` + stb_image, trained weights included.
+- [**notorch-vlm-2m**](https://github.com/ariannamethod/notorch-vlm-2m) — 2M multimodal VLM from scratch, GGUF output.
+- [**notorch-diffusion**](https://github.com/ariannamethod/notorch-diffusion) — discrete text diffusion + Hebrew VLM diffusion. reverse-mode autograd works fine when the net is a U-Net, not a transformer.
+- [**nanoagi**](https://github.com/ariannamethod/nanoagi) — a self-expanding BPE transformer that grows from conversation, Chuck/notorch self-training. eccentric, alive, and exactly the kind of thing this framework is for.
 
-### resonance organisms — notorch as compute backend
+**BitNet reference (the algorithm, not a notorch build):** [**microgpt-1bit**](https://github.com/ariannamethod/microgpt-1bit) is a pure-Python BitNet b1.58 (ternary) reference — notorch's own `nt_bit_linear` / `nt_bit_seq_linear` were validated against it.
 
-these aren't "notorch models" per se — they're larger resonance engines (from the Arianna Method ecosystem) that use notorch where a linear algebra backend is needed, while keeping their own physics on top:
+**how to train:** the trainers live in `examples/` — `train_llama3_char.c` / `train_llama3_bpe.c` (Llama-3 from scratch), `train_q.c`, `train_yent.c`, `train_resonance_lora.c` (LoRA SFT), and `train_dpo.c` / `train_grpo.c` / `train_distillation.c` (alignment). copy one, swap the model, point at your dataset. proven at scale: the Resonance-200M LoRA SFT drove loss **3.52 → 0.59** (honest min 0.18) in ~2 h on one A100, 0 NaN across 1500 steps; the 88.6M nanollama ran 25K steps on a 2019 Intel i5 with 0 NaN.
 
-- [**ariannamethod/nanoagi**](https://github.com/ariannamethod/nanoagi) — a six-level autonomy experiment (evolve → coevolve → swarm → selfcode → auto-trigger). notorch is the autograd for evolve-loop weight updates.
-- [**ariannamethod/molequla**](https://github.com/ariannamethod/molequla) — a 4-organism ecology (growing to 11 via mitosis) with conscience, immune rollback, DNA exchange. Trains its content + low-rank-RRPRAM transformer on the notorch tape (automatic GPU/CPU).
-- [**ariannamethod/dario**](https://github.com/ariannamethod/dario) — resonance OS (7 forces, 6 Kuramoto chambers, SARTRE). notorch powers the 176M Janus inference that sits at its center.
-- [**ariannamethod/metaharmonix**](https://github.com/ariannamethod/metaharmonix) — Arianna Method terminal, sibling-not-fork to Termux. notorch is baked in (`bake/notorch/`) so the terminal ships a tensor library, not just a shell.
+---
 
-### vision & diffusion on notorch
+## organisms that run on notorch
 
-- [**ariannamethod/notorch-vlm**](https://github.com/ariannamethod/notorch-vlm) — the reference vision-language model built on `notorch_vision.h` + stb_image. vision encoder → projector MLP → LLM.
-- [**ariannamethod/notorch-vlm-2m**](https://github.com/ariannamethod/notorch-vlm-2m) — a scaled-down 2M-param variant for "can a tiny VLM learn anything at all" experiments.
-- [**ariannamethod/notorch-simple-llm**](https://github.com/ariannamethod/notorch-simple-llm) — a minimal-surface-area LLM on notorch, kept deliberately small so it's readable end-to-end. good first read if you're trying to understand how the API composes.
-- [**ariannamethod/notorch-diffusion**](https://github.com/ariannamethod/notorch-diffusion) — a diffusion training loop on notorch. reverse-mode autograd still works fine when your network is a U-Net instead of a transformer.
+the appendix. these aren't notorch — they're larger Arianna Method engines that use notorch where they need a tensor/autograd backend, and keep their own physics on top.
 
-if you trained something on notorch and it's not in this list, open a PR and add it.
+- [**nanollama**](https://github.com/ariannamethod/nanollama) — "train Llama-3 from scratch, any scale, any personality." the training framework the runs above came out of.
+- [**doe**](https://github.com/ariannamethod/doe) — Democracy of Experts (Janus). wraps any GGUF read-only and grows a living Hebbian LoRA **parliament** on top of it (θ = ε + γ + αδ): experts vote per token, are born by mitosis and die by apoptosis. notorch is its Hebbian training substrate. our classic.
+- [**q**](https://github.com/ariannamethod/q) — PostGPT-Q resonant reasoning engine: triple attention + DoE parliament, 2M-param C inference.
+- [**caveLLMan**](https://github.com/ariannamethod/caveLLMan) — a colony of char-level LMs that talk, reproduce by weight-blending, and die under population pressure. notorch is the per-cave autograd + microtrain backend.
+- [**pitomadom.c**](https://github.com/ariannamethod/pitomadom.c) — Hebrew Root Resonance Engine, Janus architecture.
+- [**heart.c**](https://github.com/ariannamethod/heart.c) — field-coupled small-LM ecology running on a phone.
+- [**nanoarianna**](https://github.com/ariannamethod/nanoarianna) — a 4GB-phone (Galaxy A07, Termux) ecosystem: Janus/Resonance + AML field-physics + notorch micro-training.
+- [**molequla**](https://github.com/ariannamethod/molequla) — a live ecology of GPT organisms with conscience, immune rollback, DNA exchange; trains its low-rank-RRPRAM transformer on the notorch tape.
+- [**dario**](https://github.com/ariannamethod/dario) — resonance OS (7 forces, 6 Kuramoto chambers, SARTRE). notorch runs the 176M Janus at its center.
+- [**metaharmonix**](https://github.com/ariannamethod/metaharmonix) — the Arianna Method terminal; notorch is baked in, so the shell ships a tensor library.
+- [**janus**](https://github.com/ariannamethod/janus) — the Janus Architecture itself.
+- [**nanodurov**](https://github.com/ariannamethod/nanodurov) — a 15.7M BPE LLaMA on notorch that also happens to be a Telegram client.
+
+if you trained something on notorch and it's not here, open a PR.
 
 ---
 

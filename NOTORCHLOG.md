@@ -13,6 +13,23 @@ Newest entries on top.
 
 ---
 
+## 2026-06-05 — README rework: inference is first-class; models split refs vs organisms
+
+The README sold notorch as a training framework; it is training AND inference. Added
+an `## inference` section — the packed-Q4_K/Q6_K Metal path (`examples/infer_gguf_metal.c`,
+new `make infer_gguf_metal` target, Darwin + non-Darwin guard), the engine matrix, and the
+measured oyent-24B numbers (Mistral-Small-24B Q4_K_M on a 24 GB Mac: 0 swap, 10.6 GB,
+~1.4 tok/s). Made Apple-Silicon/Metal consistent across the build matrix, dependencies, and
+the platform table (it used to appear, then vanish). `what is this` now says trains **and** runs.
+
+Restructured the model list into exactly two sections — **references** (Karpathy ports +
+from-scratch notorch models + how-to-train, with the Resonance-200M 3.52→0.59 and
+nanollama-88.6M proofs) and **organisms that run on notorch** (appendix). Removed neovlm
+(now private) and janus.sonar (too experimental); microgpt-1bit relabeled honestly as the
+pure-Python BitNet reference notorch's BitLinear was validated against (not a notorch build);
+added nanollama-notorch + siblings. JS README's "F16+F32 dequant" line corrected — `loadGGUF`
+throws on quant today; the block-dequant port is the open JS upgrade.
+
 ## 2026-06-05 — in-house SIMD (AVX2) matmul: kernel + cache-block pass
 
 A measurement-driven optimization pass on `notorch_simd.h` (the zero-dependency
