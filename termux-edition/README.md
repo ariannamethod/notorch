@@ -144,6 +144,33 @@ Intel's `8ab5062` (NT_OP_MUL / NT_OP_SILU backward CPU-sync) and the parallel AM
 
 For an AML system-wide install on the same Termux substrate, see the sibling [`ariannamethod.ai/termux-edition/`](https://github.com/ariannamethod/ariannamethod.ai/tree/main/termux-edition) — it carries the `pkg-config` Makefile patch that AML's upstream Makefile still needs for `make BLAS=1` on Termux.
 
+## Status after Neo `nt_qmatvec` packed CPU matvec (2026-06-06)
+
+Headline: the packed quantized matvec primitive (Neo PR #9, merged via `2755ab2`) eliminates the dense F32 dequant buffer that GGUF inference previously needed on top of the packed weights. The old path expanded every GGUF tensor to f32 (×6–8 RAM) before `cblas_sgemv`; `nt_qmatvec` keeps the weights packed and dequantizes each block inline in registers, llama.cpp / MNN-style. Coverage is the full GGUF dtype set — F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K — with Phase 1 single-threaded; the int8-dot speed path and packed-runner wiring are explicitly marked in-progress upstream (no unmeasured numbers).
+
+Verified on phone-1 (Galaxy A56, Android 15, aarch64-linux-android, OpenBLAS 0.3.30):
+
+```bash
+cc -std=c11 -O2 -I. $(pkg-config --cflags openblas) -DUSE_BLAS \
+   tests/test_qmatvec.c notorch.c \
+   $(pkg-config --libs openblas) -lm -o tests/test_qmatvec
+./tests/test_qmatvec
+```
+
+Build 2.57 s, runtime output (m = 512, k = 2048):
+
+| dtype | abs err  | \|ref\|  | rel err |
+|-------|----------|----------|---------|
+| F32   | 6.87e-05 | 46.8     | 1.5e-06 |
+| F16   | 1.31e-06 | 1.1      | 1.2e-06 |
+| Q4_0  | 2.29e-05 | 22.1     | 1.0e-06 |
+| Q5_0  | 4.58e-05 | 37.6     | 1.2e-06 |
+| Q8_0  | 3.74e-04 | 340      | 1.1e-06 |
+| Q4_K  | 1.01e-03 | 1.07e+03 | 9.4e-07 |
+| Q6_K  | 7.32e-03 | 6.64e+03 | 1.1e-06 |
+
+`ALL PASS` — the NEON path is bit-close to the dequant→cblas oracle, no ARM-side delta on top of the universal implementation. The practical consequence on phone-1 is that GGUF inference no longer carries the ×6–8 dequant scratch buffer above the packed weights; quantized models that previously did not fit the 8 GB envelope on top of their packed footprint now do. This is the load-bearing primitive heart.c will build inference on.
+
 ## Files in this folder
 
 - `README.md` — this document
