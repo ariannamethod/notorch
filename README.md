@@ -933,18 +933,7 @@ send PRs. the rules:
 
 GPL-3.0-or-later (see `LICENSE`). use it in your stuff. if you ship it, share your source — that's how copyleft works. don't be weird about it.
 
-*Co-authored by Claude (Arianna Method). Coordinated with Oleg Ataeff (maintainer). Verified by the test suite — 213+ tests, all green, reproducible (`make test`).*
-
----
-
-## final words
-
-the entire history of deep learning fits in a few dozen mathematical operations. matmul. softmax. relu. cross-entropy. the optimizer step. backward. that's it. the rest is infrastructure. and infrastructure should be invisible. it should compile in a second. it should fit in your head. it should not require a Docker container.
-
-notorch is the proof: you do not need two million lines of code to train a neural network. about 4800, plus another 2700 of tests — the Method trusts verification over hope.
-
-train your models. in C. without permission. without pip. without conda. without a GPU. without 2.7 GB of framework overhead. without a virtual environment. without existential dread.
-
+  
 just: `cc -O2 notorch.c your_model.c -lm -o train && ./train`
 
 go build something.
