@@ -52,7 +52,7 @@
 
 ## what
 
-**NOTORCH** is a complete neural network framework written in pure C — it **trains** models and it **runs** them, including quantized GGUFs (a 24B on a 24 GB Mac, weights never unpacked to f32). no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no handing the model to llama.cpp to actually generate. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
+**NOTORCH** is a complete neural network framework written in pure C — it **trains** models and it **runs** them, including quantized GGUFs. no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no handing the model to llama.cpp to actually generate. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
 
 just no NOTORCH. just C.
 
