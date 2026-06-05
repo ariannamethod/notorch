@@ -16,7 +16,7 @@
 
 ## table of contents
 
-- [what is this](#what-is-this)
+- [what is this](#what)
 - [why](#why)
 - [the funeral](#the-funeral)
 - [architecture](#architecture)
