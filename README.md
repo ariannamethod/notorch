@@ -374,6 +374,12 @@ void nt_blas_mmT(float *C, const float *A, const float *BT, int m, int k, int n)
 
 // out[m] = W[m,n] @ x[n]           — hot-loop matvec for per-token inference
 void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n);
+
+// out[m] = Wq[m,k] @ x[k]          — PACKED quantized matvec: weights stay packed
+//                                    (no dense-f32 blow-up), dequantized inline per block.
+//                                    dtype = GGUF type code, full set:
+//                                    F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K.
+int  nt_qmatvec(float *out, const uint8_t *Wq, int dtype, const float *x, int m, int k);
 ```
 
 under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on macOS, OpenBLAS on Linux). without BLAS they fall back to the naive C loops — correct, just slower. the example engines reach the same BLAS path directly through their own local wrappers in their hot paths: `infer_gemma.c` / `infer_llama.c` / `infer_janus.c` call `cblas_sgemm`, and `infer_llama3_bpe.c` calls `cblas_sgemv` (scalar fallback without `USE_BLAS`).
@@ -385,6 +391,8 @@ under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on 
 the lie everyone tells you is that you train in one framework and *run* in another — train in PyTorch, export to GGUF, hand it to llama.cpp to actually generate tokens. notorch doesn't outsource the second half. it runs what it trains, and it runs models it never trained — any llama.cpp GGUF, in C, including a 24-billion-parameter quantized model on a Mac Mini.
 
 the obstacle is memory. a Q4_K weight is 4.5 bits; dequantize it to f32 and you get an 8× blow-up that turns a 14 GB model into ~96 GB you do not have. so notorch doesn't dequantize it. the weights never leave their packed GGML encoding — each block is reconstructed *inside* the matvec: Q4_K on the Apple GPU (`nt_metal_q4k_matvec`, weights registered **resident** so they upload once, not per token), Q6_K per-block across CPU cores. the only f32 in the building is the activations.
+
+that packed reconstruction is generalizing past the Metal/example corner into a CPU-agnostic library primitive. `nt_qmatvec(out, Wq, dtype, x, m, k)` keeps weights packed and dequantizes each block inline for the **whole GGUF dtype set on the CPU** — F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K — dispatched by dtype, with the Q6_K kernel lifted out of `infer_gguf_metal.c` into the library (F16 alone halves the weight RAM vs dense f32, and is converted per element rather than materialized). each format is verified bit-close to `gguf_dequant → cblas` (relative error ~1e-6 across all seven, `tests/test_qmatvec`). it means the CPU no longer has to blow Q4_0/Q8_0 up to f32 the way the f32 engines below do. the primitive is correctness-complete and single-threaded today; wiring the runners onto it (so a Q4_0 model stays packed end-to-end) and the speed path — threaded rows plus int8 activation-quant with SDOT/VNNI integer dot, the technique that makes llama.cpp and MNN fast — are in progress.
 
 measured, Mac Mini M4 Pro (24 GB), Mistral-Small-24B at Q4_K_M (~14 GB on disk): **loads in 3.6 s, 0 swap, 10.6 GB resident, ~1.4 tok/s, coherent correct output.** the same source runs Qwen3 and Llama-3 on an 8 GB phone-class A18 Pro. one forward handles two RoPE conventions, auto-detected — interleaved for llama/mistral (weights pre-permuted by llama.cpp's converter), NEOX + per-head q/k-RMSNorm for qwen2/qwen3 — with the byte-level BPE read straight out of the GGUF. GQA, attention bias (Qwen2), and tied embeddings are detected from the tensors.
 
