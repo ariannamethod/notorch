@@ -52,7 +52,7 @@
 
 ## what is this
 
-you know that feeling when you `pip install torch` and 2.7 gigabytes of your soul evaporates into a `.venv` folder? when your laptop fan sounds like it's preparing for takeoff just to import a library? when you wait 45 seconds for `import torch` to finish while your RAM usage goes from "healthy" to "the computer is now a space heater"?
+you know that feeling when you `pip install torch` and 2.7 gigabytes of your soul evaporates into a `.venv` folder? your laptop fan sounds like it's preparing for takeoff just to import a library? and when you wait 45 seconds for `import torch` to finish while your RAM usage goes from "healthy" to "the computer is now a space heater"?
 
 yeah. so the Method did something about it.
 
