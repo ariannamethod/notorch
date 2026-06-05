@@ -304,7 +304,7 @@ int Y = nt_bit_seq_linear(w_idx, x_idx, T);      // same, over T positions
 
 on the `USE_BLAS` path, BitLinear dispatches to a single `cblas_sgemm(NoTrans, Trans)` call on pre-quantized operands — the ternary `W` is pre-flattened to float, the int8-range `x` is pre-scaled, per-position output rescale is applied afterwards. this turned out to be about **18% faster per training step** on Apple Accelerate vs the naive per-output-loop path. on OpenBLAS the win is similar.
 
-**tests:** `tests/test_bitnet_ops.c` (8 tests) — ternary quantize correctness, STE identity backward, gradient flow through sequences, gradient numeric check, end-to-end training convergence of a tiny BitNet MLP.
+**tests:** `tests/test_bitnet_ops.c` (118 gradient assertions) — ternary quantize correctness, STE identity backward, gradient flow through sequences, gradient numeric check, end-to-end training convergence of a tiny BitNet MLP.
 
 **in production:** [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) — a 2.69M-param char-level BitNet transformer trained to train_best **1.6226** / val **2.0314** on Intel Mac 8GB, 10000 steps, zero NaN. the 10 MB FP32 checkpoint ternary-packs down to ~1.4 MB + γ metadata — same compute path, 6× deployment compression.
 
@@ -379,7 +379,7 @@ void nt_blas_mmT(float *C, const float *A, const float *BT, int m, int k, int n)
 void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n);
 ```
 
-under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on macOS, OpenBLAS on Linux). without BLAS they fall back to the naive C loops — correct, just slower. these three entry points are what `infer_gemma.c`, `infer_llama.c`, `infer_janus.c`, and `infer_llama3_bpe.c` all call in their hot paths.
+under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on macOS, OpenBLAS on Linux). without BLAS they fall back to the naive C loops — correct, just slower. the example engines reach the same BLAS path directly through their own local wrappers in their hot paths: `infer_gemma.c` / `infer_llama.c` / `infer_janus.c` call `cblas_sgemm`, and `infer_llama3_bpe.c` calls `cblas_sgemv` (scalar fallback without `USE_BLAS`).
 
 ---
 
@@ -457,19 +457,19 @@ Design:
 - AVX2 `_mm_prefetch` ahead of the kernel inner loop, AVX2 vectorized panel packing for `col_stride==1` paths (forward + input-grad)
 - Edge tiles (m mod 6 ≠ 0 or n mod 16 ≠ 0) handled via scalar fallback within the same buffer layout
 
-Bench at training-relevant shapes on Intel i5-8500T (6c, no AVX-512) vs OpenBLAS 0.3.26:
+Bench at training-relevant shapes on Intel i5-8500T (6c, no AVX-512) vs OpenBLAS 0.3.26, both at 6 threads (`bench/bench_simd` vs `bench/bench_blas`; ±10-15% run-to-run on this desktop part):
 
-| Shape | OpenBLAS 6T | in-house SIMD | Ratio |
+| Shape | OpenBLAS 6T | in-house SIMD 6T | Ratio |
 |---|---|---|---|
-| Llama 576×576 dW (TN, 512 ctx) | 131 GFLOP/s | **141 GFLOP/s** | **1.08× faster** |
-| Janus 640×1664 FFN-down (NN, 1024 ctx) | 132 GFLOP/s | **160 GFLOP/s** | **1.21× faster** |
-| Llama 576×576 dWffn (TN, 512 ctx) | 197 GFLOP/s | 177 GFLOP/s | 0.90× |
-| Llama 576×576 forward QKV (NN, 512 ctx) | 103 GFLOP/s | 71 GFLOP/s | 0.69× |
-| Janus 640×640 forward QKV (NN, 1024 ctx) | 161 GFLOP/s | 79 GFLOP/s | 0.49× |
+| Llama dW (E×E, TN, 512 ctx) | 449 GFLOP/s | 325 GFLOP/s | 0.72× |
+| Llama dWffn (h×E, TN, 512 ctx) | 461 GFLOP/s | 336 GFLOP/s | 0.73× |
+| Llama FFN-down (NN, 512 ctx) | 386 GFLOP/s | 167 GFLOP/s | 0.43× |
+| Janus forward QKV (NN, 1024 ctx) | 310 GFLOP/s | 152 GFLOP/s | 0.49× |
+| Janus FFN-down (NN, 1024 ctx) | 424 GFLOP/s | 173 GFLOP/s | 0.41× |
 
-Average ~0.7× of OpenBLAS at training-relevant shapes, with peaks above OpenBLAS on weight-grad (TN) and certain FFN-down configurations. Slower on T=128 small-matrix shapes (irrelevant for ≥10M-param training).
+Roughly 0.4–0.75× of fully-threaded OpenBLAS — closest on the TN weight-gradient GEMMs (~0.7×), widest on large NN forward/FFN shapes (~0.4×). The in-house SIMD does not beat a 6-thread OpenBLAS; its point is hundreds of GFLOP/s with **zero external math library** — pure C + AVX2 + pthreads, nothing to install. On a box without OpenBLAS or Accelerate, this is the accelerated path.
 
-**Correctness validated** end-to-end: all 213+ existing notorch tests pass under `make simd` (notorch_test 47/47 incl. all 11 numeric gradient checks, test_vision 48/48, test_bitnet_ops 118/118, test_sigmoid_scale 4/4) + `bench_simd.c` micro-bench + `test_simd_correctness.c` direct-vs-scalar comparison + `test_simd_loss.c` end-to-end forward → softmax → cross-entropy at lm_head shape produces bit-identical 10.379384 vs OpenBLAS path. Real nanollama 89M training step 1 produces train loss 10.3876 — bit-identical to OpenBLAS baseline.
+**Correctness validated** end-to-end under `make simd`: notorch_test 47/47 (incl. all 13 gradient/training checks), test_vision 48/48, test_bitnet_ops 118 assertions, test_sigmoid_scale 4/4. `test_simd_loss.c` produces bit-identical 10.379384 at lm_head shape vs the OpenBLAS path, and a real nanollama 89M training step 1 gives train loss 10.3876 — bit-identical to the OpenBLAS baseline. `test_simd_correctness.c` agrees with the scalar path to <1e-3 on small shapes; on large GEMM shapes a few outputs exceed the strict 1e-3 bound from FMA accumulation order — harmless, since the end-to-end loss is bit-identical.
 
 Override thread count via env: `NT_SIMD_THREADS=N`. Single-thread variant for debugging via `-DNOTORCH_SIMD_DEBUG_SCALAR` (uses `notorch_simd_scalar.h` instead — same API, pure scalar inner loop).
 
@@ -487,7 +487,7 @@ make test
 
 nine test binaries (run output is the source of truth for counts):
 
-- **`tests/test_notorch.c`** — ~94 tests: tensor mechanics, forward ops, tape recording/backward, optimizers, training integration, numerical gradient checks, infrastructure (save/load, LR schedules, NaN guard, gradient accumulation, Hebbian microlearning, profiler)
+- **`tests/test_notorch.c`** — 47 tests: tensor mechanics, forward ops, tape recording/backward, optimizers, training integration, numerical gradient checks, infrastructure (save/load, LR schedules, NaN guard, gradient accumulation, Hebbian microlearning, profiler)
 - **`tests/test_vision.c`** — 48 tests: image loading (JPEG/PNG/BMP), resize / crop / normalize / flip / grayscale, ViT patch extraction, preprocessing pipelines, BPE encode/decode roundtrip
 - **`tests/test_bitnet_ops.c`** — 118 gradient assertions: SwiGLU, BitLinear forward + seq, STE backward, SPA smoke, finite-difference gradient checks
 - **`tests/test_rrpram_lr.c` / `test_metal_q4k.c` / `test_simd_correctness.c` / `test_simd_loss.c`** — low-rank RRPRAM, Apple-Silicon Q4_K matvec, and AVX2+FMA SIMD parity
@@ -701,7 +701,7 @@ notorch/
 │   ├── train_grpo.c          # Group Relative Policy Optimization (DeepSeek-R1)
 │   └── train_distillation.c  # Knowledge distillation (Hinton 2015, teacher→student KL)
 ├── tests/
-│   ├── test_notorch.c        # ~94 tests, numerical gradient checks, integration
+│   ├── test_notorch.c        # 47 tests, numerical gradient checks, integration
 │   ├── test_vision.c         # 48 vision + BPE tests
 │   ├── test_bitnet_ops.c     # 118 BitNet/SwiGLU/SPA + STE checks
 │   ├── test_sigmoid_scale.c  # 4 tests for sigmoid + scale-by-tensor
@@ -710,7 +710,7 @@ notorch/
 └── README.md              # this. you survived. congratulations.
 ```
 
-total: **~4800 lines of core C + ~2700 of tests + ~3500 of examples**. framework + vision + GGUF + BPE + five inference engines + eight training scripts + nine test binaries. tested on 26+ real model files across 6 architectures.
+total: **~4800 lines of core C + ~2700 of tests + ~6000 of examples**. framework + vision + GGUF + BPE + five inference engines + eight training scripts + nine test binaries. tested on 26+ real model files across 6 architectures.
 
 ### models trained on notorch
 
