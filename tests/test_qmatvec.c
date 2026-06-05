@@ -153,9 +153,54 @@ static int run_fmt(const char *name, int dtype, int blkbytes, int blkvals,
     return ok ? 0 : 1;
 }
 
+/* F16 / F32 have no block structure — dedicated runners with sane weights. */
+static int run_f16(void) {
+    int m = 512, k = 2048;
+    uint16_t *Wh = malloc(sizeof(uint16_t) * (long)m * k);
+    for (long i = 0; i < (long)m * k; i++)            /* small normal f16, varied */
+        Wh[i] = (uint16_t)((rand() & 0x8000) | 0x2000 | (rand() & 0x03FF));
+    float *x = malloc(sizeof(float) * k);
+    for (int i = 0; i < k; i++) x[i] = (float)((double)rand()/RAND_MAX*2.0 - 1.0);
+    float *Wf = malloc(sizeof(float) * (long)m * k);
+    for (long i = 0; i < (long)m * k; i++) Wf[i] = ref_f16(Wh[i]);
+    float *r = malloc(sizeof(float)*m), *g = malloc(sizeof(float)*m);
+    nt_blas_matvec(r, Wf, x, m, k);
+    int rc = nt_qmatvec(g, (const uint8_t *)Wh, 1, x, m, k), ok;
+    float maxabs = 0, maxref = 0;
+    if (rc != 0) { printf("FAIL  F16   rc=%d\n", rc); ok = 0; }
+    else {
+        for (int i=0;i<m;i++){float dd=fabsf(r[i]-g[i]);if(dd>maxabs)maxabs=dd;float a=fabsf(r[i]);if(a>maxref)maxref=a;}
+        float rel = maxref>0?maxabs/maxref:maxabs; ok = rel<1e-3f;
+        printf("F16   [m=%d k=%d] abs %.3g / |ref| %.3g = rel %.2g  %s\n", m,k,maxabs,maxref,rel,ok?"PASS":"FAIL");
+    }
+    free(Wh); free(x); free(Wf); free(r); free(g);
+    return ok ? 0 : 1;
+}
+static int run_f32(void) {
+    int m = 512, k = 2048;
+    float *W = malloc(sizeof(float)*(long)m*k);
+    for (long i=0;i<(long)m*k;i++) W[i]=(float)((double)rand()/RAND_MAX*2.0-1.0);
+    float *x = malloc(sizeof(float)*k);
+    for (int i=0;i<k;i++) x[i]=(float)((double)rand()/RAND_MAX*2.0-1.0);
+    float *r=malloc(sizeof(float)*m),*g=malloc(sizeof(float)*m);
+    nt_blas_matvec(r, W, x, m, k);
+    int rc=nt_qmatvec(g,(const uint8_t*)W,0,x,m,k),ok;
+    float maxabs=0,maxref=0;
+    if(rc!=0){printf("FAIL  F32   rc=%d\n",rc);ok=0;}
+    else{
+        for(int i=0;i<m;i++){float dd=fabsf(r[i]-g[i]);if(dd>maxabs)maxabs=dd;float a=fabsf(r[i]);if(a>maxref)maxref=a;}
+        float rel=maxref>0?maxabs/maxref:maxabs;ok=rel<1e-3f;
+        printf("F32   [m=%d k=%d] abs %.3g / |ref| %.3g = rel %.2g  %s\n",m,k,maxabs,maxref,rel,ok?"PASS":"FAIL");
+    }
+    free(W);free(x);free(r);free(g);
+    return ok?0:1;
+}
+
 int main(void) {
     srand(42);
     int fails = 0;
+    fails += run_f32();
+    fails += run_f16();
     fails += run_fmt("Q4_0", 2,  18,  32, ref_q4_0, set_s32);
     fails += run_fmt("Q5_0", 6,  22,  32, ref_q5_0, set_s32);
     fails += run_fmt("Q8_0", 8,  34,  32, ref_q8_0, set_s32);

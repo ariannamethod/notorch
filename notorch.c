@@ -4804,11 +4804,35 @@ static void nt_q6_k_rows(float *out, const uint8_t *W, const float *x,
     }
 }
 
+// F16: contiguous half weights — converted per element. Keeps weights at 2 B/param
+// (half the RAM of dense f32) without ever materializing a full f32 tensor.
+static void nt_f16_rows(float *out, const uint8_t *W, const float *x,
+                        int r0, int r1, int k) {
+    const uint16_t *Wh = (const uint16_t *)W;
+    for (int row = r0; row < r1; row++) {
+        const uint16_t *r = Wh + (long)row * k;
+        float acc = 0.0f;
+        for (int j = 0; j < k; j++) acc += nt_f16_to_f32(r[j]) * x[j];
+        out[row] = acc;
+    }
+}
+
 // Packed quantized matvec. dtype = GGUF type code. Returns 0 ok, -1 if the dtype
 // has no packed kernel yet (caller falls back to gguf_dequant -> nt_blas_matvec).
 int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
                const float *x, int m, int k) {
     switch (dtype) {
+    case 0: { /* GGUF_TYPE_F32 — already dense f32, plain dot (agnostic entry) */
+        const float *Wf = (const float *)Wq;
+        for (int row = 0; row < m; row++) {
+            const float *r = Wf + (long)row * k;
+            float acc = 0.0f;
+            for (int j = 0; j < k; j++) acc += r[j] * x[j];
+            out[row] = acc;
+        }
+        return 0;
+    }
+    case 1:  /* GGUF_TYPE_F16  */ nt_f16_rows (out, Wq, x, 0, m, k); return 0;
     case 2:  /* GGUF_TYPE_Q4_0 */ if (k % 32)  return -1;
         nt_q4_0_rows(out, Wq, x, 0, m, k); return 0;
     case 6:  /* GGUF_TYPE_Q5_0 */ if (k % 32)  return -1;
