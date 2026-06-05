@@ -61,9 +61,19 @@ Speed is now **compute-bound, not memory-bound**. First the Q6_K per-row CPU
 dequant (output 131072×5120 + ~20 ffn_down) dominated at 0.2 t/s; threading that
 matvec across cores (work-gated, 12 cores on M4 Pro, disjoint y rows) lifted
 oyent-24B to **0.6 t/s** (decode 8 tok 13.2 s, total 66 s → 28.5 s, swaps still 0,
-peak 17.3 GB, same correct output). Now the **Metal Q4_K Phase-1 per-call weight
-upload** (240 dispatches/token, single-stream) dominates — next lift is resident
-weights (Phase-2) in `notorch_metal.mm`, plus optionally a Q6_K Metal matvec.
+peak 17.3 GB, same correct output). Then the **Metal Q4_K Phase-1 per-call weight
+upload** (240 dispatches/token) dominated.
+
+**Phase-2 (resident weights) landed.** `gguf.c` now page-aligns the tensor block
+(`posix_memalign`) and records `data_size`; `nt_metal_register_base` wraps it as
+zero-copy `newBufferWithBytesNoCopy` MTLBuffer(s) — **segmented**, because one
+buffer is capped at `device.maxBufferLength` (14.302 GB on M4 Pro, just under the
+14.326 GB block); `nt_metal_q4k_matvec` binds each weight by offset, no per-call
+upload (weights straddling a segment edge fall back to upload). Result on oyent-24B:
+**0.6 → 1.4 t/s** (0.2 → 1.4 over the whole pass, ~7×), total 28.5 s → 14.4 s,
+**RSS 16.3 → 10.6 GB** (zero-copy, weights not duplicated), swaps 0, same correct
+output. Llama-3.2-3B on neo (A18 Pro): **0.1 → 1.2 t/s** (~12×). Remaining lift:
+optional Q6_K Metal matvec + a tiled/simdgroup Q4_K kernel.
 
 Correctness regression (neo): Qwen3-0.6B-Q4_K greedy still "...Paris..." after the
 Q6_K-path change (it uses Q6_K tensors); Llama-3.2-3B-Q4_K greedy 5/5 capitals.

@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <unistd.h>
 #include "notorch_metal.h"
 
 /* ── MSL kernel source ───────────────────────────────────────────────── */
@@ -104,6 +105,15 @@ static id<MTLCommandQueue>         g_queue       = nil;
 static id<MTLComputePipelineState> g_q4k_pipe    = nil;
 static int                         g_initialised = 0;
 
+/* Phase 2: resident zero-copy buffers wrapping the packed GGUF data block.
+ * Segmented because a single MTLBuffer is capped at device.maxBufferLength
+ * (~0.6x RAM) — below a 14GB+ 24B weight block. */
+#define NT_MAX_SEG 16
+static id<MTLBuffer>  g_seg_buf[NT_MAX_SEG] = { nil };
+static const uint8_t *g_seg_ptr[NT_MAX_SEG] = { NULL };
+static uint64_t       g_seg_len[NT_MAX_SEG] = { 0 };
+static int            g_nseg = 0;
+
 /* ── API ─────────────────────────────────────────────────────────────── */
 
 int nt_metal_available(void)
@@ -159,10 +169,50 @@ int nt_metal_init(void)
 
 void nt_metal_shutdown(void)
 {
+    for (int s = 0; s < g_nseg; s++) g_seg_buf[s] = nil;
+    g_nseg        = 0;
     g_q4k_pipe    = nil;
     g_queue       = nil;
     g_device      = nil;
     g_initialised = 0;
+}
+
+int nt_metal_register_base(const void *base, uint64_t nbytes)
+{
+    if (!g_initialised) {
+        int rc = nt_metal_init();
+        if (rc != 0) return rc;
+    }
+    uint64_t pg    = (uint64_t)getpagesize();
+    uint64_t chunk = (uint64_t)g_device.maxBufferLength & ~(pg - 1);  /* page-floored cap */
+    if (chunk == 0) return 12;
+    g_nseg = 0;
+    @autoreleasepool {
+        uint64_t off = 0;
+        while (off < nbytes && g_nseg < NT_MAX_SEG) {
+            uint64_t len = nbytes - off;
+            if (len > chunk) len = chunk;   /* len stays a page multiple: nbytes,off,chunk all are */
+            id<MTLBuffer> b = [g_device newBufferWithBytesNoCopy:(void *)((const uint8_t *)base + off)
+                                                         length:(NSUInteger)len
+                                                        options:MTLResourceStorageModeShared
+                                                    deallocator:nil];
+            if (!b) {
+                fprintf(stderr, "nt_metal_register_base: NoCopy seg failed "
+                                "(off=%llu len=%llu maxBufferLength=%llu)\n",
+                        (unsigned long long)off, (unsigned long long)len,
+                        (unsigned long long)g_device.maxBufferLength);
+                g_nseg = 0;
+                return 12;
+            }
+            g_seg_buf[g_nseg] = b;
+            g_seg_ptr[g_nseg] = (const uint8_t *)base + off;
+            g_seg_len[g_nseg] = len;
+            g_nseg++;
+            off += len;
+        }
+        if (off < nbytes) { g_nseg = 0; return 13; }  /* exceeded NT_MAX_SEG */
+    }
+    return 0;
 }
 
 int nt_metal_q4k_matvec(float *out,
@@ -190,9 +240,22 @@ int nt_metal_q4k_matvec(float *out,
         const NSUInteger x_bytes   = (NSUInteger)k * sizeof(float);
         const NSUInteger out_bytes = (NSUInteger)m * sizeof(float);
 
-        id<MTLBuffer> bW = [g_device newBufferWithBytes:W_q4k
-                                                 length:W_bytes
-                                                options:MTLResourceStorageModeShared];
+        /* Phase 2: if this weight lives inside the registered resident base,
+         * bind it by offset (zero upload). Otherwise upload it for this call. */
+        id<MTLBuffer> bW = nil; NSUInteger W_off = 0;
+        for (int s = 0; s < g_nseg; s++) {
+            if (W_q4k >= g_seg_ptr[s] &&
+                (uint64_t)(W_q4k - g_seg_ptr[s]) + W_bytes <= g_seg_len[s]) {
+                bW = g_seg_buf[s];
+                W_off = (NSUInteger)(W_q4k - g_seg_ptr[s]);
+                break;
+            }
+        }
+        if (!bW) {   /* unregistered or straddles a segment boundary -> upload */
+            bW = [g_device newBufferWithBytes:W_q4k
+                                       length:W_bytes
+                                      options:MTLResourceStorageModeShared];
+        }
         id<MTLBuffer> bx = [g_device newBufferWithBytes:x
                                                  length:x_bytes
                                                 options:MTLResourceStorageModeShared];
@@ -210,7 +273,7 @@ int nt_metal_q4k_matvec(float *out,
         id<MTLCommandBuffer>        cb  = [g_queue commandBuffer];
         id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
         [enc setComputePipelineState:g_q4k_pipe];
-        [enc setBuffer:bW   offset:0 atIndex:0];
+        [enc setBuffer:bW   offset:W_off atIndex:0];
         [enc setBuffer:bx   offset:0 atIndex:1];
         [enc setBuffer:bout offset:0 atIndex:2];
         [enc setBuffer:bk   offset:0 atIndex:3];

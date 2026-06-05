@@ -319,6 +319,7 @@ int main(int argc, char **argv) {
     double t0 = now_ms();
     gguf_file *gf = gguf_open(argv[1]);
     if (!gf) return 1;
+    nt_metal_register_base(gf->data, gf->data_size);  /* Phase 2: weights resident on GPU, no per-call upload */
     model_t *m = model_load(gf);
     if (!m) return 1;
     bpe_tokenizer *tok = bpe_load(argv[1]);

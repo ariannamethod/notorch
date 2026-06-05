@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <unistd.h>
 
 // ── Reading primitives ───────────────────────────────────────────────────────
 
@@ -150,8 +151,13 @@ gguf_file* gguf_open(const char* path) {
     fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
     long data_size = fsize - gf->data_offset;
-    gf->data = (uint8_t*)malloc(data_size);
-    if (!gf->data) { fclose(f); free(gf); return NULL; }
+    // Page-align the tensor block so the Metal backend can wrap it as one
+    // zero-copy NoCopy MTLBuffer (resident weights). free() stays valid.
+    size_t pg = (size_t)getpagesize();
+    size_t alloc = ((size_t)data_size + pg - 1) & ~(pg - 1);
+    gf->data = NULL;
+    if (posix_memalign((void**)&gf->data, pg, alloc) != 0 || !gf->data) { fclose(f); free(gf); return NULL; }
+    gf->data_size = (uint64_t)alloc;
     fseek(f, gf->data_offset, SEEK_SET);
     fread(gf->data, 1, data_size, f);
     fclose(f);

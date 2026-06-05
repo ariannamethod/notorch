@@ -69,6 +69,15 @@ int nt_metal_q4k_matvec(float *out,
                         const float *x,
                         int m, int k);
 
+/* Phase 2 — resident weights. Register one base region (e.g. the whole packed
+ * GGUF tensor block) as a single zero-copy GPU buffer (Apple unified memory).
+ * After this, nt_metal_q4k_matvec binds any W that falls inside
+ * [base, base+nbytes) by offset instead of re-uploading it every call — the
+ * per-token weight upload disappears. `base` MUST be page-aligned
+ * (posix_memalign / mmap). Returns 0 on success, 12 if the NoCopy wrap fails.
+ * Calls nt_metal_init if needed. Weights outside the region fall back to upload. */
+int nt_metal_register_base(const void *base, uint64_t nbytes);
+
 #ifdef __cplusplus
 }
 #endif

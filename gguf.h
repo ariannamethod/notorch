@@ -58,8 +58,9 @@ typedef struct {
     gguf_tensor_info tensors[GGUF_MAX_TENSORS];
 
     // Data section
-    uint8_t*       data;          // mmap'd or loaded raw bytes
+    uint8_t*       data;          // page-aligned (posix_memalign) raw tensor bytes
     uint64_t       data_offset;   // file offset where tensor data starts
+    uint64_t       data_size;     // page-rounded byte size of `data` (for Metal NoCopy)
 
     // Architecture params (extracted from metadata)
     int  n_layers;
