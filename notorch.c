@@ -4733,17 +4733,92 @@ static void nt_q5_0_rows(float *out, const uint8_t *W, const float *x,
     }
 }
 
+// ── super-block formats (256 vals/block) ────────────────────────────────────
+// Q4_K 6-bit packed scale/min unpack (matches gguf.c:get_scale_min_k4).
+static void nt_get_scale_min_k4(int j, const uint8_t *sc, uint8_t *s, uint8_t *mn) {
+    if (j < 4) { *s = sc[j] & 63; *mn = sc[j + 4] & 63; }
+    else { *s = (sc[j + 4] & 0x0F) | ((sc[j - 4] >> 6) << 4);
+           *mn = (sc[j + 4] >> 4)  | ((sc[j]     >> 6) << 4); }
+}
+
+// Q4_K: 144 B/block, 256 vals — d, dmin (f16) + 12 B packed scales/mins + 128 nibbles.
+static void nt_q4_k_rows(float *out, const uint8_t *W, const float *x,
+                         int r0, int r1, int k) {
+    int nb = k / 256;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 144;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 144;
+            float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+            float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
+            const uint8_t *sc = b + 4, *qs = b + 16;
+            const float *xb = x + (long)blk * 256;
+            int is = 0, qi = 0;
+            for (int j = 0; j < 256; j += 64) {
+                uint8_t sc0, m0, sc1, m1;
+                nt_get_scale_min_k4(is,     sc, &sc0, &m0);
+                nt_get_scale_min_k4(is + 1, sc, &sc1, &m1);
+                float d1 = d * sc0, mm1 = dmin * m0, d2 = d * sc1, mm2 = dmin * m1;
+                for (int l = 0; l < 32; l++)
+                    acc += (d1 * (float)(qs[qi + l] & 0x0F) - mm1) * xb[j + l];
+                for (int l = 0; l < 32; l++)
+                    acc += (d2 * (float)(qs[qi + l] >> 4)   - mm2) * xb[j + 32 + l];
+                qi += 32; is += 2;
+            }
+        }
+        out[row] = acc;
+    }
+}
+
+// Q6_K: 210 B/block, 256 vals — ql[128] qh[64] int8 scales[16] + f16 d.
+// Lifted from the proven packed q6k_rows in examples/infer_gguf_metal.c.
+static void nt_q6_k_rows(float *out, const uint8_t *W, const float *x,
+                         int r0, int r1, int k) {
+    int nb = k / 256;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 210;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 210, *ql = b, *qh = b + 128;
+            const int8_t *sc = (const int8_t *)(b + 192);
+            float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
+            const float *xb = x + (long)blk * 256;
+            for (int n = 0; n < 256; n += 128) {
+                const uint8_t *qlh = ql + (n / 128) * 64, *qhh = qh + (n / 128) * 32;
+                const int8_t *sch = sc + (n / 128) * 8;
+                for (int l = 0; l < 32; l++) {
+                    int is = l / 16;
+                    int q1 = (int)((qlh[l]      & 0x0F) | (((qhh[l] >> 0) & 3) << 4)) - 32;
+                    int q2 = (int)((qlh[l + 32] & 0x0F) | (((qhh[l] >> 2) & 3) << 4)) - 32;
+                    int q3 = (int)((qlh[l]      >> 4)   | (((qhh[l] >> 4) & 3) << 4)) - 32;
+                    int q4 = (int)((qlh[l + 32] >> 4)   | (((qhh[l] >> 6) & 3) << 4)) - 32;
+                    acc += d * sch[is + 0] * q1 * xb[n + l];
+                    acc += d * sch[is + 2] * q2 * xb[n + l + 32];
+                    acc += d * sch[is + 4] * q3 * xb[n + l + 64];
+                    acc += d * sch[is + 6] * q4 * xb[n + l + 96];
+                }
+            }
+        }
+        out[row] = acc;
+    }
+}
+
 // Packed quantized matvec. dtype = GGUF type code. Returns 0 ok, -1 if the dtype
 // has no packed kernel yet (caller falls back to gguf_dequant -> nt_blas_matvec).
 int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
                const float *x, int m, int k) {
     switch (dtype) {
-    case 2: /* GGUF_TYPE_Q4_0 */ if (k % 32) return -1;
+    case 2:  /* GGUF_TYPE_Q4_0 */ if (k % 32)  return -1;
         nt_q4_0_rows(out, Wq, x, 0, m, k); return 0;
-    case 6: /* GGUF_TYPE_Q5_0 */ if (k % 32) return -1;
+    case 6:  /* GGUF_TYPE_Q5_0 */ if (k % 32)  return -1;
         nt_q5_0_rows(out, Wq, x, 0, m, k); return 0;
-    case 8: /* GGUF_TYPE_Q8_0 */ if (k % 32) return -1;
+    case 8:  /* GGUF_TYPE_Q8_0 */ if (k % 32)  return -1;
         nt_q8_0_rows(out, Wq, x, 0, m, k); return 0;
+    case 12: /* GGUF_TYPE_Q4_K */ if (k % 256) return -1;
+        nt_q4_k_rows(out, Wq, x, 0, m, k); return 0;
+    case 14: /* GGUF_TYPE_Q6_K */ if (k % 256) return -1;
+        nt_q6_k_rows(out, Wq, x, 0, m, k); return 0;
     default:
         return -1;
     }
