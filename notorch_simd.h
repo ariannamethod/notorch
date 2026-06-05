@@ -89,32 +89,37 @@ static inline void nt_simd_micro_6x16(
     _mm_prefetch((const char*)(B + 0), _MM_HINT_T0);
     _mm_prefetch((const char*)(B + 16), _MM_HINT_T0);
 
-    for (int p = 0; p < k; p++) {
-        __m256 b0 = _mm256_loadu_ps(B + p*16 + 0);
-        __m256 b1 = _mm256_loadu_ps(B + p*16 + 8);
+    // One k-step at index (pp). B_pack is 64-byte aligned (aligned_alloc + the
+    // strip base is a multiple of 64 floats), so B loads are aligned. A is
+    // MR-interleaved → the 6 values for one k-step are contiguous.
+    #define NT_KSTEP(pp) do {                                                  \
+        __m256 _b0 = _mm256_load_ps(B + (pp)*16 + 0);                          \
+        __m256 _b1 = _mm256_load_ps(B + (pp)*16 + 8);                          \
+        const float* _ap = A + (pp)*NT_SIMD_MR;                                \
+        __m256 _a;                                                             \
+        _a = _mm256_broadcast_ss(_ap+0);                                       \
+        c00 = _mm256_fmadd_ps(_a,_b0,c00); c01 = _mm256_fmadd_ps(_a,_b1,c01);  \
+        _a = _mm256_broadcast_ss(_ap+1);                                       \
+        c10 = _mm256_fmadd_ps(_a,_b0,c10); c11 = _mm256_fmadd_ps(_a,_b1,c11);  \
+        _a = _mm256_broadcast_ss(_ap+2);                                       \
+        c20 = _mm256_fmadd_ps(_a,_b0,c20); c21 = _mm256_fmadd_ps(_a,_b1,c21);  \
+        _a = _mm256_broadcast_ss(_ap+3);                                       \
+        c30 = _mm256_fmadd_ps(_a,_b0,c30); c31 = _mm256_fmadd_ps(_a,_b1,c31);  \
+        _a = _mm256_broadcast_ss(_ap+4);                                       \
+        c40 = _mm256_fmadd_ps(_a,_b0,c40); c41 = _mm256_fmadd_ps(_a,_b1,c41);  \
+        _a = _mm256_broadcast_ss(_ap+5);                                       \
+        c50 = _mm256_fmadd_ps(_a,_b0,c50); c51 = _mm256_fmadd_ps(_a,_b1,c51);  \
+    } while (0)
 
-        // Prefetch B 8 iterations ahead (B is contiguous 16 floats per row)
-        if (p + 8 < k) {
-            _mm_prefetch((const char*)(B + (p+8)*16), _MM_HINT_T0);
-            _mm_prefetch((const char*)(B + (p+8)*16 + 8), _MM_HINT_T0);
-        }
-
-        // A is MR-interleaved: the 6 values for this k-step are contiguous.
-        const float* ap = A + p*NT_SIMD_MR;
-        __m256 a;
-        a = _mm256_broadcast_ss(ap + 0);
-        c00 = _mm256_fmadd_ps(a, b0, c00);  c01 = _mm256_fmadd_ps(a, b1, c01);
-        a = _mm256_broadcast_ss(ap + 1);
-        c10 = _mm256_fmadd_ps(a, b0, c10);  c11 = _mm256_fmadd_ps(a, b1, c11);
-        a = _mm256_broadcast_ss(ap + 2);
-        c20 = _mm256_fmadd_ps(a, b0, c20);  c21 = _mm256_fmadd_ps(a, b1, c21);
-        a = _mm256_broadcast_ss(ap + 3);
-        c30 = _mm256_fmadd_ps(a, b0, c30);  c31 = _mm256_fmadd_ps(a, b1, c31);
-        a = _mm256_broadcast_ss(ap + 4);
-        c40 = _mm256_fmadd_ps(a, b0, c40);  c41 = _mm256_fmadd_ps(a, b1, c41);
-        a = _mm256_broadcast_ss(ap + 5);
-        c50 = _mm256_fmadd_ps(a, b0, c50);  c51 = _mm256_fmadd_ps(a, b1, c51);
+    // 4× unrolled main loop: amortize loop overhead, one prefetch per 4 steps.
+    int p = 0;
+    for (; p + 4 <= k; p += 4) {
+        _mm_prefetch((const char*)(B + (p+8)*16),     _MM_HINT_T0);
+        _mm_prefetch((const char*)(B + (p+8)*16 + 8), _MM_HINT_T0);
+        NT_KSTEP(p+0); NT_KSTEP(p+1); NT_KSTEP(p+2); NT_KSTEP(p+3);
     }
+    for (; p < k; p++) NT_KSTEP(p);
+    #undef NT_KSTEP
 
     _mm256_storeu_ps(C + 0*ldc + 0, c00);  _mm256_storeu_ps(C + 0*ldc + 8, c01);
     _mm256_storeu_ps(C + 1*ldc + 0, c10);  _mm256_storeu_ps(C + 1*ldc + 8, c11);
