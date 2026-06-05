@@ -4645,6 +4645,65 @@ void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// PACKED QUANTIZED MATVEC — out[m] = Wq[m,k] @ x[k], weights stay packed
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The CPU/BLAS path dequantizes a whole GGUF tensor to dense f32 (×6-8 RAM) before
+// cblas_sgemv. nt_qmatvec keeps the weights packed in RAM and dequantizes each block
+// inline in registers — same math as gguf_dequant -> nt_blas_matvec, a fraction of
+// the memory and weight bandwidth. dtype = GGUF type code. Phase 1: Q4_0,
+// single-threaded. Mirrors the packed q6k_rows pattern in
+// examples/infer_gguf_metal.c and dequant_q4_0 in gguf.c.
+
+// IEEE half -> float (GGUF block scales are stored as f16).
+static float nt_f16_to_f32(uint16_t h) {
+    uint32_t s = (h >> 15) & 1, e = (h >> 10) & 0x1F, m = h & 0x3FF, bits;
+    if (e == 0) {
+        if (m == 0) bits = s << 31;
+        else { e = 127 - 15 + 1; while (!(m & 0x400)) { m <<= 1; e--; } m &= 0x3FF;
+               bits = (s << 31) | (e << 23) | (m << 13); }
+    } else if (e == 0x1F) bits = (s << 31) | (0xFFu << 23) | (m << 13);
+    else bits = (s << 31) | ((e - 15 + 127) << 23) | (m << 13);
+    float f; memcpy(&f, &bits, 4); return f;
+}
+
+// Q4_0: 18 B/block, 32 vals — f16 scale + 16 bytes of (lo,hi) nibbles, each (-8).
+static void nt_q4_0_rows(float *out, const uint8_t *W, const float *x,
+                         int r0, int r1, int k) {
+    int nb = k / 32;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 18;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 18;
+            float d = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+            const float *xb = x + (long)blk * 32;
+            for (int i = 0; i < 16; i++) {
+                int lo = (int)(b[2 + i] & 0x0F) - 8;
+                int hi = (int)(b[2 + i] >> 4)   - 8;
+                acc += d * (float)lo * xb[i];
+                acc += d * (float)hi * xb[i + 16];
+            }
+        }
+        out[row] = acc;
+    }
+}
+
+// Packed quantized matvec. dtype = GGUF type code. Returns 0 ok, -1 if the dtype
+// has no packed kernel yet (caller falls back to gguf_dequant -> nt_blas_matvec).
+int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
+               const float *x, int m, int k) {
+    switch (dtype) {
+    case 2: /* GGUF_TYPE_Q4_0 */
+        if (k % 32) return -1;
+        nt_q4_0_rows(out, Wq, x, 0, m, k);
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // NOTORCH LoRA — low-rank adapter implementation
 // ═══════════════════════════════════════════════════════════════════════════════
 //
