@@ -4689,15 +4689,61 @@ static void nt_q4_0_rows(float *out, const uint8_t *W, const float *x,
     }
 }
 
+// Q8_0: 34 B/block, 32 vals — f16 scale + 32 int8.
+static void nt_q8_0_rows(float *out, const uint8_t *W, const float *x,
+                         int r0, int r1, int k) {
+    int nb = k / 32;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 34;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 34;
+            float d = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+            const float *xb = x + (long)blk * 32;
+            for (int i = 0; i < 32; i++)
+                acc += d * (float)(int8_t)b[2 + i] * xb[i];
+        }
+        out[row] = acc;
+    }
+}
+
+// Q5_0: 22 B/block, 32 vals — f16 scale + 4 B high-bit word + 16 nibble bytes
+// (the 5th bit of each value comes from the high-bit word).
+static void nt_q5_0_rows(float *out, const uint8_t *W, const float *x,
+                         int r0, int r1, int k) {
+    int nb = k / 32;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 22;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 22;
+            float d = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+            uint32_t qh = (uint32_t)b[2] | ((uint32_t)b[3] << 8) |
+                          ((uint32_t)b[4] << 16) | ((uint32_t)b[5] << 24);
+            const uint8_t *qs = b + 6;
+            const float *xb = x + (long)blk * 32;
+            for (int j = 0; j < 16; j++) {
+                int lo = qs[j] & 0x0F, hi = qs[j] >> 4;
+                int hb0 = (qh >> j) & 1, hb1 = (qh >> (j + 16)) & 1;
+                acc += d * (float)((lo | (hb0 << 4)) - 16) * xb[j];
+                acc += d * (float)((hi | (hb1 << 4)) - 16) * xb[j + 16];
+            }
+        }
+        out[row] = acc;
+    }
+}
+
 // Packed quantized matvec. dtype = GGUF type code. Returns 0 ok, -1 if the dtype
 // has no packed kernel yet (caller falls back to gguf_dequant -> nt_blas_matvec).
 int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
                const float *x, int m, int k) {
     switch (dtype) {
-    case 2: /* GGUF_TYPE_Q4_0 */
-        if (k % 32) return -1;
-        nt_q4_0_rows(out, Wq, x, 0, m, k);
-        return 0;
+    case 2: /* GGUF_TYPE_Q4_0 */ if (k % 32) return -1;
+        nt_q4_0_rows(out, Wq, x, 0, m, k); return 0;
+    case 6: /* GGUF_TYPE_Q5_0 */ if (k % 32) return -1;
+        nt_q5_0_rows(out, Wq, x, 0, m, k); return 0;
+    case 8: /* GGUF_TYPE_Q8_0 */ if (k % 32) return -1;
+        nt_q8_0_rows(out, Wq, x, 0, m, k); return 0;
     default:
         return -1;
     }

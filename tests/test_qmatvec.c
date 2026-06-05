@@ -1,8 +1,9 @@
 /*
- * test_qmatvec.c — nt_qmatvec packed Q4_0 vs the dequant->cblas_sgemv oracle.
+ * test_qmatvec.c — nt_qmatvec packed quantized matvec vs the dequant->cblas oracle.
  *
- * The packed kernel must compute the same matvec as the established path
- * (gguf_dequant -> nt_blas_matvec), within f32 summation-order epsilon.
+ * For each quant format the packed kernel must compute the same matvec as the
+ * established path (independent dequant -> nt_blas_matvec), within f32
+ * summation-order epsilon (< 1e-3 abs on these scales).
  *
  * Build (neo / Darwin):
  *   cc -std=c11 -O2 -I. -DUSE_BLAS -DACCELERATE -DACCELERATE_NEW_LAPACK \
@@ -19,7 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* independent f16 -> f32 (so the oracle does not borrow the kernel's helper) */
+/* independent f16 -> f32 (oracle must not borrow the kernel's helper) */
 static float ref_f16(uint16_t h) {
     uint32_t s = (h >> 15) & 1, e = (h >> 10) & 0x1F, m = h & 0x3FF, b;
     if (e == 0) {
@@ -31,59 +32,79 @@ static float ref_f16(uint16_t h) {
     float f; memcpy(&f, &b, 4); return f;
 }
 
-/* independent Q4_0 dequant (mirrors gguf.c:dequant_q4_0, 18 B / 32 vals) */
-static void ref_dequant_q4_0(const uint8_t *src, float *dst, long n) {
-    long nb = n / 32;
-    for (long bk = 0; bk < nb; bk++) {
-        const uint8_t *bl = src + bk * 18;
-        uint16_t sh; memcpy(&sh, bl, 2);
+/* independent reference dequants (mirror gguf.c / wtf_kernels.c block layouts) */
+static void ref_q4_0(const uint8_t *s, float *d, long n) {
+    for (long bk = 0; bk < n / 32; bk++) {
+        const uint8_t *b = s + bk * 18; uint16_t sh; memcpy(&sh, b, 2);
         float sc = ref_f16(sh);
         for (int i = 0; i < 16; i++) {
-            int lo = (int)(bl[2 + i] & 0x0F) - 8;
-            int hi = (int)(bl[2 + i] >> 4)   - 8;
-            dst[bk * 32 + i]      = (float)lo * sc;
-            dst[bk * 32 + i + 16] = (float)hi * sc;
+            d[bk*32+i]    = (float)((int)(b[2+i] & 0x0F) - 8) * sc;
+            d[bk*32+i+16] = (float)((int)(b[2+i] >> 4)   - 8) * sc;
+        }
+    }
+}
+static void ref_q8_0(const uint8_t *s, float *d, long n) {
+    for (long bk = 0; bk < n / 32; bk++) {
+        const uint8_t *b = s + bk * 34; uint16_t sh; memcpy(&sh, b, 2);
+        float sc = ref_f16(sh);
+        for (int i = 0; i < 32; i++) d[bk*32+i] = (float)(int8_t)b[2+i] * sc;
+    }
+}
+static void ref_q5_0(const uint8_t *s, float *d, long n) {
+    for (long bk = 0; bk < n / 32; bk++) {
+        const uint8_t *b = s + bk * 22; uint16_t sh; memcpy(&sh, b, 2);
+        float sc = ref_f16(sh);
+        uint32_t qh = (uint32_t)b[2] | ((uint32_t)b[3]<<8) |
+                      ((uint32_t)b[4]<<16) | ((uint32_t)b[5]<<24);
+        const uint8_t *qs = b + 6;
+        for (int j = 0; j < 16; j++) {
+            int lo = qs[j] & 0x0F, hi = qs[j] >> 4;
+            int h0 = (qh>>j)&1, h1 = (qh>>(j+16))&1;
+            d[bk*32+j]    = (float)((lo | (h0<<4)) - 16) * sc;
+            d[bk*32+j+16] = (float)((hi | (h1<<4)) - 16) * sc;
         }
     }
 }
 
+typedef void (*deqfn)(const uint8_t *, float *, long);
+
+/* all three block-of-32 formats carry their f16 scale at block bytes [0..1] */
+static int run_fmt(const char *name, int dtype, int blkbytes, int blkvals, deqfn ref) {
+    int m = 512, k = 2048;
+    long nb = (long)k / blkvals, stride = nb * blkbytes;
+    uint8_t *W = malloc((long)m * stride);
+    for (long i = 0; i < (long)m * stride; i++) W[i] = (uint8_t)(rand() & 0xFF);
+    for (long row = 0; row < m; row++)            /* set a sane normal f16 scale */
+        for (long bk = 0; bk < nb; bk++) {
+            uint8_t *b = W + row*stride + bk*blkbytes; b[0] = 0x66; b[1] = 0x2A;
+        }
+    float *x = malloc(sizeof(float) * k);
+    for (int i = 0; i < k; i++) x[i] = (float)((double)rand()/RAND_MAX*2.0 - 1.0);
+
+    float *Wf = malloc(sizeof(float) * (long)m * k);
+    for (int row = 0; row < m; row++) ref(W + (long)row*stride, Wf + (long)row*k, k);
+    float *r = malloc(sizeof(float)*m), *g = malloc(sizeof(float)*m);
+    nt_blas_matvec(r, Wf, x, m, k);
+
+    int rc = nt_qmatvec(g, W, dtype, x, m, k), ok;
+    float maxabs = 0.0f;
+    if (rc != 0) { printf("FAIL  %-5s nt_qmatvec rc=%d\n", name, rc); ok = 0; }
+    else {
+        for (int i = 0; i < m; i++) { float dd = fabsf(r[i]-g[i]); if (dd>maxabs) maxabs = dd; }
+        ok = maxabs < 1e-3f;
+        printf("%-5s nt_qmatvec [m=%d k=%d] vs dequant->cblas: max abs err %.3g  %s\n",
+               name, m, k, maxabs, ok ? "PASS" : "FAIL");
+    }
+    free(W); free(x); free(Wf); free(r); free(g);
+    return ok ? 0 : 1;
+}
+
 int main(void) {
     srand(42);
-    int m = 512, k = 2048;                 /* k % 32 == 0 */
-    long nb = (long)k / 32;
-    long wbytes = (long)m * nb * 18;
-
-    uint8_t *W = malloc(wbytes);
-    for (long i = 0; i < wbytes; i++) W[i] = (uint8_t)(rand() & 0xFF);
-    /* deterministic normal f16 scale (0x2A66) per block — avoid inf/nan */
-    for (long row = 0; row < m; row++)
-        for (long bk = 0; bk < nb; bk++) {
-            uint8_t *b = W + (row * nb + bk) * 18; b[0] = 0x66; b[1] = 0x2A;
-        }
-
-    float *x = malloc(sizeof(float) * k);
-    for (int i = 0; i < k; i++) x[i] = (float)((double)rand() / RAND_MAX * 2.0 - 1.0);
-
-    /* oracle: dequant whole W to dense f32, then cblas matvec */
-    float *Wf = malloc(sizeof(float) * (long)m * k);
-    for (int row = 0; row < m; row++)
-        ref_dequant_q4_0(W + (long)row * nb * 18, Wf + (long)row * k, k);
-    float *ref = malloc(sizeof(float) * m), *got = malloc(sizeof(float) * m);
-    nt_blas_matvec(ref, Wf, x, m, k);
-
-    int rc = nt_qmatvec(got, W, 2 /* GGUF_TYPE_Q4_0 */, x, m, k);
-    if (rc != 0) { printf("FAIL: nt_qmatvec returned %d\n", rc); return 1; }
-
-    float maxabs = 0.0f; int worst = -1;
-    for (int i = 0; i < m; i++) {
-        float d = fabsf(ref[i] - got[i]);
-        if (d > maxabs) { maxabs = d; worst = i; }
-    }
-    printf("nt_qmatvec Q4_0 [m=%d k=%d] vs dequant->cblas: max abs err %.3g "
-           "(ref=%.5f got=%.5f @row %d)\n",
-           m, k, maxabs, worst >= 0 ? ref[worst] : 0, worst >= 0 ? got[worst] : 0, worst);
-
-    free(W); free(x); free(Wf); free(ref); free(got);
-    if (maxabs < 1e-3f) { printf("PASS\n"); return 0; }
-    printf("FAIL (max abs err >= 1e-3)\n"); return 1;
+    int fails = 0;
+    fails += run_fmt("Q4_0", 2, 18, 32, ref_q4_0);
+    fails += run_fmt("Q5_0", 6, 22, 32, ref_q5_0);
+    fails += run_fmt("Q8_0", 8, 34, 32, ref_q8_0);
+    if (fails == 0) { printf("ALL PASS\n"); return 0; }
+    printf("%d format(s) FAILED\n", fails); return 1;
 }
