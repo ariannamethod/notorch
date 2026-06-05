@@ -8,7 +8,7 @@
 //
 // Design:
 //   - 6×16 register-blocked micro-kernel (12 YMM accumulators, fits Skylake's 16-reg file)
-//   - Outer triple-loop with cache blocking (Mc=64, Kc=128, Nc=512) sized for 32KB L1d
+//   - Outer triple-loop with cache blocking (Mc=96, Kc=128, Nc=256) — B-panel L2-resident
 //   - Pack A and B into contiguous panels for streaming through micro-kernel
 //   - Pthread row-partitioning across the M dimension
 //
@@ -37,13 +37,23 @@ typedef enum { CblasRowMajor = 101, CblasColMajor = 102 } CBLAS_ORDER;
 typedef enum { CblasNoTrans = 111, CblasTrans = 112, CblasConjTrans = 113 } CBLAS_TRANSPOSE;
 
 // ── Tuning constants ──────────────────────────────────────────────────────
-// Block sizes for cache blocking. Sized for i5-8500T (32KB L1d, 256KB L2,
-// 9MB shared L3). Mc × Kc panel of A ≈ 32KB, Kc × Nc panel of B ≈ 256KB.
+// Block sizes for cache blocking, tuned by sweep on the i5-8500T (32KB L1d,
+// 256KB L2/core, 9MB shared L3, 6 cores no-SMT). Kc=128/Nc=256 keeps the
+// packed B-panel (Kc×Nc ≈ 128KB) inside the private L2, which cuts shared-L3
+// bandwidth contention across cores: vs Kc=256/Nc=1024 it lifts multi-thread
+// NN-forward shapes +5–12% at 6T (Janus FFN-down 188→208 GFLOP/s) for a small
+// (−6%) cost on one TN shape. Override via -DNT_SIMD_{MC,KC,NC} per target.
 #define NT_SIMD_MR 6     // micro-kernel row block (must match unrolled kernel)
 #define NT_SIMD_NR 16    // micro-kernel col block (= 2 × YMM width of 8)
+#ifndef NT_SIMD_MC
 #define NT_SIMD_MC 96    // outer M block — multiple of MR
-#define NT_SIMD_KC 256   // outer K block
-#define NT_SIMD_NC 1024  // outer N block — multiple of NR
+#endif
+#ifndef NT_SIMD_KC
+#define NT_SIMD_KC 128   // outer K block (B-panel resident in private L2)
+#endif
+#ifndef NT_SIMD_NC
+#define NT_SIMD_NC 256   // outer N block — multiple of NR
+#endif
 
 // Default thread count: capped by hw, env-overridable via NT_SIMD_THREADS.
 #ifndef NT_SIMD_MAX_THREADS
