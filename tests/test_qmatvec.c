@@ -122,7 +122,7 @@ static void set_q6k(uint8_t *b) { b[208]=0x66; b[209]=0x2A; }                   
 
 static int run_fmt(const char *name, int dtype, int blkbytes, int blkvals,
                    deqfn ref, setfn setblk) {
-    int m = 512, k = 2048;
+    int m = 4096, k = 2048;  // m*k = 8.4M > 4M threshold -> exercises the threaded path
     long nb = (long)k / blkvals, stride = nb * blkbytes;
     uint8_t *W = malloc((long)m * stride);
     for (long i = 0; i < (long)m * stride; i++) W[i] = (uint8_t)(rand() & 0xFF);
@@ -155,7 +155,7 @@ static int run_fmt(const char *name, int dtype, int blkbytes, int blkvals,
 
 /* F16 / F32 have no block structure — dedicated runners with sane weights. */
 static int run_f16(void) {
-    int m = 512, k = 2048;
+    int m = 4096, k = 2048;  // m*k = 8.4M > 4M threshold -> exercises the threaded path
     uint16_t *Wh = malloc(sizeof(uint16_t) * (long)m * k);
     for (long i = 0; i < (long)m * k; i++)            /* small normal f16, varied */
         Wh[i] = (uint16_t)((rand() & 0x8000) | 0x2000 | (rand() & 0x03FF));
@@ -177,7 +177,7 @@ static int run_f16(void) {
     return ok ? 0 : 1;
 }
 static int run_f32(void) {
-    int m = 512, k = 2048;
+    int m = 4096, k = 2048;  // m*k = 8.4M > 4M threshold -> exercises the threaded path
     float *W = malloc(sizeof(float)*(long)m*k);
     for (long i=0;i<(long)m*k;i++) W[i]=(float)((double)rand()/RAND_MAX*2.0-1.0);
     float *x = malloc(sizeof(float)*k);

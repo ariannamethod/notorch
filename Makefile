@@ -3,7 +3,7 @@
 
 CC = cc
 AR ?= ar
-CFLAGS = -O2 -Wall -Wextra -std=c11 -I.
+CFLAGS = -O2 -Wall -Wextra -std=c11 -pthread -I.
 
 # Detect platform
 UNAME := $(shell uname)
