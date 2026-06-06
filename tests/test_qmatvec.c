@@ -196,12 +196,43 @@ static int run_f32(void) {
     return ok?0:1;
 }
 
+/* int8 dynamic-activation-quant path vs the f32-dequant reference (APPROXIMATE:
+ * int8 activation quant trades a little accuracy for speed -> tolerance, not bit-close). */
+static int run_i8_q4_0(void) {
+    int m = 512, k = 2048;
+    long nb = (long)k / 32;
+    uint8_t *W = malloc((long)m * nb * 18);
+    for (long i = 0; i < (long)m * nb * 18; i++) W[i] = (uint8_t)(rand() & 0xFF);
+    for (long row = 0; row < m; row++)
+        for (long b = 0; b < nb; b++) { uint8_t *bl = W + (row*nb + b)*18; bl[0] = 0x66; bl[1] = 0x2A; }
+    float *x = malloc(sizeof(float) * k);
+    for (int i = 0; i < k; i++) x[i] = (float)((double)rand()/RAND_MAX*2.0 - 1.0);
+    float *ref = malloc(sizeof(float)*m), *got = malloc(sizeof(float)*m);
+    nt_qmatvec(ref, W, 2, x, m, k);                 /* f32 dequant = exact oracle */
+    int rc = nt_qmatvec_i8(got, W, 2, x, m, k), ok; /* int8 dynamic-quant approx */
+    if (rc != 0) { printf("FAIL  i8Q4_0 nt_qmatvec_i8 rc=%d\n", rc); ok = 0; }
+    else {
+        float maxabs = 0, maxref = 0;
+        for (int i = 0; i < m; i++) {
+            float dd = fabsf(ref[i]-got[i]); if (dd > maxabs) maxabs = dd;
+            float a  = fabsf(ref[i]);        if (a  > maxref) maxref = a;
+        }
+        float rel = maxref > 0 ? maxabs/maxref : maxabs;
+        ok = rel < 2e-2f;
+        printf("i8Q4_0 vs f32-dequant [m=%d k=%d] rel %.2g  %s (int8 approx, tol 2e-2)\n",
+               m, k, rel, ok ? "PASS" : "FAIL");
+    }
+    free(W); free(x); free(ref); free(got);
+    return ok ? 0 : 1;
+}
+
 int main(void) {
     srand(42);
     int fails = 0;
     fails += run_f32();
     fails += run_f16();
     fails += run_fmt("Q4_0", 2,  18,  32, ref_q4_0, set_s32);
+    fails += run_i8_q4_0();
     fails += run_fmt("Q5_0", 6,  22,  32, ref_q5_0, set_s32);
     fails += run_fmt("Q8_0", 8,  34,  32, ref_q8_0, set_s32);
     fails += run_fmt("Q4_K", 12, 144, 256, ref_q4_k, set_q4k);

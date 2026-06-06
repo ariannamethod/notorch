@@ -4895,6 +4895,67 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
     return 0;
 }
 
+// ── int8 dynamic-activation-quant matvec (the llama.cpp / MNN fast path) ─────────
+// Quantize the activation to per-32-block symmetric int8 once, then dot it against
+// the packed int4/int8 weights with INTEGER accumulation. APPROXIMATE: int8
+// activation quant trades a little accuracy for speed; nt_qmatvec (f32 dequant) is
+// the exact reference. Phase 2b: Q4_0, scalar (SDOT/VNNI + more dtypes next).
+
+// x[k] -> per-32-block symmetric int8: qa[k] (int8) + da[k/32] (block scales).
+static void nt_quant_act_q8(const float *x, int k, int8_t *qa, float *da) {
+    int nb = k / 32;
+    for (int b = 0; b < nb; b++) {
+        const float *xb = x + (long)b * 32;
+        float amax = 0.0f;
+        for (int i = 0; i < 32; i++) { float a = fabsf(xb[i]); if (a > amax) amax = a; }
+        float d  = amax / 127.0f;
+        float id = (d > 0.0f) ? 1.0f / d : 0.0f;
+        da[b] = d;
+        for (int i = 0; i < 32; i++) {
+            int q = (int)lrintf(xb[i] * id);
+            if (q > 127) q = 127; else if (q < -127) q = -127;
+            qa[(long)b * 32 + i] = (int8_t)q;
+        }
+    }
+}
+
+// Q4_0 int8-dot rows: packed weights (18 B/32) × pre-quantized int8 activation.
+static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 32;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 18;
+        float acc = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 18;
+            float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            const int8_t *qab = qa + (long)b * 32;
+            int32_t s = 0;
+            for (int i = 0; i < 16; i++) {
+                int lo = (int)(blk[2 + i] & 0x0F) - 8;
+                int hi = (int)(blk[2 + i] >> 4)   - 8;
+                s += lo * qab[i];
+                s += hi * qab[i + 16];
+            }
+            acc += d_w * da[b] * (float)s;
+        }
+        out[row] = acc;
+    }
+}
+
+int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
+                  const float *x, int m, int k) {
+    if (dtype != 2 || (k % 32)) return -1;   /* Phase 2b: Q4_0 only for now */
+    int nb = k / 32;
+    int8_t *qa = (int8_t *)malloc((size_t)k);
+    float  *da = (float *)malloc((size_t)nb * sizeof(float));
+    if (!qa || !da) { free(qa); free(da); return -1; }
+    nt_quant_act_q8(x, k, qa, da);
+    nt_q4_0_rows_i8(out, Wq, qa, da, 0, m, k);
+    free(qa); free(da);
+    return 0;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // NOTORCH LoRA — low-rank adapter implementation
 // ═══════════════════════════════════════════════════════════════════════════════

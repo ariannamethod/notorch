@@ -501,6 +501,14 @@ void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n);
 int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
                const float *x, int m, int k);
 
+// int8 dynamic-activation-quant matvec — the llama.cpp / MNN fast path. Quantizes
+// the activation to per-block int8 and dots it against the packed weights with
+// INTEGER accumulation (SDOT/VNNI-friendly). APPROXIMATE: a little accuracy traded
+// for speed; nt_qmatvec (f32 dequant) stays the exact reference. dtype = GGUF type
+// code. Returns 0 on success, -1 if no int8 kernel for the dtype yet.
+int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
+                  const float *x, int m, int k);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROFILER — op timing + memory tracking
 // ═══════════════════════════════════════════════════════════════════════════════
