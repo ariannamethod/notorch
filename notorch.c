@@ -4920,6 +4920,37 @@ static void nt_quant_act_q8(const float *x, int k, int8_t *qa, float *da) {
 }
 
 // Q4_0 int8-dot rows: packed weights (18 B/32) × pre-quantized int8 activation.
+// Block layout (per dequant_q4_0): byte i holds elem i (low nibble) and elem i+16
+// (high nibble), each value = nibble - 8. So lo nibbles pair with qa[0..15], hi with
+// qa[16..31]. Integer accumulation; per-block result scaled by d_w * d_a.
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+#include <arm_neon.h>
+static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 32;
+    const uint8x16_t mask0f = vdupq_n_u8(0x0F);
+    const int8x16_t  eight  = vdupq_n_s8(8);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 18;
+        float acc = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 18;
+            float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            const int8_t *qab = qa + (long)b * 32;
+            uint8x16_t packed = vld1q_u8(blk + 2);                        // 16 nibble-bytes
+            int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(packed, mask0f)), eight);  // elems 0..15
+            int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(packed, 4)), eight);     // elems 16..31
+            int8x16_t qlo = vld1q_s8(qab);                                // qa[0..15]
+            int8x16_t qhi = vld1q_s8(qab + 16);                           // qa[16..31]
+            int32x4_t s4 = vdupq_n_s32(0);
+            s4 = vdotq_s32(s4, lo, qlo);                                  // 16 int8-MAC
+            s4 = vdotq_s32(s4, hi, qhi);                                  // 16 int8-MAC
+            acc += d_w * da[b] * (float)vaddvq_s32(s4);                   // horizontal sum
+        }
+        out[row] = acc;
+    }
+}
+#else
 static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                             const float *da, int r0, int r1, int k) {
     int nb = k / 32;
@@ -4942,6 +4973,7 @@ static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
         out[row] = acc;
     }
 }
+#endif
 
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k) {
