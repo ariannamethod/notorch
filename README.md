@@ -303,7 +303,7 @@ on the `USE_BLAS` path, BitLinear dispatches to a single `cblas_sgemm(NoTrans, T
 
 **tests:** `tests/test_bitnet_ops.c` (118 gradient assertions) — ternary quantize correctness, STE identity backward, gradient flow through sequences, gradient numeric check, end-to-end training convergence of a tiny BitNet MLP.
 
-**reference:** [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) is a **pure-Python** BitNet b1.58 microGPT — 2.69M char-level, train_best **1.6226** / val **2.0314**, 10000 steps, zero NaN, 10 MB FP32 ternary-packing to ~1.4 MB. it's the algorithm reference, not a notorch build: notorch's own `nt_bit_linear` / `nt_bit_seq_linear` were validated against its numbers.
+**reference:** [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) is a **pure-Python** BitNet b1.58 microGPT — 2.69M char-level, train_best **1.6226** / val **2.0314**, 10000 steps, zero NaN, 10 MB FP32 ternary-packing to ~1.4 MB. it's an external algorithm reference, not a notorch build: notorch's own `nt_bit_linear` / `nt_bit_seq_linear` were validated against its numbers.
 
 ---
 
@@ -522,7 +522,7 @@ Override thread count via env: `NT_SIMD_THREADS=N`. Single-thread variant for de
 make test
 ```
 
-nine test binaries (run output is the source of truth for counts):
+ten test binaries (run output is the source of truth for counts):
 
 - **`tests/test_notorch.c`** — 47 tests: tensor mechanics, forward ops, tape recording/backward, optimizers, training integration, numerical gradient checks, infrastructure (save/load, LR schedules, NaN guard, gradient accumulation, Hebbian microlearning, profiler)
 - **`tests/test_vision.c`** — 48 tests: image loading (JPEG/PNG/BMP), resize / crop / normalize / flip / grayscale, ViT patch extraction, preprocessing pipelines, BPE encode/decode roundtrip
@@ -530,6 +530,7 @@ nine test binaries (run output is the source of truth for counts):
 - **`tests/test_rrpram_lr.c` / `test_metal_q4k.c` / `test_simd_correctness.c` / `test_simd_loss.c`** — low-rank RRPRAM, Apple-Silicon Q4_K matvec, and AVX2+FMA SIMD parity
 - **`tests/test_sigmoid_scale.c`** — 4 tests: `nt_sigmoid` forward/backward, `nt_scale_by_t` forward/backward (scalar × tensor with grad flowing to both)
 - **`tests/test_gguf.c`** — GGUF parser smoke test (F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K dequant)
+- **`tests/test_qmatvec.c`** — packed quantized matvec (`nt_qmatvec`) vs the dequant→cblas oracle across all 7 GGUF dtypes (F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K), relative error ~1e-6
 
 every gradient check uses finite differences to verify the analytic backward pass. if a single gradient is wrong, the test catches it. the Method trusts these tests more than it trusts most people.
 
@@ -597,6 +598,7 @@ nt_spa_modulate_logits(logits, V, conn, 0.3f);
 nt_blas_mm(C, A, B, m, k, n);            // C = A @ B
 nt_blas_mmT(C, A, BT, m, k, n);          // C = A @ B^T
 nt_blas_matvec(out, W, x, m, n);         // out = W @ x
+nt_qmatvec(out, Wq, dtype, x, m, k);     // out = W @ x — weights stay PACKED, no f32 blow-up
 ```
 
 ---
@@ -690,7 +692,7 @@ that's it. that's the whole thing. no virtual environment. no requirements.txt. 
 
 | platform | backend | command |
 |---|---|---|
-| macOS | Apple Accelerate (AMX / Neural Engine) | `make` |
+| macOS | Apple Accelerate (optimized Apple Silicon math) | `make` |
 | Linux | OpenBLAS | `make` |
 | **Android (Termux, ARM64)** | **OpenBLAS via Termux** | **`pkg install libopenblas binutils && make BLAS=1`** |
 | any POSIX | pure C fallback | `make cpu` |
@@ -699,7 +701,7 @@ that's it. that's the whole thing. no virtual environment. no requirements.txt. 
 
 the BLAS backends are optional. without them, everything still works — just uses naive C loops, which are fine for anything under ~50M parameters. for bigger stuff, BLAS gives you 10-50x on matmuls because it's using your CPU's vector instructions instead of pretending it's 1995.
 
-the macOS path uses Apple Accelerate, which means your MacBook's AMX coprocessor and Neural Engine are doing the heavy lifting. for free. no NVIDIA required. no drivers. no compatibility hell. just `make` and go.
+the macOS path uses Apple Accelerate, which gives you optimized Apple Silicon math paths for free. no NVIDIA required. no drivers. no compatibility hell. just `make` and go.
 
 ### Termux Edition (Android, ARM64)
 
@@ -728,6 +730,8 @@ notorch/
 ├── gguf.c                 # GGUF parser + F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K dequant
 ├── notorch_metal.h        # Apple Metal backend — packed Q4_K matvec, resident weights
 ├── notorch_metal.mm       # Obj-C++/MSL: Q4_K inline-dequant matvec on the Apple GPU
+├── notorch_simd.h         # in-house AVX2+FMA cblas shim (zero-dep x86_64 path)
+├── notorch_cuda.h / .cu   # CUDA / cuBLAS backend (USE_CUDA, separate lib)
 ├── Makefile               # build everything
 ├── examples/
 │   ├── bpe_2048_merges.txt   # reference BPE tokenizer (1792 merges, vocab 2048)
@@ -750,12 +754,15 @@ notorch/
 │   ├── test_vision.c         # 48 vision + BPE tests
 │   ├── test_bitnet_ops.c     # 118 BitNet/SwiGLU/SPA + STE checks
 │   ├── test_sigmoid_scale.c  # 4 tests for sigmoid + scale-by-tensor
-│   └── test_gguf.c           # GGUF parser smoke test
+│   ├── test_gguf.c           # GGUF parser smoke test
+│   └── test_qmatvec.c        # packed nt_qmatvec vs dequant→cblas, all 7 dtypes
+├── js-edition/            # notorch.js — pure-JS / WebGPU port (loads + runs GGUF)
+├── termux-edition/        # Android / Termux recipe over the same C tree (aarch64)
 ├── LICENSE                # GPL-3.0-or-later
 └── README.md              # this. you survived. congratulations.
 ```
 
-total: **~4800 lines of core C + ~2700 of tests + ~6000 of examples**. framework + vision + GGUF + BPE + five inference engines + eight training scripts + nine test binaries. tested on 26+ real model files across 6 architectures.
+total: **~4800 lines of core C + ~2700 of tests + ~6000 of examples**. framework + vision + GGUF + BPE + five inference engines + eight training scripts + ten test binaries + JS and Termux ports. tested on 26+ real model files across 6 architectures.
 
 ### models trained on notorch
 
