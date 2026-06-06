@@ -68,6 +68,20 @@ So the backend matrix is four-wide: **CPU/BLAS · AVX2-SIMD · CUDA · Metal**.
 Keep this section current as backends land — it is the first thing a new
 session reads.
 
+**Packed quantized inference on CPU.** Beyond the f32-dequant→cblas path,
+notorch has `nt_qmatvec(out, Wq, dtype, x, m, k)` — a CPU matvec that keeps
+GGUF weights *packed* in RAM and dequantizes each block inline, agnostic over
+the 7 common dtypes (F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K), verified bit-close to
+dequant→cblas. `nt_qmatvec_i8` is the int8 dynamic-activation-quant fast path
+(the llama.cpp/MNN trick: quantize the activation to int8, integer-dot via NEON
+SDOT / scalar — 22.9× over scalar f32-dequant on Q4_0 at the kernel level).
+**int8 is APPROXIMATE** — `nt_qmatvec` stays the exact reference and the int8
+path is opt-in. Row fan-out is gated high (≥4M elements): per-call pthread
+spawn + Apple-Silicon 2P+4E asymmetry make threading counterproductive for
+small single-token decode matvecs, so only large work threads (Makefile carries
+`-pthread`). As of 2026-06-07 the int8 NEON path covers Q4_0; Q8_0/K-quants,
+x86 AVX-VNNI, and the runner wiring land on `feat/nt-qmatvec-threaded`.
+
 The split exists because amlc-generated organism builds use `-lnotorch`
 without `-lcudart`/`-lcublas`. If CUDA symbols leak into `libnotorch.a`,
 organism builds break with unresolved `__cudaRegisterFatBinaryEnd` etc.
