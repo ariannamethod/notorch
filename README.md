@@ -772,7 +772,7 @@ total: **~4800 lines of core C + ~2700 of tests + ~6000 of examples**. framework
 | LLaMA 3 char-level (sample) | 9.5M | char (GQA+RoPE+SwiGLU) | 0.026 | reference char-level trainer |
 | Yent | 9.8M | char | 1.77 | cynical AI character |
 | LLaMA 3 BPE (sample) | 15.7M | BPE 2048 (MHA+RoPE+SwiGLU) | 0.022 | reference BPE trainer |
-| nanollama-notorch | 88.6M | BPE 32k (GQA+RoPE+SwiGLU) | 2.68 | Llama-3 nano — 11.5 days on a 2019 Intel i5, 0 NaN across 25K steps |
+| nanollama-notorch | 88.6M | BPE 32k (GQA+RoPE+SwiGLU) | 2.68 | Llama-3 nano — 11.5 days on a MacBook Pro 2019 Intel i5 8gb, 0 NaN across 25K steps |
 
 all trained from scratch on 8 GB Mac. no Python. no pip. Chuck optimizer. (the 88.6M run is the ceiling of the "train it on the laptop you own" regime: 22.86M FineWeb-Edu tokens, train 3.16 → CPT 2.68, then SFT'd to a Method voice — `ariannamethod/nanollama-notorch`.)
 
