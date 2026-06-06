@@ -8,6 +8,8 @@
 #include <string.h>
 #include <float.h>
 #include <sys/time.h>
+#include <pthread.h>
+#include <unistd.h>
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BLAS BACKEND
@@ -4817,35 +4819,173 @@ static void nt_f16_rows(float *out, const uint8_t *W, const float *x,
     }
 }
 
-// Packed quantized matvec. dtype = GGUF type code. Returns 0 ok, -1 if the dtype
+// F32 dense dot as a range kernel, so the agnostic entry threads like the rest.
+static void nt_f32_rows(float *out, const uint8_t *W, const float *x,
+                        int r0, int r1, int k) {
+    const float *Wf = (const float *)W;
+    for (int row = r0; row < r1; row++) {
+        const float *r = Wf + (long)row * k;
+        float acc = 0.0f;
+        for (int j = 0; j < k; j++) acc += r[j] * x[j];
+        out[row] = acc;
+    }
+}
+
+typedef void (*nt_qrows_fn)(float *, const uint8_t *, const float *, int, int, int);
+
+// Map a GGUF dtype to its packed row-kernel, or NULL if unsupported / bad shape.
+static nt_qrows_fn nt_qrows_for(int dtype, int k) {
+    switch (dtype) {
+    case 0:  return nt_f32_rows;                          /* F32  */
+    case 1:  return nt_f16_rows;                          /* F16  */
+    case 2:  return (k % 32)  ? NULL : nt_q4_0_rows;      /* Q4_0 */
+    case 6:  return (k % 32)  ? NULL : nt_q5_0_rows;      /* Q5_0 */
+    case 8:  return (k % 32)  ? NULL : nt_q8_0_rows;      /* Q8_0 */
+    case 12: return (k % 256) ? NULL : nt_q4_k_rows;      /* Q4_K */
+    case 14: return (k % 256) ? NULL : nt_q6_k_rows;      /* Q6_K */
+    default: return NULL;
+    }
+}
+
+#define NT_QMV_MAX_THREADS 16
+
+typedef struct {
+    nt_qrows_fn fn; float *out; const uint8_t *Wq; const float *x;
+    int r0, r1, k;
+} nt_qjob;
+
+static void *nt_qworker(void *p) {
+    nt_qjob *j = (nt_qjob *)p;
+    j->fn(j->out, j->Wq, j->x, j->r0, j->r1, j->k);
+    return NULL;
+}
+
+// Packed quantized matvec, parallelized across rows (rows are independent and
+// write disjoint out[]). dtype = GGUF type code. Returns 0 ok, -1 if the dtype
 // has no packed kernel yet (caller falls back to gguf_dequant -> nt_blas_matvec).
 int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
                const float *x, int m, int k) {
-    switch (dtype) {
-    case 0: { /* GGUF_TYPE_F32 — already dense f32, plain dot (agnostic entry) */
-        const float *Wf = (const float *)Wq;
-        for (int row = 0; row < m; row++) {
-            const float *r = Wf + (long)row * k;
-            float acc = 0.0f;
-            for (int j = 0; j < k; j++) acc += r[j] * x[j];
-            out[row] = acc;
+    nt_qrows_fn fn = nt_qrows_for(dtype, k);
+    if (!fn) return -1;
+
+    int nt = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (nt < 1) nt = 1;
+    if (nt > NT_QMV_MAX_THREADS) nt = NT_QMV_MAX_THREADS;
+    if (nt > m) nt = m;
+    // Per-call pthread_create + the 2P+4E asymmetry of Apple-Silicon-class CPUs make
+    // fan-out counterproductive for small single-token decode matvecs (measured ~6%/noise
+    // on a 360M model). Gate it high: only large matvecs (big models / batched work) thread,
+    // where the spawn cost amortizes; small decode stays single-thread.
+    if (nt <= 1 || (long)m * k < (4L << 20)) { fn(out, Wq, x, 0, m, k); return 0; }
+
+    pthread_t th[NT_QMV_MAX_THREADS];
+    nt_qjob   jobs[NT_QMV_MAX_THREADS];
+    int per = (m + nt - 1) / nt, launched = 0;
+    for (int t = 0; t < nt; t++) {
+        int r0 = t * per, r1 = (r0 + per > m) ? m : r0 + per;
+        if (r0 >= m) break;
+        jobs[t] = (nt_qjob){ fn, out, Wq, x, r0, r1, k };
+        if (pthread_create(&th[t], NULL, nt_qworker, &jobs[t]) != 0) {
+            fn(out, Wq, x, r0, m, k);   // create failed: run the rest inline
+            break;
         }
-        return 0;
+        launched++;
     }
-    case 1:  /* GGUF_TYPE_F16  */ nt_f16_rows (out, Wq, x, 0, m, k); return 0;
-    case 2:  /* GGUF_TYPE_Q4_0 */ if (k % 32)  return -1;
-        nt_q4_0_rows(out, Wq, x, 0, m, k); return 0;
-    case 6:  /* GGUF_TYPE_Q5_0 */ if (k % 32)  return -1;
-        nt_q5_0_rows(out, Wq, x, 0, m, k); return 0;
-    case 8:  /* GGUF_TYPE_Q8_0 */ if (k % 32)  return -1;
-        nt_q8_0_rows(out, Wq, x, 0, m, k); return 0;
-    case 12: /* GGUF_TYPE_Q4_K */ if (k % 256) return -1;
-        nt_q4_k_rows(out, Wq, x, 0, m, k); return 0;
-    case 14: /* GGUF_TYPE_Q6_K */ if (k % 256) return -1;
-        nt_q6_k_rows(out, Wq, x, 0, m, k); return 0;
-    default:
-        return -1;
+    for (int t = 0; t < launched; t++) pthread_join(th[t], NULL);
+    return 0;
+}
+
+// ── int8 dynamic-activation-quant matvec (the llama.cpp / MNN fast path) ─────────
+// Quantize the activation to per-32-block symmetric int8 once, then dot it against
+// the packed int4/int8 weights with INTEGER accumulation. APPROXIMATE: int8
+// activation quant trades a little accuracy for speed; nt_qmatvec (f32 dequant) is
+// the exact reference. Phase 2b: Q4_0, scalar (SDOT/VNNI + more dtypes next).
+
+// x[k] -> per-32-block symmetric int8: qa[k] (int8) + da[k/32] (block scales).
+static void nt_quant_act_q8(const float *x, int k, int8_t *qa, float *da) {
+    int nb = k / 32;
+    for (int b = 0; b < nb; b++) {
+        const float *xb = x + (long)b * 32;
+        float amax = 0.0f;
+        for (int i = 0; i < 32; i++) { float a = fabsf(xb[i]); if (a > amax) amax = a; }
+        float d  = amax / 127.0f;
+        float id = (d > 0.0f) ? 1.0f / d : 0.0f;
+        da[b] = d;
+        for (int i = 0; i < 32; i++) {
+            int q = (int)lrintf(xb[i] * id);
+            if (q > 127) q = 127; else if (q < -127) q = -127;
+            qa[(long)b * 32 + i] = (int8_t)q;
+        }
     }
+}
+
+// Q4_0 int8-dot rows: packed weights (18 B/32) × pre-quantized int8 activation.
+// Block layout (per dequant_q4_0): byte i holds elem i (low nibble) and elem i+16
+// (high nibble), each value = nibble - 8. So lo nibbles pair with qa[0..15], hi with
+// qa[16..31]. Integer accumulation; per-block result scaled by d_w * d_a.
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+#include <arm_neon.h>
+static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 32;
+    const uint8x16_t mask0f = vdupq_n_u8(0x0F);
+    const int8x16_t  eight  = vdupq_n_s8(8);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 18;
+        float acc = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 18;
+            float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            const int8_t *qab = qa + (long)b * 32;
+            uint8x16_t packed = vld1q_u8(blk + 2);                        // 16 nibble-bytes
+            int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(packed, mask0f)), eight);  // elems 0..15
+            int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(packed, 4)), eight);     // elems 16..31
+            int8x16_t qlo = vld1q_s8(qab);                                // qa[0..15]
+            int8x16_t qhi = vld1q_s8(qab + 16);                           // qa[16..31]
+            int32x4_t s4 = vdupq_n_s32(0);
+            s4 = vdotq_s32(s4, lo, qlo);                                  // 16 int8-MAC
+            s4 = vdotq_s32(s4, hi, qhi);                                  // 16 int8-MAC
+            acc += d_w * da[b] * (float)vaddvq_s32(s4);                   // horizontal sum
+        }
+        out[row] = acc;
+    }
+}
+#else
+static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 32;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 18;
+        float acc = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 18;
+            float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            const int8_t *qab = qa + (long)b * 32;
+            int32_t s = 0;
+            for (int i = 0; i < 16; i++) {
+                int lo = (int)(blk[2 + i] & 0x0F) - 8;
+                int hi = (int)(blk[2 + i] >> 4)   - 8;
+                s += lo * qab[i];
+                s += hi * qab[i + 16];
+            }
+            acc += d_w * da[b] * (float)s;
+        }
+        out[row] = acc;
+    }
+}
+#endif
+
+int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
+                  const float *x, int m, int k) {
+    if (dtype != 2 || (k % 32)) return -1;   /* Phase 2b: Q4_0 only for now */
+    int nb = k / 32;
+    int8_t *qa = (int8_t *)malloc((size_t)k);
+    float  *da = (float *)malloc((size_t)nb * sizeof(float));
+    if (!qa || !da) { free(qa); free(da); return -1; }
+    nt_quant_act_q8(x, k, qa, da);
+    nt_q4_0_rows_i8(out, Wq, qa, da, 0, m, k);
+    free(qa); free(da);
+    return 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

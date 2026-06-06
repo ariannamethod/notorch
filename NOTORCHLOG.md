@@ -13,6 +13,31 @@ Newest entries on top.
 
 ---
 
+## 2026-06-07 — Phase 2: gated multi-thread fan-out + int8 dynamic-activation-quant matvec (Q4_0, 22.9×)
+
+Two speed paths layered onto `nt_qmatvec`, branch `feat/nt-qmatvec-threaded`.
+
+**(2a) fn-dispatch + gated multi-thread.** `nt_qmatvec` is now a function-pointer dispatch (`nt_qrows_for`)
+over per-dtype row kernels, plus a pthread row fan-out. Naive per-call fan-out turned out **counterproductive
+for small single-token decode matvecs** — measured ~6%/noise on a 360M model: per-call `pthread_create` plus the
+2P+4E asymmetry of Apple-Silicon CPUs eat the parallelism (even-split waits on the slow E-cores). So it is
+**gated high (≥4M elements)**: only large matvecs (big models / batched) thread; small decode stays
+single-thread. The fn-dispatch is clean groundwork the int8 kernels plug into. `Makefile` gains `-pthread`
+(glibc-Linux linkage; no-op on macOS/Termux libc). Commit `9096051`.
+
+**(2b) int8 dynamic-activation-quant matvec — `nt_qmatvec_i8`.** The llama.cpp/MNN fast path: quantize the
+activation to per-32-block symmetric int8 once (`nt_quant_act_q8`: `d_a = amax/127`, `qa = round(x/d_a)`), then
+dot it against the **packed** Q4_0 weights with INTEGER accumulation; per-block result scaled by `d_w·d_a`.
+NEON **SDOT** (`vdotq_s32`, 4 int8-MAC/instr; `__ARM_FEATURE_DOTPROD`, default on Apple Silicon) with a scalar
+`#else` fallback — weights unpacked to int8 in-register (`nibble−8`), dotted against the int8 activation,
+horizontal-summed. **Measured single-thread on neo (A18 Pro), `tests/bench_qmatvec.c`: f32-dequant
+1.794 ms/call → int8-dot 0.078 ms/call = 22.9×.** Same matvec result (rel 0.0028 vs the exact f32 reference):
+int8 activation quant is **APPROXIMATE**, so `nt_qmatvec` (f32 dequant) stays the exact path and `nt_qmatvec_i8`
+is an opt-in fast path. `notorch_test` 47/47. Commits `71eb92d` (scalar) / `bf87651` (NEON SDOT).
+
+Kernel-level numbers. NEXT: wire `nt_qmatvec_i8` end-to-end into the runners (WTForacle Q4_0), extend to
+Q8_0 / K-quants, add x86 AVX-VNNI, then merge Phase 2 to main.
+
 ## 2026-06-06 — nt_qmatvec: agnostic packed quantized CPU matvec (Q4_0/Q5_0/Q8_0/Q4_K/Q6_K)
 
 The CPU/BLAS/SIMD inference path dequantized every GGUF tensor to dense f32 (×6-8 RAM) before
