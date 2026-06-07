@@ -837,7 +837,7 @@ the appendix. these aren't notorch — they're larger Arianna Method engines tha
 
 - [**Arianna**](https://github.com/ariannamethod/arianna.c) — Arianna.
 - [**WTForacle**](https://github.com/ariannamethod/WTForacle) — SmolLM2-360M Q4_0, a single Go binary that runs on notorch through cgo. first organism on the packed CPU matvec: weights kept packed via `nt_qmatvec`, no f32 blow-up — the obkatka cut RSS 1.6 GB → 588 MB. charismatic, hand-written dataset.
-- [**doe**](https://github.com/ariannamethod/doe) — Democracy of Experts (Janus). wraps any GGUF read-only and grows a living Hebbian LoRA **parliament** on top of it (θ = ε + γ + αδ): experts vote per token, are born by mitosis and die by apoptosis. notorch is its Hebbian training substrate. our classic.
+- [**doe**](https://github.com/ariannamethod/doe) — Democracy of Experts (Janus). wraps any GGUF read-only and grows a living Hebbian LoRA **parliament** on top of it (θ = ε + γ + αδ): experts vote per token, are born by mitosis and die by apoptosis. notorch is its Hebbian training substrate — and now its packed inference matvec too: weights stay packed via `nt_qmatvec` (vendored inline, single file), no f32 blow-up — RSS ×2.27 on a 360M personality. our classic.
 - [**q**](https://github.com/ariannamethod/q) — PostGPT-Q resonant reasoning engine: triple attention + DoE parliament, 2M-param C inference.
 - [**caveLLMan**](https://github.com/ariannamethod/caveLLMan) — a colony of char-level LMs that talk, reproduce by weight-blending, and die under population pressure. notorch is the per-cave autograd + microtrain backend.
 - [**pitomadom.c**](https://github.com/ariannamethod/pitomadom.c) — Hebrew Root Resonance Engine, Janus architecture.
