@@ -847,6 +847,8 @@ the appendix. these aren't notorch — they're larger Arianna Method engines tha
 - [**dario**](https://github.com/ariannamethod/dario) — resonance OS (7 forces, 6 Kuramoto chambers, SARTRE). notorch runs the 176M Janus at its center.
 - [**metaharmonix**](https://github.com/ariannamethod/metaharmonix) — the Arianna Method terminal; notorch is baked in, so the shell ships a tensor library.
 - [**janus**](https://github.com/ariannamethod/janus) — the Janus Architecture itself.
+- [**yent.aml**](https://github.com/ariannamethod/yent.aml) — Janus 176M Yent SFT inference written in AML, linking notorch + libaml (not vendored). Two faces: Janus (triple attention) and Janus-R (a 12-step bidirectional associative resonator). notorch is the linked tensor/matvec backend; the language carries the Dario field on top.
+- [**resonance.aml**](https://github.com/ariannamethod/resonance.aml) — Resonance 200M, the other face of Yent: dual attention (Content + RRPRAM low-rank), in AML, linking notorch + libaml. notorch's RRPRAM low-rank op (33) was trained at scale on this model — the LoRA SFT that drove loss 3.52 → 0.59.
 - [**nanodurov**](https://github.com/ariannamethod/nanodurov) — a 15.7M BPE LLaMA on notorch that also happens to be a Telegram client.
 
 if you trained something on notorch and it's not here, open a PR.
