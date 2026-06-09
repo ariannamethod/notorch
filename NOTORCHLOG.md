@@ -13,6 +13,19 @@ Newest entries on top.
 
 ---
 
+## 2026-06-09 — Image ops: conv2d (im2col + GEMM) + group norm (forward, for diffusion)
+
+`nt_im2col` / `nt_conv2d` / `nt_group_norm` added to `notorch.c` (declared in `notorch.h`) — the
+image-NN ops notorch lacked, forward-only, companions to `nt_qmatvec` (pre-trained weights, no tape).
+
+- **`nt_conv2d`** = `nt_im2col` (zero-padded unfold) → a single `nt_blas_mm` GEMM (weight `[Cout, Cin·kH·kW]` @ col `[K, Hout·Wout]`) → optional per-channel bias.
+- **`nt_group_norm`** = per-group mean/var over `(C/num_groups)·H·W` → normalize → per-channel affine (`gamma`/`beta` nullable). Portable plain-C (no vDSP); `out` may alias `in`.
+
+Motivation: yent.yo's BK-SDM diffusion runs on ONNX Runtime because notorch had no conv2d/group_norm —
+this is step one toward running it on notorch. Reference: yent.yo's `accel.c`, ported portable.
+Tests in `tests/test_vision.c` (conv2d 3×3 → [12,16,24,28] + bias; group_norm 2-group {−1,+1} + 1-group affine):
+**test_vision 61/61, notorch_test 47/47.**
+
 ## 2026-06-07 — Phase 2: gated multi-thread fan-out + int8 dynamic-activation-quant matvec (Q4_0, 22.9×)
 
 Two speed paths layered onto `nt_qmatvec`, branch `feat/nt-qmatvec-threaded`.

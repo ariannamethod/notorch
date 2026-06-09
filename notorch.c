@@ -4989,6 +4989,90 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// IMAGE OPS — conv2d (im2col + GEMM) + group norm — forward-only inference ops
+// for diffusion engines (Stable-Diffusion UNet/VAE). Companions to nt_qmatvec:
+// pre-trained weights, no tape. The image-NN ops notorch lacked.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// nt_im2col — unfold [Cin,Hin,Win] into columns [Cin*kH*kW, Hout*Wout] so a
+// convolution becomes a single GEMM. Out-of-range taps are zero (padding).
+void nt_im2col(float *col, const float *in, int Cin, int Hin, int Win,
+               int kH, int kW, int stride, int padding) {
+    int Hout = (Hin + 2 * padding - kH) / stride + 1;
+    int Wout = (Win + 2 * padding - kW) / stride + 1;
+    int col_cols = Hout * Wout;
+    for (int c = 0; c < Cin; c++)
+        for (int kh = 0; kh < kH; kh++)
+            for (int kw = 0; kw < kW; kw++) {
+                int row = (c * kH + kh) * kW + kw;
+                for (int oh = 0; oh < Hout; oh++)
+                    for (int ow = 0; ow < Wout; ow++) {
+                        int ih = oh * stride - padding + kh;
+                        int iw = ow * stride - padding + kw;
+                        float val = 0.0f;
+                        if (ih >= 0 && ih < Hin && iw >= 0 && iw < Win)
+                            val = in[(c * Hin + ih) * Win + iw];
+                        col[row * col_cols + oh * Wout + ow] = val;
+                    }
+            }
+}
+
+// nt_conv2d — out[Cout,Hout,Wout] = weight[Cout, Cin*kH*kW] @ im2col(in) + bias.
+// weight is the standard [Cout,Cin,kH,kW] tensor row-major (== [Cout, Cin*kH*kW]).
+// bias may be NULL. Returns 0, or -1 on bad geometry / allocation failure.
+int nt_conv2d(float *out, const float *in, const float *weight, const float *bias,
+              int Cin, int Hin, int Win, int Cout, int kH, int kW, int stride, int padding) {
+    int Hout = (Hin + 2 * padding - kH) / stride + 1;
+    int Wout = (Win + 2 * padding - kW) / stride + 1;
+    if (Hout <= 0 || Wout <= 0) return -1;
+    int K = Cin * kH * kW;
+    int N = Hout * Wout;
+    float *col = (float *)malloc((size_t)K * N * sizeof(float));
+    if (!col) return -1;
+    nt_im2col(col, in, Cin, Hin, Win, kH, kW, stride, padding);
+    nt_blas_mm(out, weight, col, Cout, K, N);   /* [Cout,K] @ [K,N] -> [Cout,N] */
+    if (bias) {
+        for (int co = 0; co < Cout; co++) {
+            float b = bias[co];
+            float *op = out + (size_t)co * N;
+            for (int n = 0; n < N; n++) op[n] += b;
+        }
+    }
+    free(col);
+    return 0;
+}
+
+// nt_group_norm — GroupNorm over [C,H,W]: split C into num_groups, normalize each
+// group over (C/num_groups)*H*W, then per-channel affine (gamma/beta may be NULL).
+// out may alias in. Returns 0, or -1 on bad args.
+int nt_group_norm(float *out, const float *in, const float *gamma, const float *beta,
+                  int C, int H, int W, int num_groups, float eps) {
+    if (num_groups <= 0 || C % num_groups != 0) return -1;
+    int gc = C / num_groups;
+    int spatial = H * W;
+    long count = (long)gc * spatial;
+    if (count <= 0) return -1;
+    for (int g = 0; g < num_groups; g++) {
+        int c0 = g * gc;
+        const float *base = in + (size_t)c0 * spatial;
+        double sum = 0.0, sumsq = 0.0;
+        for (long i = 0; i < count; i++) { double v = base[i]; sum += v; sumsq += v * v; }
+        float mean = (float)(sum / count);
+        float var = (float)(sumsq / count - (double)mean * mean);
+        if (var < 0.0f) var = 0.0f;
+        float inv = 1.0f / sqrtf(var + eps);
+        for (int c = c0; c < c0 + gc; c++) {
+            float wsc = (gamma ? gamma[c] : 1.0f) * inv;
+            float wsh = (beta ? beta[c] : 0.0f) - mean * wsc;
+            const float *ip = in + (size_t)c * spatial;
+            float *op = out + (size_t)c * spatial;
+            for (int s = 0; s < spatial; s++) op[s] = ip[s] * wsc + wsh;
+        }
+    }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // NOTORCH LoRA — low-rank adapter implementation
 // ═══════════════════════════════════════════════════════════════════════════════
 //

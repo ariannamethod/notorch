@@ -510,6 +510,19 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k);
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// IMAGE OPS — forward-only conv2d + group norm for diffusion inference engines
+// ═══════════════════════════════════════════════════════════════════════════════
+// Unfold [Cin,Hin,Win] into columns [Cin*kH*kW, Hout*Wout] (im2col).
+void nt_im2col(float *col, const float *in, int Cin, int Hin, int Win,
+               int kH, int kW, int stride, int padding);
+// out[Cout,Hout,Wout] = weight[Cout,Cin*kH*kW] @ im2col(in) + bias. bias may be NULL.
+int nt_conv2d(float *out, const float *in, const float *weight, const float *bias,
+              int Cin, int Hin, int Win, int Cout, int kH, int kW, int stride, int padding);
+// GroupNorm over [C,H,W] with num_groups; per-channel affine (gamma/beta may be NULL).
+int nt_group_norm(float *out, const float *in, const float *gamma, const float *beta,
+                  int C, int H, int W, int num_groups, float eps);
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // PROFILER — op timing + memory tracking
 // ═══════════════════════════════════════════════════════════════════════════════
 
