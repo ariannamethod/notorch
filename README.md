@@ -850,6 +850,7 @@ the appendix. these aren't notorch — they're larger Arianna Method engines tha
 - [**yent.aml**](https://github.com/ariannamethod/yent.aml) — Janus 176M Yent SFT inference written in AML, linking notorch + libaml (not vendored). Two faces: Janus (triple attention) and Janus-R (a 12-step bidirectional associative resonator). notorch is the linked tensor/matvec backend; the language carries the Dario field on top.
 - [**resonance.aml**](https://github.com/ariannamethod/resonance.aml) — Resonance 200M, the other face of Yent: dual attention (Content + RRPRAM low-rank), in AML, linking notorch + libaml. notorch's RRPRAM low-rank op (33) was trained at scale on this model — the LoRA SFT that drove loss 3.52 → 0.59.
 - [**nanodurov**](https://github.com/ariannamethod/nanodurov) — a 15.7M BPE LLaMA on notorch that also happens to be a Telegram client.
+- [**yent.yo**](https://github.com/ariannamethod/yent.yo) — an AI artist that argues back: two from-scratch nanollama Yents + a BK-SDM diffusion model paint an oppositional reaction to your prompt. **The first organism on notorch's image op set** — both the dual-Yent LLMs and the Stable-Diffusion CLIP→UNet→VAE run on notorch (`-tags notorch`), exercising `nt_conv2d`, `nt_group_norm`, `nt_attention` and `nt_upsample_nearest` (added in v4.0.0). The whole pipeline runs end-to-end, bit-identical to the in-repo accel.c kernels.
 
 if you trained something on notorch and it's not here, open a PR.
 
