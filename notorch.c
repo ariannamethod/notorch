@@ -5072,6 +5072,45 @@ int nt_group_norm(float *out, const float *in, const float *gamma, const float *
     return 0;
 }
 
+// nt_upsample_nearest — nearest-neighbour upsample of [C,H,W] -> [C,H*scale,W*scale].
+// The UNet decoder / VAE up-blocks upsample then convolve.
+void nt_upsample_nearest(float *out, const float *in, int C, int H, int W, int scale) {
+    int Ho = H * scale, Wo = W * scale;
+    for (int c = 0; c < C; c++) {
+        const float *ip = in + (size_t)c * H * W;
+        float *op = out + (size_t)c * Ho * Wo;
+        for (int oh = 0; oh < Ho; oh++) {
+            const float *irow = ip + (size_t)(oh / scale) * W;
+            float *orow = op + (size_t)oh * Wo;
+            for (int ow = 0; ow < Wo; ow++) orow[ow] = irow[ow / scale];
+        }
+    }
+}
+
+// nt_attention — scaled dot-product attention (single head), forward inference.
+// Q[T,d], K[S,d], V[S,d] -> out[T,d] = softmax(Q @ K^T / sqrt(d)) @ V. Self-attention:
+// S == T (K,V from the same features). Cross-attention: S = context length (e.g. CLIP
+// tokens) — the conditioning path of a diffusion UNet. -1 on bad args / alloc failure.
+int nt_attention(float *out, const float *Q, const float *K, const float *V, int T, int S, int d) {
+    if (T <= 0 || S <= 0 || d <= 0) return -1;
+    float *scores = (float *)malloc((size_t)T * S * sizeof(float));
+    if (!scores) return -1;
+    nt_blas_mmT(scores, Q, K, T, d, S);          /* scores[T,S] = Q[T,d] @ K[S,d]^T */
+    float scale = 1.0f / sqrtf((float)d);
+    for (int t = 0; t < T; t++) {
+        float *row = scores + (size_t)t * S;
+        float mx = row[0] * scale;
+        for (int s = 1; s < S; s++) { float v = row[s] * scale; if (v > mx) mx = v; }
+        float sum = 0.0f;
+        for (int s = 0; s < S; s++) { float e = expf(row[s] * scale - mx); row[s] = e; sum += e; }
+        float inv = 1.0f / sum;
+        for (int s = 0; s < S; s++) row[s] *= inv;
+    }
+    nt_blas_mm(out, scores, V, T, S, d);          /* out[T,d] = scores[T,S] @ V[S,d] */
+    free(scores);
+    return 0;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // NOTORCH LoRA — low-rank adapter implementation
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -521,6 +521,10 @@ int nt_conv2d(float *out, const float *in, const float *weight, const float *bia
 // GroupNorm over [C,H,W] with num_groups; per-channel affine (gamma/beta may be NULL).
 int nt_group_norm(float *out, const float *in, const float *gamma, const float *beta,
                   int C, int H, int W, int num_groups, float eps);
+// Nearest-neighbour upsample [C,H,W] -> [C,H*scale,W*scale].
+void nt_upsample_nearest(float *out, const float *in, int C, int H, int W, int scale);
+// Scaled dot-product attention (single head): Q[T,d], K[S,d], V[S,d] -> out[T,d]. Self/cross.
+int nt_attention(float *out, const float *Q, const float *K, const float *V, int T, int S, int d);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROFILER — op timing + memory tracking

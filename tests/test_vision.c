@@ -335,6 +335,37 @@ static void test_group_norm(void) {
     ASSERT_NEAR(out[3],  3.6833f, 2e-3f, "gn 1grp affine [3] =  3.683");
 }
 
+static void test_upsample(void) {
+    printf("\n-- upsample (nearest) --\n");
+    float in[4]  = {1,2, 3,4};        // 1ch 2x2
+    float out[16] = {0};
+    nt_upsample_nearest(out, in, 1, 2, 2, 2);  // -> 4x4, each pixel duplicated 2x2
+    ASSERT_NEAR(out[0],  1.0f, 1e-6f, "up[0,0] = 1");
+    ASSERT_NEAR(out[3],  2.0f, 1e-6f, "up[0,3] = 2");
+    ASSERT_NEAR(out[5],  1.0f, 1e-6f, "up[1,1] = 1");
+    ASSERT_NEAR(out[8],  3.0f, 1e-6f, "up[2,0] = 3");
+    ASSERT_NEAR(out[15], 4.0f, 1e-6f, "up[3,3] = 4");
+}
+
+static void test_attention(void) {
+    printf("\n-- attention (scaled dot-product) --\n");
+    // self-attn T=S=2, d=2; Q=K=identity -> softmax(I/sqrt2) @ V.
+    float Q[4] = {1,0, 0,1}, K[4] = {1,0, 0,1}, V[4] = {1,2, 3,4};
+    float out[4] = {0};
+    int rc = nt_attention(out, Q, K, V, 2, 2, 2);
+    ASSERT(rc == 0, "nt_attention returns 0");
+    ASSERT_NEAR(out[0], 1.6605f, 5e-3f, "attn out[0,0]");
+    ASSERT_NEAR(out[1], 2.6605f, 5e-3f, "attn out[0,1]");
+    ASSERT_NEAR(out[2], 2.3395f, 5e-3f, "attn out[1,0]");
+    ASSERT_NEAR(out[3], 3.3395f, 5e-3f, "attn out[1,1]");
+    // cross-attn T=1, S=2 (context) -> the conditioning path.
+    float Qc[2] = {1,1}, Kc[4] = {1,1, 0,0}, Vc[4] = {10,20, 30,40};
+    float outc[2] = {0};
+    nt_attention(outc, Qc, Kc, Vc, 1, 2, 2);
+    ASSERT_NEAR(outc[0], 13.914f, 5e-2f, "cross-attn out[0]");
+    ASSERT_NEAR(outc[1], 23.914f, 5e-2f, "cross-attn out[1]");
+}
+
 int main(void) {
     printf("═══════════════════════════════════════════\n");
     printf("  notorch vision + BPE tests\n");
@@ -352,6 +383,8 @@ int main(void) {
     test_bpe();
     test_conv2d();
     test_group_norm();
+    test_upsample();
+    test_attention();
 
     printf("\n═══════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", n_pass, n_fail);
