@@ -73,6 +73,15 @@ gguf_file* gguf_open(const char* path) {
     read_u64(f, &gf->n_tensors);
     read_u64(f, &gf->n_kv);
 
+    // The tensor-info table is fixed-size. With more tensors than it holds, the
+    // info loop stops early and data_offset (computed from ftell after the loop)
+    // lands mid-header, silently corrupting every tensor read. Fail loud instead.
+    if (gf->n_tensors > GGUF_MAX_TENSORS) {
+        fprintf(stderr, "gguf: %llu tensors exceeds GGUF_MAX_TENSORS=%d (%s); refusing to load\n",
+                (unsigned long long)gf->n_tensors, GGUF_MAX_TENSORS, path);
+        fclose(f); free(gf); return NULL;
+    }
+
     // Parse metadata
     gf->n_kv_parsed = 0;
     for (uint64_t i = 0; i < gf->n_kv; i++) {
@@ -348,6 +357,13 @@ static void dequant_q5_0(const uint8_t *data, float *out, uint64_t n) {
 float* gguf_dequant(const gguf_file* gf, int tensor_idx) {
     if (!gf || tensor_idx < 0 || tensor_idx >= (int)gf->n_tensors) return NULL;
     const gguf_tensor_info* ti = &gf->tensors[tensor_idx];
+    // ti->offset comes from the file; reject an offset past the data buffer so a
+    // malformed/oversized GGUF can't drive an out-of-bounds read from here.
+    if (ti->offset >= gf->data_size) {
+        fprintf(stderr, "gguf: tensor '%s' offset %llu out of bounds (data_size %llu)\n",
+                ti->name, (unsigned long long)ti->offset, (unsigned long long)gf->data_size);
+        return NULL;
+    }
     const uint8_t* src = gf->data + ti->offset;
 
     float* dst = (float*)malloc(ti->n_elements * sizeof(float));
