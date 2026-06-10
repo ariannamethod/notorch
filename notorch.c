@@ -2238,7 +2238,8 @@ void nt_tape_adam_step(float lr) {
     int param_idx = 0;
     for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param || !e->grad) continue;
+        if (!e->is_param) continue;
+        if (!e->grad) { param_idx++; continue; }   // registered param w/o grad this step: keep slot alignment, skip update
         nt_adam_state* as = &g_tape.adam[param_idx];
         if (!as->m || !as->v) { param_idx++; continue; }
         as->t++;
@@ -2267,7 +2268,8 @@ void nt_tape_adamw_step(float lr, float weight_decay, float beta1, float beta2) 
     int param_idx = 0;
     for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param || !e->grad) continue;
+        if (!e->is_param) continue;
+        if (!e->grad) { param_idx++; continue; }   // registered param w/o grad this step: keep slot alignment, skip update
         nt_adam_state* as = &g_tape.adam[param_idx];
         if (!as->m || !as->v) { param_idx++; continue; }
         as->t++;
@@ -2426,7 +2428,8 @@ void nt_tape_chuck_step(float lr, float loss_val) {
     int param_idx = 0;
     for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param || !e->grad) continue;
+        if (!e->is_param) continue;
+        if (!e->grad) { param_idx++; continue; }   // registered param w/o grad this step: keep slot alignment, skip update
         nt_adam_state* as = &g_tape.adam[param_idx];
         nt_chuck_param_state* cp = &g_tape.chuck_params[param_idx];
         if (cp->dampen == 0.0f) cp->dampen = 1.0f;
@@ -4493,6 +4496,7 @@ nt_tensor** nt_load(const char* path, int* n_params) {
     for (int i = 0; i < n; i++) {
         int32_t ndim;
         fread(&ndim, 4, 1, f);
+        if (ndim < 0 || ndim > NT_MAX_DIMS) { fclose(f); *n_params = i; return params; }
         int shape[NT_MAX_DIMS];
         for (int d = 0; d < ndim; d++) {
             int32_t s;
@@ -5005,14 +5009,15 @@ void nt_im2col(float *col, const float *in, int Cin, int Hin, int Win,
         for (int kh = 0; kh < kH; kh++)
             for (int kw = 0; kw < kW; kw++) {
                 int row = (c * kH + kh) * kW + kw;
+                size_t col_base = (size_t)row * col_cols;
                 for (int oh = 0; oh < Hout; oh++)
                     for (int ow = 0; ow < Wout; ow++) {
                         int ih = oh * stride - padding + kh;
                         int iw = ow * stride - padding + kw;
                         float val = 0.0f;
                         if (ih >= 0 && ih < Hin && iw >= 0 && iw < Win)
-                            val = in[(c * Hin + ih) * Win + iw];
-                        col[row * col_cols + oh * Wout + ow] = val;
+                            val = in[((size_t)c * Hin + ih) * Win + iw];
+                        col[col_base + (size_t)oh * Wout + ow] = val;
                     }
             }
 }
