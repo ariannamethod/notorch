@@ -326,6 +326,54 @@ int main(void)
         free(s1); free(s2); free(s3); free(d1); free(b1); free(b2); free(b3);
     }
 
+    /* ── M3 gate: simdgroup path vs naive reference + determinism ──────── */
+    {
+        const int sm = 128, sk = 1024;
+        const uint64_t r4 = (uint64_t)(sk / 256) * 144;
+        const uint64_t r6 = (uint64_t)(sk / 256) * 210;
+        uint8_t *W4 = (uint8_t *)malloc((size_t)sm * r4);
+        uint8_t *W6 = (uint8_t *)malloc((size_t)sm * r6);
+        float *xs = (float *)malloc((size_t)sk * sizeof(float));
+        float *g1 = (float *)calloc((size_t)sm, sizeof(float));
+        float *g1b = (float *)calloc((size_t)sm, sizeof(float));
+        float *g2 = (float *)calloc((size_t)sm, sizeof(float));
+        float *n1 = (float *)calloc((size_t)sm, sizeof(float));
+        float *n2 = (float *)calloc((size_t)sm, sizeof(float));
+        unsigned rs = 0xA11CE;
+        for (int i = 0; i < sm; i++) make_random_q4k_row(W4 + (uint64_t)i * r4, (uint64_t)sk, &rs);
+        for (int i = 0; i < sm; i++) make_random_q6k_row(W6 + (uint64_t)i * r6, (uint64_t)sk, &rs);
+        for (int j = 0; j < sk; j++) xs[j] = ((float)rand_r(&rs) / (float)RAND_MAX) - 0.5f;
+
+        /* default = simdgroup path */
+        nt_metal_q4k_matvec(g1, W4, xs, sm, sk);
+        nt_metal_q4k_matvec(g1b, W4, xs, sm, sk);
+        nt_metal_q6k_matvec(g2, W6, xs, sm, sk);
+        int sdet = (memcmp(g1, g1b, (size_t)sm * sizeof(float)) == 0);
+        printf("test_metal_sg_determinism: %s (2x same input bit-identical)\n",
+               sdet ? "PASS" : "FAIL");
+        ok = ok && sdet;
+
+        /* naive reference path: different reduction order — tolerance gate */
+        nt_metal_shutdown();
+        setenv("NT_METAL_NAIVE", "1", 1);
+        nt_metal_q4k_matvec(n1, W4, xs, sm, sk);
+        nt_metal_q6k_matvec(n2, W6, xs, sm, sk);
+        unsetenv("NT_METAL_NAIVE");
+        nt_metal_shutdown();
+        float mr4 = 0.f, mr6 = 0.f;
+        for (int i = 0; i < sm; i++) {
+            float r4e = fabsf(g1[i] - n1[i]) / (fabsf(n1[i]) + 1e-6f);
+            float r6e = fabsf(g2[i] - n2[i]) / (fabsf(n2[i]) + 1e-6f);
+            if (r4e > mr4) mr4 = r4e;
+            if (r6e > mr6) mr6 = r6e;
+        }
+        int oksg = (mr4 < 5e-4f) && (mr6 < 5e-4f);
+        printf("test_metal_sg_vs_naive: q4k max_rel=%.3e q6k max_rel=%.3e  %s\n",
+               mr4, mr6, oksg ? "PASS" : "FAIL");
+        ok = ok && oksg;
+        free(W4); free(W6); free(xs); free(g1); free(g1b); free(g2); free(n1); free(n2);
+    }
+
     nt_metal_shutdown();
     return ok ? 0 : 4;
 }

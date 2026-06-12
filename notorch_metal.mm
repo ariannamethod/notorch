@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include "notorch_metal.h"
 
 /* ── MSL kernel source ───────────────────────────────────────────────── */
@@ -139,6 +140,105 @@ kernel void q6k_matvec(
     }
     out[i] = acc;
 }
+
+/* ── M3 — simdgroup-cooperative matvecs (llama.cpp-class geometry) ──────
+ * One SIMDGROUP (32 lanes) per output row; the lanes split WITHIN each
+ * block (256 weights / 32 lanes = 8 weights per lane), all lanes walk the
+ * blocks together — full lane utilization at any k, coalesced reads. A
+ * simd_sum folds the 32 partials. Dispatch: grid (32, m), threadgroup
+ * (32, NSG) — each y-line of the threadgroup is exactly one simdgroup.
+ * The simd_sum tree is fixed for a fixed geometry, so runs are
+ * bit-identical run-to-run; vs the naive kernel the reduction ORDER
+ * differs, so agreement is tolerance-level (~1e-5 rel), not bitwise. */
+
+kernel void q4k_matvec_sg(
+    device const uchar *W   [[buffer(0)]],
+    device const float *x   [[buffer(1)]],
+    device       float *out [[buffer(2)]],
+    constant     uint  &k   [[buffer(3)]],
+    uint2 tpig              [[thread_position_in_grid]],
+    uint  lane              [[thread_index_in_simdgroup]])
+{
+    uint nblocks   = k / 256u;
+    uint row_bytes = nblocks * 144u;
+    device const uchar *w_row = W + tpig.y * row_bytes;
+
+    float acc = 0.0f;
+    for (uint bi = 0; bi < nblocks; bi++) {
+        device const uchar *b = w_row + bi * 144u;
+        ushort dbits    = ushort(b[0]) | (ushort(b[1]) << 8);
+        ushort dminbits = ushort(b[2]) | (ushort(b[3]) << 8);
+        float  d        = float(as_type<half>(dbits));
+        float  dmin     = float(as_type<half>(dminbits));
+        device const uchar *sc = b + 4;
+        device const uchar *qs = b + 16;
+        device const float *xb = x + bi * 256u;
+
+        /* lane-indexed slice of the naive chunk loop: this lane owns byte
+         * `lane` of every 32-byte chunk — w_lo at jj+lane, w_hi at
+         * jj+32+lane; 4 chunks x 2 weights = 8 weights per lane. */
+        int is = 0;
+        int qi = 0;
+        for (int jj = 0; jj < 256; jj += 64) {
+            uchar sc0, m0, sc1, m1v;
+            get_scale_min_k4(is,     sc, sc0, m0);
+            get_scale_min_k4(is + 1, sc, sc1, m1v);
+            float d1 = d * float(sc0); float mm1 = dmin * float(m0);
+            float d2 = d * float(sc1); float mm2 = dmin * float(m1v);
+            float w_lo = d1 * float(qs[qi + lane] & 0x0Fu) - mm1;
+            acc += w_lo * xb[jj + lane];
+            float w_hi = d2 * float(qs[qi + lane] >> 4) - mm2;
+            acc += w_hi * xb[jj + 32 + lane];
+            qi += 32;
+            is += 2;
+        }
+    }
+    float total = simd_sum(acc);
+    if (lane == 0) out[tpig.y] = total;
+}
+
+kernel void q6k_matvec_sg(
+    device const uchar *W   [[buffer(0)]],
+    device const float *x   [[buffer(1)]],
+    device       float *out [[buffer(2)]],
+    constant     uint  &k   [[buffer(3)]],
+    uint2 tpig              [[thread_position_in_grid]],
+    uint  lane              [[thread_index_in_simdgroup]])
+{
+    uint nblocks   = k / 256u;
+    uint row_bytes = nblocks * 210u;
+    device const uchar *w_row = W + tpig.y * row_bytes;
+
+    float acc = 0.0f;
+    for (uint bi = 0; bi < nblocks; bi++) {
+        device const uchar *bl = w_row + bi * 210u;
+        device const uchar *ql = bl;
+        device const uchar *qh = bl + 128u;
+        device const char  *sc = (device const char *)(bl + 192u);
+        ushort dbits = ushort(bl[208]) | (ushort(bl[209]) << 8);
+        float  d  = float(as_type<half>(dbits));
+        device const float *xb = x + bi * 256u;
+
+        /* lane-indexed slice of the naive l-loop: lane == l, 4 weights per
+         * half (q1..q4), two halves = 8 weights per lane. */
+        for (int nn = 0; nn < 256; nn += 128) {
+            device const uchar *qlh = ql + (nn / 128) * 64;
+            device const uchar *qhh = qh + (nn / 128) * 32;
+            device const char  *sch = sc + (nn / 128) * 8;
+            int is = (int)(lane / 16u);
+            int q1 = (int)((qlh[lane]      & 0x0Fu) | (((qhh[lane] >> 0) & 3u) << 4)) - 32;
+            int q2 = (int)((qlh[lane + 32] & 0x0Fu) | (((qhh[lane] >> 2) & 3u) << 4)) - 32;
+            int q3 = (int)((qlh[lane]      >> 4)    | (((qhh[lane] >> 4) & 3u) << 4)) - 32;
+            int q4 = (int)((qlh[lane + 32] >> 4)    | (((qhh[lane] >> 6) & 3u) << 4)) - 32;
+            acc += d * float(sch[is + 0]) * float(q1) * xb[nn + lane];
+            acc += d * float(sch[is + 2]) * float(q2) * xb[nn + lane + 32];
+            acc += d * float(sch[is + 4]) * float(q3) * xb[nn + lane + 64];
+            acc += d * float(sch[is + 6]) * float(q4) * xb[nn + lane + 96];
+        }
+    }
+    float total = simd_sum(acc);
+    if (lane == 0) out[tpig.y] = total;
+}
 )MSL";
 
 /* ── State (ARC-managed) ─────────────────────────────────────────────── */
@@ -147,6 +247,9 @@ static id<MTLDevice>               g_device      = nil;
 static id<MTLCommandQueue>         g_queue       = nil;
 static id<MTLComputePipelineState> g_q4k_pipe    = nil;
 static id<MTLComputePipelineState> g_q6k_pipe    = nil;
+static id<MTLComputePipelineState> g_q4k_sg_pipe = nil;   /* M3 simdgroup path */
+static id<MTLComputePipelineState> g_q6k_sg_pipe = nil;
+static int                         g_use_sg      = 1;     /* NT_METAL_NAIVE=1 -> 0 */
 static int                         g_initialised = 0;
 
 /* Phase 2: resident zero-copy buffers wrapping the packed GGUF data block.
@@ -239,6 +342,22 @@ int nt_metal_init(void)
                     err ? err.localizedDescription.UTF8String : "(no error)");
             return 5;
         }
+        id<MTLFunction> fn4s = [lib newFunctionWithName:@"q4k_matvec_sg"];
+        id<MTLFunction> fn6s = [lib newFunctionWithName:@"q6k_matvec_sg"];
+        if (!fn4s || !fn6s) {
+            fprintf(stderr, "nt_metal_init: simdgroup kernels missing\n");
+            return 4;
+        }
+        g_q4k_sg_pipe = [g_device newComputePipelineStateWithFunction:fn4s error:&err];
+        g_q6k_sg_pipe = [g_device newComputePipelineStateWithFunction:fn6s error:&err];
+        if (!g_q4k_sg_pipe || !g_q6k_sg_pipe) {
+            fprintf(stderr, "nt_metal_init: simdgroup pipeline state failed: %s\n",
+                    err ? err.localizedDescription.UTF8String : "(no error)");
+            return 5;
+        }
+        /* M3 default is the simdgroup path; NT_METAL_NAIVE=1 falls back to the
+         * one-thread-per-row kernels (A/B reference, never deleted). */
+        g_use_sg = getenv("NT_METAL_NAIVE") ? 0 : 1;
     }
 
     g_initialised = 1;
@@ -258,6 +377,8 @@ void nt_metal_shutdown(void)
     g_nseg        = 0;
     g_q4k_pipe    = nil;
     g_q6k_pipe    = nil;
+    g_q4k_sg_pipe = nil;
+    g_q6k_sg_pipe = nil;
     g_queue       = nil;
     g_device      = nil;
     g_initialised = 0;
@@ -415,19 +536,38 @@ static int encode_matvec(id<MTLComputePipelineState> pipe, NSUInteger block_byte
         if (!cb || !enc) { fprintf(stderr, "nt_metal: encoder alloc failed\n"); return 11; }
     }
 
+    /* M3: simdgroup path by default — one 32-lane simdgroup per row, grid
+     * (32, m), each threadgroup y-line is one simdgroup. NT_METAL_NAIVE=1
+     * keeps the one-thread-per-row reference geometry. */
+    id<MTLComputePipelineState> sg_pipe =
+        (block_bytes == 144u) ? g_q4k_sg_pipe : g_q6k_sg_pipe;
     uint32_t k_u32 = (uint32_t)k;
-    [enc setComputePipelineState:pipe];
-    [enc setBuffer:bW          offset:W_off atIndex:0];
-    [enc setBuffer:g_arena_in  offset:x_off atIndex:1];
-    [enc setBuffer:g_arena_out offset:o_off atIndex:2];
-    [enc setBytes:&k_u32 length:sizeof(uint32_t) atIndex:3];
-
-    NSUInteger tg_size = pipe.maxTotalThreadsPerThreadgroup;
-    if (tg_size > 64) tg_size = 64;
-    if (tg_size > (NSUInteger)m) tg_size = (NSUInteger)m;
-    MTLSize grid = MTLSizeMake((NSUInteger)m, 1, 1);
-    MTLSize tg   = MTLSizeMake(tg_size, 1, 1);
-    [enc dispatchThreads:grid threadsPerThreadgroup:tg];
+    if (g_use_sg && sg_pipe) {
+        [enc setComputePipelineState:sg_pipe];
+        [enc setBuffer:bW          offset:W_off atIndex:0];
+        [enc setBuffer:g_arena_in  offset:x_off atIndex:1];
+        [enc setBuffer:g_arena_out offset:o_off atIndex:2];
+        [enc setBytes:&k_u32 length:sizeof(uint32_t) atIndex:3];
+        NSUInteger nsg = sg_pipe.maxTotalThreadsPerThreadgroup / 32u;
+        if (nsg > 8) nsg = 8;
+        if (nsg < 1) nsg = 1;
+        if (nsg > (NSUInteger)m) nsg = (NSUInteger)m;
+        MTLSize grid = MTLSizeMake(32, (NSUInteger)m, 1);
+        MTLSize tg   = MTLSizeMake(32, nsg, 1);
+        [enc dispatchThreads:grid threadsPerThreadgroup:tg];
+    } else {
+        [enc setComputePipelineState:pipe];
+        [enc setBuffer:bW          offset:W_off atIndex:0];
+        [enc setBuffer:g_arena_in  offset:x_off atIndex:1];
+        [enc setBuffer:g_arena_out offset:o_off atIndex:2];
+        [enc setBytes:&k_u32 length:sizeof(uint32_t) atIndex:3];
+        NSUInteger tg_size = pipe.maxTotalThreadsPerThreadgroup;
+        if (tg_size > 64) tg_size = 64;
+        if (tg_size > (NSUInteger)m) tg_size = (NSUInteger)m;
+        MTLSize grid = MTLSizeMake((NSUInteger)m, 1, 1);
+        MTLSize tg   = MTLSizeMake(tg_size, 1, 1);
+        [enc dispatchThreads:grid threadsPerThreadgroup:tg];
+    }
 
     if (g_batch_active) {
         g_pending[g_npending].dst   = out;

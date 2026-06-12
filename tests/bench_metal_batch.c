@@ -99,6 +99,23 @@ int main(void)
     printf("  B groups (%3d syncs): %7.2f ms/sweep  %6.1f us/matvec  x%.2f\n", LAYERS * 4, tB * 1e3, tB * 1e6 / n_mv, tA / tB);
     printf("  C /layer (%3d syncs): %7.2f ms/sweep  %6.1f us/matvec  x%.2f\n", LAYERS,     tC * 1e3, tC * 1e6 / n_mv, tA / tC);
 
+
+    /* D: naive kernels, solo — isolates the simdgroup kernel multiplier */
+    nt_metal_shutdown();
+    setenv("NT_METAL_NAIVE", "1", 1);
+    if (nt_metal_init() != 0 || nt_metal_register_base(base, total) != 0) {
+        fprintf(stderr, "naive re-init failed\n"); return 1;
+    }
+    nt_metal_q4k_matvec(out, base, x, M, K);   /* warmup */
+    t0 = now_s();
+    for (int r = 0; r < REPS; r++)
+        for (int l = 0; l < LAYERS; l++)
+            for (int w = 0; w < NW; w++)
+                nt_metal_q4k_matvec(out + (size_t)w * M, base + (uint64_t)w * W_bytes, x, M, K);
+    double tD = (now_s() - t0) / REPS;
+    unsetenv("NT_METAL_NAIVE");
+    printf("  D naive  (%3d syncs): %7.2f ms/sweep  %6.1f us/matvec  (sg kernel x%.2f vs naive)\n",
+           n_mv, tD * 1e3, tD * 1e6 / n_mv, tD / tA);
     free(x); free(out);
     munmap(base, (size_t)total);
     nt_metal_shutdown();

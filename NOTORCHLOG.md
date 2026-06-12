@@ -40,6 +40,22 @@ then layer-resident ops (rmsnorm/rope/silu/attention in MSL) toward the
 one-command-buffer-per-token shape — the llama.cpp-class decode (16.8 t/s on
 M4 Pro vs our 3.66 today) with our bit-identical gate discipline at every step.
 
+
+### Addendum, same day — M3: simdgroup-cooperative kernels (default path)
+
+`q4k_matvec_sg` / `q6k_matvec_sg`: one 32-lane simdgroup per output row, lanes
+split WITHIN each 256-weight block (8 weights/lane — full utilization at any k,
+coalesced reads), simd_sum folds the partials; dispatch grid (32,m), threadgroup
+(32,8). Default path; `NT_METAL_NAIVE=1` keeps the one-thread-per-row reference
+kernels for A/B (never deleted). Determinism: fixed simd_sum tree → bit-identical
+run-to-run (gated); vs naive the reduction order differs → tolerance gate
+(q4k 3.6e-05, q6k 1.6e-05 max_rel, both PASS). Phase-fair bench on neo A18
+(all-naive run vs all-sg run): solo sweep 168.50 → 93.27 ms (x1.81), per-layer
+batch 102.84 → 73.58 ms (x1.40); best observed warmed config (sg + 40 batches)
+41.63 ms/sweep vs the 163.68 ms starting point. A18 microbench is noisy — the
+authoritative numbers come from the 24B on M4 (doe re-runs t/s + verify after
+pull). M4-the-milestone (rmsnorm/rope/silu/attention in MSL) remains next.
+
 ## 2026-06-09 — SD op set on notorch: conv2d + group norm + upsample + attention (forward)
 
 Added to `notorch.c` (declared in `notorch.h`) — the image-NN ops notorch lacked, forward-only,
