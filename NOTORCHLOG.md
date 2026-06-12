@@ -13,6 +13,33 @@ Newest entries on top.
 
 ---
 
+## 2026-06-12 — Metal token-graph step 1: persistent arenas + batched dispatch (with Q6_K landing the same day)
+
+Two commits, two nodes, one front. `dd1779f` (metal node): `nt_metal_q6k_matvec` —
+Q4_K_M GGUF stores attn_v/ffn_down/output as Q6_K, so the GPU path needed the
+second kernel to keep lm_head/FFN-down off the CPU; verified bit-identical vs CPU
+on live oyent-24B weights (lm_head m=131072, max_rel < 2e-5), ~2.5x decode.
+cb.status guard after every waitUntilCompleted (a silent GPU fault is now loud) +
+a run-to-run determinism gate in the test.
+
+`bbb29e5` (neo, branch `feat/metal-token-graph`): the dispatch structure. The
+Metal path was a matvec accelerator bolted onto a CPU loop — every call allocated
+fresh x/out/k buffers and paid a full commit+waitUntilCompleted (~280 syncs per
+24B token; profile shows matvec = 95% of decode). Step 1: persistent in/out
+arenas (bump-allocated, 256-aligned) kill the per-call buffer churn; k rides
+setBytes; `nt_metal_batch_begin/commit` encodes independent matvecs ({q,k,v},
+{gate,up}, a whole layer sweep) into ONE command buffer with ONE sync. Kernels
+and dispatch geometry untouched — batched results are bit-identical to solo
+calls, and the q4k correctness numbers are bit-identical to the pre-change
+baseline (max_rel=2.124e-05, same worst idx). New gates: q6k correctness vs the
+gguf.c reference dequant (max_rel=1.267e-05), q4k/q6k 2x-run determinism,
+batch-vs-solo memcmp. `tests/bench_metal_batch.c` isolates the sync cost on
+resident weights: neo A18, 280 matvecs/sweep — solo 280 syncs vs 40 per-layer
+batches = x1.6-2.2 wall-clock. Next: doe wires the {q,k,v}/{gate,up} groups,
+then layer-resident ops (rmsnorm/rope/silu/attention in MSL) toward the
+one-command-buffer-per-token shape — the llama.cpp-class decode (16.8 t/s on
+M4 Pro vs our 3.66 today) with our bit-identical gate discipline at every step.
+
 ## 2026-06-09 — SD op set on notorch: conv2d + group norm + upsample + attention (forward)
 
 Added to `notorch.c` (declared in `notorch.h`) — the image-NN ops notorch lacked, forward-only,
