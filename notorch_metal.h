@@ -69,6 +69,13 @@ int nt_metal_q4k_matvec(float *out,
                         const float *x,
                         int m, int k);
 
+/* Q6_K matrix-vector multiply on the Apple GPU, inline dequant (block 210 bytes per 256
+ * weights). Mirrors gguf dequant_q6_k / doe.c:pq_q6_k_rows. Same ABI/codes as q4k. */
+int nt_metal_q6k_matvec(float *out,
+                        const uint8_t *W_q6k,
+                        const float *x,
+                        int m, int k);
+
 /* Phase 2 — resident weights. Register one base region (e.g. the whole packed
  * GGUF tensor block) as a single zero-copy GPU buffer (Apple unified memory).
  * After this, nt_metal_q4k_matvec binds any W that falls inside

@@ -103,6 +103,18 @@ static void make_random_q4k_row(uint8_t *row, uint64_t k, unsigned *rng)
     }
 }
 
+/* Random-but-valid Q6_K row (210 bytes/block: ql[128] qh[64] sc[16] d[2]). */
+static void make_random_q6k_row(uint8_t *row, uint64_t k, unsigned *rng)
+{
+    uint64_t nblocks = k / 256;
+    for (uint64_t i = 0; i < nblocks; i++) {
+        uint8_t *b = row + i * 210;
+        for (int j = 0; j < 208; j++) b[j] = (uint8_t)(rand_r(rng) & 0xFF);
+        uint16_t d_bits = (uint16_t)(0x3000 + (rand_r(rng) & 0x0FFF));  /* ~[0.125,0.25) */
+        b[208] = (uint8_t)(d_bits & 0xFF); b[209] = (uint8_t)(d_bits >> 8);
+    }
+}
+
 int main(void)
 {
     if (!nt_metal_available()) {
@@ -172,6 +184,32 @@ int main(void)
     printf("test_metal_q4k: %s (tol=%.0e)\n", ok ? "PASS" : "FAIL", tol);
 
     free(W); free(x); free(W_ref_f32); free(out_ref); free(out_gpu);
+
+    /* ── Q6_K determinism gate (Mythos): the same (W,x) run twice must be
+     * bit-identical. A stability tripwire for any future non-deterministic
+     * Metal Q6_K path (the cleaned eviction-debug class) — not a correctness
+     * check, a regression guard. */
+    {
+        const int q6m = 64, q6k = 512;
+        const uint64_t q6_row = (uint64_t)(q6k / 256) * 210;
+        uint8_t *Wq6 = (uint8_t *)malloc((size_t)q6m * q6_row);
+        float   *xq6 = (float *)  malloc((size_t)q6k * sizeof(float));
+        float   *o1  = (float *)  calloc((size_t)q6m, sizeof(float));
+        float   *o2  = (float *)  calloc((size_t)q6m, sizeof(float));
+        unsigned r6 = 0xB16B00B5u;
+        for (int i = 0; i < q6m; i++)
+            make_random_q6k_row(Wq6 + (uint64_t)i * q6_row, (uint64_t)q6k, &r6);
+        for (int j = 0; j < q6k; j++)
+            xq6[j] = ((float)rand_r(&r6) / (float)RAND_MAX) - 0.5f;
+        nt_metal_q6k_matvec(o1, Wq6, xq6, q6m, q6k);
+        nt_metal_q6k_matvec(o2, Wq6, xq6, q6m, q6k);
+        int det = (memcmp(o1, o2, (size_t)q6m * sizeof(float)) == 0);
+        printf("test_metal_q6k_determinism: %s (2x same input bit-identical)\n",
+               det ? "PASS" : "FAIL");
+        ok = ok && det;
+        free(Wq6); free(xq6); free(o1); free(o2);
+    }
+
     nt_metal_shutdown();
     return ok ? 0 : 4;
 }

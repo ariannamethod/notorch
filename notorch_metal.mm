@@ -96,6 +96,49 @@ kernel void q4k_matvec(
 
     out[i] = acc;
 }
+
+/* Q6_K: block = 210 bytes per 256 weights — 128 ql + 64 qh + 16 int8 scales + 2 d(fp16).
+ * Mirrors doe.c:pq_q6_k_rows / dequant_q6_k byte-for-byte. One thread per output row. */
+kernel void q6k_matvec(
+    device const uchar *W   [[buffer(0)]],   /* [m * (k/256) * 210] */
+    device const float *x   [[buffer(1)]],   /* [k]                 */
+    device       float *out [[buffer(2)]],   /* [m]                 */
+    constant     uint  &k   [[buffer(3)]],
+    uint i                  [[thread_position_in_grid]])
+{
+    uint nblocks   = k / 256u;
+    uint row_bytes = nblocks * 210u;
+    device const uchar *w_row = W + i * row_bytes;
+    float acc = 0.0f;
+
+    for (uint bi = 0; bi < nblocks; bi++) {
+        device const uchar *bl = w_row + bi * 210u;
+        device const uchar *ql = bl;
+        device const uchar *qh = bl + 128u;
+        device const char  *sc = (device const char *)(bl + 192u);   /* int8 scales */
+        ushort dbits = ushort(bl[208]) | (ushort(bl[209]) << 8);
+        float  d  = float(as_type<half>(dbits));
+        device const float *xb = x + bi * 256u;
+
+        for (int nn = 0; nn < 256; nn += 128) {
+            device const uchar *qlh = ql + (nn / 128) * 64;
+            device const uchar *qhh = qh + (nn / 128) * 32;
+            device const char  *sch = sc + (nn / 128) * 8;
+            for (int l = 0; l < 32; l++) {
+                int is = l / 16;
+                int q1 = (int)((qlh[l]      & 0x0Fu) | (((qhh[l] >> 0) & 3u) << 4)) - 32;
+                int q2 = (int)((qlh[l + 32] & 0x0Fu) | (((qhh[l] >> 2) & 3u) << 4)) - 32;
+                int q3 = (int)((qlh[l]      >> 4)    | (((qhh[l] >> 4) & 3u) << 4)) - 32;
+                int q4 = (int)((qlh[l + 32] >> 4)    | (((qhh[l] >> 6) & 3u) << 4)) - 32;
+                acc += d * float(sch[is + 0]) * float(q1) * xb[nn + l];
+                acc += d * float(sch[is + 2]) * float(q2) * xb[nn + l + 32];
+                acc += d * float(sch[is + 4]) * float(q3) * xb[nn + l + 64];
+                acc += d * float(sch[is + 6]) * float(q4) * xb[nn + l + 96];
+            }
+        }
+    }
+    out[i] = acc;
+}
 )MSL";
 
 /* ── State (ARC-managed) ─────────────────────────────────────────────── */
@@ -103,6 +146,7 @@ kernel void q4k_matvec(
 static id<MTLDevice>               g_device      = nil;
 static id<MTLCommandQueue>         g_queue       = nil;
 static id<MTLComputePipelineState> g_q4k_pipe    = nil;
+static id<MTLComputePipelineState> g_q6k_pipe    = nil;
 static int                         g_initialised = 0;
 
 /* Phase 2: resident zero-copy buffers wrapping the packed GGUF data block.
@@ -161,6 +205,17 @@ int nt_metal_init(void)
                     err ? err.localizedDescription.UTF8String : "(no error)");
             return 5;
         }
+        id<MTLFunction> fn6 = [lib newFunctionWithName:@"q6k_matvec"];
+        if (!fn6) {
+            fprintf(stderr, "nt_metal_init: kernel q6k_matvec missing\n");
+            return 4;
+        }
+        g_q6k_pipe = [g_device newComputePipelineStateWithFunction:fn6 error:&err];
+        if (!g_q6k_pipe) {
+            fprintf(stderr, "nt_metal_init: q6k pipeline state failed: %s\n",
+                    err ? err.localizedDescription.UTF8String : "(no error)");
+            return 5;
+        }
     }
 
     g_initialised = 1;
@@ -172,6 +227,7 @@ void nt_metal_shutdown(void)
     for (int s = 0; s < g_nseg; s++) g_seg_buf[s] = nil;
     g_nseg        = 0;
     g_q4k_pipe    = nil;
+    g_q6k_pipe    = nil;
     g_queue       = nil;
     g_device      = nil;
     g_initialised = 0;
@@ -287,6 +343,96 @@ int nt_metal_q4k_matvec(float *out,
         [enc endEncoding];
         [cb commit];
         [cb waitUntilCompleted];
+        if (cb.status != MTLCommandBufferStatusCompleted) {
+            fprintf(stderr, "nt_metal: command buffer not completed status=%ld error=%s\n",
+                    (long)cb.status,
+                    cb.error ? [cb.error.localizedDescription UTF8String] : "(none)");
+            return 14;
+        }
+
+        memcpy(out, [bout contents], (size_t)out_bytes);
+    }
+
+    return 0;
+}
+
+int nt_metal_q6k_matvec(float *out,
+                        const uint8_t *W_q6k,
+                        const float *x,
+                        int m, int k)
+{
+    if (!g_initialised) {
+        int rc = nt_metal_init();
+        if (rc != 0) return rc;
+    }
+    if (k <= 0 || (k % 256) != 0) {
+        fprintf(stderr, "nt_metal_q6k_matvec: k=%d not a positive multiple of 256\n", k);
+        return 10;
+    }
+    if (m <= 0) {
+        fprintf(stderr, "nt_metal_q6k_matvec: m=%d must be positive\n", m);
+        return 10;
+    }
+
+    @autoreleasepool {
+        const NSUInteger nblocks   = (NSUInteger)k / 256u;
+        const NSUInteger row_bytes = nblocks * 210u;
+        const NSUInteger W_bytes   = (NSUInteger)m * row_bytes;
+        const NSUInteger x_bytes   = (NSUInteger)k * sizeof(float);
+        const NSUInteger out_bytes = (NSUInteger)m * sizeof(float);
+
+        /* Phase 2: bind resident weight by offset if registered; else upload. */
+        id<MTLBuffer> bW = nil; NSUInteger W_off = 0;
+        for (int s = 0; s < g_nseg; s++) {
+            if (W_q6k >= g_seg_ptr[s] &&
+                (uint64_t)(W_q6k - g_seg_ptr[s]) + W_bytes <= g_seg_len[s]) {
+                bW = g_seg_buf[s];
+                W_off = (NSUInteger)(W_q6k - g_seg_ptr[s]);
+                break;
+            }
+        }
+        if (!bW) {
+            bW = [g_device newBufferWithBytes:W_q6k
+                                       length:W_bytes
+                                      options:MTLResourceStorageModeShared];
+        }
+        id<MTLBuffer> bx = [g_device newBufferWithBytes:x
+                                                 length:x_bytes
+                                                options:MTLResourceStorageModeShared];
+        id<MTLBuffer> bout = [g_device newBufferWithLength:out_bytes
+                                                   options:MTLResourceStorageModeShared];
+        uint32_t k_u32 = (uint32_t)k;
+        id<MTLBuffer> bk = [g_device newBufferWithBytes:&k_u32
+                                                 length:sizeof(uint32_t)
+                                                options:MTLResourceStorageModeShared];
+        if (!bW || !bx || !bout || !bk) {
+            fprintf(stderr, "nt_metal_q6k_matvec: buffer alloc failed\n");
+            return 11;
+        }
+
+        id<MTLCommandBuffer>        cb  = [g_queue commandBuffer];
+        id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
+        [enc setComputePipelineState:g_q6k_pipe];
+        [enc setBuffer:bW   offset:W_off atIndex:0];
+        [enc setBuffer:bx   offset:0 atIndex:1];
+        [enc setBuffer:bout offset:0 atIndex:2];
+        [enc setBuffer:bk   offset:0 atIndex:3];
+
+        NSUInteger tg_size = g_q6k_pipe.maxTotalThreadsPerThreadgroup;
+        if (tg_size > 64) tg_size = 64;
+        if (tg_size > (NSUInteger)m) tg_size = (NSUInteger)m;
+        MTLSize grid = MTLSizeMake((NSUInteger)m, 1, 1);
+        MTLSize tg   = MTLSizeMake(tg_size, 1, 1);
+        [enc dispatchThreads:grid threadsPerThreadgroup:tg];
+        [enc endEncoding];
+        [cb commit];
+        [cb waitUntilCompleted];
+        if (cb.status != MTLCommandBufferStatusCompleted) {
+            fprintf(stderr, "nt_metal: command buffer not completed status=%ld error=%s\n",
+                    (long)cb.status,
+                    cb.error ? [cb.error.localizedDescription UTF8String] : "(none)");
+            return 14;
+        }
 
         memcpy(out, [bout contents], (size_t)out_bytes);
     }
