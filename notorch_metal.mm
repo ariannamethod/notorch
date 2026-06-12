@@ -567,12 +567,13 @@ int nt_metal_init(void)
                 return 5;
             }
         }
-        /* Default = naive one-thread-per-row. The 24B doe A/B on M4 Pro
-         * (2026-06-12) measured sg at -23% on the real mixed-shape decode
-         * stream (280 matvecs/token, attn k/v down to 1024x5120) despite
-         * x1.81 on the square resident microbench. NT_METAL_SG=1 opts in
-         * for geometry tuning; NT_METAL_NAIVE=1 still forces naive. */
-        g_use_sg = getenv("NT_METAL_SG") ? 1 : 0;
+        /* Kernel choice is per-format (doe-mix per-shape A/B, 2026-06-13):
+         * the sg geometry wins on Q6_K everywhere measured (ffn down x1.48,
+         * lm_head x1.61 vs naive on the real 24B shapes) and loses on Q4_K,
+         * so auto mode rides sg for Q6_K and naive for Q4_K. NT_METAL_SG=1
+         * forces sg everywhere, NT_METAL_NAIVE=1 forces naive everywhere
+         * and wins over both. */
+        g_use_sg = getenv("NT_METAL_SG") ? 1 : 2;          /* 2 = auto */
         if (getenv("NT_METAL_NAIVE")) g_use_sg = 0;
     }
 
@@ -756,13 +757,14 @@ static int encode_matvec(id<MTLComputePipelineState> pipe, NSUInteger block_byte
         if (!cb || !enc) { fprintf(stderr, "nt_metal: encoder alloc failed\n"); return 11; }
     }
 
-    /* M3: simdgroup path by default — one 32-lane simdgroup per row, grid
-     * (32, m), each threadgroup y-line is one simdgroup. NT_METAL_NAIVE=1
-     * keeps the one-thread-per-row reference geometry. */
+    /* M3 simdgroup geometry — one 32-lane simdgroup per row, grid (32, m),
+     * each threadgroup y-line is one simdgroup. Auto mode picks it for
+     * Q6_K only; see nt_metal_init for the per-format A/B. */
     id<MTLComputePipelineState> sg_pipe =
         (block_bytes == 144u) ? g_q4k_sg_pipe : g_q6k_sg_pipe;
     uint32_t k_u32 = (uint32_t)k;
-    if (g_use_sg && sg_pipe) {
+    int sg_on = sg_pipe && (g_use_sg == 1 || (g_use_sg == 2 && block_bytes == 210u));
+    if (sg_on) {
         [enc setComputePipelineState:sg_pipe];
         [enc setBuffer:bW          offset:W_off atIndex:0];
         [enc setBuffer:g_arena_in  offset:x_off atIndex:1];
@@ -1183,7 +1185,8 @@ static int matvec_slot(id<MTLComputePipelineState> naive_pipe,
         id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
         int rc = op_enc(&cb, &enc); if (rc) return rc;
         uint32_t k_u32 = (uint32_t)k;
-        if (g_use_sg && sg_pipe) {
+        int sg_on = sg_pipe && (g_use_sg == 1 || (g_use_sg == 2 && block_bytes == 210u));
+        if (sg_on) {
             [enc setComputePipelineState:sg_pipe];
             [enc setBuffer:bW offset:W_off atIndex:0];
             [enc setBuffer:g_slot_buf offset:g_slot_tab[src_slot].off atIndex:1];

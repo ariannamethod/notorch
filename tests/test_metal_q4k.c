@@ -358,11 +358,13 @@ int main(void)
                sdet ? "PASS" : "FAIL");
         ok = ok && sdet;
 
-        /* default (naive) path: different reduction order — tolerance gate */
+        /* naive reference path (forced): different reduction order — tolerance gate */
         unsetenv("NT_METAL_SG");
+        setenv("NT_METAL_NAIVE", "1", 1);
         nt_metal_shutdown();
         nt_metal_q4k_matvec(n1, W4, xs, sm, sk);
         nt_metal_q6k_matvec(n2, W6, xs, sm, sk);
+        unsetenv("NT_METAL_NAIVE");
         nt_metal_shutdown();
         float mr4 = 0.f, mr6 = 0.f;
         for (int i = 0; i < sm; i++) {

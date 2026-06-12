@@ -42,6 +42,21 @@ per-group spread 18.8 (attn qkv, small-m underoccupancy) to 34.0 (gate+up);
 ffn down (Q6_K, m=5120 k=32768) is the worst byte-weighted offender at
 19.7 GB/s. That is the target list for the kernel-geometry round.
 
+And the harness paid for itself within the hour: the per-shape sg-vs-naive
+A/B revealed the split is by FORMAT, not by geometry — the sg kernels win
+on Q6_K everywhere measured (ffn down 188 vs 279 ms, lm_head 15.9 vs 25.7,
+even at m=131072) and lose on Q4_K everywhere (gate+up 495 vs 222). So the
+default became per-format auto: Q6_K rides sg, Q4_K rides naive
+(`g_use_sg` tri-state; NT_METAL_SG=1 still forces all-sg, NT_METAL_NAIVE=1
+all-naive and wins over both). doe-mix full-speed on neo A18: naive 574.6
+ms/tok, all-sg 767.0, auto 449.7 = 33.0 GB/s effective — +24% over the
+naive default from one selection rule, zero new kernels. Caveat for
+consumers: Q6_K results now differ from the naive reference by reduction
+order (within tolerance, run-to-run still bit-identical) — exact-equality
+gates against CPU on Q6_K-fed paths become tolerance + argmax gates. The
+custom-geometry round (multi-row simdgroup, scale-decode amortization,
+Q4_K sg rework) stays open with gate+up as the next byte-weighted target.
+
 ## 2026-06-12 — Metal token-graph step 1: persistent arenas + batched dispatch (with Q6_K landing the same day)
 
 Two commits, two nodes, one front. `dd1779f` (metal node): `nt_metal_q6k_matvec` —
