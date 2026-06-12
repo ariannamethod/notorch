@@ -56,6 +56,27 @@ batch 102.84 → 73.58 ms (x1.40); best observed warmed config (sg + 40 batches)
 authoritative numbers come from the 24B on M4 (doe re-runs t/s + verify after
 pull). M4-the-milestone (rmsnorm/rope/silu/attention in MSL) remains next.
 
+
+### Addendum 2, same day — M4: layer ops in MSL + device-resident slots
+
+The other half of the 50/50 profile (CPU attention/rmsnorm/silu/sample between
+GPU matvecs). Six kernels — `rmsnorm_f32` (single-threadgroup, fixed reduction
+ladder), `rope_f32` (llama-style pairs, in place), `silu_mul_f32`, `add_f32`,
+`attn_decode_f32` (one threadgroup per q-head, GQA, softmax in threadgroup
+memory, t_len <= 4096), `copy_f32` (KV append GPU-side) — plus the architecture
+that makes them chain: SLOTS, device-resident activations in a persistent GPU
+arena. Ops read/write slots with no host crossing, so a whole decode layer
+(rmsnorm -> qkv -> rope -> attn -> o -> residual -> rmsnorm -> gate/up ->
+silu*mul -> down -> residual) encodes inside ONE command buffer between
+batch_begin/commit. New API: nt_metal_register_region (appends KV cache and
+friends to the registered segments — base and length must be PAGE-aligned;
+note getpagesize() is 16384 on Apple Silicon), slot_alloc/upload/download,
+slot-resident matvec variants, and the ops above. Gates (neo A18, all green):
+rmsnorm exact-0 vs CPU ref, rope 1.3e-05, silu_mul 2.2e-07, add exact-0,
+attn_decode 3.6e-06 vs double-precision CPU softmax-attention, 3-op chain
+batched bit-identical to solo. Integration into doe (layer graph on slots,
+KV registered, one sync per token) is the next wiring step on the metal node.
+
 ## 2026-06-09 — SD op set on notorch: conv2d + group norm + upsample + attention (forward)
 
 Added to `notorch.c` (declared in `notorch.h`) — the image-NN ops notorch lacked, forward-only,

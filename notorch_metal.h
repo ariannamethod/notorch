@@ -103,6 +103,32 @@ int nt_metal_batch_begin(void);
 int nt_metal_batch_commit(void);
 int nt_metal_batch_active(void);
 
+/* ── M4 — device-resident slots + layer ops ──────────────────────────
+ * Slots are fixed regions in a persistent GPU arena: ops read/write
+ * slots without host roundtrips, so a whole decode layer (rmsnorm ->
+ * qkv matvecs -> rope -> attention -> o -> residual -> rmsnorm ->
+ * gate/up -> silu*mul -> down -> residual) chains inside ONE command
+ * buffer between batch_begin/commit. upload/download are the only host
+ * crossings; download only after commit. K/V caches and norm weights
+ * resolve through registered regions (nt_metal_register_region appends
+ * without resetting the weight base; page-aligned base and length).
+ * All reductions use fixed trees: bit-identical run-to-run. */
+int nt_metal_register_region(const void *base, uint64_t nbytes);
+int nt_metal_slot_alloc(int slot, uint64_t bytes);
+int nt_metal_slot_upload(int slot, const void *src, uint64_t bytes);
+int nt_metal_slot_download(int slot, void *dst, uint64_t bytes);
+int nt_metal_q4k_matvec_slot(int dst_slot, const uint8_t *W, int src_slot, int m, int k);
+int nt_metal_q6k_matvec_slot(int dst_slot, const uint8_t *W, int src_slot, int m, int k);
+int nt_metal_rmsnorm(int dst_slot, int src_slot, const float *w, int n, float eps);
+int nt_metal_rope(int slot, int n_heads, int head_dim, int pos, float theta);
+int nt_metal_silu_mul(int dst_slot, int gate_slot, int up_slot, int n);
+int nt_metal_add(int dst_slot, int a_slot, int b_slot, int n);
+int nt_metal_attn_decode(int dst_slot, int q_slot, const float *K, const float *V,
+                         int t_len, int n_q_heads, int n_kv_heads, int head_dim,
+                         uint32_t k_pos_stride, uint32_t k_head_stride,
+                         uint32_t v_pos_stride, uint32_t v_head_stride, float scale);
+int nt_metal_copy_to_region(void *dst, int src_slot, uint64_t bytes);
+
 #ifdef __cplusplus
 }
 #endif

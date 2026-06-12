@@ -18,6 +18,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #ifndef USE_METAL
 /* ── Reference dequant for Q6_K, identical to gguf.c:dequant_q6_k ────── */
@@ -372,6 +374,175 @@ int main(void)
                mr4, mr6, oksg ? "PASS" : "FAIL");
         ok = ok && oksg;
         free(W4); free(W6); free(xs); free(g1); free(g1b); free(g2); free(n1); free(n2);
+    }
+
+    /* ── M4 gates: layer ops vs CPU references + chained batch ─────────── */
+    {
+        const int E = 512, NH = 4, KVH = 2, HD = 64, T = 9;
+        const float EPS = 1e-5f, THETA = 10000.0f;
+        unsigned rm = 0x4D4;
+        float *xv = (float *)malloc((size_t)E * sizeof(float));
+        float *wn = (float *)malloc((size_t)E * sizeof(float));
+        float *ref = (float *)malloc((size_t)E * sizeof(float));
+        float *gpu = (float *)malloc((size_t)E * sizeof(float));
+        for (int i = 0; i < E; i++) {
+            xv[i] = ((float)rand_r(&rm) / (float)RAND_MAX) - 0.5f;
+            wn[i] = 0.5f + (float)rand_r(&rm) / (float)RAND_MAX;
+        }
+        int m4ok = 1;
+
+        /* rmsnorm */
+        nt_metal_slot_alloc(0, (uint64_t)E * 4);
+        nt_metal_slot_alloc(1, (uint64_t)E * 4);
+        nt_metal_slot_upload(0, xv, (uint64_t)E * 4);
+        nt_metal_rmsnorm(1, 0, wn, E, EPS);
+        nt_metal_slot_download(1, gpu, (uint64_t)E * 4);
+        {
+            double ss = 0; for (int i = 0; i < E; i++) ss += (double)xv[i] * xv[i];
+            float rinv = 1.0f / sqrtf((float)(ss / E) + EPS);
+            float mr = 0;
+            for (int i = 0; i < E; i++) {
+                ref[i] = xv[i] * rinv * wn[i];
+                float r = fabsf(gpu[i] - ref[i]) / (fabsf(ref[i]) + 1e-6f);
+                if (r > mr) mr = r;
+            }
+            printf("test_metal_rmsnorm: max_rel=%.3e %s\n", mr, mr < 5e-4f ? "PASS" : "FAIL");
+            m4ok = m4ok && (mr < 5e-4f);
+        }
+
+        /* rope (in place on slot 0, NH heads x HD) */
+        {
+            const int QN = NH * HD;  /* 256 <= E */
+            const int POS = 7;
+            nt_metal_slot_upload(0, xv, (uint64_t)QN * 4);
+            nt_metal_rope(0, NH, HD, POS, THETA);
+            nt_metal_slot_download(0, gpu, (uint64_t)QN * 4);
+            memcpy(ref, xv, (size_t)QN * 4);
+            for (int h = 0; h < NH; h++)
+                for (int i = 0; i < HD / 2; i++) {
+                    float fr = powf(THETA, -2.0f * (float)i / (float)HD);
+                    float c = cosf((float)POS * fr), s = sinf((float)POS * fr);
+                    float x0 = ref[h * HD + i], x1 = ref[h * HD + i + HD / 2];
+                    ref[h * HD + i]          = x0 * c - x1 * s;
+                    ref[h * HD + i + HD / 2] = x0 * s + x1 * c;
+                }
+            float mr = 0;
+            for (int i = 0; i < QN; i++) {
+                float r = fabsf(gpu[i] - ref[i]) / (fabsf(ref[i]) + 1e-6f);
+                if (r > mr) mr = r;
+            }
+            printf("test_metal_rope: max_rel=%.3e %s\n", mr, mr < 5e-4f ? "PASS" : "FAIL");
+            m4ok = m4ok && (mr < 5e-4f);
+        }
+
+        /* silu_mul + add */
+        {
+            float *g2 = (float *)malloc((size_t)E * 4);
+            for (int i = 0; i < E; i++) g2[i] = ((float)rand_r(&rm) / (float)RAND_MAX) - 0.5f;
+            nt_metal_slot_alloc(2, (uint64_t)E * 4);
+            nt_metal_slot_upload(0, xv, (uint64_t)E * 4);
+            nt_metal_slot_upload(1, g2, (uint64_t)E * 4);
+            nt_metal_silu_mul(2, 0, 1, E);
+            nt_metal_slot_download(2, gpu, (uint64_t)E * 4);
+            float mr = 0;
+            for (int i = 0; i < E; i++) {
+                float si = xv[i] / (1.0f + expf(-xv[i]));
+                float rf = si * g2[i];
+                float r = fabsf(gpu[i] - rf) / (fabsf(rf) + 1e-6f);
+                if (r > mr) mr = r;
+            }
+            nt_metal_add(2, 0, 1, E);
+            nt_metal_slot_download(2, gpu, (uint64_t)E * 4);
+            float mra = 0;
+            for (int i = 0; i < E; i++) {
+                float rf = xv[i] + g2[i];
+                float r = fabsf(gpu[i] - rf) / (fabsf(rf) + 1e-6f);
+                if (r > mra) mra = r;
+            }
+            printf("test_metal_silu_mul: max_rel=%.3e %s\n", mr, mr < 5e-4f ? "PASS" : "FAIL");
+            printf("test_metal_add: max_rel=%.3e %s\n", mra, mra < 5e-4f ? "PASS" : "FAIL");
+            m4ok = m4ok && (mr < 5e-4f) && (mra < 5e-4f);
+            free(g2);
+        }
+
+        /* attn_decode: KV in a registered (page-aligned) region */
+        {
+            const int QDIM = NH * HD;
+            size_t pgsz = (size_t)getpagesize();
+            size_t kv_bytes = ((size_t)KVH * T * HD * 4 * 2 + pgsz - 1) & ~(pgsz - 1);
+            uint8_t *kvbase = (uint8_t *)mmap(NULL, kv_bytes, PROT_READ | PROT_WRITE,
+                                              MAP_ANON | MAP_PRIVATE, -1, 0);
+            float *Kc = (float *)kvbase;
+            float *Vc = Kc + (size_t)KVH * T * HD;
+            float *qv = (float *)malloc((size_t)QDIM * 4);
+            float *att = (float *)malloc((size_t)QDIM * 4);
+            for (int i = 0; i < KVH * T * HD; i++) {
+                Kc[i] = ((float)rand_r(&rm) / (float)RAND_MAX) - 0.5f;
+                Vc[i] = ((float)rand_r(&rm) / (float)RAND_MAX) - 0.5f;
+            }
+            for (int i = 0; i < QDIM; i++) qv[i] = ((float)rand_r(&rm) / (float)RAND_MAX) - 0.5f;
+            nt_metal_register_region(kvbase, kv_bytes);
+            nt_metal_slot_alloc(3, (uint64_t)QDIM * 4);
+            nt_metal_slot_alloc(4, (uint64_t)QDIM * 4);
+            nt_metal_slot_upload(3, qv, (uint64_t)QDIM * 4);
+            float scale = 1.0f / sqrtf((float)HD);
+            /* layout: K[kvh][t][d] -> head stride T*HD, pos stride HD */
+            int rc = nt_metal_attn_decode(4, 3, Kc, Vc, T, NH, KVH, HD,
+                                          (uint32_t)HD, (uint32_t)(T * HD),
+                                          (uint32_t)HD, (uint32_t)(T * HD), scale);
+            nt_metal_slot_download(4, att, (uint64_t)QDIM * 4);
+            float mr = 0;
+            for (int h = 0; h < NH && rc == 0; h++) {
+                int g = h / (NH / KVH);
+                const float *qh = qv + h * HD;
+                const float *Kh = Kc + (size_t)g * T * HD;
+                const float *Vh = Vc + (size_t)g * T * HD;
+                double sc[64]; double smax = -1e30;
+                for (int p = 0; p < T; p++) {
+                    double d = 0;
+                    for (int dd = 0; dd < HD; dd++) d += (double)qh[dd] * Kh[p * HD + dd];
+                    sc[p] = d * scale;
+                    if (sc[p] > smax) smax = sc[p];
+                }
+                double ssum = 0;
+                for (int p = 0; p < T; p++) { sc[p] = exp(sc[p] - smax); ssum += sc[p]; }
+                for (int dd = 0; dd < HD; dd++) {
+                    double a = 0;
+                    for (int p = 0; p < T; p++) a += sc[p] * Vh[p * HD + dd];
+                    float rf = (float)(a / ssum);
+                    float r = fabsf(att[h * HD + dd] - rf) / (fabsf(rf) + 1e-6f);
+                    if (r > mr) mr = r;
+                }
+            }
+            printf("test_metal_attn_decode: rc=%d max_rel=%.3e %s\n",
+                   rc, mr, (rc == 0 && mr < 5e-4f) ? "PASS" : "FAIL");
+            m4ok = m4ok && (rc == 0) && (mr < 5e-4f);
+
+            /* chained batch: rmsnorm -> silu_mul -> add in ONE command buffer,
+             * bit-identical to the solo sequence above re-run */
+            float *solo3 = (float *)malloc((size_t)E * 4);
+            float *bat3  = (float *)malloc((size_t)E * 4);
+            nt_metal_slot_upload(0, xv, (uint64_t)E * 4);
+            nt_metal_rmsnorm(1, 0, wn, E, EPS);
+            nt_metal_silu_mul(2, 1, 0, E);
+            nt_metal_add(1, 2, 0, E);
+            nt_metal_slot_download(1, solo3, (uint64_t)E * 4);
+            nt_metal_slot_upload(0, xv, (uint64_t)E * 4);
+            nt_metal_batch_begin();
+            nt_metal_rmsnorm(1, 0, wn, E, EPS);
+            nt_metal_silu_mul(2, 1, 0, E);
+            nt_metal_add(1, 2, 0, E);
+            int brc2 = nt_metal_batch_commit();
+            nt_metal_slot_download(1, bat3, (uint64_t)E * 4);
+            int chain_ok = (brc2 == 0) && (memcmp(solo3, bat3, (size_t)E * 4) == 0);
+            printf("test_metal_chain_batch: %s (3-op chain batched bit-identical to solo)\n",
+                   chain_ok ? "PASS" : "FAIL");
+            m4ok = m4ok && chain_ok;
+            free(qv); free(att); free(solo3); free(bat3);
+            munmap(kvbase, kv_bytes);
+        }
+        ok = ok && m4ok;
+        free(xv); free(wn); free(ref); free(gpu);
     }
 
     nt_metal_shutdown();

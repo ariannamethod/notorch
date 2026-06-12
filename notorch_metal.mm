@@ -239,6 +239,184 @@ kernel void q6k_matvec_sg(
     float total = simd_sum(acc);
     if (lane == 0) out[tpig.y] = total;
 }
+
+/* ── M4 — layer ops: the CPU fence-posts move onto the GPU ──────────────
+ * rmsnorm / rope / silu·mul / residual add / single-token attention over
+ * the KV cache. With these plus the matvecs, a whole decode layer encodes
+ * into one command buffer — the CPU stops being a fence-post between
+ * every GPU op. All reductions use fixed trees (simd_sum + fixed
+ * threadgroup ladders): bit-identical run-to-run. */
+
+kernel void rmsnorm_f32(
+    device const float *src [[buffer(0)]],
+    device       float *dst [[buffer(1)]],
+    device const float *w   [[buffer(2)]],
+    constant     uint  &n   [[buffer(3)]],
+    constant     float &eps [[buffer(4)]],
+    uint tid                [[thread_position_in_threadgroup]],
+    uint tgsz               [[threads_per_threadgroup]],
+    uint sgid               [[simdgroup_index_in_threadgroup]],
+    uint lane               [[thread_index_in_simdgroup]])
+{
+    threadgroup float partials[32];
+    float acc = 0.0f;
+    for (uint i = tid; i < n; i += tgsz) acc += src[i] * src[i];
+    float s = simd_sum(acc);
+    if (lane == 0) partials[sgid] = s;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = (tgsz + 31u) / 32u;
+    float total = 0.0f;
+    if (sgid == 0) {
+        float p = (lane < nsg) ? partials[lane] : 0.0f;
+        total = simd_sum(p);
+        if (lane == 0) partials[0] = total;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float rinv = rsqrt(partials[0] / float(n) + eps);
+    for (uint i = tid; i < n; i += tgsz) dst[i] = src[i] * rinv * w[i];
+}
+
+/* llama-style rotary: head h, pair (i, i+hd/2), angle = pos * theta^(-2i/hd).
+ * One thread per pair, in place. */
+kernel void rope_f32(
+    device       float *v    [[buffer(0)]],
+    constant     uint  &nh   [[buffer(1)]],
+    constant     uint  &hd   [[buffer(2)]],
+    constant     uint  &pos  [[buffer(3)]],
+    constant     float &theta[[buffer(4)]],
+    uint gid                 [[thread_position_in_grid]])
+{
+    uint half_hd = hd / 2u;
+    if (gid >= nh * half_hd) return;
+    uint h = gid / half_hd;
+    uint i = gid % half_hd;
+    float freq  = pow(theta, -2.0f * float(i) / float(hd));
+    float angle = float(pos) * freq;
+    float c = cos(angle), s = sin(angle);
+    device float *p = v + h * hd;
+    float x0 = p[i], x1 = p[i + half_hd];
+    p[i]           = x0 * c - x1 * s;
+    p[i + half_hd] = x0 * s + x1 * c;
+}
+
+kernel void silu_mul_f32(
+    device const float *gate [[buffer(0)]],
+    device const float *up   [[buffer(1)]],
+    device       float *dst  [[buffer(2)]],
+    constant     uint  &n    [[buffer(3)]],
+    uint gid                 [[thread_position_in_grid]])
+{
+    if (gid >= n) return;
+    float g = gate[gid];
+    dst[gid] = (g / (1.0f + exp(-g))) * up[gid];
+}
+
+kernel void add_f32(
+    device const float *a   [[buffer(0)]],
+    device const float *b   [[buffer(1)]],
+    device       float *dst [[buffer(2)]],
+    constant     uint  &n   [[buffer(3)]],
+    uint gid                [[thread_position_in_grid]])
+{
+    if (gid >= n) return;
+    dst[gid] = a[gid] + b[gid];
+}
+
+/* Single-token attention over the KV cache, one threadgroup per q-head.
+ * Stage 1: 128 threads stride the positions — scores into threadgroup
+ * memory; fixed-ladder max + expsum; normalize. Stage 2: thread d
+ * accumulates sum_p P[p] * V[p][d]. GQA via gqa = n_q_heads / n_kv_heads.
+ * Strides are in FLOATS. t_len <= 4096 (host-checked). */
+typedef struct {
+    uint  t_len, hd, gqa;
+    uint  k_pos_stride, k_head_stride;
+    uint  v_pos_stride, v_head_stride;
+    float scale;
+} AttnParams;
+
+kernel void attn_decode_f32(
+    device const float *q   [[buffer(0)]],   /* [n_q_heads][hd]  */
+    device const float *K   [[buffer(1)]],
+    device const float *V   [[buffer(2)]],
+    device       float *out [[buffer(3)]],   /* [n_q_heads][hd]  */
+    constant AttnParams &P  [[buffer(4)]],
+    uint head               [[threadgroup_position_in_grid]],
+    uint tid                [[thread_position_in_threadgroup]],
+    uint tgsz               [[threads_per_threadgroup]],
+    uint sgid               [[simdgroup_index_in_threadgroup]],
+    uint lane               [[thread_index_in_simdgroup]])
+{
+    threadgroup float scores[4096];
+    threadgroup float red[32];
+
+    uint kvh = head / P.gqa;
+    device const float *qh = q + head * P.hd;
+    device const float *Kh = K + kvh * P.k_head_stride;
+    device const float *Vh = V + kvh * P.v_head_stride;
+
+    /* stage 1a: raw scores */
+    for (uint p = tid; p < P.t_len; p += tgsz) {
+        device const float *kp = Kh + p * P.k_pos_stride;
+        float dot = 0.0f;
+        for (uint d = 0; d < P.hd; d++) dot += qh[d] * kp[d];
+        scores[p] = dot * P.scale;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    /* stage 1b: max (fixed ladder: lanes -> simdgroups -> first sg) */
+    float lmax = -3.4e38f;
+    for (uint p = tid; p < P.t_len; p += tgsz) lmax = max(lmax, scores[p]);
+    lmax = simd_max(lmax);
+    if (lane == 0) red[sgid] = lmax;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = (tgsz + 31u) / 32u;
+    if (sgid == 0) {
+        float m = (lane < nsg) ? red[lane] : -3.4e38f;
+        m = simd_max(m);
+        if (lane == 0) red[0] = m;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float gmax = red[0];
+
+    /* stage 1c: exp + sum */
+    float lsum = 0.0f;
+    for (uint p = tid; p < P.t_len; p += tgsz) {
+        float e = exp(scores[p] - gmax);
+        scores[p] = e;
+        lsum += e;
+    }
+    lsum = simd_sum(lsum);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (lane == 0) red[sgid] = lsum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sgid == 0) {
+        float s = (lane < nsg) ? red[lane] : 0.0f;
+        s = simd_sum(s);
+        if (lane == 0) red[0] = s;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float rsum = 1.0f / red[0];
+
+    /* stage 2: out[d] = sum_p P[p] * V[p][d] */
+    for (uint d = tid; d < P.hd; d += tgsz) {
+        float acc = 0.0f;
+        for (uint p = 0; p < P.t_len; p++)
+            acc += scores[p] * Vh[p * P.v_pos_stride + d];
+        out[head * P.hd + d] = acc * rsum;
+    }
+}
+
+
+kernel void copy_f32(
+    device const float *src [[buffer(0)]],
+    device       float *dst [[buffer(1)]],
+    constant     uint  &n   [[buffer(2)]],
+    uint gid                [[thread_position_in_grid]])
+{
+    if (gid >= n) return;
+    dst[gid] = src[gid];
+}
+
 )MSL";
 
 /* ── State (ARC-managed) ─────────────────────────────────────────────── */
@@ -250,6 +428,21 @@ static id<MTLComputePipelineState> g_q6k_pipe    = nil;
 static id<MTLComputePipelineState> g_q4k_sg_pipe = nil;   /* M3 simdgroup path */
 static id<MTLComputePipelineState> g_q6k_sg_pipe = nil;
 static int                         g_use_sg      = 1;     /* NT_METAL_NAIVE=1 -> 0 */
+static id<MTLComputePipelineState> g_rms_pipe    = nil;   /* M4 layer ops */
+static id<MTLComputePipelineState> g_rope_pipe   = nil;
+static id<MTLComputePipelineState> g_silu_pipe   = nil;
+static id<MTLComputePipelineState> g_add_pipe    = nil;
+static id<MTLComputePipelineState> g_attn_pipe   = nil;
+static id<MTLComputePipelineState> g_copy_pipe   = nil;
+
+/* M4 — device-resident activation slots: fixed regions in a persistent
+ * GPU arena. Ops read/write slots without host roundtrips, so a whole
+ * decode layer chains inside one command buffer. Slots survive batch
+ * commits; upload/download are the only host crossings. */
+#define NT_SLOT_MAX 64
+static id<MTLBuffer> g_slot_buf  = nil;
+static NSUInteger    g_slot_cap  = 0, g_slot_used = 0;
+static struct { NSUInteger off, bytes; int live; } g_slot_tab[NT_SLOT_MAX];
 static int                         g_initialised = 0;
 
 /* Phase 2: resident zero-copy buffers wrapping the packed GGUF data block.
@@ -357,6 +550,25 @@ int nt_metal_init(void)
         }
         /* M3 default is the simdgroup path; NT_METAL_NAIVE=1 falls back to the
          * one-thread-per-row kernels (A/B reference, never deleted). */
+        /* M4 layer-op pipelines */
+        struct { NSString *name; id<MTLComputePipelineState> __strong *slot; } m4ops[] = {
+            { @"rmsnorm_f32",     &g_rms_pipe  },
+            { @"rope_f32",        &g_rope_pipe },
+            { @"silu_mul_f32",    &g_silu_pipe },
+            { @"add_f32",         &g_add_pipe  },
+            { @"attn_decode_f32", &g_attn_pipe },
+            { @"copy_f32",        &g_copy_pipe },
+        };
+        for (size_t oi = 0; oi < sizeof(m4ops)/sizeof(m4ops[0]); oi++) {
+            id<MTLFunction> f = [lib newFunctionWithName:m4ops[oi].name];
+            if (!f) { fprintf(stderr, "nt_metal_init: kernel %s missing\n", m4ops[oi].name.UTF8String); return 4; }
+            *m4ops[oi].slot = [g_device newComputePipelineStateWithFunction:f error:&err];
+            if (!*m4ops[oi].slot) {
+                fprintf(stderr, "nt_metal_init: %s pipeline failed: %s\n", m4ops[oi].name.UTF8String,
+                        err ? err.localizedDescription.UTF8String : "(no error)");
+                return 5;
+            }
+        }
         g_use_sg = getenv("NT_METAL_NAIVE") ? 0 : 1;
     }
 
@@ -379,6 +591,10 @@ void nt_metal_shutdown(void)
     g_q6k_pipe    = nil;
     g_q4k_sg_pipe = nil;
     g_q6k_sg_pipe = nil;
+    g_rms_pipe = nil; g_rope_pipe = nil; g_silu_pipe = nil;
+    g_add_pipe = nil; g_attn_pipe = nil; g_copy_pipe = nil;
+    g_slot_buf = nil; g_slot_cap = 0; g_slot_used = 0;
+    memset(g_slot_tab, 0, sizeof(g_slot_tab));
     g_queue       = nil;
     g_device      = nil;
     g_initialised = 0;
@@ -667,3 +883,332 @@ int nt_metal_batch_active(void)
 {
     return g_batch_active;
 }
+
+/* ── M4 — slots + layer ops ──────────────────────────────────────────── */
+
+/* Append a region to the registered-segment table WITHOUT resetting it
+ * (nt_metal_register_base resets — weights block; this appends — KV cache
+ * and friends). base must be page-aligned, nbytes a page multiple. */
+int nt_metal_register_region(const void *base, uint64_t nbytes)
+{
+    if (!g_initialised) {
+        int rc = nt_metal_init();
+        if (rc != 0) return rc;
+    }
+    uint64_t pg = (uint64_t)getpagesize();
+    if (((uintptr_t)base & (pg - 1)) || (nbytes & (pg - 1))) {
+        fprintf(stderr, "nt_metal_register_region: base/len not page-aligned\n");
+        return 12;
+    }
+    uint64_t chunk = (uint64_t)g_device.maxBufferLength & ~(pg - 1);
+    @autoreleasepool {
+        uint64_t off = 0;
+        while (off < nbytes && g_nseg < NT_MAX_SEG) {
+            uint64_t len = nbytes - off;
+            if (len > chunk) len = chunk;
+            id<MTLBuffer> b = [g_device newBufferWithBytesNoCopy:(void *)((const uint8_t *)base + off)
+                                                         length:(NSUInteger)len
+                                                        options:MTLResourceStorageModeShared
+                                                    deallocator:nil];
+            if (!b) { fprintf(stderr, "nt_metal_register_region: NoCopy failed\n"); return 12; }
+            g_seg_buf[g_nseg] = b;
+            g_seg_ptr[g_nseg] = (const uint8_t *)base + off;
+            g_seg_len[g_nseg] = len;
+            g_nseg++;
+            off += len;
+        }
+        if (off < nbytes) return 13;
+    }
+    return 0;
+}
+
+/* Resolve a host pointer to a registered (buffer, offset). 0 = found. */
+static int resolve_region(const void *p, uint64_t bytes,
+                          id<MTLBuffer> __strong *buf, NSUInteger *off)
+{
+    for (int s = 0; s < g_nseg; s++) {
+        if ((const uint8_t *)p >= g_seg_ptr[s] &&
+            (uint64_t)((const uint8_t *)p - g_seg_ptr[s]) + bytes <= g_seg_len[s]) {
+            *buf = g_seg_buf[s];
+            *off = (NSUInteger)((const uint8_t *)p - g_seg_ptr[s]);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int nt_metal_slot_alloc(int slot, uint64_t bytes)
+{
+    if (!g_initialised) {
+        int rc = nt_metal_init();
+        if (rc != 0) return rc;
+    }
+    if (slot < 0 || slot >= NT_SLOT_MAX) return 20;
+    if (g_slot_tab[slot].live && g_slot_tab[slot].bytes >= bytes) return 0;  /* idempotent */
+    if (g_slot_tab[slot].live) return 21;     /* grow of a live slot: not supported */
+    @autoreleasepool {
+        NSUInteger need = ((g_slot_used + 255u) & ~(NSUInteger)255u) + (NSUInteger)bytes;
+        if (need > g_slot_cap) {
+            /* growing reallocates: drain any batch, then copy live contents */
+            if (g_batch_active) { int rc = batch_drain(); if (rc) return rc; rc = batch_open_cb(); if (rc) return rc; }
+            NSUInteger cap = g_slot_cap ? g_slot_cap : (NSUInteger)1 << 20;
+            while (cap < need) cap <<= 1;
+            id<MTLBuffer> nb = [g_device newBufferWithLength:cap options:MTLResourceStorageModeShared];
+            if (!nb) return 11;
+            if (g_slot_buf && g_slot_used)
+                memcpy([nb contents], [g_slot_buf contents], (size_t)g_slot_used);
+            g_slot_buf = nb;
+            g_slot_cap = cap;
+        }
+        NSUInteger off = (g_slot_used + 255u) & ~(NSUInteger)255u;
+        g_slot_tab[slot].off   = off;
+        g_slot_tab[slot].bytes = (NSUInteger)bytes;
+        g_slot_tab[slot].live  = 1;
+        g_slot_used = off + (NSUInteger)bytes;
+    }
+    return 0;
+}
+
+int nt_metal_slot_upload(int slot, const void *src, uint64_t bytes)
+{
+    if (slot < 0 || slot >= NT_SLOT_MAX || !g_slot_tab[slot].live ||
+        bytes > g_slot_tab[slot].bytes) return 20;
+    memcpy((uint8_t *)[g_slot_buf contents] + g_slot_tab[slot].off, src, (size_t)bytes);
+    return 0;
+}
+
+/* Read a slot back. Call OUTSIDE an open batch (commit first) — pending
+ * GPU writes to the slot land only at commit. */
+int nt_metal_slot_download(int slot, void *dst, uint64_t bytes)
+{
+    if (slot < 0 || slot >= NT_SLOT_MAX || !g_slot_tab[slot].live ||
+        bytes > g_slot_tab[slot].bytes) return 20;
+    memcpy(dst, (const uint8_t *)[g_slot_buf contents] + g_slot_tab[slot].off, (size_t)bytes);
+    return 0;
+}
+
+/* Open an encoder for one op: the live batch one, or a fresh solo cb. */
+static int op_enc(id<MTLCommandBuffer> __strong *cb, id<MTLComputeCommandEncoder> __strong *enc)
+{
+    if (g_batch_active) {
+        if (!g_batch_enc) { int rc = batch_open_cb(); if (rc) return rc; }
+        *cb = nil; *enc = g_batch_enc;
+        return 0;
+    }
+    *cb  = [g_queue commandBuffer];
+    *enc = *cb ? [*cb computeCommandEncoder] : nil;
+    if (!*cb || !*enc) { fprintf(stderr, "nt_metal: op encoder alloc failed\n"); return 11; }
+    return 0;
+}
+
+/* Finish one op: solo waits + checks status; batch returns immediately. */
+static int op_fin(id<MTLCommandBuffer> cb, id<MTLComputeCommandEncoder> enc)
+{
+    if (g_batch_active) return 0;
+    [enc endEncoding];
+    [cb commit];
+    [cb waitUntilCompleted];
+    if (cb.status != MTLCommandBufferStatusCompleted) {
+        fprintf(stderr, "nt_metal: op command buffer not completed status=%ld error=%s\n",
+                (long)cb.status, cb.error ? [cb.error.localizedDescription UTF8String] : "(none)");
+        return 14;
+    }
+    return 0;
+}
+
+static int slot_ok(int s) { return s >= 0 && s < NT_SLOT_MAX && g_slot_tab[s].live; }
+
+int nt_metal_rmsnorm(int dst_slot, int src_slot, const float *w, int n, float eps)
+{
+    if (!g_initialised) { int rc = nt_metal_init(); if (rc) return rc; }
+    if (!slot_ok(dst_slot) || !slot_ok(src_slot) || n <= 0) return 20;
+    @autoreleasepool {
+        id<MTLBuffer> bw = nil; NSUInteger w_off = 0;
+        if (resolve_region(w, (uint64_t)n * sizeof(float), &bw, &w_off) != 0) {
+            bw = [g_device newBufferWithBytes:w length:(NSUInteger)n * sizeof(float)
+                                      options:MTLResourceStorageModeShared];
+            if (!bw) return 11;
+        }
+        id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
+        int rc = op_enc(&cb, &enc); if (rc) return rc;
+        uint32_t n_u = (uint32_t)n;
+        [enc setComputePipelineState:g_rms_pipe];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[src_slot].off atIndex:0];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[dst_slot].off atIndex:1];
+        [enc setBuffer:bw offset:w_off atIndex:2];
+        [enc setBytes:&n_u length:4 atIndex:3];
+        [enc setBytes:&eps length:4 atIndex:4];
+        MTLSize tg = MTLSizeMake(1024, 1, 1);
+        [enc dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:tg];
+        return op_fin(cb, enc);
+    }
+}
+
+int nt_metal_rope(int slot, int n_heads, int head_dim, int pos, float theta)
+{
+    if (!g_initialised) { int rc = nt_metal_init(); if (rc) return rc; }
+    if (!slot_ok(slot) || n_heads <= 0 || head_dim <= 0 || (head_dim & 1)) return 20;
+    @autoreleasepool {
+        id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
+        int rc = op_enc(&cb, &enc); if (rc) return rc;
+        uint32_t nh = (uint32_t)n_heads, hd = (uint32_t)head_dim, ps = (uint32_t)pos;
+        [enc setComputePipelineState:g_rope_pipe];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[slot].off atIndex:0];
+        [enc setBytes:&nh length:4 atIndex:1];
+        [enc setBytes:&hd length:4 atIndex:2];
+        [enc setBytes:&ps length:4 atIndex:3];
+        [enc setBytes:&theta length:4 atIndex:4];
+        NSUInteger total = (NSUInteger)n_heads * (NSUInteger)(head_dim / 2);
+        [enc dispatchThreads:MTLSizeMake(total, 1, 1)
+       threadsPerThreadgroup:MTLSizeMake(total < 256 ? total : 256, 1, 1)];
+        return op_fin(cb, enc);
+    }
+}
+
+static int elementwise2(id<MTLComputePipelineState> pipe, int dst, int a, int b, int n)
+{
+    if (!g_initialised) { int rc = nt_metal_init(); if (rc) return rc; }
+    if (!slot_ok(dst) || !slot_ok(a) || !slot_ok(b) || n <= 0) return 20;
+    @autoreleasepool {
+        id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
+        int rc = op_enc(&cb, &enc); if (rc) return rc;
+        uint32_t n_u = (uint32_t)n;
+        [enc setComputePipelineState:pipe];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[a].off atIndex:0];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[b].off atIndex:1];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[dst].off atIndex:2];
+        [enc setBytes:&n_u length:4 atIndex:3];
+        [enc dispatchThreads:MTLSizeMake((NSUInteger)n, 1, 1)
+       threadsPerThreadgroup:MTLSizeMake(n < 256 ? (NSUInteger)n : 256, 1, 1)];
+        return op_fin(cb, enc);
+    }
+}
+
+int nt_metal_silu_mul(int dst_slot, int gate_slot, int up_slot, int n)
+{ return elementwise2(g_silu_pipe, dst_slot, gate_slot, up_slot, n); }
+
+int nt_metal_add(int dst_slot, int a_slot, int b_slot, int n)
+{ return elementwise2(g_add_pipe, dst_slot, a_slot, b_slot, n); }
+
+int nt_metal_attn_decode(int dst_slot, int q_slot, const float *K, const float *V,
+                         int t_len, int n_q_heads, int n_kv_heads, int head_dim,
+                         uint32_t k_pos_stride, uint32_t k_head_stride,
+                         uint32_t v_pos_stride, uint32_t v_head_stride, float scale)
+{
+    if (!g_initialised) { int rc = nt_metal_init(); if (rc) return rc; }
+    if (!slot_ok(dst_slot) || !slot_ok(q_slot)) return 20;
+    if (t_len <= 0 || t_len > 4096) {
+        fprintf(stderr, "nt_metal_attn_decode: t_len=%d out of range (1..4096)\n", t_len);
+        return 20;
+    }
+    if (n_kv_heads <= 0 || n_q_heads % n_kv_heads) return 20;
+    @autoreleasepool {
+        /* K/V must live in registered regions — too big to upload per call */
+        id<MTLBuffer> bK = nil, bV = nil; NSUInteger K_off = 0, V_off = 0;
+        uint64_t k_span = ((uint64_t)(n_kv_heads - 1) * k_head_stride +
+                           (uint64_t)(t_len - 1) * k_pos_stride + head_dim) * sizeof(float);
+        uint64_t v_span = ((uint64_t)(n_kv_heads - 1) * v_head_stride +
+                           (uint64_t)(t_len - 1) * v_pos_stride + head_dim) * sizeof(float);
+        if (resolve_region(K, k_span, &bK, &K_off) != 0 ||
+            resolve_region(V, v_span, &bV, &V_off) != 0) {
+            fprintf(stderr, "nt_metal_attn_decode: K/V not in a registered region\n");
+            return 22;
+        }
+        id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
+        int rc = op_enc(&cb, &enc); if (rc) return rc;
+        struct { uint32_t t_len, hd, gqa, kps, khs, vps, vhs; float scale; } P = {
+            (uint32_t)t_len, (uint32_t)head_dim,
+            (uint32_t)(n_q_heads / n_kv_heads),
+            k_pos_stride, k_head_stride, v_pos_stride, v_head_stride, scale
+        };
+        [enc setComputePipelineState:g_attn_pipe];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[q_slot].off  atIndex:0];
+        [enc setBuffer:bK offset:K_off atIndex:1];
+        [enc setBuffer:bV offset:V_off atIndex:2];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[dst_slot].off atIndex:3];
+        [enc setBytes:&P length:sizeof(P) atIndex:4];
+        [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)n_q_heads, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+        return op_fin(cb, enc);
+    }
+}
+
+/* Copy a slot into a registered host region GPU-side (KV append inside a
+ * batch). dst must be float-aligned inside a registered region. */
+int nt_metal_copy_to_region(void *dst, int src_slot, uint64_t bytes)
+{
+    if (!g_initialised) { int rc = nt_metal_init(); if (rc) return rc; }
+    if (!slot_ok(src_slot) || bytes == 0 || (bytes & 3)) return 20;
+    @autoreleasepool {
+        id<MTLBuffer> bD = nil; NSUInteger D_off = 0;
+        if (resolve_region(dst, bytes, &bD, &D_off) != 0) {
+            fprintf(stderr, "nt_metal_copy_to_region: dst not registered\n");
+            return 22;
+        }
+        id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
+        int rc = op_enc(&cb, &enc); if (rc) return rc;
+        uint32_t n_u = (uint32_t)(bytes / 4);
+        [enc setComputePipelineState:g_copy_pipe];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[src_slot].off atIndex:0];
+        [enc setBuffer:bD offset:D_off atIndex:1];
+        [enc setBytes:&n_u length:4 atIndex:2];
+        [enc dispatchThreads:MTLSizeMake((NSUInteger)n_u, 1, 1)
+       threadsPerThreadgroup:MTLSizeMake(n_u < 256 ? (NSUInteger)n_u : 256, 1, 1)];
+        return op_fin(cb, enc);
+    }
+}
+
+/* Slot-resident matvecs: x from a slot, out to a slot — chain links for
+ * the layer graph. Same kernels and geometry as the host-pointer path. */
+static int matvec_slot(id<MTLComputePipelineState> naive_pipe,
+                       id<MTLComputePipelineState> sg_pipe,
+                       NSUInteger block_bytes,
+                       int dst_slot, const uint8_t *W, int src_slot, int m, int k)
+{
+    if (!g_initialised) { int rc = nt_metal_init(); if (rc) return rc; }
+    if (!slot_ok(dst_slot) || !slot_ok(src_slot)) return 20;
+    if (k <= 0 || (k % 256) != 0 || m <= 0) return 10;
+    @autoreleasepool {
+        const NSUInteger W_bytes = (NSUInteger)m * ((NSUInteger)k / 256u) * block_bytes;
+        id<MTLBuffer> bW = nil; NSUInteger W_off = 0;
+        if (resolve_region(W, W_bytes, &bW, &W_off) != 0) {
+            bW = [g_device newBufferWithBytes:W length:W_bytes
+                                      options:MTLResourceStorageModeShared];
+            if (!bW) return 11;
+        }
+        id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
+        int rc = op_enc(&cb, &enc); if (rc) return rc;
+        uint32_t k_u32 = (uint32_t)k;
+        if (g_use_sg && sg_pipe) {
+            [enc setComputePipelineState:sg_pipe];
+            [enc setBuffer:bW offset:W_off atIndex:0];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[src_slot].off atIndex:1];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[dst_slot].off atIndex:2];
+            [enc setBytes:&k_u32 length:4 atIndex:3];
+            NSUInteger nsg = sg_pipe.maxTotalThreadsPerThreadgroup / 32u;
+            if (nsg > 8) nsg = 8;
+            if (nsg < 1) nsg = 1;
+            if (nsg > (NSUInteger)m) nsg = (NSUInteger)m;
+            [enc dispatchThreads:MTLSizeMake(32, (NSUInteger)m, 1)
+           threadsPerThreadgroup:MTLSizeMake(32, nsg, 1)];
+        } else {
+            [enc setComputePipelineState:naive_pipe];
+            [enc setBuffer:bW offset:W_off atIndex:0];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[src_slot].off atIndex:1];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[dst_slot].off atIndex:2];
+            [enc setBytes:&k_u32 length:4 atIndex:3];
+            NSUInteger tg = naive_pipe.maxTotalThreadsPerThreadgroup;
+            if (tg > 64) tg = 64;
+            if (tg > (NSUInteger)m) tg = (NSUInteger)m;
+            [enc dispatchThreads:MTLSizeMake((NSUInteger)m, 1, 1)
+           threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+        }
+        return op_fin(cb, enc);
+    }
+}
+
+int nt_metal_q4k_matvec_slot(int dst_slot, const uint8_t *W, int src_slot, int m, int k)
+{ return matvec_slot(g_q4k_pipe, g_q4k_sg_pipe, 144u, dst_slot, W, src_slot, m, k); }
+
+int nt_metal_q6k_matvec_slot(int dst_slot, const uint8_t *W, int src_slot, int m, int k)
+{ return matvec_slot(g_q6k_pipe, g_q6k_sg_pipe, 210u, dst_slot, W, src_slot, m, k); }
