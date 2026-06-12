@@ -25,6 +25,7 @@ static double now_s(void) {
 int main(void)
 {
     if (!nt_metal_available()) { fprintf(stderr, "no Metal device, skipping\n"); return 0; }
+    setenv("NT_METAL_SG", "1", 1);   /* phases A-C bench the sg kernels; D = naive (library default) */
     if (nt_metal_init() != 0) return 1;
 
     const int M = 2048, K = 2048;            /* small-model-layer sized */
@@ -100,9 +101,10 @@ int main(void)
     printf("  C /layer (%3d syncs): %7.2f ms/sweep  %6.1f us/matvec  x%.2f\n", LAYERS,     tC * 1e3, tC * 1e6 / n_mv, tA / tC);
 
 
-    /* D: naive kernels, solo — isolates the simdgroup kernel multiplier */
+    /* D: naive kernels (library default), solo — isolates the simdgroup
+     * kernel multiplier */
     nt_metal_shutdown();
-    setenv("NT_METAL_NAIVE", "1", 1);
+    unsetenv("NT_METAL_SG");
     if (nt_metal_init() != 0 || nt_metal_register_base(base, total) != 0) {
         fprintf(stderr, "naive re-init failed\n"); return 1;
     }
@@ -113,7 +115,6 @@ int main(void)
             for (int w = 0; w < NW; w++)
                 nt_metal_q4k_matvec(out + (size_t)w * M, base + (uint64_t)w * W_bytes, x, M, K);
     double tD = (now_s() - t0) / REPS;
-    unsetenv("NT_METAL_NAIVE");
     printf("  D naive  (%3d syncs): %7.2f ms/sweep  %6.1f us/matvec  (sg kernel x%.2f vs naive)\n",
            n_mv, tD * 1e3, tD * 1e6 / n_mv, tD / tA);
     free(x); free(out);

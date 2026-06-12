@@ -13,6 +13,24 @@ Newest entries on top.
 
 ---
 
+## 2026-06-13 — Metal: naive matvec is the default; sg goes opt-in (NT_METAL_SG=1)
+
+The authoritative A/B — live oyent-24B decode through doe on M4 Pro, one
+binary, whole-run NT_METAL_NAIVE flag — measured the simdgroup kernels at
+−23% vs naive (sg median 2.86 t/s vs naive 3.71; correctness gates green,
+identity intact, pure speed). The square resident microbench win that made
+sg the default in `09e76af` (×1.81, M=K=2048) does not transfer to the real
+mixed-shape decode stream (280 matvecs/token, attn k/v down to 1024×5120),
+and a phase-fair microbench rerun on neo A18 now agrees (sg solo 227.27
+ms/sweep vs naive 155.85). Real-workload A/B outranks the microbench, so the
+default follows it: `g_use_sg` starts at 0, `NT_METAL_SG=1` opts in for the
+geometry-tuning round, `NT_METAL_NAIVE=1` still forces naive and wins over
+both. Tests updated to match — the sg determinism/tolerance gates opt in
+explicitly (the tolerance gate now also proves the default differs from sg
+by reduction order, max_rel 3.6e-05 ≠ 0), bench phases A–C pin sg while
+phase D measures the library default. 13 gates green, rc=0, −Wall −Wextra
+clean.
+
 ## 2026-06-12 — Metal token-graph step 1: persistent arenas + batched dispatch (with Q6_K landing the same day)
 
 Two commits, two nodes, one front. `dd1779f` (metal node): `nt_metal_q6k_matvec` —

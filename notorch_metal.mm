@@ -548,8 +548,6 @@ int nt_metal_init(void)
                     err ? err.localizedDescription.UTF8String : "(no error)");
             return 5;
         }
-        /* M3 default is the simdgroup path; NT_METAL_NAIVE=1 falls back to the
-         * one-thread-per-row kernels (A/B reference, never deleted). */
         /* M4 layer-op pipelines */
         struct { NSString *name; id<MTLComputePipelineState> __strong *slot; } m4ops[] = {
             { @"rmsnorm_f32",     &g_rms_pipe  },
@@ -569,7 +567,13 @@ int nt_metal_init(void)
                 return 5;
             }
         }
-        g_use_sg = getenv("NT_METAL_NAIVE") ? 0 : 1;
+        /* Default = naive one-thread-per-row. The 24B doe A/B on M4 Pro
+         * (2026-06-12) measured sg at -23% on the real mixed-shape decode
+         * stream (280 matvecs/token, attn k/v down to 1024x5120) despite
+         * x1.81 on the square resident microbench. NT_METAL_SG=1 opts in
+         * for geometry tuning; NT_METAL_NAIVE=1 still forces naive. */
+        g_use_sg = getenv("NT_METAL_SG") ? 1 : 0;
+        if (getenv("NT_METAL_NAIVE")) g_use_sg = 0;
     }
 
     g_initialised = 1;

@@ -346,7 +346,10 @@ int main(void)
         for (int i = 0; i < sm; i++) make_random_q6k_row(W6 + (uint64_t)i * r6, (uint64_t)sk, &rs);
         for (int j = 0; j < sk; j++) xs[j] = ((float)rand_r(&rs) / (float)RAND_MAX) - 0.5f;
 
-        /* default = simdgroup path */
+        /* simdgroup path is opt-in (NT_METAL_SG=1) since the 24B doe A/B
+         * regression; library default is naive */
+        nt_metal_shutdown();
+        setenv("NT_METAL_SG", "1", 1);
         nt_metal_q4k_matvec(g1, W4, xs, sm, sk);
         nt_metal_q4k_matvec(g1b, W4, xs, sm, sk);
         nt_metal_q6k_matvec(g2, W6, xs, sm, sk);
@@ -355,12 +358,11 @@ int main(void)
                sdet ? "PASS" : "FAIL");
         ok = ok && sdet;
 
-        /* naive reference path: different reduction order — tolerance gate */
+        /* default (naive) path: different reduction order — tolerance gate */
+        unsetenv("NT_METAL_SG");
         nt_metal_shutdown();
-        setenv("NT_METAL_NAIVE", "1", 1);
         nt_metal_q4k_matvec(n1, W4, xs, sm, sk);
         nt_metal_q6k_matvec(n2, W6, xs, sm, sk);
-        unsetenv("NT_METAL_NAIVE");
         nt_metal_shutdown();
         float mr4 = 0.f, mr6 = 0.f;
         for (int i = 0; i < sm; i++) {
