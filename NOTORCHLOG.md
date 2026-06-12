@@ -31,6 +31,17 @@ by reduction order, max_rel 3.6e-05 ≠ 0), bench phases A–C pin sg while
 phase D measures the library default. 13 gates green, rc=0, −Wall −Wextra
 clean.
 
+Same day, the lesson became a harness: `bench_metal_batch doe` — doe-mix
+mode with the real oyent-24B shapes (q/k/v/o + gate/up/down ×40 + lm_head;
+Q6_K on v/down/lm_head), weight copies cycled per layer so every matvec
+streams from DRAM (small attn matrices get 8 copies to defeat the SLC),
+per-group sync isolation plus an honest full-speed sweep. First read on
+neo A18 (naive default): time follows bytes — ffn 85.2% of time vs 88% of
+bytes, no dispatch anomaly — and effective bandwidth is 26.6 GB/s, with
+per-group spread 18.8 (attn qkv, small-m underoccupancy) to 34.0 (gate+up);
+ffn down (Q6_K, m=5120 k=32768) is the worst byte-weighted offender at
+19.7 GB/s. That is the target list for the kernel-geometry round.
+
 ## 2026-06-12 — Metal token-graph step 1: persistent arenas + batched dispatch (with Q6_K landing the same day)
 
 Two commits, two nodes, one front. `dd1779f` (metal node): `nt_metal_q6k_matvec` —
