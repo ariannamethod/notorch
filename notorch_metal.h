@@ -85,6 +85,24 @@ int nt_metal_q6k_matvec(float *out,
  * Calls nt_metal_init if needed. Weights outside the region fall back to upload. */
 int nt_metal_register_base(const void *base, uint64_t nbytes);
 
+/* ── Token-graph batch mode ──────────────────────────────────────────
+ * Collect multiple matvec dispatches into ONE command buffer with ONE
+ * GPU sync at commit. Between begin and commit, nt_metal_q4k_matvec /
+ * nt_metal_q6k_matvec ENQUEUE instead of executing: x is consumed at
+ * call time (the caller may reuse its memory immediately), but `out`
+ * is written only during commit — do not read `out`, and keep its
+ * memory alive, until nt_metal_batch_commit returns. Intended for
+ * groups of independent matvecs that share an input ({q,k,v},
+ * {gate,up}, the whole per-token weight sweep): 1 CPU-GPU sync per
+ * group instead of 1 per matvec. The kernels and dispatch geometry are
+ * identical to the solo path, so batched results are bit-identical to
+ * sequential calls. begin is idempotent; commit without begin is a
+ * no-op. Returns 0 on success, 14 if the GPU reports an error (every
+ * pending `out` of that batch is then undefined). */
+int nt_metal_batch_begin(void);
+int nt_metal_batch_commit(void);
+int nt_metal_batch_active(void);
+
 #ifdef __cplusplus
 }
 #endif

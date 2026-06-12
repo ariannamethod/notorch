@@ -158,6 +158,29 @@ static const uint8_t *g_seg_ptr[NT_MAX_SEG] = { NULL };
 static uint64_t       g_seg_len[NT_MAX_SEG] = { 0 };
 static int            g_nseg = 0;
 
+/* M1 — persistent Shared arenas, bump-allocated: `in` holds x uploads (GPU
+ * reads), `out` holds matvec results (GPU writes, host copies back after
+ * the wait). Kills the per-call newBufferWithBytes / newBufferWithLength
+ * churn. Suballocations are 256-byte aligned — a safe setBuffer:offset:
+ * on every GPU family. */
+static id<MTLBuffer> g_arena_in  = nil;
+static NSUInteger    g_in_cap  = 0, g_in_off  = 0;
+static id<MTLBuffer> g_arena_out = nil;
+static NSUInteger    g_out_cap = 0, g_out_off = 0;
+
+/* M2 — token-graph batch: one command buffer collects many matvec
+ * dispatches — ONE commit + ONE waitUntilCompleted per batch instead of
+ * one per call. Results land in arena regions, copied to their host
+ * destinations at commit (or at a transparent mid-batch flush when an
+ * arena or the pending table fills). */
+#define NT_BATCH_MAX 256
+typedef struct { float *dst; NSUInteger off, bytes; } NTPendingOut;
+static int                          g_batch_active = 0;
+static id<MTLCommandBuffer>         g_batch_cb     = nil;
+static id<MTLComputeCommandEncoder> g_batch_enc    = nil;
+static NTPendingOut                 g_pending[NT_BATCH_MAX];
+static int                          g_npending     = 0;
+
 /* ── API ─────────────────────────────────────────────────────────────── */
 
 int nt_metal_available(void)
@@ -224,6 +247,13 @@ int nt_metal_init(void)
 
 void nt_metal_shutdown(void)
 {
+    if (g_batch_enc) [g_batch_enc endEncoding];   /* abort any open batch */
+    g_batch_cb     = nil;
+    g_batch_enc    = nil;
+    g_batch_active = 0;
+    g_npending     = 0;
+    g_arena_in  = nil; g_in_cap  = 0; g_in_off  = 0;
+    g_arena_out = nil; g_out_cap = 0; g_out_off = 0;
     for (int s = 0; s < g_nseg; s++) g_seg_buf[s] = nil;
     g_nseg        = 0;
     g_q4k_pipe    = nil;
@@ -271,6 +301,156 @@ int nt_metal_register_base(const void *base, uint64_t nbytes)
     return 0;
 }
 
+/* ── M1/M2 — scratch arenas + token-graph batch (state above) ────────── */
+
+static int arena_grow(id<MTLBuffer> __strong *buf, NSUInteger *cap, NSUInteger need)
+{
+    NSUInteger c = *cap ? *cap : (NSUInteger)1 << 20;
+    while (c < need) c <<= 1;
+    id<MTLBuffer> nb = [g_device newBufferWithLength:c
+                                             options:MTLResourceStorageModeShared];
+    if (!nb) { fprintf(stderr, "nt_metal: arena grow to %lu failed\n", (unsigned long)c); return 11; }
+    *buf = nb;
+    *cap = c;
+    return 0;
+}
+
+static int batch_open_cb(void)
+{
+    g_batch_cb  = [g_queue commandBuffer];
+    g_batch_enc = g_batch_cb ? [g_batch_cb computeCommandEncoder] : nil;
+    if (!g_batch_cb || !g_batch_enc) {
+        fprintf(stderr, "nt_metal: batch encoder alloc failed\n");
+        g_batch_cb = nil; g_batch_enc = nil;
+        return 11;
+    }
+    return 0;
+}
+
+/* Commit the in-flight batch encoder, wait once, drain every pending out
+ * region to its host destination, reset the arenas. */
+static int batch_drain(void)
+{
+    if (!g_batch_enc) return 0;
+    [g_batch_enc endEncoding];
+    [g_batch_cb commit];
+    [g_batch_cb waitUntilCompleted];
+    int rc = 0;
+    if (g_batch_cb.status != MTLCommandBufferStatusCompleted) {
+        fprintf(stderr, "nt_metal: batch command buffer not completed status=%ld error=%s\n",
+                (long)g_batch_cb.status,
+                g_batch_cb.error ? [g_batch_cb.error.localizedDescription UTF8String] : "(none)");
+        rc = 14;
+    } else {
+        const uint8_t *ob = (const uint8_t *)[g_arena_out contents];
+        for (int i = 0; i < g_npending; i++)
+            memcpy(g_pending[i].dst, ob + g_pending[i].off, (size_t)g_pending[i].bytes);
+    }
+    g_batch_cb = nil; g_batch_enc = nil;
+    g_npending = 0;
+    g_in_off = 0; g_out_off = 0;
+    return rc;
+}
+
+/* Shared encode path for both quant kernels, solo and batch modes. The
+ * kernels and dispatch geometry are UNTOUCHED relative to the per-call
+ * path they replace — results stay bit-identical. */
+static int encode_matvec(id<MTLComputePipelineState> pipe, NSUInteger block_bytes,
+                         float *out, const uint8_t *W, const float *x, int m, int k)
+{
+    const NSUInteger nblocks   = (NSUInteger)k / 256u;
+    const NSUInteger row_bytes = nblocks * block_bytes;
+    const NSUInteger W_bytes   = (NSUInteger)m * row_bytes;
+    const NSUInteger x_bytes   = (NSUInteger)k * sizeof(float);
+    const NSUInteger out_bytes = (NSUInteger)m * sizeof(float);
+
+    /* Resident weight: bind by offset inside a registered segment (zero
+     * upload). Unregistered W uploads for this call (tests, small tensors). */
+    id<MTLBuffer> bW = nil; NSUInteger W_off = 0;
+    for (int s = 0; s < g_nseg; s++) {
+        if (W >= g_seg_ptr[s] &&
+            (uint64_t)(W - g_seg_ptr[s]) + W_bytes <= g_seg_len[s]) {
+            bW = g_seg_buf[s];
+            W_off = (NSUInteger)(W - g_seg_ptr[s]);
+            break;
+        }
+    }
+    if (!bW) {
+        bW = [g_device newBufferWithBytes:W length:W_bytes
+                                  options:MTLResourceStorageModeShared];
+        if (!bW) { fprintf(stderr, "nt_metal: W upload alloc failed\n"); return 11; }
+    }
+
+    /* Arena capacity. Growing reallocates the MTLBuffer, which is only
+     * safe with no encoded-but-uncommitted work referencing it — a live
+     * batch is drained (one extra sync) before any grow or reset. */
+    NSUInteger in_need  = ((g_in_off  + 255u) & ~(NSUInteger)255u) + x_bytes;
+    NSUInteger out_need = ((g_out_off + 255u) & ~(NSUInteger)255u) + out_bytes;
+    if (in_need > g_in_cap || out_need > g_out_cap ||
+        (g_batch_active && g_npending >= NT_BATCH_MAX)) {
+        if (g_batch_active) {
+            int rc = batch_drain(); if (rc) return rc;
+            rc = batch_open_cb();   if (rc) return rc;
+        } else { g_in_off = 0; g_out_off = 0; }
+        if (x_bytes   > g_in_cap  && arena_grow(&g_arena_in,  &g_in_cap,  x_bytes))   return 11;
+        if (out_bytes > g_out_cap && arena_grow(&g_arena_out, &g_out_cap, out_bytes)) return 11;
+        if (!g_arena_in  && arena_grow(&g_arena_in,  &g_in_cap,  x_bytes))   return 11;
+        if (!g_arena_out && arena_grow(&g_arena_out, &g_out_cap, out_bytes)) return 11;
+    }
+
+    NSUInteger x_off = (g_in_off  + 255u) & ~(NSUInteger)255u;
+    NSUInteger o_off = (g_out_off + 255u) & ~(NSUInteger)255u;
+    g_in_off  = x_off + x_bytes;
+    g_out_off = o_off + out_bytes;
+    memcpy((uint8_t *)[g_arena_in contents] + x_off, x, (size_t)x_bytes);
+
+    id<MTLCommandBuffer>         cb  = nil;
+    id<MTLComputeCommandEncoder> enc = nil;
+    if (g_batch_active) {
+        if (!g_batch_enc) { int rc = batch_open_cb(); if (rc) return rc; }
+        enc = g_batch_enc;
+    } else {
+        cb  = [g_queue commandBuffer];
+        enc = cb ? [cb computeCommandEncoder] : nil;
+        if (!cb || !enc) { fprintf(stderr, "nt_metal: encoder alloc failed\n"); return 11; }
+    }
+
+    uint32_t k_u32 = (uint32_t)k;
+    [enc setComputePipelineState:pipe];
+    [enc setBuffer:bW          offset:W_off atIndex:0];
+    [enc setBuffer:g_arena_in  offset:x_off atIndex:1];
+    [enc setBuffer:g_arena_out offset:o_off atIndex:2];
+    [enc setBytes:&k_u32 length:sizeof(uint32_t) atIndex:3];
+
+    NSUInteger tg_size = pipe.maxTotalThreadsPerThreadgroup;
+    if (tg_size > 64) tg_size = 64;
+    if (tg_size > (NSUInteger)m) tg_size = (NSUInteger)m;
+    MTLSize grid = MTLSizeMake((NSUInteger)m, 1, 1);
+    MTLSize tg   = MTLSizeMake(tg_size, 1, 1);
+    [enc dispatchThreads:grid threadsPerThreadgroup:tg];
+
+    if (g_batch_active) {
+        g_pending[g_npending].dst   = out;
+        g_pending[g_npending].off   = o_off;
+        g_pending[g_npending].bytes = out_bytes;
+        g_npending++;
+        return 0;
+    }
+
+    [enc endEncoding];
+    [cb commit];
+    [cb waitUntilCompleted];
+    if (cb.status != MTLCommandBufferStatusCompleted) {
+        fprintf(stderr, "nt_metal: command buffer not completed status=%ld error=%s\n",
+                (long)cb.status,
+                cb.error ? [cb.error.localizedDescription UTF8String] : "(none)");
+        return 14;
+    }
+    memcpy(out, (const uint8_t *)[g_arena_out contents] + o_off, (size_t)out_bytes);
+    g_in_off = 0; g_out_off = 0;   /* solo call complete — arenas fully reusable */
+    return 0;
+}
+
 int nt_metal_q4k_matvec(float *out,
                         const uint8_t *W_q4k,
                         const float *x,
@@ -288,72 +468,9 @@ int nt_metal_q4k_matvec(float *out,
         fprintf(stderr, "nt_metal_q4k_matvec: m=%d must be positive\n", m);
         return 10;
     }
-
     @autoreleasepool {
-        const NSUInteger nblocks   = (NSUInteger)k / 256u;
-        const NSUInteger row_bytes = nblocks * 144u;
-        const NSUInteger W_bytes   = (NSUInteger)m * row_bytes;
-        const NSUInteger x_bytes   = (NSUInteger)k * sizeof(float);
-        const NSUInteger out_bytes = (NSUInteger)m * sizeof(float);
-
-        /* Phase 2: if this weight lives inside the registered resident base,
-         * bind it by offset (zero upload). Otherwise upload it for this call. */
-        id<MTLBuffer> bW = nil; NSUInteger W_off = 0;
-        for (int s = 0; s < g_nseg; s++) {
-            if (W_q4k >= g_seg_ptr[s] &&
-                (uint64_t)(W_q4k - g_seg_ptr[s]) + W_bytes <= g_seg_len[s]) {
-                bW = g_seg_buf[s];
-                W_off = (NSUInteger)(W_q4k - g_seg_ptr[s]);
-                break;
-            }
-        }
-        if (!bW) {   /* unregistered or straddles a segment boundary -> upload */
-            bW = [g_device newBufferWithBytes:W_q4k
-                                       length:W_bytes
-                                      options:MTLResourceStorageModeShared];
-        }
-        id<MTLBuffer> bx = [g_device newBufferWithBytes:x
-                                                 length:x_bytes
-                                                options:MTLResourceStorageModeShared];
-        id<MTLBuffer> bout = [g_device newBufferWithLength:out_bytes
-                                                   options:MTLResourceStorageModeShared];
-        uint32_t k_u32 = (uint32_t)k;
-        id<MTLBuffer> bk = [g_device newBufferWithBytes:&k_u32
-                                                 length:sizeof(uint32_t)
-                                                options:MTLResourceStorageModeShared];
-        if (!bW || !bx || !bout || !bk) {
-            fprintf(stderr, "nt_metal_q4k_matvec: buffer alloc failed\n");
-            return 11;
-        }
-
-        id<MTLCommandBuffer>        cb  = [g_queue commandBuffer];
-        id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
-        [enc setComputePipelineState:g_q4k_pipe];
-        [enc setBuffer:bW   offset:W_off atIndex:0];
-        [enc setBuffer:bx   offset:0 atIndex:1];
-        [enc setBuffer:bout offset:0 atIndex:2];
-        [enc setBuffer:bk   offset:0 atIndex:3];
-
-        NSUInteger tg_size = g_q4k_pipe.maxTotalThreadsPerThreadgroup;
-        if (tg_size > 64) tg_size = 64;
-        if (tg_size > (NSUInteger)m) tg_size = (NSUInteger)m;
-        MTLSize grid = MTLSizeMake((NSUInteger)m, 1, 1);
-        MTLSize tg   = MTLSizeMake(tg_size, 1, 1);
-        [enc dispatchThreads:grid threadsPerThreadgroup:tg];
-        [enc endEncoding];
-        [cb commit];
-        [cb waitUntilCompleted];
-        if (cb.status != MTLCommandBufferStatusCompleted) {
-            fprintf(stderr, "nt_metal: command buffer not completed status=%ld error=%s\n",
-                    (long)cb.status,
-                    cb.error ? [cb.error.localizedDescription UTF8String] : "(none)");
-            return 14;
-        }
-
-        memcpy(out, [bout contents], (size_t)out_bytes);
+        return encode_matvec(g_q4k_pipe, 144u, out, W_q4k, x, m, k);
     }
-
-    return 0;
 }
 
 int nt_metal_q6k_matvec(float *out,
@@ -373,69 +490,40 @@ int nt_metal_q6k_matvec(float *out,
         fprintf(stderr, "nt_metal_q6k_matvec: m=%d must be positive\n", m);
         return 10;
     }
-
     @autoreleasepool {
-        const NSUInteger nblocks   = (NSUInteger)k / 256u;
-        const NSUInteger row_bytes = nblocks * 210u;
-        const NSUInteger W_bytes   = (NSUInteger)m * row_bytes;
-        const NSUInteger x_bytes   = (NSUInteger)k * sizeof(float);
-        const NSUInteger out_bytes = (NSUInteger)m * sizeof(float);
-
-        /* Phase 2: bind resident weight by offset if registered; else upload. */
-        id<MTLBuffer> bW = nil; NSUInteger W_off = 0;
-        for (int s = 0; s < g_nseg; s++) {
-            if (W_q6k >= g_seg_ptr[s] &&
-                (uint64_t)(W_q6k - g_seg_ptr[s]) + W_bytes <= g_seg_len[s]) {
-                bW = g_seg_buf[s];
-                W_off = (NSUInteger)(W_q6k - g_seg_ptr[s]);
-                break;
-            }
-        }
-        if (!bW) {
-            bW = [g_device newBufferWithBytes:W_q6k
-                                       length:W_bytes
-                                      options:MTLResourceStorageModeShared];
-        }
-        id<MTLBuffer> bx = [g_device newBufferWithBytes:x
-                                                 length:x_bytes
-                                                options:MTLResourceStorageModeShared];
-        id<MTLBuffer> bout = [g_device newBufferWithLength:out_bytes
-                                                   options:MTLResourceStorageModeShared];
-        uint32_t k_u32 = (uint32_t)k;
-        id<MTLBuffer> bk = [g_device newBufferWithBytes:&k_u32
-                                                 length:sizeof(uint32_t)
-                                                options:MTLResourceStorageModeShared];
-        if (!bW || !bx || !bout || !bk) {
-            fprintf(stderr, "nt_metal_q6k_matvec: buffer alloc failed\n");
-            return 11;
-        }
-
-        id<MTLCommandBuffer>        cb  = [g_queue commandBuffer];
-        id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
-        [enc setComputePipelineState:g_q6k_pipe];
-        [enc setBuffer:bW   offset:W_off atIndex:0];
-        [enc setBuffer:bx   offset:0 atIndex:1];
-        [enc setBuffer:bout offset:0 atIndex:2];
-        [enc setBuffer:bk   offset:0 atIndex:3];
-
-        NSUInteger tg_size = g_q6k_pipe.maxTotalThreadsPerThreadgroup;
-        if (tg_size > 64) tg_size = 64;
-        if (tg_size > (NSUInteger)m) tg_size = (NSUInteger)m;
-        MTLSize grid = MTLSizeMake((NSUInteger)m, 1, 1);
-        MTLSize tg   = MTLSizeMake(tg_size, 1, 1);
-        [enc dispatchThreads:grid threadsPerThreadgroup:tg];
-        [enc endEncoding];
-        [cb commit];
-        [cb waitUntilCompleted];
-        if (cb.status != MTLCommandBufferStatusCompleted) {
-            fprintf(stderr, "nt_metal: command buffer not completed status=%ld error=%s\n",
-                    (long)cb.status,
-                    cb.error ? [cb.error.localizedDescription UTF8String] : "(none)");
-            return 14;
-        }
-
-        memcpy(out, [bout contents], (size_t)out_bytes);
+        return encode_matvec(g_q6k_pipe, 210u, out, W_q6k, x, m, k);
     }
+}
 
-    return 0;
+int nt_metal_batch_begin(void)
+{
+    if (!g_initialised) {
+        int rc = nt_metal_init();
+        if (rc != 0) return rc;
+    }
+    if (g_batch_active) return 0;          /* idempotent */
+    @autoreleasepool {
+        g_batch_active = 1;
+        g_npending = 0;
+        g_in_off = 0; g_out_off = 0;
+        int rc = batch_open_cb();
+        if (rc) g_batch_active = 0;
+        return rc;
+    }
+}
+
+int nt_metal_batch_commit(void)
+{
+    if (!g_batch_active) return 0;         /* commit without begin: no-op */
+    int rc;
+    @autoreleasepool {
+        rc = batch_drain();
+    }
+    g_batch_active = 0;
+    return rc;
+}
+
+int nt_metal_batch_active(void)
+{
+    return g_batch_active;
 }

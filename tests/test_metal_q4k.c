@@ -20,6 +20,8 @@
 #include <math.h>
 
 #ifndef USE_METAL
+/* ── Reference dequant for Q6_K, identical to gguf.c:dequant_q6_k ────── */
+
 int main(void) {
     fprintf(stderr, "test_metal_q4k: not built with -DUSE_METAL, skipping\n");
     return 0;
@@ -112,6 +114,34 @@ static void make_random_q6k_row(uint8_t *row, uint64_t k, unsigned *rng)
         for (int j = 0; j < 208; j++) b[j] = (uint8_t)(rand_r(rng) & 0xFF);
         uint16_t d_bits = (uint16_t)(0x3000 + (rand_r(rng) & 0x0FFF));  /* ~[0.125,0.25) */
         b[208] = (uint8_t)(d_bits & 0xFF); b[209] = (uint8_t)(d_bits >> 8);
+    }
+}
+
+/* ── Reference dequant for Q6_K, identical to gguf.c:dequant_q6_k ────── */
+static void dequant_q6_k_ref(const uint8_t *data, float *out, uint64_t n)
+{
+    uint64_t nblocks = n / 256;
+    for (uint64_t i = 0; i < nblocks; i++) {
+        const uint8_t *b  = data + i * 210;
+        const uint8_t *ql = b, *qh = b + 128;
+        const int8_t  *sc = (const int8_t *)(b + 192);
+        float d = f16_to_f32_((uint16_t)(b[208] | (b[209] << 8)));
+        for (int n_ = 0; n_ < 256; n_ += 128) {
+            const uint8_t *qlh = ql + (n_ / 128) * 64;
+            const uint8_t *qhh = qh + (n_ / 128) * 32;
+            const int8_t  *sch = sc + (n_ / 128) * 8;
+            for (int l = 0; l < 32; l++) {
+                int is = l / 16;
+                int q1 = (int)((qlh[l]      & 0x0F) | (((qhh[l] >> 0) & 3) << 4)) - 32;
+                int q2 = (int)((qlh[l + 32] & 0x0F) | (((qhh[l] >> 2) & 3) << 4)) - 32;
+                int q3 = (int)((qlh[l]      >> 4)   | (((qhh[l] >> 4) & 3) << 4)) - 32;
+                int q4 = (int)((qlh[l + 32] >> 4)   | (((qhh[l] >> 6) & 3) << 4)) - 32;
+                out[i*256 + n_ + l]      = d * sch[is + 0] * q1;
+                out[i*256 + n_ + l + 32] = d * sch[is + 2] * q2;
+                out[i*256 + n_ + l + 64] = d * sch[is + 4] * q3;
+                out[i*256 + n_ + l + 96] = d * sch[is + 6] * q4;
+            }
+        }
     }
 }
 
@@ -208,6 +238,92 @@ int main(void)
                det ? "PASS" : "FAIL");
         ok = ok && det;
         free(Wq6); free(xq6); free(o1); free(o2);
+    }
+
+    /* ── Q6_K correctness vs the gguf.c reference dequant ──────────────── */
+    {
+        const int m6 = 96, k6 = 768;                 /* 3 Q6_K blocks per row */
+        const uint64_t r6b = (uint64_t)(k6 / 256) * 210;
+        uint8_t *W6  = (uint8_t *)malloc((size_t)m6 * r6b);
+        float   *x6  = (float *)  malloc((size_t)k6 * sizeof(float));
+        float   *Wf  = (float *)  malloc((size_t)m6 * (size_t)k6 * sizeof(float));
+        float   *ref = (float *)  calloc((size_t)m6, sizeof(float));
+        float   *gpu = (float *)  calloc((size_t)m6, sizeof(float));
+        unsigned rq = 0xDECAF;
+        for (int i = 0; i < m6; i++)
+            make_random_q6k_row(W6 + (uint64_t)i * r6b, (uint64_t)k6, &rq);
+        for (int j = 0; j < k6; j++)
+            x6[j] = ((float)rand_r(&rq) / (float)RAND_MAX) - 0.5f;
+        for (int i = 0; i < m6; i++)
+            dequant_q6_k_ref(W6 + (uint64_t)i * r6b, Wf + (uint64_t)i * k6, (uint64_t)k6);
+        for (int i = 0; i < m6; i++) {
+            double s = 0.0;
+            for (int j = 0; j < k6; j++) s += (double)Wf[i * k6 + j] * (double)x6[j];
+            ref[i] = (float)s;
+        }
+        int rc6 = nt_metal_q6k_matvec(gpu, W6, x6, m6, k6);
+        float mr = 0.f; int wi = 0;
+        for (int i = 0; i < m6; i++) {
+            float rel = fabsf(gpu[i] - ref[i]) / (fabsf(ref[i]) + 1e-6f);
+            if (rel > mr) { mr = rel; wi = i; }
+        }
+        int ok6 = (rc6 == 0) && (mr < 5e-4f);
+        printf("test_metal_q6k: m=%d k=%d  max_rel=%.3e  (worst idx=%d ref=%.5f gpu=%.5f)  %s\n",
+               m6, k6, mr, wi, ref[wi], gpu[wi], ok6 ? "PASS" : "FAIL");
+        ok = ok && ok6;
+        free(W6); free(x6); free(Wf); free(ref); free(gpu);
+    }
+
+    /* ── Token-graph gate: solo determinism + batch ≡ solo bit-identical ── */
+    {
+        const int bm = 80, bk = 512;
+        const uint64_t r4b = (uint64_t)(bk / 256) * 144;
+        const uint64_t r6b = (uint64_t)(bk / 256) * 210;
+        uint8_t *W4 = (uint8_t *)malloc((size_t)bm * r4b);
+        uint8_t *W6 = (uint8_t *)malloc((size_t)bm * r6b);
+        float *x1 = (float *)malloc((size_t)bk * sizeof(float));
+        float *x2 = (float *)malloc((size_t)bk * sizeof(float));
+        float *s1 = (float *)calloc((size_t)bm, sizeof(float));
+        float *s2 = (float *)calloc((size_t)bm, sizeof(float));
+        float *s3 = (float *)calloc((size_t)bm, sizeof(float));
+        float *d1 = (float *)calloc((size_t)bm, sizeof(float));
+        float *b1 = (float *)calloc((size_t)bm, sizeof(float));
+        float *b2 = (float *)calloc((size_t)bm, sizeof(float));
+        float *b3 = (float *)calloc((size_t)bm, sizeof(float));
+        unsigned rb = 0xFEED;
+        for (int i = 0; i < bm; i++) make_random_q4k_row(W4 + (uint64_t)i * r4b, (uint64_t)bk, &rb);
+        for (int i = 0; i < bm; i++) make_random_q6k_row(W6 + (uint64_t)i * r6b, (uint64_t)bk, &rb);
+        for (int j = 0; j < bk; j++) x1[j] = ((float)rand_r(&rb) / (float)RAND_MAX) - 0.5f;
+        for (int j = 0; j < bk; j++) x2[j] = ((float)rand_r(&rb) / (float)RAND_MAX) - 0.5f;
+
+        /* solo reference trio: a {q,k,v}-style share of x1 + a second input */
+        nt_metal_q4k_matvec(s1, W4, x1, bm, bk);
+        nt_metal_q6k_matvec(s2, W6, x1, bm, bk);
+        nt_metal_q4k_matvec(s3, W4, x2, bm, bk);
+        /* solo determinism (q4k twin of the q6k gate below) */
+        nt_metal_q4k_matvec(d1, W4, x1, bm, bk);
+        int det4 = (memcmp(s1, d1, (size_t)bm * sizeof(float)) == 0);
+        printf("test_metal_q4k_determinism: %s (2x same input bit-identical)\n",
+               det4 ? "PASS" : "FAIL");
+        ok = ok && det4;
+
+        /* the same trio through ONE command buffer */
+        int brc = nt_metal_batch_begin();
+        if (brc == 0) {
+            nt_metal_q4k_matvec(b1, W4, x1, bm, bk);
+            nt_metal_q6k_matvec(b2, W6, x1, bm, bk);
+            nt_metal_q4k_matvec(b3, W4, x2, bm, bk);
+            brc = nt_metal_batch_commit();
+        }
+        int okb = (brc == 0) &&
+                  (memcmp(b1, s1, (size_t)bm * sizeof(float)) == 0) &&
+                  (memcmp(b2, s2, (size_t)bm * sizeof(float)) == 0) &&
+                  (memcmp(b3, s3, (size_t)bm * sizeof(float)) == 0);
+        printf("test_metal_batch: %s (batched trio bit-identical to solo, rc=%d)\n",
+               okb ? "PASS" : "FAIL", brc);
+        ok = ok && okb;
+        free(W4); free(W6); free(x1); free(x2);
+        free(s1); free(s2); free(s3); free(d1); free(b1); free(b2); free(b3);
     }
 
     nt_metal_shutdown();
