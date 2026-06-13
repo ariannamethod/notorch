@@ -522,6 +522,7 @@ static id<MTLCommandQueue>         g_queue       = nil;
 static id<MTLComputePipelineState> g_q4k_pipe    = nil;
 static id<MTLComputePipelineState> g_q6k_pipe    = nil;
 static id<MTLComputePipelineState> g_q4k_sg_pipe = nil;   /* M3 simdgroup path */
+static id<MTLComputePipelineState> g_q4k_v3_pipe = nil;   /* v3 multi-row Q4_K (llama port) */
 static id<MTLComputePipelineState> g_q6k_sg_pipe = nil;
 static int                         g_use_sg      = 0;     /* 0 naive | 1 sg | 2 per-format auto (set in init) */
 static id<MTLComputePipelineState> g_rms_pipe    = nil;   /* M4 layer ops */
@@ -644,6 +645,14 @@ int nt_metal_init(void)
                     err ? err.localizedDescription.UTF8String : "(no error)");
             return 5;
         }
+        /* v3 multi-row Q4_K (optional — falls back to naive/sg if absent) */
+        id<MTLFunction> fn4v = [lib newFunctionWithName:@"q4k_matvec_v3"];
+        if (fn4v) {
+            g_q4k_v3_pipe = [g_device newComputePipelineStateWithFunction:fn4v error:&err];
+            if (!g_q4k_v3_pipe)
+                fprintf(stderr, "nt_metal_init: q4k_v3 pipeline state failed: %s\n",
+                        err ? err.localizedDescription.UTF8String : "(no error)");
+        }
         /* M4 layer-op pipelines */
         struct { NSString *name; id<MTLComputePipelineState> __strong *slot; } m4ops[] = {
             { @"rmsnorm_f32",     &g_rms_pipe  },
@@ -693,6 +702,7 @@ void nt_metal_shutdown(void)
     g_q4k_pipe    = nil;
     g_q6k_pipe    = nil;
     g_q4k_sg_pipe = nil;
+    g_q4k_v3_pipe = nil;
     g_q6k_sg_pipe = nil;
     g_rms_pipe = nil; g_rope_pipe = nil; g_silu_pipe = nil;
     g_add_pipe = nil; g_attn_pipe = nil; g_copy_pipe = nil;
