@@ -525,6 +525,7 @@ static id<MTLComputePipelineState> g_q4k_sg_pipe = nil;   /* M3 simdgroup path *
 static id<MTLComputePipelineState> g_q4k_v3_pipe = nil;   /* v3 multi-row Q4_K (llama port) */
 static id<MTLComputePipelineState> g_q6k_sg_pipe = nil;
 static int                         g_use_sg      = 0;     /* 0 naive | 1 sg | 2 per-format auto (set in init) */
+static int                         g_use_v3      = 0;     /* 1 = v3 multi-row Q4_K (NT_METAL_V3) */
 static id<MTLComputePipelineState> g_rms_pipe    = nil;   /* M4 layer ops */
 static id<MTLComputePipelineState> g_rope_pipe   = nil;
 static id<MTLComputePipelineState> g_silu_pipe   = nil;
@@ -682,6 +683,7 @@ int nt_metal_init(void)
         g_use_sg = getenv("NT_METAL_SG") ? 1 : 0;
         if (getenv("NT_METAL_AUTO")) g_use_sg = 2;         /* per-format: sg on Q6_K only */
         if (getenv("NT_METAL_NAIVE")) g_use_sg = 0;
+        g_use_v3 = getenv("NT_METAL_V3") ? 1 : 0;          /* v3 multi-row Q4_K (M4 Pro tuning) */
     }
 
     g_initialised = 1;
@@ -872,7 +874,23 @@ static int encode_matvec(id<MTLComputePipelineState> pipe, NSUInteger block_byte
         (block_bytes == 144u) ? g_q4k_sg_pipe : g_q6k_sg_pipe;
     uint32_t k_u32 = (uint32_t)k;
     int sg_on = sg_pipe && (g_use_sg == 1 || (g_use_sg == 2 && block_bytes == 210u));
-    if (sg_on) {
+    int v3_on = g_use_v3 && g_q4k_v3_pipe && block_bytes == 144u;
+    if (v3_on) {
+        /* v3 multi-row Q4_K: NSG simdgroups x NR0 rows each. Kernel uses
+         * threadgroup_position_in_grid, so dispatchThreadgroups (not Threads).
+         * setBytes m at index 4 for row bounds (tail threadgroup). */
+        uint32_t m_u32 = (uint32_t)m;
+        const NSUInteger NSG = 2u, NR0 = 2u;
+        NSUInteger ntg = ((NSUInteger)m + (NSG*NR0) - 1u) / (NSG*NR0);
+        [enc setComputePipelineState:g_q4k_v3_pipe];
+        [enc setBuffer:bW          offset:W_off atIndex:0];
+        [enc setBuffer:g_arena_in  offset:x_off atIndex:1];
+        [enc setBuffer:g_arena_out offset:o_off atIndex:2];
+        [enc setBytes:&k_u32 length:sizeof(uint32_t) atIndex:3];
+        [enc setBytes:&m_u32 length:sizeof(uint32_t) atIndex:4];
+        [enc dispatchThreadgroups:MTLSizeMake(ntg, 1, 1)
+              threadsPerThreadgroup:MTLSizeMake(32u*NSG, 1, 1)];
+    } else if (sg_on) {
         [enc setComputePipelineState:sg_pipe];
         [enc setBuffer:bW          offset:W_off atIndex:0];
         [enc setBuffer:g_arena_in  offset:x_off atIndex:1];
