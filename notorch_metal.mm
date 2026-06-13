@@ -427,7 +427,7 @@ static id<MTLComputePipelineState> g_q4k_pipe    = nil;
 static id<MTLComputePipelineState> g_q6k_pipe    = nil;
 static id<MTLComputePipelineState> g_q4k_sg_pipe = nil;   /* M3 simdgroup path */
 static id<MTLComputePipelineState> g_q6k_sg_pipe = nil;
-static int                         g_use_sg      = 1;     /* NT_METAL_NAIVE=1 -> 0 */
+static int                         g_use_sg      = 0;     /* 0 naive | 1 sg | 2 per-format auto (set in init) */
 static id<MTLComputePipelineState> g_rms_pipe    = nil;   /* M4 layer ops */
 static id<MTLComputePipelineState> g_rope_pipe   = nil;
 static id<MTLComputePipelineState> g_silu_pipe   = nil;
@@ -567,13 +567,15 @@ int nt_metal_init(void)
                 return 5;
             }
         }
-        /* Kernel choice is per-format (doe-mix per-shape A/B, 2026-06-13):
-         * the sg geometry wins on Q6_K everywhere measured (ffn down x1.48,
-         * lm_head x1.61 vs naive on the real 24B shapes) and loses on Q4_K,
-         * so auto mode rides sg for Q6_K and naive for Q4_K. NT_METAL_SG=1
-         * forces sg everywhere, NT_METAL_NAIVE=1 forces naive everywhere
+        /* Kernel choice defaults to naive: the per-format split (Q6_K -> sg)
+         * is tuned on A18 (doe-mix per-shape A/B: ffn down x1.48, lm_head x1.61)
+         * and does NOT transfer to M4 Pro, where a clean one-binary A/B has
+         * naive fastest (median t/s 4.24 naive > 3.57 auto > 3.24 all-sg).
+         * NT_METAL_AUTO=1 opts in to the per-format split (the A18 win),
+         * NT_METAL_SG=1 forces sg everywhere, NT_METAL_NAIVE=1 forces naive
          * and wins over both. */
-        g_use_sg = getenv("NT_METAL_SG") ? 1 : 2;          /* 2 = auto */
+        g_use_sg = getenv("NT_METAL_SG") ? 1 : 0;
+        if (getenv("NT_METAL_AUTO")) g_use_sg = 2;         /* per-format: sg on Q6_K only */
         if (getenv("NT_METAL_NAIVE")) g_use_sg = 0;
     }
 

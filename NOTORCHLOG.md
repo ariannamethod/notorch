@@ -57,6 +57,22 @@ gates against CPU on Q6_K-fed paths become tolerance + argmax gates. The
 custom-geometry round (multi-row simdgroup, scale-decode amortization,
 Q4_K sg rework) stays open with gate+up as the next byte-weighted target.
 
+The deploy machine then ruled on the default. A clean one-binary A/B on
+M4 Pro (live oyent-24B decode through doe, short runs, disjoint ranges,
+medians): all-naive 4.24 t/s > per-format auto 3.57 (-16%) > all-sg 3.24.
+The per-format split is A18-tuned and does not transfer across Apple GPU
+generations -- on M4 Pro the sg kernels lag even on Q6_K, while identity
+stays exact (auto tok1 19.961 == CPU, argmax + determinism x2; pure
+speed, zero correctness cost). So the library default is naive again and
+the split is opt-in: NT_METAL_AUTO=1 enables per-format (the A18 win,
+re-verified on neo same-binary: doe-mix full-speed 558.7 ms/tok auto vs
+778.6 naive, auto run later and hotter), NT_METAL_SG=1 forces all-sg,
+NT_METAL_NAIVE=1 forces naive and wins over both. The standing rule this
+encodes: kernel defaults follow the deploy machine, and a per-GPU tuning
+win ships as an env opt-in until the target machine confirms it. The
+geometry round ahead (multi-row simdgroup, Q4_K rework) gates on M4 Pro
+numbers, not A18.
+
 ## 2026-06-12 — Metal token-graph step 1: persistent arenas + batched dispatch (with Q6_K landing the same day)
 
 Two commits, two nodes, one front. `dd1779f` (metal node): `nt_metal_q6k_matvec` —
