@@ -1312,7 +1312,20 @@ static int matvec_slot(id<MTLComputePipelineState> naive_pipe,
         int rc = op_enc(&cb, &enc); if (rc) return rc;
         uint32_t k_u32 = (uint32_t)k;
         int sg_on = sg_pipe && (g_use_sg == 1 || (g_use_sg == 2 && block_bytes == 210u));
-        if (sg_on) {
+        int v3_on = g_use_v3 && g_q4k_v3_pipe && block_bytes == 144u;
+        if (v3_on) {
+            uint32_t m_u32 = (uint32_t)m;
+            const NSUInteger NSG = 2u, NR0 = 2u;
+            NSUInteger ntg = ((NSUInteger)m + (NSG*NR0) - 1u) / (NSG*NR0);
+            [enc setComputePipelineState:g_q4k_v3_pipe];
+            [enc setBuffer:bW offset:W_off atIndex:0];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[src_slot].off atIndex:1];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[dst_slot].off atIndex:2];
+            [enc setBytes:&k_u32 length:4 atIndex:3];
+            [enc setBytes:&m_u32 length:4 atIndex:4];
+            [enc dispatchThreadgroups:MTLSizeMake(ntg, 1, 1)
+                  threadsPerThreadgroup:MTLSizeMake(32u*NSG, 1, 1)];
+        } else if (sg_on) {
             [enc setComputePipelineState:sg_pipe];
             [enc setBuffer:bW offset:W_off atIndex:0];
             [enc setBuffer:g_slot_buf offset:g_slot_tab[src_slot].off atIndex:1];
