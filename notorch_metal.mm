@@ -226,6 +226,7 @@ kernel void q4k_matvec_v3(
     const uint row_bytes = nb * 144u;        /* bytes per Q4_K row */
     const uint row_u16   = row_bytes / 2u;   /* row stride in uint16 units */
     const int  first_row = ((int)tgpig.x * NSG + sgitg) * NR0;
+    if (first_row >= (int)m) return;   /* tail threadgroup owns no rows (Codex: OOB W guard) */
 
     device const uchar *x0 = W + (uint)first_row * row_bytes;
     device const float *y4 = x + ix * 256u + 64u * iq + 8u * ir;
@@ -252,6 +253,7 @@ kernel void q4k_matvec_v3(
         device const half     *dh  = (device const half *)blk;
 
         for (short row = 0; row < NR0; ++row) {
+            if (first_row + row >= (int)m) break;   /* tail row: skip OOB W loads (Codex) */
             sc16[0] =  sc[0] & kmask1;
             sc16[1] =  sc[2] & kmask1;
             sc16[2] = ((sc[4] >> 0) & kmask2) | ((sc[0] & kmask3) >> 2);
