@@ -611,6 +611,7 @@ static id<MTLComputePipelineState> g_q6k_v3_pipe = nil;   /* v3 multi-row Q6_K (
 static id<MTLComputePipelineState> g_q6k_sg_pipe = nil;
 static int                         g_use_sg      = 0;     /* 0 naive | 1 sg | 2 per-format auto (set in init) */
 static int                         g_use_v3      = 0;     /* 1 = v3 multi-row Q4_K (NT_METAL_V3) */
+static int                         g_use_v3_q6   = 0;     /* 1 = v3 multi-row Q6_K (NT_METAL_V3, unless NT_METAL_V3_NOQ6) */
 static id<MTLComputePipelineState> g_rms_pipe    = nil;   /* M4 layer ops */
 static id<MTLComputePipelineState> g_rope_pipe   = nil;
 static id<MTLComputePipelineState> g_silu_pipe   = nil;
@@ -775,7 +776,15 @@ int nt_metal_init(void)
         g_use_sg = getenv("NT_METAL_SG") ? 1 : 0;
         if (getenv("NT_METAL_AUTO")) g_use_sg = 2;         /* per-format: sg on Q6_K only */
         if (getenv("NT_METAL_NAIVE")) g_use_sg = 0;
-        g_use_v3 = getenv("NT_METAL_V3") ? 1 : 0;          /* v3 multi-row Q4_K (M4 Pro tuning) */
+        g_use_v3 = getenv("NT_METAL_V3") ? 1 : 0;          /* v3 multi-row Q4_K — WINS on M4 Pro (gate+up +20%) */
+        /* q6k v3 is a SEPARATE opt-in (NT_METAL_V3_Q6=1), default OFF. A clean
+         * same-binary A/B on M4 Pro (tool b80lte1bv): naive 4.21 < q4k-v3-only
+         * 5.18, but q4k+q6k-v3 drops to 3.81 — the multi-row q6k geometry LOSES
+         * to naive for the Q6_K forms (ffn_down m=5120, byte-wise 6-bit unpack,
+         * not vectorised like q4k). Same lesson as the sg path: A18 multi-row
+         * wins do not transfer to M4 Pro. Kept correct + opt-in for A18/future
+         * geometry work; NT_METAL_V3=1 alone keeps the clean q4k-only win. */
+        g_use_v3_q6 = getenv("NT_METAL_V3_Q6") ? 1 : 0;
     }
 
     g_initialised = 1;
@@ -970,7 +979,7 @@ static int encode_matvec(id<MTLComputePipelineState> pipe, NSUInteger block_byte
         (block_bytes == 210u) ? g_q6k_v3_pipe : nil;
     uint32_t k_u32 = (uint32_t)k;
     int sg_on = sg_pipe && (g_use_sg == 1 || (g_use_sg == 2 && block_bytes == 210u));
-    int v3_on = g_use_v3 && v3_pipe;
+    int v3_on = v3_pipe && ((block_bytes == 144u) ? g_use_v3 : g_use_v3_q6);
     if (v3_on) {
         /* v3 multi-row (Q4_K and Q6_K): NSG simdgroups x NR0 rows each. Kernel
          * uses threadgroup_position_in_grid, so dispatchThreadgroups (not
@@ -1411,7 +1420,7 @@ static int matvec_slot(id<MTLComputePipelineState> naive_pipe,
             (block_bytes == 144u) ? g_q4k_v3_pipe :
             (block_bytes == 210u) ? g_q6k_v3_pipe : nil;
         int sg_on = sg_pipe && (g_use_sg == 1 || (g_use_sg == 2 && block_bytes == 210u));
-        int v3_on = g_use_v3 && v3_pipe;
+        int v3_on = v3_pipe && ((block_bytes == 144u) ? g_use_v3 : g_use_v3_q6);
         if (v3_on) {
             uint32_t m_u32 = (uint32_t)m;
             const NSUInteger NSG = 2u, NR0 = 2u;
