@@ -597,6 +597,154 @@ kernel void copy_f32(
     dst[gid] = src[gid];
 }
 
+/* DOE parliament LoRA injection on the resident stream — two f32 stages over a
+ * registered per-layer arena: [ w_vote ne*D | per-expert (B rank*D, A D*rank) x ne ].
+ * Stage 1 (parliament_btmp): tmp[e*rank+r] = dot(B_e[r], x), one threadgroup per
+ * (e,r), simd-reduced over D. Stage 2 (parliament_apply): one thread per output i,
+ * x[i] += alpha * sum_e gate[e] * sum_r A_e[i][r] * tmp[e*rank+r]. gate[e]=0 (dead
+ * or unelected) is a true no-op. Mirrors the CPU inject (doe.c parliament path);
+ * the GPU reduction order differs, so parity is ~1e-4, not bit-identical. */
+kernel void parliament_btmp(
+    device const float *layer [[buffer(0)]],   /* per-layer arena base */
+    device const float *x     [[buffer(1)]],   /* [D] */
+    device       float *tmp   [[buffer(2)]],   /* [ne*rank] */
+    constant     uint  &D     [[buffer(3)]],
+    constant     uint  &rank  [[buffer(4)]],
+    constant     uint  &ne    [[buffer(5)]],
+    uint gid  [[threadgroup_position_in_grid]],   /* e*rank + r */
+    uint tid  [[thread_position_in_threadgroup]],
+    uint tgsz [[threads_per_threadgroup]],
+    uint sgid [[simdgroup_index_in_threadgroup]],
+    uint lane [[thread_index_in_simdgroup]])
+{
+    threadgroup float partials[32];
+    uint e = gid / rank;
+    uint r = gid % rank;
+    uint per_expert = 2u * rank * D;
+    device const float *Brow = layer + ne * D + e * per_expert + r * D;
+    float acc = 0.0f;
+    for (uint j = tid; j < D; j += tgsz) acc += Brow[j] * x[j];
+    float s = simd_sum(acc);
+    if (lane == 0) partials[sgid] = s;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = (tgsz + 31u) / 32u;
+    if (sgid == 0) {
+        float p = (lane < nsg) ? partials[lane] : 0.0f;
+        p = simd_sum(p);
+        if (lane == 0) tmp[gid] = p;
+    }
+}
+
+kernel void parliament_apply(
+    device const float *layer [[buffer(0)]],
+    device const float *tmp   [[buffer(1)]],   /* [ne*rank] */
+    device const float *gate  [[buffer(2)]],   /* [ne] */
+    device       float *x     [[buffer(3)]],   /* [D], in/out */
+    constant     uint  &D     [[buffer(4)]],
+    constant     uint  &rank  [[buffer(5)]],
+    constant     uint  &ne    [[buffer(6)]],
+    constant     float &alpha [[buffer(7)]],
+    uint i [[thread_position_in_grid]])
+{
+    if (i >= D) return;
+    uint per_expert = 2u * rank * D;
+    float acc = 0.0f;
+    for (uint e = 0u; e < ne; e++) {
+        float g = gate[e];
+        if (g == 0.0f) continue;
+        device const float *Arow = layer + ne * D + e * per_expert + rank * D + i * rank;
+        device const float *tg = tmp + e * rank;
+        float s = 0.0f;
+        for (uint r = 0u; r < rank; r++) s += Arow[r] * tg[r];
+        acc += g * s;
+    }
+    x[i] += alpha * acc;
+}
+
+/* DOE parliament election — variable-k vote over the LoRA experts. Two stages.
+ * parliament_votes: vdot[e] = dot(w_vote_e, x) over the ne vote rows at the layer
+ * arena base, one threadgroup per e, simd-reduced. parliament_elect: a single
+ * thread reproduces parliament_elect() (doe.c) bit-for-bit given the same inputs
+ * — votes = vdot + res (host-precomputed 0.1*resonance), mean/var over alive,
+ * EMA consensus persisted in cons[layer], variable k, hard top-k, softmax into a
+ * dense gate[ne] (0 for dead/unelected). alive[e] (1/0) is the frozen liveness
+ * mask; dead vote rows are never counted. cons is the stateful EMA across tokens. */
+kernel void parliament_votes(
+    device const float *layer [[buffer(0)]],   /* w_vote at layer[e*D + j] */
+    device const float *x     [[buffer(1)]],   /* [D] */
+    device       float *vdot  [[buffer(2)]],   /* [ne] */
+    constant     uint  &D     [[buffer(3)]],
+    uint gid  [[threadgroup_position_in_grid]],   /* e */
+    uint tid  [[thread_position_in_threadgroup]],
+    uint tgsz [[threads_per_threadgroup]],
+    uint sgid [[simdgroup_index_in_threadgroup]],
+    uint lane [[thread_index_in_simdgroup]])
+{
+    threadgroup float partials[32];
+    device const float *row = layer + (uint)gid * D;
+    float acc = 0.0f;
+    for (uint j = tid; j < D; j += tgsz) acc += row[j] * x[j];
+    float s = simd_sum(acc);
+    if (lane == 0) partials[sgid] = s;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = (tgsz + 31u) / 32u;
+    if (sgid == 0) {
+        float p = (lane < nsg) ? partials[lane] : 0.0f;
+        p = simd_sum(p);
+        if (lane == 0) vdot[gid] = p;
+    }
+}
+
+kernel void parliament_elect(
+    device const float *vdot  [[buffer(0)]],   /* [ne] */
+    device const float *res   [[buffer(1)]],   /* [ne]  0.1*resonance(freq,hs) */
+    device const float *alive [[buffer(2)]],   /* [ne]  1.0 / 0.0 */
+    device       float *cons  [[buffer(3)]],   /* [n_layers] persistent EMA consensus */
+    device       float *gate  [[buffer(4)]],   /* [ne]  dense output */
+    constant     uint  &ne    [[buffer(5)]],
+    constant     uint  &layer [[buffer(6)]],
+    constant     uint  &min_e [[buffer(7)]],
+    uint tid [[thread_position_in_grid]])
+{
+    if (tid != 0u) return;
+    float votes[16];
+    uint n_alive = 0u;
+    for (uint e = 0u; e < ne; e++) {
+        gate[e] = 0.0f;
+        if (alive[e] != 0.0f) { votes[e] = vdot[e] + res[e]; n_alive++; }
+        else                  { votes[e] = -3.0e38f; }
+    }
+    if (n_alive < min_e) return;                 /* CPU returns 0 -> no injection (gate all 0) */
+    float mean = 0.0f;
+    for (uint e = 0u; e < ne; e++) if (alive[e] != 0.0f) mean += votes[e];
+    mean /= (float)n_alive;
+    float var = 0.0f;
+    for (uint e = 0u; e < ne; e++) if (alive[e] != 0.0f) { float d = votes[e] - mean; var += d*d; }
+    var /= (float)n_alive;
+    float cnew = sqrt(var + 1e-8f) / (fabs(mean) + 1.0f);
+    if (cnew > 1.0f) cnew = 1.0f;
+    float c = 0.9f * cons[layer] + 0.1f * cnew;
+    cons[layer] = c;
+    int k = (int)((float)n_alive * (1.0f - c));
+    if (k < (int)min_e) k = (int)min_e;          /* CPU: if(k<2)k=2; MIN_EXPERTS==2 */
+    if (k > (int)n_alive) k = (int)n_alive;
+    bool used[16];
+    for (uint e = 0u; e < ne; e++) used[e] = false;
+    int   sel[16];
+    float selv[16];
+    for (int ki = 0; ki < k; ki++) {
+        float bv = -3.0e38f; int bi = 0;
+        for (uint e = 0u; e < ne; e++)
+            if (alive[e] != 0.0f && !used[e] && votes[e] > bv) { bv = votes[e]; bi = (int)e; }
+        sel[ki] = bi; selv[ki] = votes[bi]; used[bi] = true;
+    }
+    float mx = selv[0];
+    for (int ki = 1; ki < k; ki++) if (selv[ki] > mx) mx = selv[ki];
+    float sum = 0.0f;
+    for (int ki = 0; ki < k; ki++) { selv[ki] = exp(selv[ki] - mx); sum += selv[ki]; }
+    for (int ki = 0; ki < k; ki++) gate[sel[ki]] = selv[ki] / sum;
+}
+
 )MSL";
 
 /* ── State (ARC-managed) ─────────────────────────────────────────────── */
@@ -618,6 +766,10 @@ static id<MTLComputePipelineState> g_silu_pipe   = nil;
 static id<MTLComputePipelineState> g_add_pipe    = nil;
 static id<MTLComputePipelineState> g_attn_pipe   = nil;
 static id<MTLComputePipelineState> g_copy_pipe   = nil;
+static id<MTLComputePipelineState> g_pbtmp_pipe  = nil;   /* DOE parliament: B@x */
+static id<MTLComputePipelineState> g_papply_pipe = nil;   /* DOE parliament: A@tmp, gated */
+static id<MTLComputePipelineState> g_pvotes_pipe = nil;   /* DOE parliament: w_vote@x */
+static id<MTLComputePipelineState> g_pelect_pipe = nil;   /* DOE parliament: variable-k election */
 
 /* M4 — device-resident activation slots: fixed regions in a persistent
  * GPU arena. Ops read/write slots without host roundtrips, so a whole
@@ -755,6 +907,10 @@ int nt_metal_init(void)
             { @"add_f32",         &g_add_pipe  },
             { @"attn_decode_f32", &g_attn_pipe },
             { @"copy_f32",        &g_copy_pipe },
+            { @"parliament_btmp", &g_pbtmp_pipe },
+            { @"parliament_apply",&g_papply_pipe },
+            { @"parliament_votes",&g_pvotes_pipe },
+            { @"parliament_elect",&g_pelect_pipe },
         };
         for (size_t oi = 0; oi < sizeof(m4ops)/sizeof(m4ops[0]); oi++) {
             id<MTLFunction> f = [lib newFunctionWithName:m4ops[oi].name];
@@ -810,6 +966,8 @@ void nt_metal_shutdown(void)
     g_q6k_sg_pipe = nil;
     g_rms_pipe = nil; g_rope_pipe = nil; g_silu_pipe = nil;
     g_add_pipe = nil; g_attn_pipe = nil; g_copy_pipe = nil;
+    g_pbtmp_pipe = nil; g_papply_pipe = nil;
+    g_pvotes_pipe = nil; g_pelect_pipe = nil;
     g_slot_buf = nil; g_slot_cap = 0; g_slot_used = 0;
     memset(g_slot_tab, 0, sizeof(g_slot_tab));
     g_queue       = nil;
@@ -1391,6 +1549,117 @@ int nt_metal_copy_to_region(void *dst, int src_slot, uint64_t bytes)
         [enc setBytes:&n_u length:4 atIndex:2];
         [enc dispatchThreads:MTLSizeMake((NSUInteger)n_u, 1, 1)
        threadsPerThreadgroup:MTLSizeMake(n_u < 256 ? (NSUInteger)n_u : 256, 1, 1)];
+        return op_fin(cb, enc);
+    }
+}
+
+/* DOE parliament LoRA injection over a registered per-layer arena, x resident.
+ * Two serial dispatches inside the current encoder (batch: serial-dispatch order
+ * makes stage 2 see stage 1's tmp; solo: each commits+waits). layer_base is the
+ * host pointer to this layer's slice of the registered expert arena. gate[ne] in
+ * gate_slot carries the softmax election weights (0 = dead/unelected). Mirrors the
+ * CPU inject; reduction order differs so parity is ~1e-4. */
+int nt_metal_parliament_inject(int x_slot, int tmp_slot, int gate_slot,
+                               const float *layer_base, int D, int rank, int ne, float alpha)
+{
+    if (!g_initialised) { int rc = nt_metal_init(); if (rc) return rc; }
+    if (!slot_ok(x_slot) || !slot_ok(tmp_slot) || !slot_ok(gate_slot)) return 20;
+    if (D <= 0 || rank <= 0 || ne <= 0) return 20;
+    @autoreleasepool {
+        size_t per_expert   = (size_t)2 * rank * D;
+        size_t layer_floats = (size_t)ne * D + (size_t)ne * per_expert;
+        id<MTLBuffer> bL = nil; NSUInteger L_off = 0;
+        if (resolve_region(layer_base, (uint64_t)layer_floats * sizeof(float), &bL, &L_off) != 0) {
+            fprintf(stderr, "nt_metal_parliament_inject: layer arena not registered\n");
+            return 22;
+        }
+        uint32_t Du = (uint32_t)D, ru = (uint32_t)rank, neu = (uint32_t)ne;
+        /* stage 1: tmp[e*rank+r] = dot(B_e[r], x) */
+        {
+            id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
+            int rc = op_enc(&cb, &enc); if (rc) return rc;
+            [enc setComputePipelineState:g_pbtmp_pipe];
+            [enc setBuffer:bL offset:L_off atIndex:0];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[x_slot].off   atIndex:1];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[tmp_slot].off atIndex:2];
+            [enc setBytes:&Du  length:4 atIndex:3];
+            [enc setBytes:&ru  length:4 atIndex:4];
+            [enc setBytes:&neu length:4 atIndex:5];
+            [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)ne * (NSUInteger)rank, 1, 1)
+                  threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+            rc = op_fin(cb, enc); if (rc) return rc;
+        }
+        /* stage 2: x[i] += alpha * sum_e gate[e] * sum_r A_e[i][r]*tmp[e][r] */
+        {
+            id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
+            int rc = op_enc(&cb, &enc); if (rc) return rc;
+            [enc setComputePipelineState:g_papply_pipe];
+            [enc setBuffer:bL offset:L_off atIndex:0];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[tmp_slot].off  atIndex:1];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[gate_slot].off atIndex:2];
+            [enc setBuffer:g_slot_buf offset:g_slot_tab[x_slot].off    atIndex:3];
+            [enc setBytes:&Du    length:4 atIndex:4];
+            [enc setBytes:&ru    length:4 atIndex:5];
+            [enc setBytes:&neu   length:4 atIndex:6];
+            [enc setBytes:&alpha length:4 atIndex:7];
+            [enc dispatchThreads:MTLSizeMake((NSUInteger)D, 1, 1)
+           threadsPerThreadgroup:MTLSizeMake(D < 256 ? (NSUInteger)D : 256, 1, 1)];
+            rc = op_fin(cb, enc); if (rc) return rc;
+        }
+        return 0;
+    }
+}
+
+/* DOE parliament election stage 1: vdot[e] = dot(w_vote_e, x) over the ne vote
+ * rows at the registered layer arena base, x resident. */
+int nt_metal_parliament_votes(const float *layer_base, int x_slot, int vdot_slot, int D, int ne)
+{
+    if (!g_initialised) { int rc = nt_metal_init(); if (rc) return rc; }
+    if (!slot_ok(x_slot) || !slot_ok(vdot_slot) || D <= 0 || ne <= 0) return 20;
+    @autoreleasepool {
+        id<MTLBuffer> bL = nil; NSUInteger L_off = 0;
+        if (resolve_region(layer_base, (uint64_t)ne * D * sizeof(float), &bL, &L_off) != 0) {
+            fprintf(stderr, "nt_metal_parliament_votes: layer arena not registered\n");
+            return 22;
+        }
+        id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
+        int rc = op_enc(&cb, &enc); if (rc) return rc;
+        uint32_t Du = (uint32_t)D;
+        [enc setComputePipelineState:g_pvotes_pipe];
+        [enc setBuffer:bL offset:L_off atIndex:0];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[x_slot].off    atIndex:1];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[vdot_slot].off atIndex:2];
+        [enc setBytes:&Du length:4 atIndex:3];
+        [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)ne, 1, 1)
+              threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+        return op_fin(cb, enc);
+    }
+}
+
+/* DOE parliament election stage 2: single-thread variable-k election reproducing
+ * parliament_elect() (doe.c) — votes = vdot + res, EMA consensus in cons[layer_idx],
+ * hard top-k, softmax -> dense gate[ne]. ne <= 16. */
+int nt_metal_parliament_elect(int vdot_slot, int res_slot, int alive_slot,
+                              int cons_slot, int gate_slot, int ne, int layer_idx, int min_experts)
+{
+    if (!g_initialised) { int rc = nt_metal_init(); if (rc) return rc; }
+    if (!slot_ok(vdot_slot) || !slot_ok(res_slot) || !slot_ok(alive_slot) ||
+        !slot_ok(cons_slot) || !slot_ok(gate_slot)) return 20;
+    if (ne <= 0 || ne > 16 || layer_idx < 0 || min_experts < 0) return 20;
+    @autoreleasepool {
+        id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
+        int rc = op_enc(&cb, &enc); if (rc) return rc;
+        uint32_t neu = (uint32_t)ne, lu = (uint32_t)layer_idx, mu = (uint32_t)min_experts;
+        [enc setComputePipelineState:g_pelect_pipe];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[vdot_slot].off  atIndex:0];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[res_slot].off   atIndex:1];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[alive_slot].off atIndex:2];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[cons_slot].off  atIndex:3];
+        [enc setBuffer:g_slot_buf offset:g_slot_tab[gate_slot].off  atIndex:4];
+        [enc setBytes:&neu length:4 atIndex:5];
+        [enc setBytes:&lu  length:4 atIndex:6];
+        [enc setBytes:&mu  length:4 atIndex:7];
+        [enc dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
         return op_fin(cb, enc);
     }
 }
