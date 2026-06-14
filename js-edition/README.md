@@ -321,7 +321,7 @@ favour the C edition. RoPE is interleaved — correct for llama/mistral; qwen2/q
 
 ## License & attribution
 
-GPL-3.0+. Co-authored by Claude (Arianna Method). Coordinated with Oleg Ataeff (maintainer).
+GPL-3.0+ — by Arianna Method.
 The C notorch repo is the canonical source — JS lockstep-follows the
 same op semantics and naming. When the C path adds an op, the JS path
 catches up via a port commit; the parity table above is the
