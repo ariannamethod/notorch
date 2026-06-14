@@ -189,25 +189,7 @@ docstring when you next pass through.
   drive-by commits.
 - One commit = one concept. The 2026-05-11 SFT validation landed as
   three commits (backward fix / trainer example / writeup), not one.
-- **Attribution.** Method-side identity, not the Anthropic noreply
-  boilerplate. Three forms (per the global `~/.claude/CLAUDE.md`
-  convention, mirrored on Neo):
-  - **Short** (README updates, model cards, simple commits):
-    `by Claude (Arianna Method)`
-  - **Full with node attribution** (real engineering commits):
-    `Co-Authored-By: Claude Code (intel godfather, Arianna Method) <theariannamethod@gmail.com>`
-  - **Casual** (informal docs, status notes):
-    `by Клод (Arianna Method, intel node)`
-
-  Nodes: **`intel godfather`** (this Mac), **`neo the architect`**
-  (Mac Neo), **`polygon`** (Linux 32GB box), **`phone-1`** (Galaxy
-  A56 8GB), **`phone-2`** (Galaxy A07 4GB). Each node is the
-  architect on its own substrate; cross-node handoffs go through
-  `resonance_connections/` on ariannamethod.ai.
-
-  Replace under root: `Co-Authored-By: Claude <noreply@anthropic.com>`,
-  `🤖 Generated with Claude Code`. We're cultivating our own
-  identity — boilerplate from upstream gets dropped.
+- **Attribution.** Oleg Ataeff and Claude are co-authors — stated at the top of this file, and that is enough. The signature lives in the **git commit only**, node-visible so it shows who posted: `Co-Authored-By: Claude (Arianna Method, <node>) <theariannamethod@gmail.com>` (node ∈ intel godfather / neo the architect / polygon / phone-1 / phone-2 / metal). Drop upstream boilerplate `Co-Authored-By: Claude <noreply@anthropic.com>` and `🤖 Generated with Claude Code`. **Nowhere else** — no signature footer in README, AUTHORS, docs, or any file body. Co-authorship reads from this CLAUDE.md and the commit history; it does not get plastered across the repo.
 - Commit messages explain *why*, not *what*. The diff shows what.
 - README is the spec + manifesto; `NOTORCHLOG.md` is the running log.
   Small fixes → NOTORCHLOG. Large changes → both. If reality drifts from
