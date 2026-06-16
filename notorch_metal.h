@@ -128,6 +128,18 @@ int nt_metal_attn_decode(int dst_slot, int q_slot, const float *K, const float *
                          uint32_t k_pos_stride, uint32_t k_head_stride,
                          uint32_t v_pos_stride, uint32_t v_head_stride, float scale);
 int nt_metal_copy_to_region(void *dst, int src_slot, uint64_t bytes);
+/* DOE parliament LoRA injection: x_slot += alpha * sum_e gate[e] * A_e @ (B_e @ x).
+ * layer_base = host pointer to this layer's slice of a registered expert arena
+ * laid out [ w_vote ne*D | per-expert (B rank*D, A D*rank) x ne ]. tmp_slot holds
+ * ne*rank scratch, gate_slot holds ne softmax weights (0 = dead/unelected). */
+int nt_metal_parliament_inject(int x_slot, int tmp_slot, int gate_slot,
+                               const float *layer_base, int D, int rank, int ne, float alpha);
+/* DOE parliament election (variable-k vote over experts). votes: vdot[e]=dot(w_vote_e,x);
+ * elect: dense gate[ne] from vdot + res (host 0.1*resonance) with EMA consensus persisted
+ * in cons[layer_idx] and the frozen alive[ne] mask. ne <= 16. */
+int nt_metal_parliament_votes(const float *layer_base, int x_slot, int vdot_slot, int D, int ne);
+int nt_metal_parliament_elect(int vdot_slot, int res_slot, int alive_slot,
+                              int cons_slot, int gate_slot, int ne, int layer_idx, int min_experts);
 
 #ifdef __cplusplus
 }
