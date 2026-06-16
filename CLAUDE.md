@@ -215,9 +215,8 @@ docstring when you next pass through.
   `notorch_cuda.cu:824`.
 - Fix the `notorch.h:653` alpha-format docstring (raw float bytes, not
   `alpha*1000`).
-- Implement `nt_rrpram_broadcast_attention` (`NT_OP_RRPRAM_BCAST` 34)
-  on the C side — declared in `notorch.h:126,442` but no implementation
-  in `notorch.c`. JS edition currently stops parity at op 33 awaiting
-  this.
+- JS edition: implement op 34 `nt_rrpram_broadcast_attention` for parity —
+  the C reference landed 2026-06-16 (canonical Janus pattern); the JS port
+  currently stops at op 33.
 - Vary RNG seed per cell in `phase7_eval.py` so the first sampled token
   isn't identical across cells with the same prompt.

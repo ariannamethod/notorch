@@ -13,6 +13,15 @@ Newest entries on top.
 
 ---
 
+## 2026-06-16 — op 34 nt_rrpram_broadcast_attention implemented (closes a standing TODO)
+
+NT_OP_RRPRAM_BCAST (34) was declared in notorch.h with no C implementation —
+the op was unusable from C and the JS port stalled at op 33. Implemented the
+canonical Janus broadcast pattern (mid[h,r] = Σ_t x[t]·Wr_a[h], sc=1/sqrt(D))
+with full forward + backward, plus a 348-line adversarial test. Verified:
+sentinel forward bit-exact (max_diff=0), backward finite-diff (d_wr/d_x/d_v)
+correct, suite 73/73 green. (PR #13.)
+
 ## 2026-06-16 — infer_llama: GGUF-embedded BPE tokenizer (CPU path was byte-level)
 
 examples/infer_llama.c tokenized byte-level — each prompt byte fed as a token
