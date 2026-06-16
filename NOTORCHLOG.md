@@ -13,6 +13,21 @@ Newest entries on top.
 
 ---
 
+## 2026-06-16 — infer_llama: GGUF-embedded BPE tokenizer (CPU path was byte-level)
+
+examples/infer_llama.c tokenized byte-level — each prompt byte fed as a token
+id (infer_llama.c:327) and decoded as raw ASCII — so any real BPE-vocab GGUF
+(SmolLM2, Qwen2.5, Mistral) got scrambled input and emitted token-number
+garbage (`[9234][512]…`). The fix wires the gguf-native BPE that already
+shipped in examples/bpe.c (bpe_load reads tokenizer.ggml.tokens/.merges
+straight from the file; bpe_encode/bpe_decode_token) — the same tokenizer the
+Metal inferer infer_gguf_metal.c already used; the CPU path simply never got
+it. eos comes from tokenizer.ggml.eos_token_id; byte-level is kept as a guarded
+fallback for char/byte-level models (nanollama) where bpe_load returns NULL.
+Makefile `llama` target now links examples/bpe.c. Verified: BPE roundtrip
+BPE_OK on the SmolLM2 vocab; SmolLM2-135M produces coherent English (was
+`[9234][512]` garbage); notorch test suite 73/73 green.
+
 ## 2026-06-13 — Metal: naive matvec is the default; sg goes opt-in (NT_METAL_SG=1)
 
 The authoritative A/B — live oyent-24B decode through doe on M4 Pro, one
