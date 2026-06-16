@@ -443,8 +443,15 @@ int nt_rrpram_lowrank_attention(int wr_combined_idx, int x_idx, int v_idx,
 // score[h,j] = Σ_r mid[h,r] · Wr_b[h,r,j] * sc with sc = 1/sqrt(D) (canonical scale).
 // attn[h,i,j] = softmax_causal(scores[h])[i,j] for j ≤ i.
 // out[i, h_off+d] = Σ_{j≤i} attn[h,i,j] · v[j, h_off+d].
+//
+// Use this when training/inferring against weights produced by canonical Janus models —
+// nt_rrpram_lowrank_attention's per-position pattern is a function-class-different op
+// and DoE LoRA training against it plateaus near uniform-distribution loss.
+// rank is REQUIRED — packed weight is H*R*(E + ctx_T), and ctx_T is derived from
+// combined_len / (H*rank) - n_embd. Caller passes the model's rank from JANU header.
+// head_dim must satisfy nr_heads*head_dim == n_embd (Janus invariant).
 int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
-                                   int T, int n_embd, int nr_heads, int head_dim);
+                                   int T, int n_embd, int nr_heads, int head_dim, int rank);
 
 // Concatenate per-position: out[t] = [a[t], b[t]]. a: [T, D_a], b: [T, D_b] → out: [T, D_a+D_b]
 int nt_concat(int a_idx, int b_idx, int T);
