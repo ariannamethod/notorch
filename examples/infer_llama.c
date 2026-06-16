@@ -10,6 +10,7 @@
 
 #include "gguf.h"
 #include "notorch.h"
+#include "examples/bpe.h"
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
@@ -313,19 +314,40 @@ int main(int argc, char **argv) {
     if (!model) { gguf_close(gf); return 1; }
     printf("loaded in %.0f ms\n", now_ms() - t0);
 
+    // GGUF-embedded BPE tokenizer (tokenizer.ggml.tokens/.merges). NULL for
+    // char/byte-level models (e.g. nanollama) → byte-level fallback below.
+    bpe_tokenizer* tok = bpe_load(argv[1]);
+    int eos = -1;
+    if (tok) {
+        const gguf_kv* e = gguf_get_kv(gf, "tokenizer.ggml.eos_token_id");
+        if (e) eos = (int)e->val.u32;
+        printf("tokenizer: GGUF BPE (vocab=%d eos=%d)\n", bpe_n_vocab(tok), eos);
+    } else {
+        printf("tokenizer: byte-level fallback (no GGUF BPE vocab)\n");
+    }
+
     const char* prompt = argc > 2 ? argv[2] : "Hello";
     int max_tokens = argc > 3 ? atoi(argv[3]) : 50;
     float temp = argc > 4 ? (float)atof(argv[4]) : 0.8f;
 
     int max_seq = 256;
+    // tokens[] below is sized to max_seq; clamp max_tokens (from argv[3]) so the
+    // encode cap (max_seq - max_tokens - 1) and the byte-loop bound stay inside
+    // the buffer — a negative or oversized max_tokens would otherwise overflow it.
+    if (max_tokens < 1) max_tokens = 1;
+    if (max_tokens > max_seq - 1) max_tokens = max_seq - 1;
     kv_cache* kv = kv_new(model->n_layers, max_seq, model->kv_dim);
     float *logits = (float*)calloc(model->vocab, sizeof(float));
 
-    // Simple byte-level tokenization (BOS=1 for llama, BOS=2 for others)
     int tokens[256]; int n_tok = 0;
-    tokens[n_tok++] = 1; // BOS
-    for (int i = 0; prompt[i] && n_tok < max_seq - max_tokens; i++)
-        tokens[n_tok++] = (unsigned char)prompt[i];
+    if (tok) {
+        n_tok = bpe_encode(tok, prompt, tokens, max_seq - max_tokens - 1);
+    } else {
+        // byte-level fallback (BOS=1) for char/byte-level models without a GGUF vocab
+        tokens[n_tok++] = 1; // BOS
+        for (int i = 0; prompt[i] && n_tok < max_seq - max_tokens; i++)
+            tokens[n_tok++] = (unsigned char)prompt[i];
+    }
 
     printf("\nprompt: \"%s\" (%d tokens, temp=%.2f)\n", prompt, n_tok, temp);
 
@@ -339,15 +361,19 @@ int main(int argc, char **argv) {
     fflush(stdout);
 
     // Decode
-    int gen = 0;
+    int gen = 0; char piece[256];
     for (int step = 0; step < max_tokens; step++) {
         int next = sample(logits, model->vocab, temp);
-        if (next <= 2) break; // EOS/BOS/PAD
-
-        // Print: if printable ASCII or newline
-        if (next >= 32 && next < 127) printf("%c", (char)next);
-        else if (next == 10) printf("\n");
-        else printf("[%d]", next);
+        if (tok) {
+            if (next == eos) break;
+            bpe_decode_token(tok, next, piece, sizeof(piece));
+            printf("%s", piece);
+        } else {
+            if (next <= 2) break; // EOS/BOS/PAD (byte-level)
+            if (next >= 32 && next < 127) printf("%c", (char)next);
+            else if (next == 10) printf("\n");
+            else printf("[%d]", next);
+        }
         fflush(stdout);
         gen++;
 
@@ -361,6 +387,7 @@ int main(int argc, char **argv) {
            n_tok, prefill_ms, n_tok * 1000.0 / prefill_ms,
            gen, total_ms - prefill_ms, gen > 0 ? gen * 1000.0 / (total_ms - prefill_ms) : 0);
 
+    if (tok) bpe_free(tok);
     free(logits); kv_free(kv); llama_free(model); gguf_close(gf);
     return 0;
 }

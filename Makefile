@@ -119,9 +119,9 @@ gemma: examples/infer_gemma.c gguf.c gguf.h notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_gemma examples/infer_gemma.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_gemma (Gemma-3 GGUF, $(BLAS_NAME))"
 
-llama: examples/infer_llama.c gguf.c gguf.h notorch.c notorch.h
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama examples/infer_llama.c gguf.c notorch.c -lm $(BLAS_LIBS)
-	@echo "Compiled: infer_llama (LLaMA/Qwen GGUF, $(BLAS_NAME))"
+llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama examples/infer_llama.c examples/bpe.c gguf.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: infer_llama (LLaMA/Qwen GGUF + GGUF-BPE tokenizer, $(BLAS_NAME))"
 
 # ── Training ──
 
