@@ -331,6 +331,11 @@ int main(int argc, char **argv) {
     float temp = argc > 4 ? (float)atof(argv[4]) : 0.8f;
 
     int max_seq = 256;
+    // tokens[] below is sized to max_seq; clamp max_tokens (from argv[3]) so the
+    // encode cap (max_seq - max_tokens - 1) and the byte-loop bound stay inside
+    // the buffer — a negative or oversized max_tokens would otherwise overflow it.
+    if (max_tokens < 1) max_tokens = 1;
+    if (max_tokens > max_seq - 1) max_tokens = max_seq - 1;
     kv_cache* kv = kv_new(model->n_layers, max_seq, model->kv_dim);
     float *logits = (float*)calloc(model->vocab, sizeof(float));
 
