@@ -196,7 +196,7 @@ int main(int argc, char** argv) {
     printf("════════════════════════════════════════════════════════\n");
 
     // Load corpus
-    const char* corpus_path = "/Users/ataeff/q/postgpt/postgpt.txt";
+    const char* corpus_path = "./postgpt.txt";
     FILE* f = fopen(corpus_path, "rb");
     if (!f) { printf("cannot open %s\n", corpus_path); return 1; }
     fseek(f, 0, SEEK_END);

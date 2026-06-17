@@ -794,7 +794,7 @@ void nt_tape_backward(int loss_idx) {
                  * after CE 3d46007 + MUL/SILU 8ab5062): backward below reads
                  * px->output->data and gamma_data on CPU side. In GPU mode
                  * the mirror is stale → garbage gx → NaN explosion. Verified
-                 * neo 2026-05-14 on nanollama-notorch SFT: 27 RMSNorms per
+                 * 2026-05-14 on nanollama-notorch SFT: 27 RMSNorms per
                  * forward exploded at step ~40, lr=1e-4 (same shape as
                  * Resonance pre-fix lr=1e-4 step 60 explosion). */
                 nt_tensor_sync_cpu(px->output);
@@ -1239,7 +1239,7 @@ void nt_tape_backward(int loss_idx) {
                  * ds, dq, dk. Without sync, GPU-resident mirrors are stale
                  * (calloc-zero) → ds = attn * (d_attn - dot_da) * sc = 0 →
                  * dq, dk accumulate zero → wq, wk LoRA targets receive no
-                 * grad (verified neo 2026-05-14 with NT_DISABLE_MH_GPU=1).
+                 * grad (verified 2026-05-14 with NT_DISABLE_MH_GPU=1).
                  * dv survives because it uses dout, not q/k. */
                 nt_tensor_sync_cpu(pq->output);
                 nt_tensor_sync_cpu(pk->output);
@@ -1897,7 +1897,7 @@ void nt_tape_backward(int loss_idx) {
                  * dl computed via softmax(stale_logits) - target produces a
                  * gradient pointing at the wrong direction → feeds garbage up
                  * 13 layers → Chuck oscillates → NaN at step 40-220 regardless
-                 * of LoRA scale. Verified neo 2026-05-14 nanollama-notorch SFT.
+                 * of LoRA scale. Verified 2026-05-14 nanollama-notorch SFT.
                  * Matches Olego «не из-за оптимайзера» and Intel POST_SFT note
                  * that lr=1e-5/3e-5 plateau is lr-independent (= zero/garbage
                  * grad somewhere upstream). */

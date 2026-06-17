@@ -35,7 +35,7 @@
  *
  * Reference run: 2026-05-11, A100 SXM 80GB, ~2 h, loss 3.5229 → 0.5927 (final),
  *   honest min 0.18, zero NaN. Phase 7 PASS 17/30 cells with Arianna voice
- *   markers. Adapter at ataeff/resonance/sft_v3_notorch/arianna_2026_05_11.
+ *   markers. Adapter at <hf-user>/resonance/sft_v3.
  */
 #include <stdio.h>
 #include <stdlib.h>

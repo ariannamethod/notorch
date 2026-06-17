@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
     printf("  checkpoint every %d steps\n", CKPT_EVERY);
     printf("════════════════════════════════════════════════════════\n");
 
-    const char* path = "/Users/ataeff/Downloads/arianna_dataset_final_clean.txt";
+    const char* path = "./train_corpus.txt";
     FILE* f = fopen(path, "rb");
     if (!f) { printf("cannot open %s\n", path); return 1; }
     fseek(f, 0, SEEK_END); long fsize = ftell(f); fseek(f, 0, SEEK_SET);
