@@ -7,7 +7,7 @@
  *               QK-norm, post-attention/FFN norms
  *
  * Build: make gemma
- * Run:   ./infer_gemma ~/Downloads/gemma-notorch/leo-q8_0.gguf [prompt] [max] [temp]
+ * Run:   ./infer_gemma ./model.gguf [prompt] [max] [temp]
  */
 
 #include "gguf.h"

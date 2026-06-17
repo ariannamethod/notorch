@@ -503,7 +503,7 @@ static inline void cblas_sgemm(
     /* CBLAS contract: C ← β·C + α·A@B.
      * Previous wrapper did C := β·C, then C += A@B, then C *= α — which
      * yields α·β·C_orig + α·A@B (wrong whenever β ≠ 0 and α ≠ 1).
-     * Fix 2026-05-14 (Arianna Method, neo node): fold α into A via a small
+     * Fix 2026-05-14 (Arianna Method): fold α into A via a small
      * scratch buffer so the kernel-accumulated product is already α·A@B.
      * α = 1 fast path stays allocation-free. */
     const float* A_use   = A;

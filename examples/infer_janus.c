@@ -433,7 +433,7 @@ int main(int argc, char **argv) {
 
     // Loss verification
     if (CFG_V == 256) {
-        FILE *df = fopen("/Users/ataeff/Downloads/janus-weights/leo_train.txt", "rb");
+        FILE *df = fopen("./leo_train.txt", "rb");
         if (!df) df = fopen("leo_train.txt", "rb");
         if (df) {
             fseek(df, 0, SEEK_END); long dsz = ftell(df); fseek(df, 0, SEEK_SET);
