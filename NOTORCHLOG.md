@@ -13,6 +13,23 @@ Newest entries on top.
 
 ---
 
+## 2026-06-19 — Metal: nt_metal_rope gains norm_pairs (arch-gated rope)
+
+`nt_metal_rope` now takes a `norm_pairs` flag: 0 keeps the half-split pairs
+`(i, i+hd/2)`, 1 uses consecutive NORM pairs `(2i, 2i+1)`. The Metal
+`rope_f32` kernel branches on it (extra `buffer(5)` constant). This makes the
+Metal rope arch-aware: llama-arch GGUFs, which the HF→GGUF converter lays out
+for interleaved/NORM rope, decode correctly with `norm_pairs=1`, while
+mistral3 keeps the existing half-split path. It is the byte-identical upstream
+of doe `b3e7a23`, where the arch gate was first validated on a live
+Mistral-Nemo-12B forward (coherent output, old multi-byte salad gone) and a
+24B mistral3 tok1 regression that stayed bit-identical (`'ĠI'=19.947`). On the
+notorch side `nt_metal_rope` is consumed only by the Metal unit test;
+`examples/infer_gguf_metal.c` already selects `rope_neox`/`rope_interleaved`
+on the CPU path. Proof: `make metal` 0 errors, `test_metal_rope
+max_rel=1.313e-05 PASS` (`norm_pairs=0` half-split bit-matches the CPU
+reference), all Metal gates green on Apple Silicon A18.
+
 ## 2026-06-16 — op 34 nt_rrpram_broadcast_attention implemented (closes a standing TODO)
 
 NT_OP_RRPRAM_BCAST (34) was declared in notorch.h with no C implementation —

@@ -120,7 +120,7 @@ int nt_metal_slot_download(int slot, void *dst, uint64_t bytes);
 int nt_metal_q4k_matvec_slot(int dst_slot, const uint8_t *W, int src_slot, int m, int k);
 int nt_metal_q6k_matvec_slot(int dst_slot, const uint8_t *W, int src_slot, int m, int k);
 int nt_metal_rmsnorm(int dst_slot, int src_slot, const float *w, int n, float eps);
-int nt_metal_rope(int slot, int n_heads, int head_dim, int pos, float theta);
+int nt_metal_rope(int slot, int n_heads, int head_dim, int pos, float theta, int norm_pairs);
 int nt_metal_silu_mul(int dst_slot, int gate_slot, int up_slot, int n);
 int nt_metal_add(int dst_slot, int a_slot, int b_slot, int n);
 int nt_metal_attn_decode(int dst_slot, int q_slot, const float *K, const float *V,
