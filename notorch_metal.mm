@@ -456,14 +456,15 @@ kernel void rmsnorm_f32(
     for (uint i = tid; i < n; i += tgsz) dst[i] = src[i] * rinv * w[i];
 }
 
-/* llama-style rotary: head h, pair (i, i+hd/2), angle = pos * theta^(-2i/hd).
- * One thread per pair, in place. */
+/* Rotary position encoding. norm_pairs=0 uses half-split pairs (i, i+hd/2);
+ * norm_pairs=1 uses consecutive NORM pairs (2i, 2i+1). */
 kernel void rope_f32(
     device       float *v    [[buffer(0)]],
     constant     uint  &nh   [[buffer(1)]],
     constant     uint  &hd   [[buffer(2)]],
     constant     uint  &pos  [[buffer(3)]],
     constant     float &theta[[buffer(4)]],
+    constant     uint  &norm_pairs[[buffer(5)]],
     uint gid                 [[thread_position_in_grid]])
 {
     uint half_hd = hd / 2u;
@@ -474,9 +475,11 @@ kernel void rope_f32(
     float angle = float(pos) * freq;
     float c = cos(angle), s = sin(angle);
     device float *p = v + h * hd;
-    float x0 = p[i], x1 = p[i + half_hd];
-    p[i]           = x0 * c - x1 * s;
-    p[i + half_hd] = x0 * s + x1 * c;
+    uint a = norm_pairs ? 2u*i : i;
+    uint b = norm_pairs ? 2u*i + 1u : i + half_hd;
+    float x0 = p[a], x1 = p[b];
+    p[a] = x0 * c - x1 * s;
+    p[b] = x0 * s + x1 * c;
 }
 
 kernel void silu_mul_f32(
@@ -1439,7 +1442,7 @@ int nt_metal_rmsnorm(int dst_slot, int src_slot, const float *w, int n, float ep
     }
 }
 
-int nt_metal_rope(int slot, int n_heads, int head_dim, int pos, float theta)
+int nt_metal_rope(int slot, int n_heads, int head_dim, int pos, float theta, int norm_pairs)
 {
     if (!g_initialised) { int rc = nt_metal_init(); if (rc) return rc; }
     if (!slot_ok(slot) || n_heads <= 0 || head_dim <= 0 || (head_dim & 1)) return 20;
@@ -1447,12 +1450,14 @@ int nt_metal_rope(int slot, int n_heads, int head_dim, int pos, float theta)
         id<MTLCommandBuffer> cb; id<MTLComputeCommandEncoder> enc;
         int rc = op_enc(&cb, &enc); if (rc) return rc;
         uint32_t nh = (uint32_t)n_heads, hd = (uint32_t)head_dim, ps = (uint32_t)pos;
+        uint32_t rp = norm_pairs ? 1u : 0u;
         [enc setComputePipelineState:g_rope_pipe];
         [enc setBuffer:g_slot_buf offset:g_slot_tab[slot].off atIndex:0];
         [enc setBytes:&nh length:4 atIndex:1];
         [enc setBytes:&hd length:4 atIndex:2];
         [enc setBytes:&ps length:4 atIndex:3];
         [enc setBytes:&theta length:4 atIndex:4];
+        [enc setBytes:&rp length:4 atIndex:5];
         NSUInteger total = (NSUInteger)n_heads * (NSUInteger)(head_dim / 2);
         [enc dispatchThreads:MTLSizeMake(total, 1, 1)
        threadsPerThreadgroup:MTLSizeMake(total < 256 ? total : 256, 1, 1)];

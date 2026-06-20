@@ -419,7 +419,7 @@ int main(void)
             const int QN = NH * HD;  /* 256 <= E */
             const int POS = 7;
             nt_metal_slot_upload(0, xv, (uint64_t)QN * 4);
-            nt_metal_rope(0, NH, HD, POS, THETA);
+            nt_metal_rope(0, NH, HD, POS, THETA, 0);
             nt_metal_slot_download(0, gpu, (uint64_t)QN * 4);
             memcpy(ref, xv, (size_t)QN * 4);
             for (int h = 0; h < NH; h++)
