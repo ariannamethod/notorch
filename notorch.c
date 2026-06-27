@@ -744,6 +744,21 @@ void nt_tape_backward(int loss_idx) {
             break;
         }
 
+        case NT_OP_RELU: {
+            /* y = max(0, x); dy/dx = (y > 0) ? 1 : 0  (y>0 ⟺ x>0) */
+            if (e->parent1 >= 0) {
+                float* gx = (float*)calloc(out_len, sizeof(float));
+                if (gx) {
+                    for (int i = 0; i < out_len; i++) {
+                        gx[i] = (e->output->data[i] > 0.0f) ? dout[i] : 0.0f;
+                    }
+                    tape_acc_grad(e->parent1, gx, out_len);
+                }
+                free(gx);
+            }
+            break;
+        }
+
         case NT_OP_SCALE_BY_T: {
             /* y = a[0] * x; gx = a[0] * dout; ga = sum(dout * x) */
             if (e->parent1 >= 0 && e->parent2 >= 0) {
@@ -2768,7 +2783,8 @@ void nt_tape_accum_grads(void) {
     int param_idx = 0;
     for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param || !e->grad) continue;
+        if (!e->is_param) continue;
+        if (!e->grad) { param_idx++; continue; }   // registered param w/o grad this step: keep slot alignment, skip update
         nt_adam_state* as = &g_tape.adam[param_idx];
         int n = e->output->len;
         if (!as->acc_grad) {
@@ -3312,6 +3328,24 @@ int nt_sigmoid(int x_idx) {
                                 : expf(x) / (1.0f + expf(x));
     }
     int idx = nt_tape_record(out, NT_OP_SIGMOID, x_idx, -1, 0);
+    nt_tensor_free(out);
+    return idx;
+}
+
+int nt_relu(int x_idx) {
+    if (x_idx < 0) return -1;
+    nt_tape_entry* px = &g_tape.entries[x_idx];
+    int n = px->output->len;
+    nt_tensor* out = nt_tensor_new(n);
+    if (!out) return -1;
+    /* parent output may be GPU-resident with a stale CPU mirror — sync before
+     * read (same bug class as SIGMOID/SILU). */
+    nt_tensor_sync_cpu(px->output);
+    for (int i = 0; i < n; i++) {
+        float x = px->output->data[i];
+        out->data[i] = x > 0.0f ? x : 0.0f;
+    }
+    int idx = nt_tape_record(out, NT_OP_RELU, x_idx, -1, 0);
     nt_tensor_free(out);
     return idx;
 }

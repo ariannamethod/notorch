@@ -123,6 +123,7 @@ void nt_tensor_print(const nt_tensor* t, const char* name);
 #define NT_OP_SEQ_CROSSENT_MASKED 32  // masked sequence cross-entropy (parent3 = mask)
 #define NT_OP_RRPRAM_LR     33   // low-rank RRPRAM (Wr = Wr_a × Wr_b packed in one tensor)
 #define NT_OP_RRPRAM_BCAST  34   // broadcast RRPRAM — mid[h,r] = Σ_t x[t]·Wr_a[h] (canonical Janus pattern, sc=1/sqrt(D))
+#define NT_OP_RELU          35   // y = max(0, x) — rectified linear unit
 
 typedef struct {
     nt_tensor* output;          // forward result
@@ -352,6 +353,9 @@ int nt_silu(int x_idx);
 
 // Sigmoid activation: y = 1 / (1 + exp(-x))
 int nt_sigmoid(int x_idx);
+
+// ReLU activation: y = max(0, x)
+int nt_relu(int x_idx);
 
 // Broadcast scale: y[i] = a[0] * x[i], where a is a scalar tensor (shape [1]).
 // Grad flows to both x (gx = a*gy) and a (ga = sum(gy*x)).

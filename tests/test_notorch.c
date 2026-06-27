@@ -294,6 +294,23 @@ static void test_silu(void) {
     PASS("silu");
 }
 
+static void test_relu(void) {
+    nt_tape_start();
+    nt_tensor* x = nt_tensor_new(3);
+    x->data[0] = -1; x->data[1] = 0; x->data[2] = 2;
+    int x_idx = nt_tape_record(x, NT_OP_NONE, -1, -1, 0);
+    int y_idx = nt_relu(x_idx);
+
+    nt_tape_entry* ey = &nt_tape_get()->entries[y_idx];
+    ASSERT_CLOSE(ey->output->data[0], 0.0f, 1e-5f, "relu(-1)=0");
+    ASSERT_CLOSE(ey->output->data[1], 0.0f, 1e-5f, "relu(0)=0");
+    ASSERT_CLOSE(ey->output->data[2], 2.0f, 1e-5f, "relu(2)=2");
+
+    nt_tape_clear();
+    nt_tensor_free(x);
+    PASS("relu");
+}
+
 static void test_softmax(void) {
     nt_tape_start();
     nt_tensor* x = nt_tensor_new(3);
@@ -1334,6 +1351,7 @@ int main(void) {
 
     printf("\n[Ops]\n");
     test_silu();
+    test_relu();
     test_softmax();
     test_rmsnorm();
 

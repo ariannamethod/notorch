@@ -13,6 +13,17 @@ Newest entries on top.
 
 ---
 
+## 2026-06-27 — nt_relu: plain ReLU activation (op 35)
+
+Added `nt_relu(int x_idx)` — `y = max(0, x)` forward, `dy/dx = (y > 0) ? 1 : 0`
+backward (`NT_OP_RELU`, op 35). notorch carried silu / gelu / sigmoid / geglu /
+swiglu but no plain ReLU; PostGPT's MLP (`F.relu`) needed it to lift its training
+loop off PyTorch onto the notorch tape (Operation Napalm-2 —
+github.com/ariannamethod/postgpt). Forward mirrors `nt_sigmoid`; backward mirrors
+the SIGMOID case (reads `e->output`, since `y > 0 ⟺ x > 0`). Proof: `make` clean
+(only the pre-existing unused-symbol warnings), `./notorch_test` 48/48 passed,
+0 failed (47 + `test_relu`, which checks relu(-1)=0 / relu(0)=0 / relu(2)=2).
+
 ## 2026-06-19 — Metal: nt_metal_rope gains norm_pairs (arch-gated rope)
 
 `nt_metal_rope` now takes a `norm_pairs` flag: 0 keeps the half-split pairs
