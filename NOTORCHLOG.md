@@ -13,6 +13,19 @@ Newest entries on top.
 
 ---
 
+## 2026-06-28 — nt_seq_gate: per-position mechanism gate (op 36)
+
+Added `nt_seq_gate(x_idx, g_idx, T, nm, gi)` — `out[t,d] = x[t,d] * gate[t*nm+gi]`, the
+per-position scalar-over-block multiply PostGPT-Q's triple attention needs to gate each
+mechanism (Content / RRPRAM / Janus) by its own learned sigmoid before the concat. `x`
+is `[T, B]` (B = x.len/T), `gate` is `[T, nm]`, `gi` selects the gate column. Backward
+flows to `x` (`dout*gate`) and to gate column `gi` (`Σ_d dout[t,d]*x[t,d]`); mirrors
+`NT_OP_MUL` plus a reduction. This lifted PostGPT-Q's training loop off PyTorch onto the
+notorch tape (Operation Napalm-2 — github.com/ariannamethod/q). Proof: `make` clean
+(pre-existing unused-symbol warnings only), `./notorch_test` 49/49 passed, 0 failed
+(48 + `test_seq_gate`, which checks the gated values and that grads reach both `x` and
+the gate).
+
 ## 2026-06-27 — nt_relu: plain ReLU activation (op 35)
 
 Added `nt_relu(int x_idx)` — `y = max(0, x)` forward, `dy/dx = (y > 0) ? 1 : 0`

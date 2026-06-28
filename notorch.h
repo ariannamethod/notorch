@@ -124,6 +124,7 @@ void nt_tensor_print(const nt_tensor* t, const char* name);
 #define NT_OP_RRPRAM_LR     33   // low-rank RRPRAM (Wr = Wr_a × Wr_b packed in one tensor)
 #define NT_OP_RRPRAM_BCAST  34   // broadcast RRPRAM — mid[h,r] = Σ_t x[t]·Wr_a[h] (canonical Janus pattern, sc=1/sqrt(D))
 #define NT_OP_RELU          35   // y = max(0, x) — rectified linear unit
+#define NT_OP_SEQ_GATE      36   // out[t,d] = x[t,d] * gate[t,gi] — per-position mechanism gate
 
 typedef struct {
     nt_tensor* output;          // forward result
@@ -356,6 +357,12 @@ int nt_sigmoid(int x_idx);
 
 // ReLU activation: y = max(0, x)
 int nt_relu(int x_idx);
+
+// Per-position mechanism gate (q triple-attention): out[t,d] = x[t,d] * gate[t*nm+gi].
+// x is [T, B] (B = x.len/T), gate is [T, nm]; gi selects which gate column scales this
+// mechanism's block. Backward flows to x (dout*gate) and to gate column gi
+// (Σ_d dout[t,d]*x[t,d]); other gate columns get zero gradient.
+int nt_seq_gate(int x_idx, int g_idx, int T, int nm, int gi);
 
 // Broadcast scale: y[i] = a[0] * x[i], where a is a scalar tensor (shape [1]).
 // Grad flows to both x (gx = a*gy) and a (ga = sum(gy*x)).

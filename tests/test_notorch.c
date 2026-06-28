@@ -311,6 +311,38 @@ static void test_relu(void) {
     PASS("relu");
 }
 
+static void test_seq_gate(void) {
+    nt_tape_start();
+    nt_tensor* x = nt_tensor_new(6);     // [T=2, B=3]
+    for (int i = 0; i < 6; i++) x->data[i] = (float)(i + 1);
+    int x_idx = nt_tape_param(x);
+    nt_tensor* g = nt_tensor_new(4);     // [T=2, nm=2]
+    g->data[0] = 0.5f; g->data[1] = 2.0f;
+    g->data[2] = 0.5f; g->data[3] = 3.0f;
+    int g_idx = nt_tape_param(g);
+    int y_idx = nt_seq_gate(x_idx, g_idx, 2, 2, 1);   // gate column gi=1
+
+    nt_tape_entry* ey = &nt_tape_get()->entries[y_idx];
+    ASSERT_CLOSE(ey->output->data[0], 2.0f,  1e-5f, "seq_gate t0d0=1*2");
+    ASSERT_CLOSE(ey->output->data[2], 6.0f,  1e-5f, "seq_gate t0d2=3*2");
+    ASSERT_CLOSE(ey->output->data[3], 12.0f, 1e-5f, "seq_gate t1d0=4*3");
+    ASSERT_CLOSE(ey->output->data[5], 18.0f, 1e-5f, "seq_gate t1d2=6*3");
+
+    int loss_idx = nt_cross_entropy(y_idx, 5);
+    nt_tape_backward(loss_idx);
+    nt_tape_entry* ex = &nt_tape_get()->entries[x_idx];
+    nt_tape_entry* eg = &nt_tape_get()->entries[g_idx];
+    ASSERT(ex->grad != NULL && eg->grad != NULL, "seq_gate grads exist");
+    float gn = 0.0f;
+    for (int i = 0; i < eg->grad->len; i++) gn += fabsf(eg->grad->data[i]);
+    ASSERT(gn > 1e-9f, "seq_gate gate grad nonzero");
+
+    nt_tape_clear();
+    nt_tensor_free(x);
+    nt_tensor_free(g);
+    PASS("seq_gate");
+}
+
 static void test_softmax(void) {
     nt_tape_start();
     nt_tensor* x = nt_tensor_new(3);
@@ -1352,6 +1384,7 @@ int main(void) {
     printf("\n[Ops]\n");
     test_silu();
     test_relu();
+    test_seq_gate();
     test_softmax();
     test_rmsnorm();
 
