@@ -766,7 +766,9 @@ void nt_tape_backward(int loss_idx) {
                 nt_tape_entry* px = &g_tape.entries[e->parent1];
                 nt_tape_entry* pg = &g_tape.entries[e->parent2];
                 int T = (int)e->aux, nm = (int)e->aux2, gi = (int)e->aux3;
-                int B = (T > 0) ? out_len / T : 0;
+                if (T <= 0 || nm <= 0 || gi < 0 || gi >= nm ||
+                    out_len % T != 0 || pg->output->len != T * nm) break;  /* shape guard */
+                int B = out_len / T;
                 nt_tensor_sync_cpu(px->output);
                 nt_tensor_sync_cpu(pg->output);
                 float* dx = (float*)calloc(out_len, sizeof(float));
@@ -3381,10 +3383,11 @@ int nt_relu(int x_idx) {
 }
 
 int nt_seq_gate(int x_idx, int g_idx, int T, int nm, int gi) {
-    if (x_idx < 0 || g_idx < 0 || T <= 0) return -1;
+    if (x_idx < 0 || g_idx < 0 || T <= 0 || nm <= 0 || gi < 0 || gi >= nm) return -1;
     nt_tape_entry* px = &g_tape.entries[x_idx];
     nt_tape_entry* pg = &g_tape.entries[g_idx];
     int n = px->output->len;
+    if (n % T != 0 || pg->output->len != T * nm) return -1;  /* shape guard: fail fast */
     int B = n / T;
     nt_tensor* out = nt_tensor_new(n);
     if (!out) return -1;

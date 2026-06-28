@@ -26,6 +26,13 @@ notorch tape (Operation Napalm-2 — github.com/ariannamethod/q). Proof: `make` 
 (48 + `test_seq_gate`, which checks the gated values and that grads reach both `x` and
 the gate).
 
+**Addendum (same op, Copilot review on PR #18):** added fail-fast shape guards to both
+the forward and the `NT_OP_SEQ_GATE` backward — `nm <= 0`, `gi` out of `[0,nm)`,
+`x.len % T != 0`, or `gate.len != T*nm` now return -1 (forward) / `break` (backward)
+instead of reading past the gate buffer or silently emitting wrong output on
+`x.len % T` remainder. `test_seq_gate` now also asserts a bad `gi` and a wrong gate
+length are rejected. notorch_test 49/49.
+
 ## 2026-06-27 — nt_relu: plain ReLU activation (op 35)
 
 Added `nt_relu(int x_idx)` — `y = max(0, x)` forward, `dy/dx = (y > 0) ? 1 : 0`

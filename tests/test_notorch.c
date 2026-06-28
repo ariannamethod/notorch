@@ -336,6 +336,9 @@ static void test_seq_gate(void) {
     float gn = 0.0f;
     for (int i = 0; i < eg->grad->len; i++) gn += fabsf(eg->grad->data[i]);
     ASSERT(gn > 1e-9f, "seq_gate gate grad nonzero");
+    // input-guard: bad gi (>= nm) and wrong gate length must fail fast (-1)
+    ASSERT(nt_seq_gate(x_idx, g_idx, 2, 2, 5) < 0, "seq_gate rejects gi out of range");
+    ASSERT(nt_seq_gate(x_idx, g_idx, 2, 3, 0) < 0, "seq_gate rejects gate.len != T*nm");
 
     nt_tape_clear();
     nt_tensor_free(x);
