@@ -759,6 +759,36 @@ void nt_tape_backward(int loss_idx) {
             break;
         }
 
+        case NT_OP_SEQ_GATE: {
+            /* out[t,d] = x[t,d] * g[t,gi];
+             * dx[t,d] = dout[t,d] * g[t,gi];  dg[t,gi] = Σ_d dout[t,d] * x[t,d] */
+            if (e->parent1 >= 0 && e->parent2 >= 0) {
+                nt_tape_entry* px = &g_tape.entries[e->parent1];
+                nt_tape_entry* pg = &g_tape.entries[e->parent2];
+                int T = (int)e->aux, nm = (int)e->aux2, gi = (int)e->aux3;
+                int B = (T > 0) ? out_len / T : 0;
+                nt_tensor_sync_cpu(px->output);
+                nt_tensor_sync_cpu(pg->output);
+                float* dx = (float*)calloc(out_len, sizeof(float));
+                float* dg = (float*)calloc(pg->output->len, sizeof(float));
+                if (dx && dg) {
+                    for (int t = 0; t < T; t++) {
+                        float gv = pg->output->data[t * nm + gi];
+                        float acc = 0.0f;
+                        for (int d = 0; d < B; d++) {
+                            dx[t * B + d] = dout[t * B + d] * gv;
+                            acc += dout[t * B + d] * px->output->data[t * B + d];
+                        }
+                        dg[t * nm + gi] = acc;
+                    }
+                    tape_acc_grad(e->parent1, dx, out_len);
+                    tape_acc_grad(e->parent2, dg, pg->output->len);
+                }
+                free(dx); free(dg);
+            }
+            break;
+        }
+
         case NT_OP_SCALE_BY_T: {
             /* y = a[0] * x; gx = a[0] * dout; ga = sum(dout * x) */
             if (e->parent1 >= 0 && e->parent2 >= 0) {
@@ -3346,6 +3376,28 @@ int nt_relu(int x_idx) {
         out->data[i] = x > 0.0f ? x : 0.0f;
     }
     int idx = nt_tape_record(out, NT_OP_RELU, x_idx, -1, 0);
+    nt_tensor_free(out);
+    return idx;
+}
+
+int nt_seq_gate(int x_idx, int g_idx, int T, int nm, int gi) {
+    if (x_idx < 0 || g_idx < 0 || T <= 0) return -1;
+    nt_tape_entry* px = &g_tape.entries[x_idx];
+    nt_tape_entry* pg = &g_tape.entries[g_idx];
+    int n = px->output->len;
+    int B = n / T;
+    nt_tensor* out = nt_tensor_new(n);
+    if (!out) return -1;
+    /* parents may be GPU-resident with stale CPU mirrors — sync before read. */
+    nt_tensor_sync_cpu(px->output);
+    nt_tensor_sync_cpu(pg->output);
+    for (int t = 0; t < T; t++) {
+        float gv = pg->output->data[t * nm + gi];
+        for (int d = 0; d < B; d++)
+            out->data[t * B + d] = px->output->data[t * B + d] * gv;
+    }
+    int idx = nt_tape_record4(out, NT_OP_SEQ_GATE, x_idx, g_idx, -1,
+                              (float)T, (float)nm, (float)gi, 0.0f);
     nt_tensor_free(out);
     return idx;
 }
