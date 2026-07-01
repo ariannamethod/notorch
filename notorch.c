@@ -3396,6 +3396,12 @@ int nt_rrpram_attention(int wr_idx, int x_idx, int v_idx, int T, int n_embd, int
     nt_tape_entry* pwr = &g_tape.entries[wr_idx];
     nt_tape_entry* px  = &g_tape.entries[x_idx];
     nt_tape_entry* pv  = &g_tape.entries[v_idx];
+    /* GPU/CPU sync (forward): x and v may be GPU-fresh from a prior GPU matvec — without
+     * this the CPU-only RRPRAM path reads a stale (calloc-zero) mirror and produces zeros.
+     * Forward-side counterpart of the backward sync-discipline audit. No-op on CPU builds. */
+    nt_tensor_sync_cpu(pwr->output);
+    nt_tensor_sync_cpu(px->output);
+    nt_tensor_sync_cpu(pv->output);
     int ctx = pwr->output->len / (nr_heads * n_embd);
     float* scores_buf = (float*)malloc(T * sizeof(float));
     for (int h = 0; h < nr_heads; h++) {
@@ -3552,6 +3558,10 @@ int nt_concat(int a_idx, int b_idx, int T) {
     if (a_idx < 0 || b_idx < 0) return -1;
     nt_tape_entry* pa = &g_tape.entries[a_idx];
     nt_tape_entry* pb = &g_tape.entries[b_idx];
+    /* GPU/CPU sync (forward): concat inputs (content_out, rrpram_out) may be GPU-fresh —
+     * read the current values, not a stale CPU mirror. No-op on CPU builds. */
+    nt_tensor_sync_cpu(pa->output);
+    nt_tensor_sync_cpu(pb->output);
     int Da = pa->output->len / T;
     int Db = pb->output->len / T;
     int Dc = Da + Db;
@@ -4467,6 +4477,10 @@ int nt_save(const char* path, nt_tensor** params, int n_params) {
     fwrite(&n, 4, 1, f);
     for (int i = 0; i < n_params; i++) {
         nt_tensor* t = params[i];
+        /* GPU/CPU sync: after a GPU Chuck step the trained weights live in d_data and the
+         * CPU mirror is stale — without this the checkpoint would save OLD (pre-train) weights
+         * that still pass size checks. No-op on CPU builds. */
+        nt_tensor_sync_cpu(t);
         int32_t ndim = t->ndim;
         fwrite(&ndim, 4, 1, f);
         for (int d = 0; d < ndim; d++) {

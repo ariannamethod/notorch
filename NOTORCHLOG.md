@@ -13,6 +13,27 @@ Newest entries on top.
 
 ---
 
+## 2026-07-01 — GPU/CPU sync discipline: FORWARD-side audit (rrpram, concat, save)
+
+The backward sync-discipline audit was done (CLAUDE.md registry); the FORWARD side had open
+instances. On a CUDA build a CPU-only forward op that reads `parent->output->data` without
+`nt_tensor_sync_cpu` gets the stale (calloc-zero) CPU mirror of a GPU-fresh input → zeros.
+Surfaced by a Codex audit of the nanoagi supermilestone A40 plan.
+
+Fixed (nt_tensor_sync_cpu on the CPU-read inputs; no-op on CPU/BLAS builds):
+- `nt_rrpram_attention` — reads x, v (GPU-fresh from prior matvecs) + wr. It has NO GPU
+  branch, so it always runs on CPU and would read zeros under GPU mode. nanoagi's dual
+  attention uses it — the whole forward would be garbage on GPU without this.
+- `nt_concat` — reads content_out + rrpram_out (GPU-fresh from matvec).
+- `nt_save` — sync each param before write: after a GPU Chuck step the trained weights are
+  in d_data with the CPU mirror stale; without this a checkpoint saves OLD weights that
+  still pass size checks.
+
+Bug-class registry (forward-side instances): nt_rrpram_attention, nt_concat, nt_save.
+Proof: CPU regression green (nanoagi 100 tests); GPU parity to be verified on the A40 pod
+via `parity_check.py` (CPU-vs-GPU same-weights loss/logits/grad match, not just dispatch>0).
+by Claude (Arianna Method, neo the architect)
+
 ## 2026-06-19 — Metal: nt_metal_rope gains norm_pairs (arch-gated rope)
 
 `nt_metal_rope` now takes a `norm_pairs` flag: 0 keeps the half-split pairs
