@@ -13,6 +13,31 @@ Newest entries on top.
 
 ---
 
+## 2026-07-07 — gguf.c: harden parser error-paths (F-1 NULL-deref + latent data_size wrap)
+
+An error-path hardening pass on the GGUF parser (untrusted-binary surface). One real
+NULL-deref plus four fail-loud gaps; the successful-load path is byte-unchanged.
+
+Fixed:
+- `gguf_read_str_array` (F-1): a crafted type-9 string array with a huge `alen` drove
+  `calloc(alen*8)` → NULL → `result[j]=strdup` NULL-deref. Now capped at
+  `GGUF_MAX_STR_ARRAY` (2M, gguf.h), `calloc`/`strdup` NULL-checked, `*out_n` reports
+  the actually-read count `j`, not the claimed `alen`.
+- `gguf_open` data section: `data_size = fsize - data_offset` wrapped to a huge unsigned
+  on a file truncated before the data section (latent bug). Guarded now
+  (`fsize<0 || data_offset>fsize` → fail-loud), and the tensor-data `fread` is checked
+  for short read (frees `gf->data`+`gf`).
+- `gguf_open` header: `version/n_tensors/n_kv` reads checked, fail-loud on truncation.
+- `read_string`: huge-len discard loop breaks on EOF (no billion-iteration spin).
+- `gguf_dequant`: `dst = malloc(n*sizeof)` → `calloc(n, sizeof)` — C11 overflow-safe,
+  zeroes the tail when `n_elements` isn't block-aligned.
+
+Proof (Neo): compiles `-Wall -Wextra` zero-warning; `make` builds libnotorch.a; mini.gguf
+(janus, 31 tensors) and nanollama (llama, 120 tensors, 32000 tokens) load identically;
+crafted `alen`=4G → fail-loud, no segfault (`gguf_craft_test`). Independently verified by
+Codex (CLEAN) and an Opus subagent audit (CLEAN — all six hunks + the `examples/bpe.c`
+consumer `out_n` contract).
+
 ## 2026-06-28 — nt_seq_gate: per-position mechanism gate (op 36)
 
 Added `nt_seq_gate(x_idx, g_idx, T, nm, gi)` — `out[t,d] = x[t,d] * gate[t*nm+gi]`, the

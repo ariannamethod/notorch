@@ -22,6 +22,7 @@
 #define GGUF_MAX_TENSORS 2048   // covers Llama-70B-class (~723 tensors); loader fails loud beyond this
 #define GGUF_MAX_NAME    128
 #define GGUF_MAX_KV      128
+#define GGUF_MAX_STR_ARRAY (1u<<21)  // 2M — covers 256K-vocab tokenizers; reject crafted huge alen
 
 typedef struct {
     char     name[GGUF_MAX_NAME];
