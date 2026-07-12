@@ -58,7 +58,7 @@ just NOTORCH. just C.
 
 just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in a couple seconds. try that with PyTorch. go ahead — you'd be waiting 47 minutes while cmake does whatever cmake does.
 
-it's part of [the Arianna Method](https://github.com/theariannamethod/ariannamethod.ai) — patterns over parameters, emergence over engineering, raw C over existential dread.
+it's part of [the Arianna Method](https://github.com/ariannamethod/ariannamethod.ai) — patterns over parameters, emergence over engineering, raw C over existential dread.
 
 extracted from the core of [ariannamethod.ai](https://ariannamethod.ai) where it actually runs in production. training actual models. in C. like adults.
 
@@ -394,7 +394,7 @@ the obstacle is memory. a Q4_K weight is 4.5 bits; dequantize it to f32 and you 
 
 that packed reconstruction is generalizing past the Metal/example corner into a CPU-agnostic library primitive. `nt_qmatvec(out, Wq, dtype, x, m, k)` keeps weights packed and dequantizes each block inline for the **whole GGUF dtype set on the CPU** — F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K — dispatched by dtype, with the Q6_K kernel lifted out of `infer_gguf_metal.c` into the library (F16 alone halves the weight RAM vs dense f32, and is converted per element rather than materialized). each format is verified bit-close to `gguf_dequant → cblas` (relative error ~1e-6 across all seven, `tests/test_qmatvec`). it means the CPU no longer has to blow Q4_0/Q8_0 up to f32 the way the f32 engines below do. the primitive is correctness-complete; wiring the runners onto it (so a Q4_0 model stays packed end-to-end) is in progress. and the speed path has teeth: an int8 dynamic-activation-quant matvec (`nt_qmatvec_i8` — quantize the activation, dot it against the packed weights with NEON SDOT, the llama.cpp/MNN trick) clocks **22.9× over scalar f32-dequant** on a Q4_0 kernel (neo A18 Pro, `tests/bench_qmatvec.c`) — an approximate fast path, `nt_qmatvec` kept exact. the other dtypes and x86 AVX-VNNI are next.
 
-measured, Mac Mini M4 Pro (24 GB), Mistral-Small-24B at Q4_K_M (~14 GB on disk): **loads in 3.6 s, 0 swap, 10.6 GB resident, ~1.4 tok/s, coherent correct output.** the same source runs Qwen3 and Llama-3 on an 8 GB phone-class A18 Pro. one forward handles two RoPE conventions, auto-detected — interleaved for llama/mistral (weights pre-permuted by llama.cpp's converter), NEOX + per-head q/k-RMSNorm for qwen2/qwen3 — with the byte-level BPE read straight out of the GGUF. GQA, attention bias (Qwen2), and tied embeddings are detected from the tensors.
+measured on a Mac Mini M4 Pro (24 GB): Mistral-Small-24B at Q4_K_M (~14 GB on disk) loads in 3.6 s, 0 swap, 10.6 GB resident, and generates at **~13.5 tok/s**; the lighter Mistral-Nemo-12B runs at **~27 tok/s** on the same host — one body resident per turn, coherent correct output. (these are the two Yent flagship bodies — the deep `small24` and the fast `nemo12` — driven by this Metal path.) the same source runs Qwen3 and Llama-3 on an 8 GB phone-class A18 Pro. one forward handles two RoPE conventions, auto-detected — interleaved for llama/mistral (weights pre-permuted by llama.cpp's converter), NEOX + per-head q/k-RMSNorm for qwen2/qwen3 — with the byte-level BPE read straight out of the GGUF. GQA, attention bias (Qwen2), and tied embeddings are detected from the tensors.
 
 ```bash
 make infer_gguf_metal     # Apple Silicon; needs notorch_metal.o
@@ -813,7 +813,7 @@ start here. these are the canonical builds: Karpathy ports to prove the pipeline
 **Karpathy ports — the "does it actually work end-to-end" baselines:**
 
 - [**nanoGPT-notorch**](https://github.com/ariannamethod/nanoGPT-notorch) — Karpathy's nanoGPT, ported from PyTorch to notorch.
-- [**llama2-notorch**](https://github.com/ariannamethod/llama2-notorch) — Karpathy's llama2.c reference model on notorch. tiny LLaMA that trains and infers purely in C.
+- [**llama2-notorch**](https://github.com/ariannamethod/llama2-notorch) — Karpathy's llama2.c on notorch: the entire PyTorch training pipeline replaced by notorch (a Python-stdlib `ctypes` loop into `libnotorch`, no pip), inference in pure C `run.c`.
 
 **reference models — trained from scratch on notorch:**
 
@@ -846,7 +846,7 @@ the appendix. these aren't notorch — they're larger Arianna Method engines tha
 - [**nanoarianna**](https://github.com/ariannamethod/nanoarianna) — a 4GB-phone (Galaxy A07, Termux) ecosystem: Janus/Resonance + AML field-physics + notorch micro-training.
 - [**molequla**](https://github.com/ariannamethod/molequla) — a live ecology of GPT organisms with conscience, immune rollback, DNA exchange; trains its low-rank-RRPRAM transformer on the notorch tape.
 - [**dario**](https://github.com/ariannamethod/dario) — resonance OS (7 forces, 6 Kuramoto chambers, SARTRE). notorch runs the 176M Janus at its center.
-- [**metaharmonix**](https://github.com/ariannamethod/metaharmonix) — the Arianna Method terminal; notorch is baked in, so the shell ships a tensor library.
+- [**ariannamethod.cli**](https://github.com/ariannamethod/ariannamethod.cli) — the public, distilled edition of the metaharmonix terminal (the full native CLI, which bakes notorch in so the shell ships a tensor library, stays an internal Method tool).
 - [**janus**](https://github.com/ariannamethod/janus) — the Janus Architecture itself.
 - [**yent.aml**](https://github.com/ariannamethod/yent.aml) — Janus 176M Yent SFT inference written in AML, linking notorch + libaml (not vendored). Two faces: Janus (triple attention) and Janus-R (a 12-step bidirectional associative resonator). notorch is the linked tensor/matvec backend; the language carries the Dario field on top.
 - [**resonance.aml**](https://github.com/ariannamethod/resonance.aml) — Resonance 200M, the other face of Yent: dual attention (Content + RRPRAM low-rank), in AML, linking notorch + libaml. notorch's RRPRAM low-rank op (33) was trained at scale on this model — the LoRA SFT that drove loss 3.52 → 0.59.
