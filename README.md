@@ -84,7 +84,7 @@ and for WHAT? a matmul and a softmax. that's all neural networks are. matmuls an
 
 so here we are. **notorch**. everything you need. nothing you don't. no Python runtime. no GIL. no garbage collector pausing your training at the worst possible moment. no `torch.no_grad()` context manager that you forget and then wonder why you're out of memory. just tensors, autograd, optimizers, and the cold clarity of C.
 
-**the entire framework is two files.** `notorch.h` and `notorch.c`. that's it. ~4800 lines. you can read the whole thing in an afternoon. try reading PyTorch's source in an afternoon. actually don't. you'll end up in a hospital.
+**the entire framework is two files.** `notorch.h` and `notorch.c`. that's it. ~6400 lines. you can read the whole thing in an afternoon. try reading PyTorch's source in an afternoon. actually don't. you'll end up in a hospital.
 
 ---
 
@@ -111,7 +111,7 @@ so here we are. **notorch**. everything you need. nothing you don't. no Python r
 ```
 
 notorch is for people who:
-- want to understand what's actually happening (all ~4800 lines of it)
+- want to understand what's actually happening (all ~6400 lines of it)
 - want to train models on machines that aren't cloud instances
 - want compile times measured in seconds, not minutes
 - want to embed neural network inference in C/C++ applications without shipping half of Python
@@ -506,7 +506,7 @@ Bench at training-relevant shapes on Intel i5-8500T (6c, no AVX-512) vs OpenBLAS
 
 Roughly 0.5–0.9× of fully-threaded OpenBLAS — closest on the TN weight-gradient GEMMs (~0.7–0.9×), widest on large NN forward/FFN shapes (~0.5×). The in-house SIMD does not beat a fully-threaded OpenBLAS or MKL: single-thread it is ~0.8× MKL (the kernel is competitive), and the residual multi-thread gap is shared-cache residency — the part a tuned BLAS spends a decade on. Its point is hundreds of GFLOP/s with **zero external math library** — pure C + AVX2 + pthreads, nothing to install. On a box without OpenBLAS or Accelerate, this is the accelerated path.
 
-**Correctness validated** end-to-end under `make simd`: notorch_test 47/47 (incl. all 13 gradient/training checks), test_vision 48/48, test_bitnet_ops 118 assertions, test_sigmoid_scale 4/4. `test_simd_loss.c` produces bit-identical 10.379384 at lm_head shape vs the OpenBLAS path, and a real nanollama 89M training step 1 gives train loss 10.3876 — bit-identical to the OpenBLAS baseline. `test_simd_correctness.c` agrees with the scalar path to <1e-3 on small shapes; on large GEMM shapes a few outputs exceed the strict 1e-3 bound from FMA accumulation order — harmless, since the end-to-end loss is bit-identical.
+**Correctness validated** end-to-end under `make simd`: notorch_test 49/49 (incl. all 13 gradient/training checks), test_vision 48/48, test_bitnet_ops 118 assertions, test_sigmoid_scale 4/4. `test_simd_loss.c` produces bit-identical 10.379384 at lm_head shape vs the OpenBLAS path, and a real nanollama 89M training step 1 gives train loss 10.3876 — bit-identical to the OpenBLAS baseline. `test_simd_correctness.c` agrees with the scalar path to <1e-3 on small shapes; on large GEMM shapes a few outputs exceed the strict 1e-3 bound from FMA accumulation order — harmless, since the end-to-end loss is bit-identical.
 
 Override thread count via env: `NT_SIMD_THREADS=N`. Single-thread variant for debugging via `-DNOTORCH_SIMD_DEBUG_SCALAR` (uses `notorch_simd_scalar.h` instead — same API, pure scalar inner loop).
 
@@ -723,7 +723,7 @@ A phone with 8 GB of RAM and Termux installed is now a credible host for the 10�
 ```
 notorch/
 ├── notorch.h              # core API — tensors, autograd, optimizers, BPE, ops
-├── notorch.c              # core implementation (~4800 lines)
+├── notorch.c              # core implementation (~5700 lines)
 ├── notorch_vision.h       # image loading, transforms, ViT patches (stb_image)
 ├── stb_image.h            # JPEG/PNG/BMP decoder (public domain)
 ├── gguf.h                 # GGUF file parser header
@@ -762,7 +762,7 @@ notorch/
 └── README.md              # this. you survived. congratulations.
 ```
 
-total: **~4800 lines of core C + ~2700 of tests + ~6000 of examples**. framework + vision + GGUF + BPE + five inference engines + eight training scripts + ten test binaries + JS and Termux ports. tested on 26+ real model files across 6 architectures.
+total: **~6400 lines of core C + ~4500 of tests + ~6600 of examples**. framework + vision + GGUF + BPE + five inference engines + eight training scripts + ten test binaries + JS and Termux ports. tested on 26+ real model files across 6 architectures.
 
 ### models trained on notorch
 
