@@ -52,12 +52,12 @@ ln -sf "$(command -v llvm-ar)" "$PREFIX/bin/ar"
 # 3) Clone and build
 git clone https://github.com/ariannamethod/notorch ~/notorch
 cd ~/notorch
-make            # CPU-only, scalar fallback
-make BLAS=1     # CPU + OpenBLAS (recommended on aarch64)
-./notorch_test  # expect 47/47 pass
+make            # CPU + OpenBLAS (default — auto via pkg-config on Termux)
+make cpu        # CPU scalar fallback (no BLAS)
+./notorch_test  # expect 49/49 pass
 ```
 
-If `make BLAS=1` fails on `cblas.h`, double-check pkg-config:
+If `make` fails on `cblas.h`, double-check pkg-config:
 
 ```bash
 pkg-config --cflags openblas    # → -I$PREFIX/include/openblas

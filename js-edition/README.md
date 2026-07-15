@@ -137,8 +137,8 @@ Tokenizers: `CharTokenizer`, `BPETokenizer`.
 
 ## Op parity table
 
-35 op codes (matching C `notorch.h:92-126` numbering) + 8 JS-specific
-extensions.
+37 C op codes (0–36, matching C `notorch.h:91-127` numbering) + 8 JS-specific
+extension codes (100+). RELU (C op 35) runs under JS-local opcode 105.
 
 | OP | # | Forward method | Notes |
 |----|---|----------------|-------|
@@ -176,7 +176,9 @@ extensions.
 | BIT_SEQ_LINEAR      | 31 | `bitSeqLinear(W, x, T)`                        | BitNet 1.58 sequence |
 | SEQ_CROSSENT_MASKED | 32 | `seqCrossEntropyLossMasked(l, t, m, T, V)`     | assistant-only SFT |
 | RRPRAM_LR           | 33 | `rrpramLowrankAttention(wr, x, v, T, E, nH, hD)` | low-rank Wr_a × Wr_b |
-| **RRPRAM_BCAST**    | 34 | _not yet implemented (parity with C — declared in `notorch.h` but unimplemented in `notorch.c`)_ | |
+| RRPRAM_BCAST        | 34 | `rrpramBroadcastAttention(wr, x, v, T, E, nH, hD, rank)` | broadcast RRPRAM — canonical Janus, sc=1/√hd |
+| RELU                | 35 | `relu(x)`                                       | C op 35; forward via JS-local opcode 105 (see extensions) |
+| SEQ_GATE            | 36 | `seqGate(x, g, T, nm, gi)`                      | per-position mechanism gate |
 
 ### JS-specific extensions (op codes 100+)
 

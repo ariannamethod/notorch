@@ -431,7 +431,7 @@ each is a single self-contained C file under `examples/` (~550–610 LOC) with i
 
 ## autograd
 
-the backward pass supports **34 operation types** (op IDs 0–34, each with a `NT_OP_*` constant; op 34 RRPRAM-broadcast is declared, implementation pending). the tape records operations during forward, then backward walks it in reverse computing local gradients via the chain rule. standard reverse-mode AD.
+the backward pass supports **37 operation types** (op IDs 0–36, each with a `NT_OP_*` constant). the tape records operations during forward, then backward walks it in reverse computing local gradients via the chain rule. standard reverse-mode AD.
 
 **gradient checking**: every op is verified against finite differences (`(f(x+h) - f(x-h)) / 2h`). relative error tolerances from 0.01 to 0.3 depending on op complexity. all pass. including the annoying ones — GEGLU, SwiGLU, multi-head attention with multi-path gradients through Q/K/V, BitLinear with STE identity passthrough.
 
@@ -864,7 +864,7 @@ if you trained something on notorch and it's not here, open a PR.
 > *"the logic of memory without the weight of framework"*
 > — `js-edition/notorch.js`, line 1
 
-a single-file pure-JavaScript port of notorch for the browser. WebGPU when available, V8-optimised CPU fallback (Math.fround f32 hint) when not. zero npm dependencies. live at `js-edition/notorch.js` (~3580 LOC).
+a single-file pure-JavaScript port of notorch for the browser. WebGPU when available, V8-optimised CPU fallback (Math.fround f32 hint) when not. zero npm dependencies. live at `js-edition/notorch.js` (~3900 LOC).
 
 ### what it ships (feature parity with the C lib at small scale)
 
@@ -899,7 +899,7 @@ autograd works, Chuck works, sampler works, everything works.
 ### caveats
 
 - WebGPU paths are code-correct but were not runtime-verified in node (no headless WebGPU). real validation needs a browser. CPU path passes everywhere `node` runs.
-- GQA, BitLinear/BitNet, low-rank RRPRAM, GEGLU, scale-by-t and friends are now ported (op parity through op 33); op 34 RRPRAM-broadcast awaits the C-side implementation. `loadGGUF` (GGUF v3, F16+F32) and `loadSafetensors` are wired.
+- GQA, BitLinear/BitNet, low-rank RRPRAM, GEGLU, scale-by-t and friends are ported (op parity through op 36 — the full C op set); op 34 RRPRAM-broadcast and op 36 SEQ_GATE landed 2026-07-15, C-parity + finite-diff verified. `loadGGUF` (GGUF v3, F16+F32) and `loadSafetensors` are wired.
 - generic transpose backward covers 2D and 3D `(1, 2)` swap (sufficient for attention; not fully general).
 - async batching of multiple GPU ops into one submit is partially achieved through the buffer pool, but no explicit op queue. impact only matters once multiple GPU ops chain.
 

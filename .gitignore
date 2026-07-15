@@ -34,3 +34,22 @@ test_vision
 *.log
 infer_janus_sonar_chain
 nanodurov.html
+
+# compiled test / example binaries (sources kept; binaries are build output)
+tests/test_*
+tests/bench_*
+!tests/*.c
+!tests/*.h
+!tests/*.sh
+examples/infer_*
+examples/train_*
+!examples/*.c
+!examples/*.h
+!examples/*.sh
+!examples/*.txt
+
+# local tooling / editor state
+.claude/
+
+# stepped checkpoints (e.g. model.bin.step100)
+*.bin.*
