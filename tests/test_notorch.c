@@ -336,6 +336,9 @@ static void test_seq_gate(void) {
     float gn = 0.0f;
     for (int i = 0; i < eg->grad->len; i++) gn += fabsf(eg->grad->data[i]);
     ASSERT(gn > 1e-9f, "seq_gate gate grad nonzero");
+    ASSERT(nt_seq_gate(x_idx, g_idx, 2, 2, 2) < 0, "seq_gate rejects gi >= nm");
+    ASSERT(nt_seq_gate(x_idx, g_idx, 4, 2, 1) < 0, "seq_gate rejects x len not divisible by T");
+    ASSERT(nt_seq_gate(x_idx, g_idx, 2, 3, 1) < 0, "seq_gate rejects gate len mismatch");
 
     nt_tape_clear();
     nt_tensor_free(x);

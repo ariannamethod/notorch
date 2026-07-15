@@ -3381,10 +3381,14 @@ int nt_relu(int x_idx) {
 }
 
 int nt_seq_gate(int x_idx, int g_idx, int T, int nm, int gi) {
-    if (x_idx < 0 || g_idx < 0 || T <= 0) return -1;
+    if (x_idx < 0 || g_idx < 0 || x_idx >= g_tape.count || g_idx >= g_tape.count) return -1;
+    if (T <= 0 || nm <= 0 || gi < 0 || gi >= nm) return -1;
     nt_tape_entry* px = &g_tape.entries[x_idx];
     nt_tape_entry* pg = &g_tape.entries[g_idx];
+    if (!px->output || !pg->output) return -1;
     int n = px->output->len;
+    if (n <= 0 || (n % T) != 0) return -1;
+    if (pg->output->len != (long)T * nm) return -1;
     int B = n / T;
     nt_tensor* out = nt_tensor_new(n);
     if (!out) return -1;
@@ -3795,8 +3799,9 @@ int nt_rrpram_lowrank_attention(int wr_combined_idx, int x_idx, int v_idx,
  * ════════════════════════════════════════════════════════════════════════ */
 int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
                                    int T, int n_embd, int nr_heads, int head_dim, int rank) {
-    if (wr_combined_idx < 0 || x_idx < 0 || v_idx < 0) return -1;
-    if (rank < 1 || nr_heads < 1 || head_dim < 1 || n_embd < 1) return -1;
+    if (wr_combined_idx < 0 || x_idx < 0 || v_idx < 0 ||
+        wr_combined_idx >= g_tape.count || x_idx >= g_tape.count || v_idx >= g_tape.count) return -1;
+    if (T < 1 || rank < 1 || nr_heads < 1 || head_dim < 1 || n_embd < 1) return -1;
     if (nr_heads * head_dim != n_embd) return -1;  /* invariant: H*D=E */
     int out_dim = nr_heads * head_dim;
     nt_tensor* out = nt_tensor_new(T * out_dim);
@@ -3804,17 +3809,26 @@ int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
     nt_tape_entry* pwr = &g_tape.entries[wr_combined_idx];
     nt_tape_entry* px  = &g_tape.entries[x_idx];
     nt_tape_entry* pv  = &g_tape.entries[v_idx];
+    if (!pwr->output || !px->output || !pv->output) { nt_tensor_free(out); return -1; }
+    if (px->output->len != (long)T * n_embd ||
+        pv->output->len != (long)T * out_dim) {
+        nt_tensor_free(out);
+        return -1;
+    }
 
     /* Packed weight shape: H*E*R + H*R*ctx_T = H*R*(E+ctx_T).
      * Derive ctx_T from combined_len / (H*R) - E (rank passed by caller). */
     long combined_len = pwr->output->len;
-    long expected_per_head = (long)rank * (n_embd + 0);
-    int ctx_T = (int)(combined_len / ((long)nr_heads * rank) - n_embd);
+    long denom = (long)nr_heads * rank;
+    if (combined_len <= 0 || (combined_len % denom) != 0) {
+        nt_tensor_free(out);
+        return -1;
+    }
+    int ctx_T = (int)(combined_len / denom - n_embd);
     if (ctx_T < T) { nt_tensor_free(out); return -1; }  /* runtime T must fit ctx */
     if ((long)nr_heads * rank * ((long)n_embd + ctx_T) != combined_len) {
         nt_tensor_free(out); return -1;  /* shape mismatch */
     }
-    (void)expected_per_head;
     long wra_total = (long)nr_heads * n_embd * rank;
     /* Canonical Janus attention scale: 1/sqrt(D) per dario/infer_v4.c:239-244 */
     float sc = 1.0f / sqrtf((float)head_dim);

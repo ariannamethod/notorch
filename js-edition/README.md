@@ -137,8 +137,8 @@ Tokenizers: `CharTokenizer`, `BPETokenizer`.
 
 ## Op parity table
 
-37 C op codes (0–36, matching C `notorch.h:91-127` numbering) + 8 JS-specific
-extension codes (100+). RELU (C op 35) runs under JS-local opcode 105.
+37 C op codes (0–36, matching C `notorch.h:91-127` numbering) + 7 JS-specific
+extension codes (100+). RELU is C op 35 in both runtimes.
 
 | OP | # | Forward method | Notes |
 |----|---|----------------|-------|
@@ -177,7 +177,7 @@ extension codes (100+). RELU (C op 35) runs under JS-local opcode 105.
 | SEQ_CROSSENT_MASKED | 32 | `seqCrossEntropyLossMasked(l, t, m, T, V)`     | assistant-only SFT |
 | RRPRAM_LR           | 33 | `rrpramLowrankAttention(wr, x, v, T, E, nH, hD)` | low-rank Wr_a × Wr_b |
 | RRPRAM_BCAST        | 34 | `rrpramBroadcastAttention(wr, x, v, T, E, nH, hD, rank)` | broadcast RRPRAM — canonical Janus, sc=1/√hd |
-| RELU                | 35 | `relu(x)`                                       | C op 35; forward via JS-local opcode 105 (see extensions) |
+| RELU                | 35 | `relu(x)`                                       | C op 35 |
 | SEQ_GATE            | 36 | `seqGate(x, g, T, nm, gi)`                      | per-position mechanism gate |
 
 ### JS-specific extensions (op codes 100+)
@@ -189,7 +189,6 @@ extension codes (100+). RELU (C op 35) runs under JS-local opcode 105.
 | NEG       | 102 | `neg(a)`                            |                             |
 | TRANSPOSE | 103 | `transpose(a, dimA, dimB)`          | 2D/3D axis swap             |
 | TANH      | 104 | `tanh(x)`                           |                             |
-| RELU      | 105 | `relu(x)`                           |                             |
 | EMBEDDING | 106 | `embedding(W, ids, T, D)`           | sequence embedding lookup   |
 | MSE       | 107 | `mseLoss(pred, target)`             | mean-squared error          |
 
@@ -288,6 +287,12 @@ To run the parity test:
 cc -O2 -I. tests/gguf_dequant_ref.c gguf.c -lm -o /tmp/gguf_dequant_ref
 /tmp/gguf_dequant_ref model.gguf token_embd.weight blk.0.attn_q.weight > ref.json
 node js-edition/test_gguf_dequant.mjs model.gguf ref.json   # → JS_DEQUANT_OK
+```
+
+The lightweight JS/C op-contract gate is:
+```bash
+make test_js
+# or: cd js-edition && npm test
 ```
 
 ### Running a GGUF end-to-end (`infer_gguf.mjs`)

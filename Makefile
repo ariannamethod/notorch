@@ -44,7 +44,7 @@ SIMD_LIBS  = -lpthread
 
 # ── Targets ──
 
-.PHONY: all test clean cpu gpu simd help lib install metal test_metal infer_gguf_metal
+.PHONY: all test test_js clean cpu gpu simd help lib install metal test_metal infer_gguf_metal
 
 all: notorch_test
 	@echo "Built with $(BLAS_NAME). Run: ./notorch_test"
@@ -220,6 +220,9 @@ endif
 test: notorch_test test_vision
 	./notorch_test
 	./test_vision
+
+test_js:
+	node js-edition/test_op_parity.mjs
 
 # SIMD correctness harness (vs scalar reference at nanollama shapes)
 tests/test_simd_correctness: tests/test_simd_correctness.c notorch_simd.h

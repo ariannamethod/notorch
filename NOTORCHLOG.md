@@ -13,6 +13,27 @@ Newest entries on top.
 
 ---
 
+## 2026-07-15 — Codex audit: JS/C op-contract + fresh-op fail-fast guards
+
+Targeted Codex audit after the JS edition was brought up to C op 36. Two bug
+classes were closed around the fresh surface:
+- `js-edition/notorch.js`: `RELU` now records canonical C op 35 instead of the
+  old JS-local 105. The README had promised full C op parity through 36 while
+  RELU still violated the numeric contract.
+- `nt_seq_gate` / `seqGate`: reject invalid `T/nm/gi`, non-divisible `x.len`,
+  and gate-length mismatches before reading.
+- `nt_rrpram_broadcast_attention` / `rrpramBroadcastAttention`: reject invalid
+  dims, short `x`/`v`, and malformed packed `Wr` before deriving strides.
+
+Added `js-edition/test_op_parity.mjs` plus `make test_js` / `npm test` for the
+lightweight JS/C op-contract gate. C regressions now cover invalid `seq_gate`
+inputs and invalid broadcast-RRPRAM shapes.
+
+Proof (Codex, local): `make test_js` → `JS_OP_PARITY_OK`; `npm test` in
+`js-edition` → `JS_OP_PARITY_OK`; `make test` → `notorch_test` 49/49 and
+`test_vision` 73/73; standalone `tests/test_rrpram_broadcast.c` adversarial
+binary PASS including invalid shape checks; `git diff --check` clean.
+
 ## 2026-07-15 — JS edition: op 34 RRPRAM_BCAST + op 36 SEQ_GATE ported (tri-version parity)
 
 The JS edition (`js-edition/notorch.js`) had stalled at op 33 while the C canon advanced

@@ -126,6 +126,50 @@ static int analytic_grads(const float* wr_data, long wr_len,
     return 0;
 }
 
+static int invalid_shape_checks(void) {
+    int failures = 0;
+    long wr_len = (long)H_LEN * E_LEN * R_LEN + (long)H_LEN * R_LEN * CTX_T;
+
+    nt_tape_start();
+    nt_tensor* tw = nt_tensor_new(wr_len);
+    int wr_idx = nt_tape_param(tw);
+    nt_tensor* tx = nt_tensor_new(T_LEN * E_LEN - 1);
+    int x_idx = nt_tape_param(tx);
+    nt_tensor* tv = nt_tensor_new(T_LEN * OUT_DIM);
+    int v_idx = nt_tape_param(tv);
+    int rc = nt_rrpram_broadcast_attention(wr_idx, x_idx, v_idx,
+                                           T_LEN, E_LEN, H_LEN, HD_LEN, R_LEN);
+    if (rc >= 0) { printf("FAIL: short x accepted\n"); failures++; }
+    nt_tape_clear();
+
+    nt_tape_start();
+    tw = nt_tensor_new(wr_len);
+    wr_idx = nt_tape_param(tw);
+    tx = nt_tensor_new(T_LEN * E_LEN);
+    x_idx = nt_tape_param(tx);
+    tv = nt_tensor_new(T_LEN * OUT_DIM - 1);
+    v_idx = nt_tape_param(tv);
+    rc = nt_rrpram_broadcast_attention(wr_idx, x_idx, v_idx,
+                                       T_LEN, E_LEN, H_LEN, HD_LEN, R_LEN);
+    if (rc >= 0) { printf("FAIL: short v accepted\n"); failures++; }
+    nt_tape_clear();
+
+    nt_tape_start();
+    tw = nt_tensor_new(wr_len - 1);
+    wr_idx = nt_tape_param(tw);
+    tx = nt_tensor_new(T_LEN * E_LEN);
+    x_idx = nt_tape_param(tx);
+    tv = nt_tensor_new(T_LEN * OUT_DIM);
+    v_idx = nt_tape_param(tv);
+    rc = nt_rrpram_broadcast_attention(wr_idx, x_idx, v_idx,
+                                       T_LEN, E_LEN, H_LEN, HD_LEN, R_LEN);
+    if (rc >= 0) { printf("FAIL: bad packed Wr accepted\n"); failures++; }
+    nt_tape_clear();
+
+    printf("invalid shape checks: %s\n", failures == 0 ? "PASS" : "FAIL");
+    return failures;
+}
+
 static int compare_grads(const char* name, const float* analytic,
                          float* x_data, long n_elem,
                          const float* wr_data, long wr_len,
@@ -310,6 +354,9 @@ int main(void) {
     printf("\n--- sentinel layout check ---\n");
     int sentinel = sentinel_layout_check();
     n_fail += (sentinel < 0) ? 1 : sentinel;
+
+    printf("\n--- invalid shape checks ---\n");
+    n_fail += invalid_shape_checks();
 
     printf("\n--- finite-diff gradient check ---\n");
     float *dwr = NULL, *dx = NULL, *dv = NULL;

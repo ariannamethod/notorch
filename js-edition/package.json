@@ -4,5 +4,8 @@
   "description": "notorch.js — pure-JavaScript port of notorch (browser + Node, ESM)",
   "type": "module",
   "main": "notorch.js",
+  "scripts": {
+    "test": "node test_op_parity.mjs"
+  },
   "license": "GPL-3.0-or-later"
 }

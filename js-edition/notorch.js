@@ -129,14 +129,14 @@ export const OP = Object.freeze({
   SEQ_CROSSENT_MASKED: 32,
   RRPRAM_LR: 33,
   RRPRAM_BCAST: 34,      // broadcast RRPRAM — canonical Janus pattern (C op 34)
+  RELU: 35,              // y = max(0, x) — C op 35
   SEQ_GATE: 36,          // per-position mechanism gate (C op 36)
-  // JS-specific extensions (RELU below mirrors C op 35 under a JS-local code)
+  // JS-specific extensions.
   SUB: 100,
   DIV: 101,
   NEG: 102,
   TRANSPOSE: 103,
   TANH: 104,
-  RELU: 105,
   EMBEDDING: 106,
   MSE: 107,
 });
@@ -1980,6 +1980,11 @@ export class Notorch {
   seqGate(xIdx, gIdx, T, nm, gi) {
     const x = this.tape.entries[xIdx].output;
     const g = this.tape.entries[gIdx].output;
+    if (T <= 0 || nm <= 0 || gi < 0 || gi >= nm) {
+      throw new Error(`seqGate: invalid T/nm/gi (T=${T}, nm=${nm}, gi=${gi})`);
+    }
+    if (x.len % T !== 0) throw new Error(`seqGate: x.len=${x.len} not divisible by T=${T}`);
+    if (g.len !== T * nm) throw new Error(`seqGate: gate len=${g.len} != T*nm=${T * nm}`);
     const B = (x.len / T) | 0;
     const out = Tensor.zeros(x.shape);
     for (let t = 0; t < T; t++) {
@@ -2511,10 +2516,19 @@ export class Notorch {
     const Wr = this.tape.entries[wrCombinedIdx].output;
     const x = this.tape.entries[xIdx].output;
     const v = this.tape.entries[vIdx].output;
+    if (T <= 0 || nEmbd <= 0 || nrHeads <= 0 || headDim <= 0 || rank <= 0) {
+      throw new Error(`rrpramBroadcastAttention: invalid dims T=${T} E=${nEmbd} H=${nrHeads} hD=${headDim} rank=${rank}`);
+    }
     if (nrHeads * headDim !== nEmbd) {
       throw new Error(`rrpramBroadcastAttention: H*D=${nrHeads * headDim} != E=${nEmbd}`);
     }
     const outDim = nrHeads * headDim;
+    if (x.len !== T * nEmbd) {
+      throw new Error(`rrpramBroadcastAttention: x len=${x.len} != T*E=${T * nEmbd}`);
+    }
+    if (v.len !== T * outDim) {
+      throw new Error(`rrpramBroadcastAttention: v len=${v.len} != T*outDim=${T * outDim}`);
+    }
     const combinedLen = Wr.len;
     const ctxT = ((combinedLen / (nrHeads * rank)) | 0) - nEmbd;
     if (ctxT < T) {
