@@ -13,6 +13,37 @@ Newest entries on top.
 
 ---
 
+## 2026-07-15 — JS edition: op 34 RRPRAM_BCAST + op 36 SEQ_GATE ported (tri-version parity)
+
+The JS edition (`js-edition/notorch.js`) had stalled at op 33 while the C canon advanced
+to op 36 (RRPRAM_BCAST 2026-06-16, RELU 2026-06-27, SEQ_GATE 2026-06-28). RELU was already
+present under JS-local opcode 105; the two genuinely-missing ops are now ported, closing
+C↔JS op parity at the full 0–36 set.
+
+Ported (forward + backward, 1:1 with C semantics):
+- `seqGate(x, g, T, nm, gi)` — op 36 SEQ_GATE, per-position mechanism gate
+  `out[t,d] = x[t,d]·g[t,gi]`. Mirrors C `nt_seq_gate` (notorch.c:3383 fwd / :762 bwd).
+- `rrpramBroadcastAttention(wr, x, v, T, E, nH, hD, rank)` — op 34 RRPRAM_BCAST, canonical
+  Janus broadcast pattern: `mid[h,r] = Σ_t Σ_e x·Wr_a` (one mid per head, broadcast across
+  queries), causal-softmax scores scaled `1/√hD`. Mirrors C `nt_rrpram_broadcast_attention`
+  (notorch.c:3796 fwd / :1578 bwd). `rank` is passed explicitly (ctx ≥ T ⇒ not derivable
+  from `Wr.len`). OP table gains `RRPRAM_BCAST:34`, `SEQ_GATE:36`.
+
+Proof (neo, node v25.9.0): a C emitter (`parity_emit.c`, built against canonical
+`notorch.c`) and a JS runner ran both ops fwd+bwd on identical hardcoded inputs
+(dout = all-ones, loss = Σ out) and diffed —
+- op 36 SEQ_GATE — bit-identical to C: `SG_OUT/DX/DG` maxAbs = 0.0.
+- op 34 RRPRAM_BCAST — within float32 rounding: `RB_OUT` 1.5e-8, `RB_DWR` 2.3e-10,
+  `RB_DX` 1.5e-11, `RB_DV` 6.0e-8 (float32-vs-float64 intermediate accumulation).
+- Independent JS finite-difference grad-check (ε=1e-3): both ops, all groups `fails=0`.
+
+`notorch_test` full suite 49/49 on neo (Accelerate). The Termux edition (a platform
+recipe + demo that builds `../../notorch.c` directly — no core fork) was rebuilt and
+generated against the current canon: parity by construction. README parity table
+(`js-edition/README.md`) and main-README op-count synced (37 ops, IDs 0–36); js caveats
+corrected (op parity through 36). Tree hygiene: `.gitignore` hardened so compiled
+test/example binaries and editor state stay out of `git status`.
+
 ## 2026-07-07 — gguf.c: harden parser error-paths (F-1 NULL-deref + latent data_size wrap)
 
 An error-path hardening pass on the GGUF parser (untrusted-binary surface). One real
