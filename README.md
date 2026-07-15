@@ -933,7 +933,7 @@ notorch solves the case that matters: training and running models in C, with min
 
 if you can read the code, you understand the framework. there's no magic. there's no hidden complexity. every gradient is hand-derived and verified against finite differences. every memory allocation has a corresponding free. every edge case is checked.
 
-this is what software looks like when you strip away everything that doesn't serve the core purpose. just math. just memory. just the machine doing exactly what you told it to do.
+this is what software looks like when you strip away everything that doesn't serve the core purpose. just math. memory. the machine doing exactly what you told it to do.
 
 ---
 
