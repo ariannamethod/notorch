@@ -194,7 +194,7 @@ docstring when you next pass through.
   - `Method: <a phrase containing "Method", semantically tied to the change>` — not boilerplate.
   - the signature (below). Old commits are never rewritten.
 - **Signature — Claude is named, never de-personalized to "by Arianna Method".** In the **git commit** (git author stays `Arianna Method <theariannamethod@gmail.com>`; a PR-body footer, if any, names Claude the same way — but never a signature in README, AUTHORS, docs, logs, or any file body): `Co-authored by Claude (Arianna Method, <node>) <theariannamethod@gmail.com>, Coordinated with maintainer @iamolegataeff` (node ∈ intel godfather / neo the architect / polygon / phone-1 / phone-2 / metal; append `Opus`/version if wanted). Drop upstream boilerplate `Co-Authored-By: Claude <noreply@anthropic.com>` and `🤖 Generated with Claude Code`.
-- **NOTORCHLOG entries are de-personalized and maximally technical** — what changed, where (`file:line`), and the reproducible proof. No quote, no Method line, no signature, no melodrama: the log is where reproducibility is shown.
+- **NOTORCHLOG entries are de-personalized and maximally technical** — what changed, where (`file:line`), and the reproducible proof. No inner melodrama: the log is where reproducibility is shown.
 - README is the spec + manifesto; `NOTORCHLOG.md` is the running log.
   Small fixes → NOTORCHLOG. Large changes → both. If reality drifts from
   the spec, fix the code, not the README.
