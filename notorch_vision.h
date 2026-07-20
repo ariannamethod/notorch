@@ -43,7 +43,7 @@ static nt_image* nt_image_load(const char* path, int desired_channels) {
     img->width = w;
     img->height = h;
     img->channels = c;
-    img->data = (float*)malloc(c * h * w * sizeof(float));
+    img->data = (float*)malloc((size_t)c * h * w * sizeof(float));
 
     // Convert uint8 HWC → float CHW, normalized to [0, 1]
     for (int ch = 0; ch < c; ch++)
@@ -66,7 +66,7 @@ static nt_image* nt_image_load_mem(const unsigned char* buf, int len, int desire
     img->width = w;
     img->height = h;
     img->channels = c;
-    img->data = (float*)malloc(c * h * w * sizeof(float));
+    img->data = (float*)malloc((size_t)c * h * w * sizeof(float));
 
     for (int ch = 0; ch < c; ch++)
         for (int y = 0; y < h; y++)
@@ -94,7 +94,7 @@ static nt_image* nt_image_resize(const nt_image* src, int tw, int th) {
     dst->width = tw;
     dst->height = th;
     dst->channels = src->channels;
-    dst->data = (float*)malloc(src->channels * th * tw * sizeof(float));
+    dst->data = (float*)malloc((size_t)src->channels * th * tw * sizeof(float));
 
     float sx = (float)src->width / tw;
     float sy = (float)src->height / th;
@@ -138,7 +138,7 @@ static nt_image* nt_image_center_crop(const nt_image* src, int tw, int th) {
     dst->width = tw;
     dst->height = th;
     dst->channels = src->channels;
-    dst->data = (float*)malloc(src->channels * th * tw * sizeof(float));
+    dst->data = (float*)malloc((size_t)src->channels * th * tw * sizeof(float));
 
     for (int ch = 0; ch < src->channels; ch++) {
         const float* sc = src->data + ch * src->height * src->width;

@@ -135,41 +135,41 @@ static float siluf(float x) { return x > -20 ? x/(1+expf(-x)) : 0; }
 
 static void forward(Weights *w, int *tok, int T, float *logits) {
     int V = CFG_V, E = CFG_E, H = CFG_H, D = CFG_D, BLK = CFG_BLK, FFN = CFG_FFN, MT = CFG_MT;
-    float *x = (float*)calloc(T*E, sizeof(float));
-    float *rn = (float*)calloc(T*E, sizeof(float));
+    float *x = (float*)calloc((size_t)T*E, sizeof(float));
+    float *rn = (float*)calloc((size_t)T*E, sizeof(float));
     float sc = 1.0f / sqrtf((float)D);
 
     for (int t = 0; t < T; t++)
         for (int e = 0; e < E; e++)
             x[t*E+e] = w->tok_emb[tok[t]*E+e] + w->pos_emb[t*E+e];
 
-    float *cat = (float*)calloc(T*E, sizeof(float));
-    float *ao = (float*)calloc(T*E, sizeof(float));
-    float *r1 = (float*)calloc(T*E, sizeof(float));
-    float *mg = (float*)calloc(T*FFN, sizeof(float));
-    float *mu = (float*)calloc(T*FFN, sizeof(float));
-    float *mo = (float*)calloc(T*E, sizeof(float));
+    float *cat = (float*)calloc((size_t)T*E, sizeof(float));
+    float *ao = (float*)calloc((size_t)T*E, sizeof(float));
+    float *r1 = (float*)calloc((size_t)T*E, sizeof(float));
+    float *mg = (float*)calloc((size_t)T*FFN, sizeof(float));
+    float *mu = (float*)calloc((size_t)T*FFN, sizeof(float));
+    float *mo = (float*)calloc((size_t)T*E, sizeof(float));
 
     for (int bl = 0; bl < BLK; bl++) {
         rmsnorm(rn, x, w->b[bl].rms1, T, E);
 
-        float *qa = (float*)calloc(T*E, sizeof(float));
-        float *ka = (float*)calloc(T*E, sizeof(float));
-        float *va = (float*)calloc(T*E, sizeof(float));
+        float *qa = (float*)calloc((size_t)T*E, sizeof(float));
+        float *ka = (float*)calloc((size_t)T*E, sizeof(float));
+        float *va = (float*)calloc((size_t)T*E, sizeof(float));
         float *vra = NULL;
         mm_t(qa, rn, w->b[bl].wq, T, E, E);
         mm_t(ka, rn, w->b[bl].wk, T, E, E);
         mm_t(va, rn, w->b[bl].wv, T, E, E);
         if (CFG_HAS_JANUS) {
-            vra = (float*)calloc(T*E, sizeof(float));
+            vra = (float*)calloc((size_t)T*E, sizeof(float));
             mm_t(vra, rn, w->b[bl].wvr, T, E, E);
         }
 
         float *echo = NULL, *eback = NULL, *jsc = NULL, *jat = NULL;
         if (CFG_HAS_JANUS) {
-            echo = (float*)calloc(T*E, sizeof(float));
+            echo = (float*)calloc((size_t)T*E, sizeof(float));
             mm_t(echo, rn, w->b[bl].wj, T, E, E);
-            eback = (float*)calloc(T*E, sizeof(float));
+            eback = (float*)calloc((size_t)T*E, sizeof(float));
             mm(eback, echo, w->b[bl].wj, T, E, E);
             jsc = (float*)calloc(T, sizeof(float));
             for (int t = 0; t < T; t++) {
@@ -177,7 +177,7 @@ static void forward(Weights *w, int *tok, int T, float *logits) {
                 for (int e = 0; e < E; e++) s += rn[t*E+e] * eback[t*E+e];
                 jsc[t] = s / sqrtf((float)E);
             }
-            jat = (float*)calloc(T*T, sizeof(float));
+            jat = (float*)calloc((size_t)T*T, sizeof(float));
             for (int i = 0; i < T; i++) {
                 for (int j = 0; j < T; j++)
                     jat[i*T+j] = (j > i) ? -1e9f : jsc[i] * jsc[j];
@@ -203,14 +203,14 @@ static void forward(Weights *w, int *tok, int T, float *logits) {
             }
         }
 
-        memset(cat, 0, T*E*sizeof(float));
-        float *at = (float*)calloc(T*T, sizeof(float));
-        float *ho = (float*)calloc(T*D, sizeof(float));
+        memset(cat, 0, (size_t)T*E*sizeof(float));
+        float *at = (float*)calloc((size_t)T*T, sizeof(float));
+        float *ho = (float*)calloc((size_t)T*D, sizeof(float));
 
         for (int h = 0; h < H; h++) {
-            float *q = (float*)calloc(T*D, sizeof(float));
-            float *k = (float*)calloc(T*D, sizeof(float));
-            float *v = (float*)calloc(T*D, sizeof(float));
+            float *q = (float*)calloc((size_t)T*D, sizeof(float));
+            float *k = (float*)calloc((size_t)T*D, sizeof(float));
+            float *v = (float*)calloc((size_t)T*D, sizeof(float));
             for (int t = 0; t < T; t++)
                 for (int d = 0; d < D; d++) {
                     q[t*D+d] = qa[t*E + h*D + d];
@@ -237,7 +237,7 @@ static void forward(Weights *w, int *tok, int T, float *logits) {
                 for (int e = 0; e < E; e++) s += rn[j*E+e] * wr_h[e*MT+j];
                 rrp_sc[j] = s * sc;
             }
-            float *ra = (float*)calloc(T*T, sizeof(float));
+            float *ra = (float*)calloc((size_t)T*T, sizeof(float));
             for (int i = 0; i < T; i++) {
                 for (int j = 0; j < T; j++)
                     ra[i*T+j] = (j > i) ? -1e9f : rrp_sc[j];
@@ -245,21 +245,21 @@ static void forward(Weights *w, int *tok, int T, float *logits) {
             }
             // RRPRAM values: use vra (Janus) or va (Resonance)
             float *rv_src = CFG_HAS_JANUS ? vra : va;
-            float *rv = (float*)calloc(T*D, sizeof(float));
+            float *rv = (float*)calloc((size_t)T*D, sizeof(float));
             for (int t = 0; t < T; t++)
                 for (int d = 0; d < D; d++)
                     rv[t*D+d] = rv_src[t*E + h*D + d];
-            float *ro = (float*)calloc(T*D, sizeof(float));
+            float *ro = (float*)calloc((size_t)T*D, sizeof(float));
             mm(ro, ra, rv, T, T, D);
 
             // Janus attention (only if Janus mode)
             float *jo = NULL;
             if (CFG_HAS_JANUS) {
-                float *jv = (float*)calloc(T*D, sizeof(float));
+                float *jv = (float*)calloc((size_t)T*D, sizeof(float));
                 for (int t = 0; t < T; t++)
                     for (int d = 0; d < D; d++)
                         jv[t*D+d] = echo[t*E + h*D + d];
-                jo = (float*)calloc(T*D, sizeof(float));
+                jo = (float*)calloc((size_t)T*D, sizeof(float));
                 mm(jo, jat, jv, T, T, D);
                 free(jv);
             }
@@ -446,7 +446,7 @@ int main(int argc, char **argv) {
                 int off = (int)((dsz - T - 1) * wi / n_win);
                 int tok[256], tgt[256];
                 for (int t = 0; t < T; t++) { tok[t] = dt[off+t]; tgt[t] = dt[off+t+1]; }
-                float *lg = (float*)calloc(T * CFG_V, sizeof(float));
+                float *lg = (float*)calloc((size_t)T * CFG_V, sizeof(float));
                 forward(&w, tok, T, lg);
                 float wloss = 0;
                 for (int t = 0; t < T; t++) {
@@ -488,7 +488,7 @@ int main(int argc, char **argv) {
     for (int step = 0; step < max_tokens; step++) {
         int T = len < max_ctx ? len : max_ctx;
         int *tok = ctx + (len > max_ctx ? len - max_ctx : 0);
-        float *lg = (float*)calloc(T * CFG_V, sizeof(float));
+        float *lg = (float*)calloc((size_t)T * CFG_V, sizeof(float));
         forward(&w, tok, T, lg);
         float *last = lg + (T - 1) * CFG_V;
         int next = sample_top_p(last, CFG_V, temp, 0.9f);
