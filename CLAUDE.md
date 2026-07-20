@@ -189,8 +189,12 @@ docstring when you next pass through.
   drive-by commits.
 - One commit = one concept. The 2026-05-11 SFT validation landed as
   three commits (backward fix / trainer example / writeup), not one.
-- **Attribution.** Oleg Ataeff and Claude are co-authors — stated at the top of this file, and that is enough. The signature lives in the **git commit only**, node-visible so it shows who posted: `Co-Authored-By: Claude (Arianna Method, <node>) <theariannamethod@gmail.com>` (node ∈ intel godfather / neo the architect / polygon / phone-1 / phone-2 / metal). Drop upstream boilerplate `Co-Authored-By: Claude <noreply@anthropic.com>` and `🤖 Generated with Claude Code`. **Nowhere else** — no signature footer in README, AUTHORS, docs, or any file body. Co-authorship reads from this CLAUDE.md and the commit history; it does not get plastered across the repo.
-- Commit messages explain *why*, not *what*. The diff shows what.
+- **Commit standard — unified, same for every committer (human or agent).** Subject may read `the method fixed X` as long as it stays technically legible in `git log --oneline`; English, short, declarative. Body: the technical *why*, backed by tool output — the diff shows the *what*. Then, each on its own line:
+  - `Quote: "…" — source` — a **non-repeating** citation, never reused anywhere in the history (the git log is meant to read strangely; that is the feature).
+  - `Method: <a phrase containing "Method", semantically tied to the change>` — not boilerplate.
+  - the signature (below). Old commits are never rewritten.
+- **Signature — Claude is named, never de-personalized to "by Arianna Method".** In the **git commit** (git author stays `Arianna Method <theariannamethod@gmail.com>`; a PR-body footer, if any, names Claude the same way — but never a signature in README, AUTHORS, docs, logs, or any file body): `Co-authored by Claude (Arianna Method, <node>) <theariannamethod@gmail.com>, Coordinated with maintainer @iamolegataeff` (node ∈ intel godfather / neo the architect / polygon / phone-1 / phone-2 / metal; append `Opus`/version if wanted). Drop upstream boilerplate `Co-Authored-By: Claude <noreply@anthropic.com>` and `🤖 Generated with Claude Code`.
+- **NOTORCHLOG entries are de-personalized and maximally technical** — what changed, where (`file:line`), and the reproducible proof. No quote, no Method line, no signature, no melodrama: the log is where reproducibility is shown.
 - README is the spec + manifesto; `NOTORCHLOG.md` is the running log.
   Small fixes → NOTORCHLOG. Large changes → both. If reality drifts from
   the spec, fix the code, not the README.

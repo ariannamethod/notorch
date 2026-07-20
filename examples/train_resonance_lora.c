@@ -84,7 +84,7 @@ static nt_tensor* g_gate_one_minus[R_N_LAYER];  /* [T*H*D] = (1-sigmoid(gate[h])
 
 static int precompute_gate_blends(int max_T) {
     int H = R_N_HEAD, D = R_HEAD_DIM;
-    int len = max_T * H * D;
+    size_t len = (size_t)max_T * H * D;
     for (int i = 0; i < R_N_LAYER; i++) {
         nt_tensor* gate = g_params[g_blocks[i].gate];  /* [H] */
         if (gate->len != H) {

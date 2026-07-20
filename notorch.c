@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <float.h>
+#include <limits.h>
 #include <sys/time.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -5383,8 +5384,14 @@ int nt_conv2d(float *out, const float *in, const float *weight, const float *bia
     int Hout = (Hin + 2 * padding - kH) / stride + 1;
     int Wout = (Win + 2 * padding - kW) / stride + 1;
     if (Hout <= 0 || Wout <= 0) return -1;
-    int K = Cin * kH * kW;
-    int N = Hout * Wout;
+    /* K and N are matmul dims for nt_blas_mm and must stay int; validate the
+     * geometry products in a wide type first, so a wrapped int32 can't mis-size
+     * the im2col buffer (Cin*kH*kW or Hout*Wout beyond INT_MAX is rejected). */
+    long K_l = (long)Cin * kH * kW;
+    long N_l = (long)Hout * Wout;
+    if (Cin <= 0 || kH <= 0 || kW <= 0 || K_l > INT_MAX || N_l > INT_MAX) return -1;
+    int K = (int)K_l;
+    int N = (int)N_l;
     float *col = (float *)malloc((size_t)K * N * sizeof(float));
     if (!col) return -1;
     nt_im2col(col, in, Cin, Hin, Win, kH, kW, stride, padding);
