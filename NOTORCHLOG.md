@@ -13,6 +13,23 @@ Newest entries on top.
 
 ---
 
+## 2026-07-20 — close the alloc-overflow residual: nt_conv2d geometry guard + resonance size_t
+
+The `nt_tensor_new` root pass named two same-class residuals; both closed here.
+
+- `nt_conv2d` (`notorch.c:5386`): `K = Cin*kH*kW` and `N = Hout*Wout` are matmul
+  dims for `nt_blas_mm` and must stay `int`, so they cannot simply be widened. The
+  products are computed in `long` and rejected if either exceeds `INT_MAX` before the
+  truncation, so a wrapped int32 can no longer mis-size the `(size_t)K*N` im2col
+  buffer. `<limits.h>` added for `INT_MAX`.
+- `examples/train_resonance_lora.c:87`: two-step `len = max_T*H*D` widened to `size_t`
+  (its only use is the two `nt_tensor_new(len)` allocations).
+
+Proof (neo, Accelerate): `make test` → notorch_test 49/49, test_vision 73/73; a
+standalone guard check drives `nt_conv2d` with `Cin*kH*kW = 2.2e9 > INT_MAX` — returns
+-1 before allocating — while a 1×3×3 / 2×2 conv returns the correct `[6,8,12,14]`; the
+resonance translation unit compiles clean under `-Wall -Wextra`.
+
 ## 2026-07-20 — integer-overflow hardening: `nt_tensor_new` length widened to `size_t` (root of the alloc-size overflow class)
 
 Two passes closed the `int * int` overflow-before-widening class flagged by CodeQL
