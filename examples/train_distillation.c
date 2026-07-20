@@ -364,7 +364,7 @@ static float inject_kd_grad(int logits_idx, const float* teacher_logits,
      * backward because the entry's grad is NULL until something writes it. */
     nt_tape* tape = nt_tape_get();
     nt_tape_entry* le = &tape->entries[logits_idx];
-    if (!le->grad) le->grad = nt_tensor_new(T * V);
+    if (!le->grad) le->grad = nt_tensor_new((size_t)T * V);
     memcpy(le->grad->data, g, (size_t)T * V * sizeof(float));
 
     free(g); free(sp); free(tp); free(s1);

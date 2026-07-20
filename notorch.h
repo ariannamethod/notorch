@@ -39,7 +39,7 @@ typedef struct {
 } nt_tensor;
 
 // Create a 1D tensor of given length, zeroed
-nt_tensor* nt_tensor_new(int len);
+nt_tensor* nt_tensor_new(size_t len);
 
 // Create a 2D tensor (rows × cols), zeroed
 nt_tensor* nt_tensor_new2d(int rows, int cols);

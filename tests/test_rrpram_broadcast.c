@@ -52,12 +52,12 @@ static float forward_only(const float* wr_data, long wr_len,
     int wr_idx = nt_tape_param(tw);
     nt_tape_freeze_param(wr_idx);
 
-    nt_tensor* tx = nt_tensor_new(t_len * e_len);
+    nt_tensor* tx = nt_tensor_new((size_t)t_len * e_len);
     memcpy(tx->data, x_data, (size_t)t_len * e_len * sizeof(float));
     int x_idx = nt_tape_param(tx);
     nt_tape_freeze_param(x_idx);
 
-    nt_tensor* tv = nt_tensor_new(t_len * out_dim);
+    nt_tensor* tv = nt_tensor_new((size_t)t_len * out_dim);
     memcpy(tv->data, v_data, (size_t)t_len * out_dim * sizeof(float));
     int v_idx = nt_tape_param(tv);
     nt_tape_freeze_param(v_idx);
@@ -85,12 +85,12 @@ static int analytic_grads(const float* wr_data, long wr_len,
     int wr_idx = nt_tape_param(tw);
     nt_tape_no_decay(wr_idx);
 
-    nt_tensor* tx = nt_tensor_new(t_len * e_len);
+    nt_tensor* tx = nt_tensor_new((size_t)t_len * e_len);
     memcpy(tx->data, x_data, (size_t)t_len * e_len * sizeof(float));
     int x_idx = nt_tape_param(tx);
     nt_tape_no_decay(x_idx);
 
-    nt_tensor* tv = nt_tensor_new(t_len * out_dim);
+    nt_tensor* tv = nt_tensor_new((size_t)t_len * out_dim);
     memcpy(tv->data, v_data, (size_t)t_len * out_dim * sizeof(float));
     int v_idx = nt_tape_param(tv);
     nt_tape_no_decay(v_idx);
@@ -266,10 +266,10 @@ static int sentinel_layout_check(void) {
     nt_tensor* tw = nt_tensor_new(wr_len);
     memcpy(tw->data, wr, (size_t)wr_len * sizeof(float));
     int wr_idx = nt_tape_param(tw); nt_tape_freeze_param(wr_idx);
-    nt_tensor* tx = nt_tensor_new(T_LEN * E_LEN);
+    nt_tensor* tx = nt_tensor_new((size_t)T_LEN * E_LEN);
     memcpy(tx->data, x, (size_t)T_LEN * E_LEN * sizeof(float));
     int x_idx = nt_tape_param(tx); nt_tape_freeze_param(x_idx);
-    nt_tensor* tv = nt_tensor_new(T_LEN * OUT_DIM);
+    nt_tensor* tv = nt_tensor_new((size_t)T_LEN * OUT_DIM);
     memcpy(tv->data, v, (size_t)T_LEN * OUT_DIM * sizeof(float));
     int v_idx = nt_tape_param(tv); nt_tape_freeze_param(v_idx);
 

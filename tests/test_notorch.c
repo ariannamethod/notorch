@@ -387,9 +387,9 @@ static void test_causal_attention(void) {
     nt_tape_start();
     int T = 3, D = 4;
 
-    nt_tensor* q = nt_tensor_new(T * D);
-    nt_tensor* k = nt_tensor_new(T * D);
-    nt_tensor* v = nt_tensor_new(T * D);
+    nt_tensor* q = nt_tensor_new((size_t)T * D);
+    nt_tensor* k = nt_tensor_new((size_t)T * D);
+    nt_tensor* v = nt_tensor_new((size_t)T * D);
     nt_seed(42);
     nt_tensor_rand(q, 0.5f);
     nt_tensor_rand(k, 0.5f);
@@ -416,9 +416,9 @@ static void test_causal_attention(void) {
 static void test_mh_causal_attention(void) {
     nt_tape_start();
     int T = 4, D = 8, head_dim = 4; // 2 heads
-    nt_tensor* q = nt_tensor_new(T * D);
-    nt_tensor* k = nt_tensor_new(T * D);
-    nt_tensor* v = nt_tensor_new(T * D);
+    nt_tensor* q = nt_tensor_new((size_t)T * D);
+    nt_tensor* k = nt_tensor_new((size_t)T * D);
+    nt_tensor* v = nt_tensor_new((size_t)T * D);
     nt_seed(7);
     nt_tensor_rand(q, 0.3f);
     nt_tensor_rand(k, 0.3f);
@@ -442,7 +442,7 @@ static void test_seq_cross_entropy(void) {
     nt_tape_start();
     int T = 3, V = 5;
 
-    nt_tensor* logits = nt_tensor_new(T * V);
+    nt_tensor* logits = nt_tensor_new((size_t)T * V);
     nt_seed(99);
     nt_tensor_rand(logits, 1.0f);
 
@@ -480,7 +480,7 @@ static void test_seq_linear(void) {
     W->data[4] = 0; W->data[5] = 1; W->data[6] = 0; W->data[7] = 0;
     int w_idx = nt_tape_param(W);
 
-    nt_tensor* X = nt_tensor_new(T * in_d);
+    nt_tensor* X = nt_tensor_new((size_t)T * in_d);
     for (int t = 0; t < T; t++)
         for (int d = 0; d < in_d; d++)
             X->data[t * in_d + d] = (float)(t * in_d + d);
@@ -904,11 +904,11 @@ static int gc_attn_graph(int q_idx) {
 static void test_gradcheck_causal_attention(void) {
     nt_seed(33);
     int T = 2, D = 4;
-    nt_tensor* Q = nt_tensor_new(T * D);
+    nt_tensor* Q = nt_tensor_new((size_t)T * D);
     nt_tensor_rand(Q, 0.3f);
-    gc_attn_k = nt_tensor_new(T * D);
+    gc_attn_k = nt_tensor_new((size_t)T * D);
     nt_tensor_rand(gc_attn_k, 0.3f);
-    gc_attn_v = nt_tensor_new(T * D);
+    gc_attn_v = nt_tensor_new((size_t)T * D);
     nt_tensor_rand(gc_attn_v, 0.3f);
     float err = numgrad_check_all(Q, gc_attn_graph, 1e-3f, 0.1f, "causal_attn_Q");
     ASSERT(err < 0.1f, "gradcheck causal_attention");
@@ -967,7 +967,7 @@ static void test_gradcheck_geglu(void) {
     nt_tensor_rand(W1, 0.3f);
     gc_geglu_w2 = nt_tensor_new2d(D_out, D_in);
     nt_tensor_rand(gc_geglu_w2, 0.3f);
-    gc_geglu_x = nt_tensor_new(1 * D_in);
+    gc_geglu_x = nt_tensor_new((size_t)1 * D_in);
     nt_tensor_rand(gc_geglu_x, 0.5f);
     // GEGLU uses tanh-approx GELU — higher tolerance for near-zero grads
     float err = numgrad_check_all(W1, gc_geglu_graph, 1e-3f, 0.3f, "geglu_W1");

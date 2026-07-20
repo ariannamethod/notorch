@@ -149,15 +149,15 @@ static void compute_strides(nt_tensor* t) {
         t->stride[i] = t->stride[i + 1] * t->shape[i + 1];
 }
 
-nt_tensor* nt_tensor_new(int len) {
-    if (len <= 0 || len > NT_MAX_ELEMENTS) return NULL;
+nt_tensor* nt_tensor_new(size_t len) {
+    if (len == 0 || len > NT_MAX_ELEMENTS) return NULL;
     nt_tensor* t = (nt_tensor*)calloc(1, sizeof(nt_tensor));
     if (!t) return NULL;
     t->data = (float*)calloc(len, sizeof(float));
     if (!t->data) { free(t); return NULL; }
-    t->len = len;
+    t->len = (int)len;
     t->ndim = 1;
-    t->shape[0] = len;
+    t->shape[0] = (int)len;
     t->stride[0] = 1;
     t->refcount = 1;
     return t;
@@ -165,7 +165,7 @@ nt_tensor* nt_tensor_new(int len) {
 
 nt_tensor* nt_tensor_new2d(int rows, int cols) {
     if (rows <= 0 || cols <= 0) return NULL;
-    int total = rows * cols;
+    size_t total = (size_t)rows * cols;
     if (total > NT_MAX_ELEMENTS) return NULL;
     nt_tensor* t = nt_tensor_new(total);
     if (!t) return NULL;
@@ -178,10 +178,10 @@ nt_tensor* nt_tensor_new2d(int rows, int cols) {
 
 nt_tensor* nt_tensor_new_shape(const int* shape, int ndim) {
     if (ndim <= 0 || ndim > NT_MAX_DIMS) return NULL;
-    int total = 1;
+    size_t total = 1;
     for (int i = 0; i < ndim; i++) {
         if (shape[i] <= 0) return NULL;
-        total *= shape[i];
+        total *= (size_t)shape[i];
         if (total > NT_MAX_ELEMENTS) return NULL;
     }
     nt_tensor* t = nt_tensor_new(total);
@@ -3059,7 +3059,7 @@ int nt_seq_embedding(int wte_idx, int wpe_idx, int tokens_idx, int T, int D) {
     nt_tape_entry* tok = &g_tape.entries[tokens_idx];
     int wte_rows = wte->output->ndim >= 2 ? wte->output->shape[0] : wte->output->len / D;
 
-    nt_tensor* out = nt_tensor_new(T * D);
+    nt_tensor* out = nt_tensor_new((size_t)T * D);
     if (!out) return -1;
 
 #ifdef USE_CUDA
@@ -3135,7 +3135,7 @@ int nt_seq_linear(int w_idx, int x_idx, int T) {
     int out_dim = pw->output->shape[0];
     int in_dim = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / out_dim;
 
-    nt_tensor* out = nt_tensor_new(T * out_dim);
+    nt_tensor* out = nt_tensor_new((size_t)T * out_dim);
     if (!out) return -1;
 
     int done_gpu = 0;
@@ -3189,7 +3189,7 @@ int nt_seq_linear_t(int w_idx, int x_idx, int T) {
     int W_cols = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / W_rows;
 
     /* W^T @ X[t]: input dim = W_rows, output dim = W_cols */
-    nt_tensor* out = nt_tensor_new(T * W_cols);
+    nt_tensor* out = nt_tensor_new((size_t)T * W_cols);
     if (!out) return -1;
 
     int done_gpu = 0;
@@ -3266,7 +3266,7 @@ int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
     if (x_idx < 0 || T <= 0 || D <= 0) return -1;
     nt_tape_entry* px = &g_tape.entries[x_idx];
 
-    nt_tensor* out = nt_tensor_new(T * D);
+    nt_tensor* out = nt_tensor_new((size_t)T * D);
     if (!out) return -1;
 
     int done_gpu = 0;
@@ -3432,7 +3432,7 @@ int nt_geglu(int x_idx, int w1_idx, int w2_idx, int T, int D_in, int D_out) {
     nt_tape_entry* pw1 = &g_tape.entries[w1_idx];
     nt_tape_entry* pw2 = &g_tape.entries[w2_idx];
 
-    nt_tensor* out = nt_tensor_new(T * D_out);
+    nt_tensor* out = nt_tensor_new((size_t)T * D_out);
     if (!out) return -1;
 
     for (int t = 0; t < T; t++) {
@@ -3478,7 +3478,7 @@ int nt_causal_attention(int q_idx, int k_idx, int v_idx, int T, int D) {
     nt_tape_entry* pk = &g_tape.entries[k_idx];
     nt_tape_entry* pv = &g_tape.entries[v_idx];
     float scale = 1.0f / sqrtf((float)D);
-    nt_tensor* out = nt_tensor_new(T * D);
+    nt_tensor* out = nt_tensor_new((size_t)T * D);
     if (!out) return -1;
     for (int i = 0; i < T; i++) {
         float* qi = pq->output->data + i * D;
@@ -3516,7 +3516,7 @@ int nt_mh_causal_attention(int q_idx, int k_idx, int v_idx, int T, int head_dim)
     if (n_heads <= 0 || D % head_dim != 0) return -1;
     float scale = 1.0f / sqrtf((float)head_dim);
 
-    nt_tensor* out = nt_tensor_new(T * D);
+    nt_tensor* out = nt_tensor_new((size_t)T * D);
     if (!out) return -1;
     nt_tape_entry* pk = &g_tape.entries[k_idx];
     nt_tape_entry* pv = &g_tape.entries[v_idx];
@@ -3587,7 +3587,7 @@ int nt_gqa_causal_attention(int q_idx, int k_idx, int v_idx, int T, int head_dim
     int gqa_ratio = n_heads / n_kv_heads;
     float scale = 1.0f / sqrtf((float)head_dim);
 
-    nt_tensor* out = nt_tensor_new(T * Q_D);
+    nt_tensor* out = nt_tensor_new((size_t)T * Q_D);
     if (!out) return -1;
     nt_tape_entry* pq = &g_tape.entries[q_idx];
     nt_tape_entry* pk = &g_tape.entries[k_idx];
@@ -3630,7 +3630,7 @@ int nt_gqa_causal_attention(int q_idx, int k_idx, int v_idx, int T, int head_dim
 int nt_rrpram_attention(int wr_idx, int x_idx, int v_idx, int T, int n_embd, int nr_heads, int head_dim) {
     if (wr_idx < 0 || x_idx < 0 || v_idx < 0) return -1;
     int out_dim = nr_heads * head_dim;
-    nt_tensor* out = nt_tensor_new(T * out_dim);
+    nt_tensor* out = nt_tensor_new((size_t)T * out_dim);
     if (!out) return -1;
     nt_tape_entry* pwr = &g_tape.entries[wr_idx];
     nt_tape_entry* px  = &g_tape.entries[x_idx];
@@ -3689,7 +3689,7 @@ int nt_rrpram_lowrank_attention(int wr_combined_idx, int x_idx, int v_idx,
                                  int T, int n_embd, int nr_heads, int head_dim) {
     if (wr_combined_idx < 0 || x_idx < 0 || v_idx < 0) return -1;
     int out_dim = nr_heads * head_dim;
-    nt_tensor* out = nt_tensor_new(T * out_dim);
+    nt_tensor* out = nt_tensor_new((size_t)T * out_dim);
     if (!out) return -1;
     nt_tape_entry* pwr = &g_tape.entries[wr_combined_idx];
     nt_tape_entry* px  = &g_tape.entries[x_idx];
@@ -3804,7 +3804,7 @@ int nt_rrpram_broadcast_attention(int wr_combined_idx, int x_idx, int v_idx,
     if (T < 1 || rank < 1 || nr_heads < 1 || head_dim < 1 || n_embd < 1) return -1;
     if (nr_heads * head_dim != n_embd) return -1;  /* invariant: H*D=E */
     int out_dim = nr_heads * head_dim;
-    nt_tensor* out = nt_tensor_new(T * out_dim);
+    nt_tensor* out = nt_tensor_new((size_t)T * out_dim);
     if (!out) return -1;
     nt_tape_entry* pwr = &g_tape.entries[wr_combined_idx];
     nt_tape_entry* px  = &g_tape.entries[x_idx];
@@ -3908,7 +3908,7 @@ int nt_concat(int a_idx, int b_idx, int T) {
     int Da = pa->output->len / T;
     int Db = pb->output->len / T;
     int Dc = Da + Db;
-    nt_tensor* out = nt_tensor_new(T * Dc);
+    nt_tensor* out = nt_tensor_new((size_t)T * Dc);
     if (!out) return -1;
     for (int t = 0; t < T; t++) {
         for (int d = 0; d < Da; d++) out->data[t * Dc + d] = pa->output->data[t * Da + d];
@@ -4031,7 +4031,7 @@ int nt_bit_seq_linear(int w_idx, int x_idx, int T) {
     int cols = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / rows;
     if (rows <= 0 || cols <= 0) return -1;
 
-    nt_tensor* out = nt_tensor_new(T * rows);
+    nt_tensor* out = nt_tensor_new((size_t)T * rows);
     if (!out) return -1;
 
     float gamma_w = nt_bit_absmean(pw->output->data, rows * cols);
@@ -4556,7 +4556,7 @@ int nt_layernorm(int x_idx, int gamma_idx, int beta_idx) {
 int nt_seq_layernorm(int x_idx, int gamma_idx, int beta_idx, int T, int D) {
     if (x_idx < 0 || T <= 0 || D <= 0) return -1;
     nt_tape_entry* px = &g_tape.entries[x_idx];
-    nt_tensor* out = nt_tensor_new(T * D);
+    nt_tensor* out = nt_tensor_new((size_t)T * D);
     if (!out) return -1;
 
     for (int t = 0; t < T; t++) {

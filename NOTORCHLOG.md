@@ -13,6 +13,47 @@ Newest entries on top.
 
 ---
 
+## 2026-07-20 — integer-overflow hardening: `nt_tensor_new` length widened to `size_t` (root of the alloc-size overflow class)
+
+Two passes closed the `int * int` overflow-before-widening class flagged by CodeQL
+(`cpp/integer-multiplication-cast-to-long`, threat model `remote`).
+
+**Leaf pass** (PR #24, `9c41b39`) — 64 flagged size expressions where a product of
+`int`s overflows before the implicit widen to `size_t` at `malloc`/`calloc`/`memcpy`/
+`memset`. Each casts its leading operand to `size_t` so the product computes wide:
+`notorch.c` 24, `examples/infer_janus.c` 28, `tests/test_rrpram_broadcast.c` 6,
+`notorch_vision.h` 4, `stb_image.h` 2 (the vendored 16-bit convert path, which lacked
+the overflow guard its 8-bit sibling gets from `stbi__malloc_mad3`).
+
+**Root pass** (this change) — the leaf casts don't help a caller that hands `nt_tensor_new`
+an already-truncated `int` product, because the length parameter itself was `int`. Widened
+the constructor family so the guard sees the true product:
+
+- `nt_tensor_new(int len)` → `nt_tensor_new(size_t len)` (`notorch.h:42`, `notorch.c:152`).
+  Guard `len <= 0` → `len == 0` (unsigned); a negative-int caller now converts to a huge
+  `size_t` and is still rejected by the `> NT_MAX_ELEMENTS` (`1<<28`) upper bound — same
+  NULL result, no under-alloc path. `t->len`/`t->shape[0]` take `(int)len`, lossless after
+  the guard (≤ 268435456 < INT_MAX).
+- `nt_tensor_new2d`: `int total = rows*cols` → `size_t total = (size_t)rows * cols`
+  (`notorch.c:168`); `nt_tensor_new_shape`: `size_t total` accumulated with `(size_t)shape[i]`
+  (`notorch.c:182`). The overflow that previously slipped past `total > NT_MAX_ELEMENTS` is
+  now caught.
+- 37 product call sites cast to `(size_t)` (14 in `notorch.c`, plus `examples/train_distillation.c`,
+  `tests/test_notorch.c` ×12, `tests/test_rrpram_broadcast.c` ×6, `tools/leak_repro.c` ×3, and the
+  two-step `nt_image_to_tensor` in `notorch_vision.h:226` which also gained a NULL-alloc guard).
+  Pure integer-literal products (`nt_tensor_new(3 * 6)`) are left as-is — compile-time constants.
+
+Proof (neo, Accelerate): `make test` → `notorch_test` 49/49, `test_vision` 73/73. A boundary
+harness drives all three constructors with `100000 * 42950` (= 4.295e9, which the old `int`
+math wrapped to 32704 and passed) — all now return NULL; ordinary shapes still allocate with
+correct `len`; `NT_MAX_ELEMENTS+1` and zero are rejected. Two independent Opus audits: casts
+correct and behavior-preserving, no flagged or two-step site missed inside the library.
+
+Known same-class residual, outside the `nt_tensor_new` root and tracked separately: `nt_conv2d`
+im2col `K = Cin*kH*kW` / `N = Hout*Wout` (`notorch.c:5372`) form `int` products before the
+`size_t` malloc (needs geometry-validation guards, since K/N must stay `int` for `nt_blas_mm`);
+and `examples/train_resonance_lora.c:94` two-step `len = max_T*H*D` (config-bounded consumer).
+
 ## 2026-07-15 — Codex audit: JS/C op-contract + fresh-op fail-fast guards
 
 Targeted Codex audit after the JS edition was brought up to C op 36. Two bug
