@@ -223,8 +223,9 @@ static nt_tensor* nt_image_to_patches(const nt_image* img, int patch_h, int patc
 
 // Convert image to flat nt_tensor [C * H * W] for direct embedding
 static nt_tensor* nt_image_to_tensor(const nt_image* img) {
-    int n = img->channels * img->height * img->width;
+    size_t n = (size_t)img->channels * img->height * img->width;
     nt_tensor* t = nt_tensor_new(n);
+    if (!t) return NULL;
     memcpy(t->data, img->data, n * sizeof(float));
     return t;
 }

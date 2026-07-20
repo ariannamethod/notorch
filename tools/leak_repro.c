@@ -20,11 +20,11 @@ int main(void) {
     nt_tape_start();
 
     int D=64, T=16, V=128, RANK=4;
-    nt_tensor* W1 = nt_tensor_new(D*D);
+    nt_tensor* W1 = nt_tensor_new((size_t)D*D);
     for (int i=0;i<D*D;i++) W1->data[i]=((float)rand()/RAND_MAX - 0.5f)*0.02f;
-    nt_tensor* W2 = nt_tensor_new(V*D);
+    nt_tensor* W2 = nt_tensor_new((size_t)V*D);
     for (int i=0;i<V*D;i++) W2->data[i]=((float)rand()/RAND_MAX - 0.5f)*0.02f;
-    nt_tensor* X  = nt_tensor_new(T*D);
+    nt_tensor* X  = nt_tensor_new((size_t)T*D);
     for (int i=0;i<T*D;i++) X->data[i]=((float)rand()/RAND_MAX - 0.5f);
 
     /* Targets tensor: T int targets (use 7 for all positions, mask at last) */
