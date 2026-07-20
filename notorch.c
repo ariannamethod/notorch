@@ -671,7 +671,7 @@ void nt_tape_backward(int loss_idx) {
                 int rows = pw->output->shape[0];
                 int cols = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / rows;
                 if (rows > 0 && cols > 0) {
-                    float* dw = (float*)calloc(rows * cols, sizeof(float));
+                    float* dw = (float*)calloc((size_t)rows * cols, sizeof(float));
                     if (dw) {
                         for (int i = 0; i < rows; i++)
                             for (int j = 0; j < cols; j++)
@@ -1122,7 +1122,7 @@ void nt_tape_backward(int loss_idx) {
                 float* gamma_data = NULL;
                 if (has_gamma) gamma_data = g_tape.entries[e->parent2].output->data;
 
-                float* gx = (float*)calloc(T * D, sizeof(float));
+                float* gx = (float*)calloc((size_t)T * D, sizeof(float));
                 float* gg = has_gamma ? (float*)calloc(D, sizeof(float)) : NULL;
                 if (gx) {
                     float* Xrn = px->output->data;
@@ -1168,9 +1168,9 @@ void nt_tape_backward(int loss_idx) {
                 int T = (int)e->aux;
                 int D = (int)e->aux2;
                 float sc = 1.0f / sqrtf((float)D);
-                float* dq = (float*)calloc(T * D, sizeof(float));
-                float* dk = (float*)calloc(T * D, sizeof(float));
-                float* dv = (float*)calloc(T * D, sizeof(float));
+                float* dq = (float*)calloc((size_t)T * D, sizeof(float));
+                float* dk = (float*)calloc((size_t)T * D, sizeof(float));
+                float* dv = (float*)calloc((size_t)T * D, sizeof(float));
                 if (dq && dk && dv) {
                     for (int i = 0; i < T; i++) {
                         float* qi = pq->output->data + i * D;
@@ -1231,9 +1231,9 @@ void nt_tape_backward(int loss_idx) {
                 int D = e->output->len / T;
                 int n_heads = D / head_dim;
                 float sc = 1.0f / sqrtf((float)head_dim);
-                float* dq = (float*)calloc(T * D, sizeof(float));
-                float* dk = (float*)calloc(T * D, sizeof(float));
-                float* dv = (float*)calloc(T * D, sizeof(float));
+                float* dq = (float*)calloc((size_t)T * D, sizeof(float));
+                float* dk = (float*)calloc((size_t)T * D, sizeof(float));
+                float* dv = (float*)calloc((size_t)T * D, sizeof(float));
                 int mh_done_gpu = 0;
 #ifdef USE_CUDA
                 /* GPU backward: kernel needs softmaxed scores. Forward did not
@@ -1355,9 +1355,9 @@ void nt_tape_backward(int loss_idx) {
                 int KV_D = n_kv_heads * head_dim;
                 int gqa_ratio = n_heads / n_kv_heads;
                 float sc = 1.0f / sqrtf((float)head_dim);
-                float* dq = (float*)calloc(T * Q_D, sizeof(float));
-                float* dk = (float*)calloc(T * KV_D, sizeof(float));
-                float* dv = (float*)calloc(T * KV_D, sizeof(float));
+                float* dq = (float*)calloc((size_t)T * Q_D, sizeof(float));
+                float* dk = (float*)calloc((size_t)T * KV_D, sizeof(float));
+                float* dv = (float*)calloc((size_t)T * KV_D, sizeof(float));
                 if (dq && dk && dv) {
                     for (int h = 0; h < n_heads; h++) {
                         int kv_h = h / gqa_ratio;
@@ -1727,8 +1727,8 @@ void nt_tape_backward(int loss_idx) {
                 int out_dim = nr * hd;
                 int ctx = pwr->output->len / (nr * n_embd);
                 float* dwr = (float*)calloc(pwr->output->len, sizeof(float));
-                float* dx  = (float*)calloc(T * n_embd, sizeof(float));
-                float* dv  = (float*)calloc(T * out_dim, sizeof(float));
+                float* dx  = (float*)calloc((size_t)T * n_embd, sizeof(float));
+                float* dv  = (float*)calloc((size_t)T * out_dim, sizeof(float));
                 if (dwr && dx && dv) {
                     for (int h = 0; h < nr; h++) {
                         int wr_base = h * n_embd * ctx; int v_off = h * hd;
@@ -1786,8 +1786,8 @@ void nt_tape_backward(int loss_idx) {
                 nt_tape_entry* pb = &g_tape.entries[e->parent2];
                 int T = (int)e->aux;
                 int Da = pa->output->len / T; int Db = pb->output->len / T; int Dc = Da + Db;
-                float* da = (float*)calloc(T * Da, sizeof(float));
-                float* db = (float*)calloc(T * Db, sizeof(float));
+                float* da = (float*)calloc((size_t)T * Da, sizeof(float));
+                float* db = (float*)calloc((size_t)T * Db, sizeof(float));
                 if (da && db) {
                     for (int t = 0; t < T; t++) {
                         for (int d = 0; d < Da; d++) da[t * Da + d] = dout[t * Dc + d];
@@ -1904,7 +1904,7 @@ void nt_tape_backward(int loss_idx) {
                     }
                 }
 #endif
-                float* dl = ce_done_gpu ? NULL : (float*)calloc(T * V, sizeof(float));
+                float* dl = ce_done_gpu ? NULL : (float*)calloc((size_t)T * V, sizeof(float));
                 if (!ce_done_gpu && dl && pt) {
                     for (int t = 0; t < T; t++) {
                         float* logits_t = pl->output->data + t * V;
@@ -1954,7 +1954,7 @@ void nt_tape_backward(int loss_idx) {
                 float n_active = 0;
                 for (int t = 0; t < T; t++) n_active += pm->output->data[t];
                 if (n_active <= 0) break;
-                float* dl = (float*)calloc(T * V, sizeof(float));
+                float* dl = (float*)calloc((size_t)T * V, sizeof(float));
                 if (dl) {
                     for (int t = 0; t < T; t++) {
                         float m = pm->output->data[t];
@@ -1996,9 +1996,9 @@ void nt_tape_backward(int loss_idx) {
                 int T = px->output->len / D_in;
 
                 // Recompute gate and value
-                float* gate = (float*)calloc(T * D_out, sizeof(float));
-                float* val = (float*)calloc(T * D_out, sizeof(float));
-                float* gelu_gate = (float*)calloc(T * D_out, sizeof(float));
+                float* gate = (float*)calloc((size_t)T * D_out, sizeof(float));
+                float* val = (float*)calloc((size_t)T * D_out, sizeof(float));
+                float* gelu_gate = (float*)calloc((size_t)T * D_out, sizeof(float));
                 float* dx = (float*)calloc(px->output->len, sizeof(float));
                 float* dw1 = (float*)calloc(pw1->output->len, sizeof(float));
                 float* dw2 = (float*)calloc(pw2->output->len, sizeof(float));
@@ -2179,7 +2179,7 @@ void nt_tape_backward(int loss_idx) {
                 int has_beta = (e->parent3 >= 0 && e->parent3 < g_tape.count);
                 float* gamma_data = has_gamma ? g_tape.entries[e->parent2].output->data : NULL;
 
-                float* gx = (float*)calloc(T * D, sizeof(float));
+                float* gx = (float*)calloc((size_t)T * D, sizeof(float));
                 float* gg = has_gamma ? (float*)calloc(D, sizeof(float)) : NULL;
                 float* gb = has_beta ? (float*)calloc(D, sizeof(float)) : NULL;
 
@@ -2349,7 +2349,7 @@ void nt_tape_backward(int loss_idx) {
                 int rows = pw->output->shape[0];
                 int cols = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / rows;
                 if (rows > 0 && cols > 0) {
-                    float* dw = (float*)calloc(rows * cols, sizeof(float));
+                    float* dw = (float*)calloc((size_t)rows * cols, sizeof(float));
                     if (dw) {
                         for (int i = 0; i < rows; i++)
                             for (int j = 0; j < cols; j++)
@@ -2382,7 +2382,7 @@ void nt_tape_backward(int loss_idx) {
                 int rows = pw->output->shape[0];
                 int cols = pw->output->ndim >= 2 ? pw->output->shape[1] : pw->output->len / rows;
                 if (rows > 0 && cols > 0 && T > 0) {
-                    float* dw = (float*)calloc(rows * cols, sizeof(float));
+                    float* dw = (float*)calloc((size_t)rows * cols, sizeof(float));
                     if (dw) {
                         for (int t = 0; t < T; t++) {
                             const float* dout_t = dout + t * rows;
@@ -2397,7 +2397,7 @@ void nt_tape_backward(int loss_idx) {
                         tape_acc_grad(e->parent1, dw, rows * cols);
                     }
                     free(dw);
-                    float* dx = (float*)calloc(T * cols, sizeof(float));
+                    float* dx = (float*)calloc((size_t)T * cols, sizeof(float));
                     if (dx) {
                         for (int t = 0; t < T; t++) {
                             const float* dout_t = dout + t * rows;

@@ -112,15 +112,15 @@ static int analytic_grads(const float* wr_data, long wr_len,
     nt_tape_entry* ev = &nt_tape_get()->entries[v_idx];
 
     *out_dwr = (float*)malloc(wr_len * sizeof(float));
-    *out_dx  = (float*)malloc(t_len * e_len * sizeof(float));
-    *out_dv  = (float*)malloc(t_len * out_dim * sizeof(float));
+    *out_dx  = (float*)malloc((size_t)t_len * e_len * sizeof(float));
+    *out_dv  = (float*)malloc((size_t)t_len * out_dim * sizeof(float));
 
     if (ew->grad) memcpy(*out_dwr, ew->grad->data, wr_len * sizeof(float));
     else memset(*out_dwr, 0, wr_len * sizeof(float));
-    if (ex->grad) memcpy(*out_dx,  ex->grad->data,  t_len * e_len * sizeof(float));
-    else memset(*out_dx,  0, t_len * e_len * sizeof(float));
-    if (ev->grad) memcpy(*out_dv,  ev->grad->data,  t_len * out_dim * sizeof(float));
-    else memset(*out_dv,  0, t_len * out_dim * sizeof(float));
+    if (ex->grad) memcpy(*out_dx,  ex->grad->data,  (size_t)t_len * e_len * sizeof(float));
+    else memset(*out_dx,  0, (size_t)t_len * e_len * sizeof(float));
+    if (ev->grad) memcpy(*out_dv,  ev->grad->data,  (size_t)t_len * out_dim * sizeof(float));
+    else memset(*out_dv,  0, (size_t)t_len * out_dim * sizeof(float));
 
     nt_tape_clear();
     return 0;
