@@ -1,16 +1,7 @@
 <p align="center">
   <img src="assets/logo.PNG" alt="notorch" width="300">
 </p>
-
-
-```
-   ███╗   ██╗ ██████╗ ████████╗ ██████╗ ██████╗  ██████╗██╗  ██╗
-   ████╗  ██║██╔═══██╗╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝██║  ██║
-   ██╔██╗ ██║██║   ██║   ██║   ██║   ██║██████╔╝██║     ███████║
-   ██║╚██╗██║██║   ██║   ██║   ██║   ██║██╔══██╗██║     ██╔══██║
-   ██║ ╚████║╚██████╔╝   ██║   ╚██████╔╝██║  ██║╚██████╗██║  ██║
-   ╚═╝  ╚═══╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝
-```
+  
 
 # notorch — neural networks in pure C | by Arianna Method
 
@@ -840,7 +831,7 @@ start here. these are the canonical builds: Karpathy ports to prove the pipeline
 
 the appendix. these aren't notorch — they're larger Arianna Method engines that use notorch where they need a tensor/autograd backend, and keep their own physics on top.
 
-- [**Arianna**](https://github.com/ariannamethod/arianna.c) — Arianna.
+- [**Arianna**](https://github.com/ariannamethod/arianna.c) — Arianna in C.
 - [**WTForacle**](https://github.com/ariannamethod/WTForacle) — SmolLM2-360M Q4_0, a single Go binary that runs on notorch through cgo. first organism on the packed CPU matvec: weights kept packed via `nt_qmatvec`, no f32 blow-up — the obkatka cut RSS 1.6 GB → 588 MB. charismatic, hand-written dataset.
 - [**doe**](https://github.com/ariannamethod/doe) — Democracy of Experts (Janus). wraps any GGUF read-only and grows a living Hebbian LoRA **parliament** on top of it (θ = ε + γ + αδ): experts vote per token, are born by mitosis and die by apoptosis. notorch is its Hebbian training substrate — and now its packed inference matvec too: weights stay packed via `nt_qmatvec` (vendored inline, single file), no f32 blow-up — RSS ×2.27 on a 360M personality. our classic.
 - [**postgpt**](https://github.com/ariannamethod/postgpt) — the metaweight seed of this whole lineage (SPA and RRPRAM flowed from here). Zero-dependency runtime; its training loop now runs on notorch through a small `ariannamethod/` ctypes shim — the dual-attention (Content QK^T + RRPRAM) graph on the notorch tape, trained with the real Chuck. PyTorch evicted.
@@ -963,3 +954,13 @@ just: `cc -O2 notorch.c your_model.c -lm -o train && ./train`
 go build something.
 
 > *"the patterns were always there. we just needed the right language to express them."*
+
+
+```
+   ███╗   ██╗ ██████╗ ████████╗ ██████╗ ██████╗  ██████╗██╗  ██╗
+   ████╗  ██║██╔═══██╗╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝██║  ██║
+   ██╔██╗ ██║██║   ██║   ██║   ██║   ██║██████╔╝██║     ███████║
+   ██║╚██╗██║██║   ██║   ██║   ██║   ██║██╔══██╗██║     ██╔══██║
+   ██║ ╚████║╚██████╔╝   ██║   ╚██████╔╝██║  ██║╚██████╗██║  ██║
+   ╚═╝  ╚═══╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝
+```  
