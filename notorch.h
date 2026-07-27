@@ -528,7 +528,8 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
 // the activation to per-block int8 and dots it against the packed weights with
 // INTEGER accumulation (SDOT/VNNI-friendly). APPROXIMATE: a little accuracy traded
 // for speed; nt_qmatvec (f32 dequant) stays the exact reference. dtype = GGUF type
-// code. Returns 0 on success, -1 if no int8 kernel for the dtype yet.
+// code: Q4_0 (2), Q8_0 (8), Q6_K (14 — k must be a multiple of 256, the others need 32).
+// Returns 0 on success, -1 if no int8 kernel for the dtype yet.
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k);
 

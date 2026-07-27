@@ -5422,16 +5422,109 @@ static void nt_q8_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #endif
 
+// Q6_K int8-dot rows: 210 B/256 vals against the per-32 int8 activation.
+// The two block grids line up, which is what makes this path exact-by-subblock: a weight
+// sub-scale covers 16 values, an activation block covers 32, and 16j..16j+15 always sits
+// inside activation block j/2 — never straddles. So the integer accumulator is per weight
+// sub-block, and d * sc[j] * da[j/2] is applied once after it, never per value.
+// A group of 32 consecutive positions therefore shares ONE activation scale and spans
+// exactly TWO sub-scales; _mm256_maddubs_epi16 splits along 128-bit lanes, i.e. exactly on
+// that 16/16 boundary, so one instruction covers the group and its halves fall out already
+// separated. Sign trick as in the Q4_0 path: |w| is unsigned-safe because Q6 lands in
+// [-32,31], and |w|*|x| <= 32*127, two of them still clear int16.
+#if defined(__AVX2__) && defined(__FMA__)
+static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 256;
+    const __m256i m4 = _mm256_set1_epi8(0x0F), m3 = _mm256_set1_epi8(3),
+                  b32 = _mm256_set1_epi8(32), ones = _mm256_set1_epi16(1);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 210;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 210, *ql = b, *qh = b + 128;
+            const int8_t *sc = (const int8_t *)(b + 192);
+            float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
+            const int8_t *qab = qa + (long)blk * 256;
+            const float  *dab = da + (long)blk * 8;
+            for (int n = 0; n < 256; n += 128) {
+                const uint8_t *qlh = ql + (n / 128) * 64, *qhh = qh + (n / 128) * 32;
+                __m256i qhv = _mm256_loadu_si256((const __m256i *)qhh);
+                for (int g = 0; g < 4; g++) {
+                    __m256i qlv = _mm256_loadu_si256((const __m256i *)(qlh + (g & 1) * 32));
+                    __m256i lo  = (g < 2) ? _mm256_and_si256(qlv, m4)
+                                          : _mm256_and_si256(_mm256_srli_epi16(qlv, 4), m4);
+                    __m256i hi2 = _mm256_and_si256(_mm256_srli_epi16(qhv, 2 * g), m3);
+                    __m256i w   = _mm256_sub_epi8(_mm256_or_si256(lo, _mm256_slli_epi16(hi2, 4)), b32);
+                    __m256i xv  = _mm256_loadu_si256((const __m256i *)(qab + n + g * 32));
+                    __m256i p   = _mm256_maddubs_epi16(_mm256_sign_epi8(w, w),
+                                                       _mm256_sign_epi8(xv, w));
+                    __m256i s32 = _mm256_madd_epi16(p, ones);
+                    __m128i l0 = _mm256_castsi256_si128(s32);          /* positions  0..15 */
+                    __m128i l1 = _mm256_extracti128_si256(s32, 1);     /* positions 16..31 */
+                    l0 = _mm_hadd_epi32(l0, l0); l0 = _mm_hadd_epi32(l0, l0);
+                    l1 = _mm_hadd_epi32(l1, l1); l1 = _mm_hadd_epi32(l1, l1);
+                    int j0 = n / 16 + g * 2;
+                    acc += d * dab[(n + g * 32) / 32]
+                         * ((float)sc[j0]     * (float)_mm_cvtsi128_si32(l0)
+                          + (float)sc[j0 + 1] * (float)_mm_cvtsi128_si32(l1));
+                }
+            }
+        }
+        out[row] = acc;
+    }
+}
+#else
+static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 256;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 210;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 210, *ql = b, *qh = b + 128;
+            const int8_t *sc = (const int8_t *)(b + 192);
+            float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
+            const int8_t *qab = qa + (long)blk * 256;
+            const float  *dab = da + (long)blk * 8;
+            int32_t ssum[16];
+            for (int j = 0; j < 16; j++) ssum[j] = 0;
+            for (int n = 0; n < 256; n += 128) {
+                const uint8_t *qlh = ql + (n / 128) * 64, *qhh = qh + (n / 128) * 32;
+                int base = (n / 128) * 8;
+                for (int l = 0; l < 32; l++) {
+                    int is = l / 16;
+                    int q1 = (int)((qlh[l]      & 0x0F) | (((qhh[l] >> 0) & 3) << 4)) - 32;
+                    int q2 = (int)((qlh[l + 32] & 0x0F) | (((qhh[l] >> 2) & 3) << 4)) - 32;
+                    int q3 = (int)((qlh[l]      >> 4)   | (((qhh[l] >> 4) & 3) << 4)) - 32;
+                    int q4 = (int)((qlh[l + 32] >> 4)   | (((qhh[l] >> 6) & 3) << 4)) - 32;
+                    ssum[base + is + 0] += q1 * (int)qab[n + l];
+                    ssum[base + is + 2] += q2 * (int)qab[n + l + 32];
+                    ssum[base + is + 4] += q3 * (int)qab[n + l + 64];
+                    ssum[base + is + 6] += q4 * (int)qab[n + l + 96];
+                }
+            }
+            for (int j = 0; j < 16; j++)
+                acc += d * (float)sc[j] * dab[j / 2] * (float)ssum[j];
+        }
+        out[row] = acc;
+    }
+}
+#endif
+
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k) {
-    if ((dtype != 2 && dtype != 8) || (k % 32)) return -1;   /* Q4_0 and Q8_0 */
+    if (dtype != 2 && dtype != 8 && dtype != 14) return -1;  /* Q4_0, Q8_0, Q6_K */
+    if (k % 32) return -1;
+    if (dtype == 14 && (k % 256)) return -1;
     int nb = k / 32;
     int8_t *qa = (int8_t *)malloc((size_t)k);
     float  *da = (float *)malloc((size_t)nb * sizeof(float));
     if (!qa || !da) { free(qa); free(da); return -1; }
     nt_quant_act_q8(x, k, qa, da);
-    if (dtype == 2) nt_q4_0_rows_i8(out, Wq, qa, da, 0, m, k);
-    else            nt_q8_0_rows_i8(out, Wq, qa, da, 0, m, k);
+    if (dtype == 2)       nt_q4_0_rows_i8(out, Wq, qa, da, 0, m, k);
+    else if (dtype == 8)  nt_q8_0_rows_i8(out, Wq, qa, da, 0, m, k);
+    else                  nt_q6_k_rows_i8(out, Wq, qa, da, 0, m, k);
     free(qa); free(da);
     return 0;
 }
