@@ -13,6 +13,37 @@ Newest entries on top.
 
 ---
 
+## 2026-07-27 — `nt_qmatvec_i8` covers Q8_0 (int8-activation matvec for the Q8 shape)
+
+`nt_qmatvec_i8` (`notorch.c:5338`) accepted only Q4_0, so every Q8_0 decoder fell
+through to the exact per-block dot. Q8_0 is the cheaper case for this path: the block
+is a f16 scale followed by 32 raw int8 weights, so no nibble unpacking is needed —
+activation and weight meet as int8 and accumulate in int32.
+
+- `nt_q8_0_rows_i8` (`notorch.c:5284` NEON dot-product / `notorch.c:5310` scalar):
+  per row, per 32-block, two `vdotq_s32` over `vld1q_s8` halves, result scaled by
+  `d_w * d_a`. Scalar branch is the same arithmetic in a plain int loop.
+- dispatcher guard widened from `dtype != 2` to `(dtype != 2 && dtype != 8)`; the
+  `k % 32` requirement is unchanged.
+
+Proof (neo, Accelerate, real tensors from a 500M SmolVLM2 Q8_0 GGUF, deterministic
+activation, same input to both kernels; agreement measured against the exact
+`nt_qmatvec`):
+
+| tensor | shape | rel L2 vs exact | speedup |
+|---|---|---|---|
+| `blk.0.attn_q.weight` | [960,960] | 0.0027 | 4.33× |
+| `blk.0.ffn_gate.weight` | [960,2560] | 0.0036 | 21.23× |
+| `blk.15.ffn_down.weight` | [2560,960] | 0.0038 | 21.15× |
+
+Both branches verified: built with dot-product intrinsics and again with `-march=armv8-a`
+(scalar path) — identical results to the last digit (`max|diff| 0.033519`,
+`rel_L2 0.003554` on `blk.0.ffn_gate.weight`). Guard checked from the other side: a
+Q4_K tensor (`dtype=12`) returns -1 while the exact kernel returns 0. The kernel stays
+documented as approximate; `nt_qmatvec` remains the exact reference.
+
+---
+
 ## 2026-07-20 — close the alloc-overflow residual: nt_conv2d geometry guard + resonance size_t
 
 The `nt_tensor_new` root pass named two same-class residuals; both closed here.
