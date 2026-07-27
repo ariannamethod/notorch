@@ -50,6 +50,30 @@ int main(void) {
     /* dtype/shape guards */
     printf("  guard k%%256!=0 -> %d (want -1)\n", nt_qmatvec_i8(y_i8, W, 14, x, m, 2048 - 32));
     printf("  guard dtype 12  -> %d (want -1)\n", nt_qmatvec_i8(y_i8, W, 12, x, m, k));
+
+    /* Threading: rows are disjoint, so the fan-out must be bit-identical to one thread.
+     * The floor is cached on first use, so the two sides are compared ACROSS runs via a
+     * checksum — run once with NT_QMV_THREAD_MIN=1 and once with a huge floor. m*k here
+     * clears the default 4M floor so the threaded path is the one under test. */
+    const int mb = 2048;
+    uint8_t *WB = malloc((size_t)mb * nb * 210);
+    float *yb = malloc((size_t)mb * sizeof(float));
+    if (WB && yb) {
+        for (long i = 0; i < (long)mb * nb; i++) {
+            uint8_t *b = WB + i * 210;
+            for (int j = 0; j < 192; j++) b[j] = (uint8_t)(rand() & 0xFF);
+            for (int j = 0; j < 16; j++) b[192 + j] = (uint8_t)(rand() % 96 + 1);
+            b[208] = 0x00; b[209] = 0x20;
+        }
+        if (nt_qmatvec_i8(yb, WB, 14, x, mb, k) == 0) {
+            double s = 0, mxv = 0;
+            for (int i = 0; i < mb; i++) { s += yb[i]; if (fabs(yb[i]) > mxv) mxv = fabs(yb[i]); }
+            const char *e = getenv("NT_QMV_THREAD_MIN");
+            printf("  threaded m=%d k=%d (floor=%s): checksum %.9f max %.9f\n",
+                   mb, k, e ? e : "default 4M", s, mxv);
+        }
+    }
+    free(WB); free(yb);
     free(W); free(x); free(y_ref); free(y_i8);
     return (num / den) < 0.02 ? 0 : 2;
 }

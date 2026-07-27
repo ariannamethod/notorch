@@ -5512,6 +5512,24 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #endif
 
+/* Rows are independent and write disjoint out[], exactly as in nt_qmatvec, so the i8 path
+ * fans out the same way and under the same NT_QMV_THREAD_MIN floor. The activation is
+ * quantized ONCE before the fan-out and shared read-only by every worker — it is per-call
+ * state, not per-row. Without this a 151936-row head ran single-threaded and the integer
+ * kernel lost to the f32 one it was meant to replace. */
+typedef void (*nt_qrows_i8_fn)(float *, const uint8_t *, const int8_t *, const float *,
+                               int, int, int);
+typedef struct {
+    nt_qrows_i8_fn fn; float *out; const uint8_t *Wq;
+    const int8_t *qa; const float *da; int r0, r1, k;
+} nt_qjob_i8;
+
+static void *nt_qworker_i8(void *p) {
+    nt_qjob_i8 *j = (nt_qjob_i8 *)p;
+    j->fn(j->out, j->Wq, j->qa, j->da, j->r0, j->r1, j->k);
+    return NULL;
+}
+
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k) {
     if (dtype != 2 && dtype != 8 && dtype != 14) return -1;  /* Q4_0, Q8_0, Q6_K */
@@ -5522,9 +5540,38 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
     float  *da = (float *)malloc((size_t)nb * sizeof(float));
     if (!qa || !da) { free(qa); free(da); return -1; }
     nt_quant_act_q8(x, k, qa, da);
-    if (dtype == 2)       nt_q4_0_rows_i8(out, Wq, qa, da, 0, m, k);
-    else if (dtype == 8)  nt_q8_0_rows_i8(out, Wq, qa, da, 0, m, k);
-    else                  nt_q6_k_rows_i8(out, Wq, qa, da, 0, m, k);
+
+    nt_qrows_i8_fn fn = (dtype == 2) ? nt_q4_0_rows_i8
+                      : (dtype == 8) ? nt_q8_0_rows_i8
+                                     : nt_q6_k_rows_i8;
+    int nt = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (nt < 1) nt = 1;
+    if (nt > NT_QMV_MAX_THREADS) nt = NT_QMV_MAX_THREADS;
+    if (nt > m) nt = m;
+    static long thread_floor_i8 = -1;
+    if (thread_floor_i8 < 0) {
+        const char *e = getenv("NT_QMV_THREAD_MIN");
+        thread_floor_i8 = (e && atol(e) > 0) ? atol(e) : (4L << 20);
+    }
+    if (nt <= 1 || (long)m * k < thread_floor_i8) {
+        fn(out, Wq, qa, da, 0, m, k);
+        free(qa); free(da);
+        return 0;
+    }
+    pthread_t th[NT_QMV_MAX_THREADS];
+    nt_qjob_i8 jobs[NT_QMV_MAX_THREADS];
+    int per = (m + nt - 1) / nt, launched = 0;
+    for (int t = 0; t < nt; t++) {
+        int r0 = t * per, r1 = (r0 + per > m) ? m : r0 + per;
+        if (r0 >= m) break;
+        jobs[t] = (nt_qjob_i8){ fn, out, Wq, qa, da, r0, r1, k };
+        if (pthread_create(&th[t], NULL, nt_qworker_i8, &jobs[t]) != 0) {
+            fn(out, Wq, qa, da, r0, m, k);   /* create failed: run the rest inline */
+            break;
+        }
+        launched++;
+    }
+    for (int t = 0; t < launched; t++) pthread_join(th[t], NULL);
     free(qa); free(da);
     return 0;
 }
