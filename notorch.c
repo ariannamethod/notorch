@@ -5333,15 +5333,61 @@ static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #endif
 
+// Q8_0 int8-dot rows: packed weights (34 B/32) × pre-quantized int8 activation.
+// Block layout (per dequant_q8_0): 2 B f16 scale, then 32 raw int8 weights — the
+// weights are already integers, so unlike Q4_0 there is nothing to unpack: the
+// dot is int8 x int8 straight through, per-block result scaled by d_w * d_a.
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+static void nt_q8_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 32;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 34;
+        float acc = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 34;
+            float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            const int8_t *wq  = (const int8_t *)(blk + 2);
+            const int8_t *qab = qa + (long)b * 32;
+            int32x4_t s4 = vdupq_n_s32(0);
+            s4 = vdotq_s32(s4, vld1q_s8(wq),      vld1q_s8(qab));         // elems 0..15
+            s4 = vdotq_s32(s4, vld1q_s8(wq + 16), vld1q_s8(qab + 16));    // elems 16..31
+            acc += d_w * da[b] * (float)vaddvq_s32(s4);
+        }
+        out[row] = acc;
+    }
+}
+#else
+static void nt_q8_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 32;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 34;
+        float acc = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 34;
+            float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            const int8_t *wq  = (const int8_t *)(blk + 2);
+            const int8_t *qab = qa + (long)b * 32;
+            int32_t s = 0;
+            for (int i = 0; i < 32; i++) s += (int32_t)wq[i] * (int32_t)qab[i];
+            acc += d_w * da[b] * (float)s;
+        }
+        out[row] = acc;
+    }
+}
+#endif
+
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k) {
-    if (dtype != 2 || (k % 32)) return -1;   /* Phase 2b: Q4_0 only for now */
+    if ((dtype != 2 && dtype != 8) || (k % 32)) return -1;   /* Q4_0 and Q8_0 */
     int nb = k / 32;
     int8_t *qa = (int8_t *)malloc((size_t)k);
     float  *da = (float *)malloc((size_t)nb * sizeof(float));
     if (!qa || !da) { free(qa); free(da); return -1; }
     nt_quant_act_q8(x, k, qa, da);
-    nt_q4_0_rows_i8(out, Wq, qa, da, 0, m, k);
+    if (dtype == 2) nt_q4_0_rows_i8(out, Wq, qa, da, 0, m, k);
+    else            nt_q8_0_rows_i8(out, Wq, qa, da, 0, m, k);
     free(qa); free(da);
     return 0;
 }
