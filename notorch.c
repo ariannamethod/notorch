@@ -467,23 +467,6 @@ int nt_tape_param_frozen(nt_tensor* param) {
     return idx;
 }
 
-// Find tape entry by tensor pointer
-static int tape_find(nt_tensor* t) {
-    if (!t) return -1;
-    for (int i = g_tape.count - 1; i >= 0; i--)
-        if (g_tape.entries[i].output && g_tape.entries[i].output->data == t->data)
-            return i;
-    return -1;
-}
-
-// Ensure tensor is on tape (record as leaf if not)
-static int tape_ensure(nt_tensor* t) {
-    if (!t || !g_tape.active) return -1;
-    int idx = tape_find(t);
-    if (idx >= 0) return idx;
-    return nt_tape_record(t, NT_OP_NONE, -1, -1, 0);
-}
-
 // Accumulate gradient into a tape entry
 static void tape_acc_grad(int idx, const float* grad, int len) {
     if (idx < 0 || idx >= g_tape.count) return;
@@ -947,8 +930,8 @@ void nt_tape_backward(int loss_idx) {
                 int T = (int)e->aux;
                 int D = (int)e->aux2;
                 int wte_rows = pwte->output->ndim >= 2 ? pwte->output->shape[0] : pwte->output->len / D;
-                int seqemb_done_gpu = 0;
 #ifdef USE_CUDA
+                int seqemb_done_gpu = 0;
                 /* GPU bw — only when no WPE branch (parent2 < 0). WPE handled CPU. */
                 if (g_use_gpu && e->parent2 < 0) {
                     float* d_dwte = gpu_scratch(3, pwte->output->len);
@@ -1442,8 +1425,8 @@ void nt_tape_backward(int loss_idx) {
                 float* dx  = (float*)calloc((long)T * n_embd, sizeof(float));
                 float* dv  = (float*)calloc((long)T * out_dim, sizeof(float));
 
-                int rrlr_bw_gpu = 0;
 #ifdef USE_CUDA
+                int rrlr_bw_gpu = 0;
                 if (g_use_gpu && dwr && dx && dv) {
                     /* Recompute U and scores on GPU (forward did not persist
                      * across tape boundary cleanly — this is cheap: H·T·R + H·T·T floats). */
@@ -3008,16 +2991,7 @@ int nt_nan_guard_check(nt_nan_guard* guard) {
 // PROFILER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-#include <sys/time.h>
-
 static nt_profiler g_profiler = {0};
-static long g_alloc_bytes = 0;
-
-static double now_ms(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000.0 + tv.tv_usec / 1000.0;
-}
 
 void nt_profiler_enable(void)  { g_profiler.enabled = 1; }
 void nt_profiler_disable(void) { g_profiler.enabled = 0; }
@@ -4699,7 +4673,7 @@ nt_dataloader* nt_dataloader_create(const char* text_file, nt_bpe* bpe,
     fseek(f, 0, SEEK_SET);
     char* text = (char*)malloc(fsize + 1);
     if (!text) { fclose(f); return NULL; }
-    fread(text, 1, fsize, f);
+    if (fread(text, 1, (size_t)fsize, f) != (size_t)fsize) { free(text); fclose(f); return NULL; }
     text[fsize] = 0;
     fclose(f);
 
@@ -4743,7 +4717,9 @@ nt_dataloader* nt_dataloader_from_tokens(const char* token_file,
     if (n_tokens < seq_len + 1) { fclose(f); return NULL; }
     int* tokens = (int*)malloc(n_tokens * sizeof(int));
     if (!tokens) { fclose(f); return NULL; }
-    fread(tokens, sizeof(int), n_tokens, f);
+    if (fread(tokens, sizeof(int), (size_t)n_tokens, f) != (size_t)n_tokens) {
+        free(tokens); fclose(f); return NULL;
+    }
     fclose(f);
 
     nt_dataloader* dl = (nt_dataloader*)calloc(1, sizeof(nt_dataloader));
@@ -4839,27 +4815,32 @@ nt_tensor** nt_load(const char* path, int* n_params) {
     if (!f) return NULL;
     uint32_t magic;
     int32_t n;
-    fread(&magic, 4, 1, f);
-    if (magic != NT_MAGIC) { fclose(f); return NULL; }
-    fread(&n, 4, 1, f);
-    if (n <= 0 || n > NT_TAPE_MAX_PARAMS) { fclose(f); return NULL; }
+    if (fread(&magic, 4, 1, f) != 1 || magic != NT_MAGIC) { fclose(f); return NULL; }
+    if (fread(&n, 4, 1, f) != 1 || n <= 0 || n > NT_TAPE_MAX_PARAMS) { fclose(f); return NULL; }
 
     nt_tensor** params = (nt_tensor**)calloc(n, sizeof(nt_tensor*));
     if (!params) { fclose(f); return NULL; }
 
     for (int i = 0; i < n; i++) {
         int32_t ndim;
-        fread(&ndim, 4, 1, f);
-        if (ndim < 0 || ndim > NT_MAX_DIMS) { fclose(f); *n_params = i; return params; }
+        if (fread(&ndim, 4, 1, f) != 1 ||
+            ndim < 0 || ndim > NT_MAX_DIMS) { fclose(f); *n_params = i; return params; }
         int shape[NT_MAX_DIMS];
         for (int d = 0; d < ndim; d++) {
             int32_t s;
-            fread(&s, 4, 1, f);
+            if (fread(&s, 4, 1, f) != 1) { fclose(f); *n_params = i; return params; }
             shape[d] = s;
         }
         params[i] = nt_tensor_new_shape(shape, ndim);
         if (!params[i]) { fclose(f); *n_params = i; return params; }
-        fread(params[i]->data, sizeof(float), params[i]->len, f);
+        /* A truncated payload leaves a tensor of calloc-zeros that looks valid to
+         * the caller — drop it and report the count that actually loaded. */
+        if (fread(params[i]->data, sizeof(float), (size_t)params[i]->len, f)
+                != (size_t)params[i]->len) {
+            nt_tensor_free(params[i]);
+            params[i] = NULL;
+            fclose(f); *n_params = i; return params;
+        }
     }
     fclose(f);
     *n_params = n;
