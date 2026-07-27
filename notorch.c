@@ -5133,6 +5133,25 @@ static void nt_q4_k_rows(float *out, const uint8_t *W, const float *x,
 
 // Q6_K: 210 B/block, 256 vals — ql[128] qh[64] int8 scales[16] + f16 d.
 // Lifted from the proven packed q6k_rows in examples/infer_gguf_metal.c.
+//
+// AVX2/FMA path (Colibri T5c): the scalar unpack costs ~3.3 cycles/weight, which on a
+// 151936x2048 lm_head is ~82 ms/token on 6 cores — the head, not memory, becomes the
+// bottleneck (measured: 4.65 t/s with the scalar kernel vs 7.53 with an AVX2 int8 head,
+// same box, same input, CPU 553%). Eight values per lane, four sub-groups accumulated
+// separately and folded by their int8 sub-scale once per 16-value group, so the scale
+// application is identical to the scalar order. The scalar body is kept verbatim under
+// #else for ARM and non-AVX2 x86.
+#if defined(__AVX2__) && defined(__FMA__)
+#include <immintrin.h>
+static inline float nt_hsum256_ps(__m256 v) {
+    __m128 lo = _mm256_castps256_ps128(v), hi = _mm256_extractf128_ps(v, 1);
+    lo = _mm_add_ps(lo, hi);
+    __m128 sh = _mm_movehl_ps(lo, lo); lo = _mm_add_ps(lo, sh);
+    sh = _mm_shuffle_ps(lo, lo, 0x1);  lo = _mm_add_ss(lo, sh);
+    return _mm_cvtss_f32(lo);
+}
+#endif
+
 static void nt_q6_k_rows(float *out, const uint8_t *W, const float *x,
                          int r0, int r1, int k) {
     int nb = k / 256;
@@ -5144,6 +5163,39 @@ static void nt_q6_k_rows(float *out, const uint8_t *W, const float *x,
             const int8_t *sc = (const int8_t *)(b + 192);
             float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
             const float *xb = x + (long)blk * 256;
+#if defined(__AVX2__) && defined(__FMA__)
+            for (int n = 0; n < 256; n += 128) {
+                const uint8_t *qlh = ql + (n / 128) * 64, *qhh = qh + (n / 128) * 32;
+                const int8_t *sch = sc + (n / 128) * 8;
+                const __m256i m4 = _mm256_set1_epi32(0x0F), m3 = _mm256_set1_epi32(3),
+                              b32 = _mm256_set1_epi32(32);
+                for (int is = 0; is < 2; is++) {          /* is = l/16, 16 values per sub-scale */
+                    __m256 a1 = _mm256_setzero_ps(), a2 = _mm256_setzero_ps(),
+                           a3 = _mm256_setzero_ps(), a4 = _mm256_setzero_ps();
+                    for (int l = is * 16; l < is * 16 + 16; l += 8) {
+                        __m256i lo = _mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i *)(qlh + l)));
+                        __m256i hi = _mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i *)(qlh + l + 32)));
+                        __m256i hb = _mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i *)(qhh + l)));
+                        __m256i q1 = _mm256_sub_epi32(_mm256_or_si256(_mm256_and_si256(lo, m4),
+                                     _mm256_slli_epi32(_mm256_and_si256(hb, m3), 4)), b32);
+                        __m256i q2 = _mm256_sub_epi32(_mm256_or_si256(_mm256_and_si256(hi, m4),
+                                     _mm256_slli_epi32(_mm256_and_si256(_mm256_srli_epi32(hb, 2), m3), 4)), b32);
+                        __m256i q3 = _mm256_sub_epi32(_mm256_or_si256(_mm256_srli_epi32(lo, 4),
+                                     _mm256_slli_epi32(_mm256_and_si256(_mm256_srli_epi32(hb, 4), m3), 4)), b32);
+                        __m256i q4 = _mm256_sub_epi32(_mm256_or_si256(_mm256_srli_epi32(hi, 4),
+                                     _mm256_slli_epi32(_mm256_and_si256(_mm256_srli_epi32(hb, 6), m3), 4)), b32);
+                        a1 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(q1), _mm256_loadu_ps(xb + n + l),      a1);
+                        a2 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(q2), _mm256_loadu_ps(xb + n + l + 32), a2);
+                        a3 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(q3), _mm256_loadu_ps(xb + n + l + 64), a3);
+                        a4 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(q4), _mm256_loadu_ps(xb + n + l + 96), a4);
+                    }
+                    acc += d * ((float)sch[is + 0] * nt_hsum256_ps(a1)
+                              + (float)sch[is + 2] * nt_hsum256_ps(a2)
+                              + (float)sch[is + 4] * nt_hsum256_ps(a3)
+                              + (float)sch[is + 6] * nt_hsum256_ps(a4));
+                }
+            }
+#else
             for (int n = 0; n < 256; n += 128) {
                 const uint8_t *qlh = ql + (n / 128) * 64, *qhh = qh + (n / 128) * 32;
                 const int8_t *sch = sc + (n / 128) * 8;
@@ -5159,6 +5211,7 @@ static void nt_q6_k_rows(float *out, const uint8_t *W, const float *x,
                     acc += d * sch[is + 6] * q4 * xb[n + l + 96];
                 }
             }
+#endif
         }
         out[row] = acc;
     }
