@@ -5246,11 +5246,13 @@ typedef struct {
     int r0, r1, k;
 } nt_qjob;
 
+#ifndef _OPENMP   /* only the pthread fan-out uses a worker entry point */
 static void *nt_qworker(void *p) {
     nt_qjob *j = (nt_qjob *)p;
     j->fn(j->out, j->Wq, j->x, j->r0, j->r1, j->k);
     return NULL;
 }
+#endif
 
 // Packed quantized matvec, parallelized across rows (rows are independent and
 // write disjoint out[]). dtype = GGUF type code. Returns 0 ok, -1 if the dtype
@@ -5280,6 +5282,23 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
     }
     if (nt <= 1 || (long)m * k < thread_floor) { fn(out, Wq, x, 0, m, k); return 0; }
 
+#ifdef _OPENMP
+    /* When the consumer is an OpenMP program, private pthreads are actively harmful, not
+     * merely redundant: libgomp parks its idle team in a SPIN wait by default, so six
+     * spinning OpenMP threads and six pthreads land on six cores and fight. Measured on a
+     * 151936x2048 head inside such an engine: 23.19 ms/tok with private pthreads against
+     * 12.47 ms once the spinning stopped — the kernel was never the problem, the
+     * oversubscription was. Reusing the caller's team removes the cause instead of asking
+     * every consumer to remember OMP_WAIT_POLICY=passive. Row ranges are identical to the
+     * pthread split, so results are bit-identical. */
+    int per_omp = (m + nt - 1) / nt;
+    #pragma omp parallel for schedule(static)
+    for (int t = 0; t < nt; t++) {
+        int r0 = t * per_omp, r1 = (r0 + per_omp > m) ? m : r0 + per_omp;
+        if (r0 < m) fn(out, Wq, x, r0, r1, k);
+    }
+    return 0;
+#else
     pthread_t th[NT_QMV_MAX_THREADS];
     nt_qjob   jobs[NT_QMV_MAX_THREADS];
     int per = (m + nt - 1) / nt, launched = 0;
@@ -5295,6 +5314,7 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
     }
     for (int t = 0; t < launched; t++) pthread_join(th[t], NULL);
     return 0;
+#endif
 }
 
 // ── int8 dynamic-activation-quant matvec (the llama.cpp / MNN fast path) ─────────
@@ -5524,11 +5544,13 @@ typedef struct {
     const int8_t *qa; const float *da; int r0, r1, k;
 } nt_qjob_i8;
 
+#ifndef _OPENMP   /* only the pthread fan-out uses a worker entry point */
 static void *nt_qworker_i8(void *p) {
     nt_qjob_i8 *j = (nt_qjob_i8 *)p;
     j->fn(j->out, j->Wq, j->qa, j->da, j->r0, j->r1, j->k);
     return NULL;
 }
+#endif
 
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k) {
@@ -5558,6 +5580,17 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
         free(qa); free(da);
         return 0;
     }
+#ifdef _OPENMP
+    /* Same reasoning as nt_qmatvec: reuse the caller's OpenMP team rather than opening a
+     * second, competing set of threads. The activation stays quantized once, before the
+     * region, and is read-only inside it. */
+    int per_omp = (m + nt - 1) / nt;
+    #pragma omp parallel for schedule(static)
+    for (int t = 0; t < nt; t++) {
+        int r0 = t * per_omp, r1 = (r0 + per_omp > m) ? m : r0 + per_omp;
+        if (r0 < m) fn(out, Wq, qa, da, r0, r1, k);
+    }
+#else
     pthread_t th[NT_QMV_MAX_THREADS];
     nt_qjob_i8 jobs[NT_QMV_MAX_THREADS];
     int per = (m + nt - 1) / nt, launched = 0;
@@ -5572,6 +5605,7 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
         launched++;
     }
     for (int t = 0; t < launched; t++) pthread_join(th[t], NULL);
+#endif
     free(qa); free(da);
     return 0;
 }
