@@ -5644,6 +5644,32 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #endif
 
+/* Pick the i8 row kernel for a dtype, or NULL. Shared by the fan-out entry and the
+ * caller-parallel one so the two can never drift apart. */
+static nt_qrows_i8_fn nt_qrows_i8_for(int dtype, int k) {
+    if (k % 32) return NULL;
+    switch (dtype) {
+    case 2:  return nt_q4_0_rows_i8;
+    case 8:  return nt_q8_0_rows_i8;
+    case 12: return (k % 256) ? NULL : nt_q4_k_rows_i8;
+    case 14: return (k % 256) ? NULL : nt_q6_k_rows_i8;
+    default: return NULL;
+    }
+}
+
+void nt_quant_act(const float *x, int k, int8_t *qa, float *da) {
+    nt_quant_act_q8(x, k, qa, da);
+}
+
+int nt_qmatvec_i8_rows(float *out, const uint8_t *Wq, int dtype,
+                       const int8_t *qa, const float *da, int r0, int r1, int k) {
+    nt_qrows_i8_fn fn = nt_qrows_i8_for(dtype, k);
+    if (!fn) return -1;
+    if (k / 32 > NT_QMV_ASUM_MAX) return -1;
+    if (r1 > r0) fn(out, Wq, qa, da, r0, r1, k);
+    return 0;
+}
+
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k) {
     if (dtype != 2 && dtype != 8 && dtype != 12 && dtype != 14) return -1;  /* Q4_0/Q8_0/Q4_K/Q6_K */

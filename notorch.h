@@ -524,6 +524,19 @@ void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n);
 int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
                const float *x, int m, int k);
 
+// Quantize one activation row to the layout the i8 matvecs expect: per-32 symmetric int8.
+// qa needs k bytes, da needs k/32 floats. Split out so a consumer that dots the SAME row
+// against many matrices — a MoE layer against its top-k experts — quantizes it once.
+void nt_quant_act(const float *x, int k, int8_t *qa, float *da);
+
+// Row-range packed matvec against a PRE-quantized activation, with NO threading inside:
+// the caller owns the parallel region. nt_qmatvec_i8 forks per call, which is right for one
+// big matrix and wrong for a MoE — 3 matmuls x 8 experts x 48 layers is 1152 fan-outs per
+// token. With this entry the engine opens one region per layer and hands out row ranges.
+// Returns 0, or -1 if the dtype has no i8 kernel or the shape does not fit it.
+int nt_qmatvec_i8_rows(float *out, const uint8_t *Wq, int dtype,
+                       const int8_t *qa, const float *da, int r0, int r1, int k);
+
 // Threading floor for the packed matvecs, in weight elements (m*k). Below it a call stays
 // single-threaded, because fan-out costs more than it saves on small shapes. The default
 // 4M was measured on a 360M-class decoder; other shapes differ by an order of magnitude —
