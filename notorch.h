@@ -524,11 +524,20 @@ void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n);
 int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
                const float *x, int m, int k);
 
+// Threading floor for the packed matvecs, in weight elements (m*k). Below it a call stays
+// single-threaded, because fan-out costs more than it saves on small shapes. The default
+// 4M was measured on a 360M-class decoder; other shapes differ by an order of magnitude —
+// a 30B MoE expert is 768x2048 = 1.57M and sits UNDER the default, so an engine that does
+// not lower the floor runs every expert on one core. Consumers set it once at startup;
+// NT_QMV_THREAD_MIN still works and is read only if the API was never called.
+void nt_qmv_set_thread_min(long elems);
+
 // int8 dynamic-activation-quant matvec — the llama.cpp / MNN fast path. Quantizes
 // the activation to per-block int8 and dots it against the packed weights with
 // INTEGER accumulation (SDOT/VNNI-friendly). APPROXIMATE: a little accuracy traded
 // for speed; nt_qmatvec (f32 dequant) stays the exact reference. dtype = GGUF type
-// code: Q4_0 (2), Q8_0 (8), Q6_K (14 — k must be a multiple of 256, the others need 32).
+// code: Q4_0 (2), Q8_0 (8), Q4_K (12), Q6_K (14). The K-quants need k divisible by 256,
+// the others by 32.
 // Returns 0 on success, -1 if no int8 kernel for the dtype yet.
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k);
