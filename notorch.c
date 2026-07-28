@@ -5240,6 +5240,19 @@ static nt_qrows_fn nt_qrows_for(int dtype, int k) {
 }
 
 #define NT_QMV_MAX_THREADS 16
+#define NT_QMV_ASUM_MAX   2048   /* k <= 65536: activation-sum scratch stays on the stack */
+
+/* Threading floor, shared by both packed matvecs. The API wins over the environment: a
+ * consumer that knows its own shapes should not have to export a variable to be fast. */
+static long g_qmv_thread_min = -1;
+void nt_qmv_set_thread_min(long elems) { g_qmv_thread_min = (elems > 0) ? elems : (4L << 20); }
+static long nt_qmv_thread_floor(void) {
+    if (g_qmv_thread_min < 0) {
+        const char *e = getenv("NT_QMV_THREAD_MIN");
+        g_qmv_thread_min = (e && atol(e) > 0) ? atol(e) : (4L << 20);
+    }
+    return g_qmv_thread_min;
+}
 
 typedef struct {
     nt_qrows_fn fn; float *out; const uint8_t *Wq; const float *x;
@@ -5275,12 +5288,7 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
      * it, so its whole decode stays single-threaded. Default is unchanged;
      * NT_QMV_THREAD_MIN lets a consumer set the floor for its own shape after
      * measuring (the eye engine runs at 256K: 3.7 -> 7.3 tok/s, same output). */
-    static long thread_floor = -1;
-    if (thread_floor < 0) {
-        const char *e = getenv("NT_QMV_THREAD_MIN");
-        thread_floor = (e && atol(e) > 0) ? atol(e) : (4L << 20);
-    }
-    if (nt <= 1 || (long)m * k < thread_floor) { fn(out, Wq, x, 0, m, k); return 0; }
+    if (nt <= 1 || (long)m * k < nt_qmv_thread_floor()) { fn(out, Wq, x, 0, m, k); return 0; }
 
 #ifdef _OPENMP
     /* When the consumer is an OpenMP program, private pthreads are actively harmful, not
@@ -5552,30 +5560,111 @@ static void *nt_qworker_i8(void *p) {
 }
 #endif
 
+// Q4_K int8-dot rows: 144 B / 256 values against the per-32 int8 activation.
+// The two grids COINCIDE here — a Q4_K sub-block is 32 values and so is an activation
+// block — which makes the split exact and the bookkeeping simpler than Q6_K's 16/32 seam.
+// Per sub-block s the affine format gives w = d*ls*q - dmin*lm, so
+//     sum_p w*x  =  da[s] * ( d*ls * SUM(q*qa)  -  dmin*lm * SUM(qa) )
+// The minus term depends only on the activation, so SUM(qa) is precomputed once per call
+// and lifted straight out of the integer dot — no per-weight subtraction anywhere.
+// q is already unsigned [0,15], so _mm256_maddubs_epi16 applies directly with no sign
+// trick, and 15*127*2 = 3810 clears int16 with room to spare.
+#if defined(__AVX2__) && defined(__FMA__)
+static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 256, nsub = k / 32;
+    int32_t asum[NT_QMV_ASUM_MAX];
+    for (int s = 0; s < nsub; s++) {
+        const int8_t *p = qa + (long)s * 32;
+        int32_t t = 0;
+        for (int i = 0; i < 32; i++) t += p[i];
+        asum[s] = t;
+    }
+    const __m256i m4 = _mm256_set1_epi8(0x0F), ones = _mm256_set1_epi16(1);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 144;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 144;
+            float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+            float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
+            const uint8_t *sc = b + 4, *qs = b + 16;
+            for (int j = 0; j < 8; j++) {
+                uint8_t s6, m6; nt_get_scale_min_k4(j, sc, &s6, &m6);
+                int sub = blk * 8 + j;
+                __m256i qsv = _mm256_loadu_si256((const __m256i *)(qs + (j >> 1) * 32));
+                __m256i nib = (j & 1) ? _mm256_and_si256(_mm256_srli_epi16(qsv, 4), m4)
+                                      : _mm256_and_si256(qsv, m4);
+                __m256i av  = _mm256_loadu_si256((const __m256i *)(qa + (long)sub * 32));
+                __m256i p   = _mm256_maddubs_epi16(nib, av);          /* q unsigned, act signed */
+                __m256i s32 = _mm256_madd_epi16(p, ones);
+                __m128i lo = _mm256_castsi256_si128(s32);
+                lo = _mm_add_epi32(lo, _mm256_extracti128_si256(s32, 1));
+                lo = _mm_hadd_epi32(lo, lo); lo = _mm_hadd_epi32(lo, lo);
+                acc += da[sub] * (d * (float)s6 * (float)_mm_cvtsi128_si32(lo)
+                                - dmin * (float)m6 * (float)asum[sub]);
+            }
+        }
+        out[row] = acc;
+    }
+}
+#else
+static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 256, nsub = k / 32;
+    int32_t asum[NT_QMV_ASUM_MAX];
+    for (int s = 0; s < nsub; s++) {
+        const int8_t *p = qa + (long)s * 32;
+        int32_t t = 0;
+        for (int i = 0; i < 32; i++) t += p[i];
+        asum[s] = t;
+    }
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 144;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 144;
+            float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+            float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
+            const uint8_t *sc = b + 4, *qs = b + 16;
+            for (int j = 0; j < 8; j++) {
+                uint8_t s6, m6; nt_get_scale_min_k4(j, sc, &s6, &m6);
+                int sub = blk * 8 + j;
+                const uint8_t *qsp = qs + (j >> 1) * 32;
+                const int8_t  *qab = qa + (long)sub * 32;
+                int32_t dot = 0;
+                if (j & 1) for (int l = 0; l < 32; l++) dot += (int32_t)(qsp[l] >> 4)   * qab[l];
+                else       for (int l = 0; l < 32; l++) dot += (int32_t)(qsp[l] & 0x0F) * qab[l];
+                acc += da[sub] * (d * (float)s6 * (float)dot
+                                - dmin * (float)m6 * (float)asum[sub]);
+            }
+        }
+        out[row] = acc;
+    }
+}
+#endif
+
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k) {
-    if (dtype != 2 && dtype != 8 && dtype != 14) return -1;  /* Q4_0, Q8_0, Q6_K */
+    if (dtype != 2 && dtype != 8 && dtype != 12 && dtype != 14) return -1;  /* Q4_0/Q8_0/Q4_K/Q6_K */
     if (k % 32) return -1;
-    if (dtype == 14 && (k % 256)) return -1;
+    if ((dtype == 12 || dtype == 14) && (k % 256)) return -1;
+    if (k / 32 > NT_QMV_ASUM_MAX) return -1;      /* per-call activation sums are stack-held */
     int nb = k / 32;
     int8_t *qa = (int8_t *)malloc((size_t)k);
     float  *da = (float *)malloc((size_t)nb * sizeof(float));
     if (!qa || !da) { free(qa); free(da); return -1; }
     nt_quant_act_q8(x, k, qa, da);
 
-    nt_qrows_i8_fn fn = (dtype == 2) ? nt_q4_0_rows_i8
-                      : (dtype == 8) ? nt_q8_0_rows_i8
-                                     : nt_q6_k_rows_i8;
+    nt_qrows_i8_fn fn = (dtype == 2)  ? nt_q4_0_rows_i8
+                      : (dtype == 8)  ? nt_q8_0_rows_i8
+                      : (dtype == 12) ? nt_q4_k_rows_i8
+                                      : nt_q6_k_rows_i8;
     int nt = (int)sysconf(_SC_NPROCESSORS_ONLN);
     if (nt < 1) nt = 1;
     if (nt > NT_QMV_MAX_THREADS) nt = NT_QMV_MAX_THREADS;
     if (nt > m) nt = m;
-    static long thread_floor_i8 = -1;
-    if (thread_floor_i8 < 0) {
-        const char *e = getenv("NT_QMV_THREAD_MIN");
-        thread_floor_i8 = (e && atol(e) > 0) ? atol(e) : (4L << 20);
-    }
-    if (nt <= 1 || (long)m * k < thread_floor_i8) {
+    if (nt <= 1 || (long)m * k < nt_qmv_thread_floor()) {
         fn(out, Wq, qa, da, 0, m, k);
         free(qa); free(da);
         return 0;
