@@ -5589,20 +5589,38 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
             float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
             float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
             const uint8_t *sc = b + 4, *qs = b + 16;
-            for (int j = 0; j < 8; j++) {
-                uint8_t s6, m6; nt_get_scale_min_k4(j, sc, &s6, &m6);
-                int sub = blk * 8 + j;
-                __m256i qsv = _mm256_loadu_si256((const __m256i *)(qs + (j >> 1) * 32));
-                __m256i nib = (j & 1) ? _mm256_and_si256(_mm256_srli_epi16(qsv, 4), m4)
-                                      : _mm256_and_si256(qsv, m4);
-                __m256i av  = _mm256_loadu_si256((const __m256i *)(qa + (long)sub * 32));
-                __m256i p   = _mm256_maddubs_epi16(nib, av);          /* q unsigned, act signed */
-                __m256i s32 = _mm256_madd_epi16(p, ones);
-                __m128i lo = _mm256_castsi256_si128(s32);
-                lo = _mm_add_epi32(lo, _mm256_extracti128_si256(s32, 1));
-                lo = _mm_hadd_epi32(lo, lo); lo = _mm_hadd_epi32(lo, lo);
-                acc += da[sub] * (d * (float)s6 * (float)_mm_cvtsi128_si32(lo)
-                                - dmin * (float)m6 * (float)asum[sub]);
+            /* Four sub-blocks per pass. A per-sub-block horizontal reduction costs two
+             * dependent hadds plus an extract, and at 32 values per sub-block that drain
+             * dominates on the small matrices this body is made of (an expert is 768x2048;
+             * measured 41% of stream bandwidth against 59% for the 151936-row head, where
+             * the same drain amortises). One hadd cascade retires four sub-blocks instead
+             * of one, so the drain is paid 3 times per 4 instead of 8.
+             * The float accumulation ORDER is deliberately unchanged — contributions are
+             * still added sub-block by sub-block ascending — so this stays a pure integer
+             * re-order and the consumer's greedy vector must not move. */
+            for (int j = 0; j < 8; j += 4) {
+                __m256i s[4];
+                for (int u = 0; u < 4; u++) {
+                    int jj = j + u, sub = blk * 8 + jj;
+                    __m256i qsv = _mm256_loadu_si256((const __m256i *)(qs + (jj >> 1) * 32));
+                    __m256i nib = (jj & 1) ? _mm256_and_si256(_mm256_srli_epi16(qsv, 4), m4)
+                                           : _mm256_and_si256(qsv, m4);
+                    __m256i av  = _mm256_loadu_si256((const __m256i *)(qa + (long)sub * 32));
+                    s[u] = _mm256_madd_epi16(_mm256_maddubs_epi16(nib, av), ones);
+                }
+                __m256i h01 = _mm256_hadd_epi32(s[0], s[1]);
+                __m256i h23 = _mm256_hadd_epi32(s[2], s[3]);
+                __m256i h   = _mm256_hadd_epi32(h01, h23);
+                __m128i q4  = _mm_add_epi32(_mm256_castsi256_si128(h),
+                                            _mm256_extracti128_si256(h, 1));
+                int32_t dots[4];
+                _mm_storeu_si128((__m128i *)dots, q4);
+                for (int u = 0; u < 4; u++) {
+                    uint8_t s6, m6; nt_get_scale_min_k4(j + u, sc, &s6, &m6);
+                    int sub = blk * 8 + j + u;
+                    acc += da[sub] * (d * (float)s6 * (float)dots[u]
+                                    - dmin * (float)m6 * (float)asum[sub]);
+                }
             }
         }
         out[row] = acc;
