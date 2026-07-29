@@ -5641,22 +5641,21 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                                           _mm256_hadd_epi32(s[6], s[7]));
             __m256i sums = _mm256_add_epi32(_mm256_permute2x128_si256(A, B, 0x20),
                                             _mm256_permute2x128_si256(A, B, 0x31));
-            /* The scalar tail was eight iterations of two multiplies, a subtract and a
-             * multiply-add — comparable to the vector work of the whole block. Everything it
-             * needs is contiguous per block (da, asum, and the eight sub-scales), so the
-             * contributions are formed eight at a time. They are still SUMMED in ascending
-             * order afterwards: the multiply is vectorised, the accumulation order is not
-             * touched, so the result stays bit-identical. */
-            __m256 vdots = _mm256_cvtepi32_ps(sums);
-            __m256 vls = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i *)ls)));
-            __m256 vlm = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i *)lm)));
-            __m256 vda = _mm256_loadu_ps(da + blk * 8);
-            __m256 vas = _mm256_cvtepi32_ps(_mm256_loadu_si256((const __m256i *)(asum + blk * 8)));
-            __m256 t1  = _mm256_mul_ps(_mm256_set1_ps(d),    _mm256_mul_ps(vls, vdots));
-            __m256 t2  = _mm256_mul_ps(_mm256_set1_ps(dmin), _mm256_mul_ps(vlm, vas));
-            float contrib[8];
-            _mm256_storeu_ps(contrib, _mm256_mul_ps(vda, _mm256_sub_ps(t1, t2)));
-            for (int j = 0; j < 8; j++) acc += contrib[j];
+            /* The scalar tail stays scalar on purpose. GCC contracts
+             * d * scale * dot - dmin * min * asum into an FMA under -march=native, and that
+             * single rounding is part of every number this kernel has ever been accepted on.
+             * Intrinsics cannot express the compiler's contraction choice: a hand-vectorised
+             * tail was measured against this one and differed on 521 of 768 rows, worst 4.8e-4
+             * relative, which moved the perplexity of an untouched container in the fourth
+             * decimal while every argmax and every six-digit probe stayed put. The dots are
+             * vectorised because they are integers and exact; the float tail is not. */
+            int32_t dots[8];
+            _mm256_storeu_si256((__m256i *)dots, sums);
+            for (int j = 0; j < 8; j++) {
+                int sub = blk * 8 + j;
+                acc += da[sub] * (d * (float)ls[j] * (float)dots[j]
+                                - dmin * (float)lm[j] * (float)asum[sub]);
+            }
         }
         out[row] = acc;
     }
