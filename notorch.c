@@ -5604,30 +5604,48 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
              * The float accumulation ORDER is deliberately unchanged — contributions are
              * still added sub-block by sub-block ascending — so this stays a pure integer
              * re-order and the consumer's greedy vector must not move. */
-            for (int j = 0; j < 8; j += 4) {
-                __m256i s[4];
-                for (int u = 0; u < 4; u++) {
-                    int jj = j + u, sub = blk * 8 + jj;
-                    __m256i qsv = _mm256_loadu_si256((const __m256i *)(qs + (jj >> 1) * 32));
-                    __m256i nib = (jj & 1) ? _mm256_and_si256(_mm256_srli_epi16(qsv, 4), m4)
-                                           : _mm256_and_si256(qsv, m4);
-                    __m256i av  = _mm256_loadu_si256((const __m256i *)(qa + (long)sub * 32));
-                    s[u] = _mm256_madd_epi16(_mm256_maddubs_epi16(nib, av), ones);
-                }
-                __m256i h01 = _mm256_hadd_epi32(s[0], s[1]);
-                __m256i h23 = _mm256_hadd_epi32(s[2], s[3]);
-                __m256i h   = _mm256_hadd_epi32(h01, h23);
-                __m128i q4  = _mm_add_epi32(_mm256_castsi256_si128(h),
-                                            _mm256_extracti128_si256(h, 1));
-                int32_t dots[4];
-                _mm_storeu_si128((__m128i *)dots, q4);
-                for (int u = 0; u < 4; u++) {
-                    uint8_t s6, m6; nt_get_scale_min_k4(j + u, sc, &s6, &m6);
-                    int sub = blk * 8 + j + u;
-                    acc += da[sub] * (d * (float)s6 * (float)dots[u]
-                                    - dmin * (float)m6 * (float)asum[sub]);
-                }
+            /* Whole block in one pass. Two things the four-at-a-time form still paid for:
+             * qs was loaded EIGHT times though sub-blocks 2p and 2p+1 share one 32-byte load
+             * (low nibbles feed the even sub-block, high nibbles the odd one), and the 6-bit
+             * (scale,min) unpack sat inside the hot loop. Now: four loads, one unpack pass,
+             * and the eight sub-block dots land in the lanes of a single vector through one
+             * hadd tree instead of a drain per sub-block.
+             * The float accumulation order is unchanged — still ascending by sub-block — so
+             * this remains an integer re-order and the consumer's greedy vector must not move. */
+            uint8_t ls[8], lm[8];
+            for (int j = 0; j < 8; j++) nt_get_scale_min_k4(j, sc, &ls[j], &lm[j]);
+            __m256i s[8];
+            for (int p = 0; p < 4; p++) {
+                __m256i qsv = _mm256_loadu_si256((const __m256i *)(qs + p * 32));
+                __m256i lo  = _mm256_and_si256(qsv, m4);
+                __m256i hi  = _mm256_and_si256(_mm256_srli_epi16(qsv, 4), m4);
+                __m256i a0  = _mm256_loadu_si256((const __m256i *)(qa + (long)(blk * 8 + 2*p) * 32));
+                __m256i a1  = _mm256_loadu_si256((const __m256i *)(qa + (long)(blk * 8 + 2*p + 1) * 32));
+                s[2*p]     = _mm256_madd_epi16(_mm256_maddubs_epi16(lo, a0), ones);
+                s[2*p + 1] = _mm256_madd_epi16(_mm256_maddubs_epi16(hi, a1), ones);
             }
+            __m256i A = _mm256_hadd_epi32(_mm256_hadd_epi32(s[0], s[1]),
+                                          _mm256_hadd_epi32(s[2], s[3]));
+            __m256i B = _mm256_hadd_epi32(_mm256_hadd_epi32(s[4], s[5]),
+                                          _mm256_hadd_epi32(s[6], s[7]));
+            __m256i sums = _mm256_add_epi32(_mm256_permute2x128_si256(A, B, 0x20),
+                                            _mm256_permute2x128_si256(A, B, 0x31));
+            /* The scalar tail was eight iterations of two multiplies, a subtract and a
+             * multiply-add — comparable to the vector work of the whole block. Everything it
+             * needs is contiguous per block (da, asum, and the eight sub-scales), so the
+             * contributions are formed eight at a time. They are still SUMMED in ascending
+             * order afterwards: the multiply is vectorised, the accumulation order is not
+             * touched, so the result stays bit-identical. */
+            __m256 vdots = _mm256_cvtepi32_ps(sums);
+            __m256 vls = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i *)ls)));
+            __m256 vlm = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i *)lm)));
+            __m256 vda = _mm256_loadu_ps(da + blk * 8);
+            __m256 vas = _mm256_cvtepi32_ps(_mm256_loadu_si256((const __m256i *)(asum + blk * 8)));
+            __m256 t1  = _mm256_mul_ps(_mm256_set1_ps(d),    _mm256_mul_ps(vls, vdots));
+            __m256 t2  = _mm256_mul_ps(_mm256_set1_ps(dmin), _mm256_mul_ps(vlm, vas));
+            float contrib[8];
+            _mm256_storeu_ps(contrib, _mm256_mul_ps(vda, _mm256_sub_ps(t1, t2)));
+            for (int j = 0; j < 8; j++) acc += contrib[j];
         }
         out[row] = acc;
     }
