@@ -5475,9 +5475,18 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
             float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
             const int8_t *qab = qa + (long)blk * 256;
             const float  *dab = da + (long)blk * 8;
+            /* Same lane treatment the Q4_K path got. This kernel drained TWICE per group —
+             * four dependent hadds and two extracts, sixteen drains per 256-value block —
+             * because each group carries two 16-value sub-blocks, one per 128-bit half.
+             * That is exactly what a hadd tree resolves for free: hadd works within halves,
+             * so folding four groups yields the four lower sub-block sums in lanes 0-3 and
+             * the four upper ones in lanes 4-7 of a single vector. Two trees cover a block.
+             * Accumulation order is preserved group by group, lower sub-block then upper,
+             * so this is an integer re-order and the greedy vector must not move. */
             for (int n = 0; n < 256; n += 128) {
                 const uint8_t *qlh = ql + (n / 128) * 64, *qhh = qh + (n / 128) * 32;
                 __m256i qhv = _mm256_loadu_si256((const __m256i *)qhh);
+                __m256i s[4];
                 for (int g = 0; g < 4; g++) {
                     __m256i qlv = _mm256_loadu_si256((const __m256i *)(qlh + (g & 1) * 32));
                     __m256i lo  = (g < 2) ? _mm256_and_si256(qlv, m4)
@@ -5485,17 +5494,19 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                     __m256i hi2 = _mm256_and_si256(_mm256_srli_epi16(qhv, 2 * g), m3);
                     __m256i w   = _mm256_sub_epi8(_mm256_or_si256(lo, _mm256_slli_epi16(hi2, 4)), b32);
                     __m256i xv  = _mm256_loadu_si256((const __m256i *)(qab + n + g * 32));
-                    __m256i p   = _mm256_maddubs_epi16(_mm256_sign_epi8(w, w),
-                                                       _mm256_sign_epi8(xv, w));
-                    __m256i s32 = _mm256_madd_epi16(p, ones);
-                    __m128i l0 = _mm256_castsi256_si128(s32);          /* positions  0..15 */
-                    __m128i l1 = _mm256_extracti128_si256(s32, 1);     /* positions 16..31 */
-                    l0 = _mm_hadd_epi32(l0, l0); l0 = _mm_hadd_epi32(l0, l0);
-                    l1 = _mm_hadd_epi32(l1, l1); l1 = _mm_hadd_epi32(l1, l1);
+                    s[g] = _mm256_madd_epi16(_mm256_maddubs_epi16(_mm256_sign_epi8(w, w),
+                                                                  _mm256_sign_epi8(xv, w)), ones);
+                }
+                /* lanes 0-3: lower sub-block of groups 0..3; lanes 4-7: their upper one */
+                __m256i T = _mm256_hadd_epi32(_mm256_hadd_epi32(s[0], s[1]),
+                                              _mm256_hadd_epi32(s[2], s[3]));
+                int32_t t[8];
+                _mm256_storeu_si256((__m256i *)t, T);
+                for (int g = 0; g < 4; g++) {
                     int j0 = n / 16 + g * 2;
                     acc += d * dab[(n + g * 32) / 32]
-                         * ((float)sc[j0]     * (float)_mm_cvtsi128_si32(l0)
-                          + (float)sc[j0 + 1] * (float)_mm_cvtsi128_si32(l1));
+                         * ((float)sc[j0]     * (float)t[g]
+                          + (float)sc[j0 + 1] * (float)t[g + 4]);
                 }
             }
         }
