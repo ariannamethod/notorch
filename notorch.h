@@ -530,18 +530,21 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
 void nt_quant_act(const float *x, int k, int8_t *qa, float *da);
 
 // Row-range packed matvec against a PRE-quantized activation, with NO threading inside:
-// the caller owns the parallel region. nt_qmatvec_i8 forks per call, which is right for one
-// big matrix and wrong for a MoE — 3 matmuls x 8 experts x 48 layers is 1152 fan-outs per
-// token. With this entry the engine opens one region per layer and hands out row ranges.
+// the caller owns the parallel region. nt_qmatvec_i8 owns its one-off dispatch, which is
+// right for one big matrix and wrong for a MoE — 3 matmuls x 8 experts x 48 layers is
+// 1152 dispatches per token. With this entry the engine opens one region per layer and
+// hands out row ranges.
 // Returns 0, or -1 if the dtype has no i8 kernel or the shape does not fit it.
 int nt_qmatvec_i8_rows(float *out, const uint8_t *Wq, int dtype,
                        const int8_t *qa, const float *da, int r0, int r1, int k);
 
 // Threading floor for the packed matvecs, in weight elements (m*k). Below it a call stays
-// single-threaded, because fan-out costs more than it saves on small shapes. The default
-// 4M was measured on a 360M-class decoder; other shapes differ by an order of magnitude —
-// a 30B MoE expert is 768x2048 = 1.57M and sits UNDER the default, so an engine that does
-// not lower the floor runs every expert on one core. Consumers set it once at startup;
+// single-threaded, because fan-out costs more than it saves on small shapes. Non-OpenMP
+// builds reuse persistent pthread workers by default (`NT_QMV_POOL=0` restores per-call
+// pthread create/join); OpenMP builds reuse the caller/runtime team. The default 4M was
+// measured on a 360M-class decoder; other shapes differ by an order of magnitude — a 30B
+// MoE expert is 768x2048 = 1.57M and sits UNDER the default, so an engine that does not
+// lower the floor runs every expert on one core. Consumers set it once at startup;
 // NT_QMV_THREAD_MIN still works and is read only if the API was never called.
 void nt_qmv_set_thread_min(long elems);
 

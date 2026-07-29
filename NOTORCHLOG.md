@@ -13,6 +13,26 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — qmatvec pthread worker reuse (non-OpenMP path)
+
+WTForacle surfaced the remaining per-call pthread overhead in the packed matvec path.
+OpenMP consumers already reuse their caller/runtime team; non-OpenMP consumers now
+reuse persistent pthread workers for `nt_qmatvec` and `nt_qmatvec_i8`, with the caller
+computing the final shard inline. That keeps the packed-row contract unchanged while
+removing `pthread_create`/`pthread_join` from each decode matvec.
+
+`NT_QMV_POOL=0` restores the old per-call pthread fallback. `NT_QMV_THREAD_MIN` /
+`nt_qmv_set_thread_min` still decide when row threading starts.
+
+Proof (neo, Accelerate):
+
+- `make test` — notorch 49/49, vision+BPE 73/73; only the pre-existing
+  `nt_image_load_mem` unused-function warning remains.
+- `cc -O2 -Wall -Wextra -std=c11 -pthread -I. -DUSE_BLAS -DACCELERATE -DACCELERATE_NEW_LAPACK tests/test_qmatvec.c notorch.c -framework Accelerate -lm -o /private/tmp/notorch_test_qmatvec_pool`
+- `NT_QMV_THREAD_MIN=1 /private/tmp/notorch_test_qmatvec_pool` — F32/F16/Q4_0/i8Q4_0/Q5_0/Q8_0/Q4_K/Q6_K PASS, ALL PASS.
+
+---
+
 ## 2026-07-27 — `nt_qmatvec_i8` covers Q8_0 (int8-activation matvec for the Q8 shape)
 
 `nt_qmatvec_i8` (`notorch.c:5338`) accepted only Q4_0, so every Q8_0 decoder fell

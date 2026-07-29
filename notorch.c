@@ -11,6 +11,7 @@
 #include <sys/time.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BLAS BACKEND
@@ -5254,16 +5255,147 @@ static long nt_qmv_thread_floor(void) {
     return g_qmv_thread_min;
 }
 
+static int nt_qmv_host_threads(int m) {
+    int nt = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (nt < 1) nt = 1;
+    if (nt > NT_QMV_MAX_THREADS) nt = NT_QMV_MAX_THREADS;
+    if (nt > m) nt = m;
+    return nt;
+}
+
 typedef struct {
     nt_qrows_fn fn; float *out; const uint8_t *Wq; const float *x;
     int r0, r1, k;
 } nt_qjob;
 
 #ifndef _OPENMP   /* only the pthread fan-out uses a worker entry point */
+static int nt_qmv_pool_enabled(void) {
+    static int enabled = -1;
+    if (enabled < 0) {
+        const char *e = getenv("NT_QMV_POOL");
+        enabled = !(e && (!strcmp(e, "0") || !strcmp(e, "false") ||
+                          !strcmp(e, "off") || !strcmp(e, "no")));
+    }
+    return enabled;
+}
+
 static void *nt_qworker(void *p) {
     nt_qjob *j = (nt_qjob *)p;
     j->fn(j->out, j->Wq, j->x, j->r0, j->r1, j->k);
     return NULL;
+}
+
+// Persistent qmatvec workers remove pthread_create/join from every decode matvec.
+// The caller computes the last shard inline; workers handle the earlier shards.
+typedef struct {
+    pthread_mutex_t mu;
+    pthread_cond_t cv_work;
+    pthread_cond_t cv_done;
+    pthread_t threads[NT_QMV_MAX_THREADS];
+    int ids[NT_QMV_MAX_THREADS];
+    int nthreads;
+    int ready;
+    int shutdown;
+    long generation;
+    int active;
+    int done;
+    nt_qjob jobs[NT_QMV_MAX_THREADS];
+} nt_qpool;
+
+static nt_qpool g_nt_qpool = {
+    PTHREAD_MUTEX_INITIALIZER,
+    PTHREAD_COND_INITIALIZER,
+    PTHREAD_COND_INITIALIZER,
+    {0},
+    {0},
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    {{0}},
+};
+static pthread_once_t g_nt_qpool_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t g_nt_qpool_dispatch_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static void *nt_qpool_loop(void *p) {
+    int id = *(int *)p;
+    long seen = 0;
+    pthread_mutex_lock(&g_nt_qpool.mu);
+    for (;;) {
+        while (!g_nt_qpool.shutdown && g_nt_qpool.generation == seen)
+            pthread_cond_wait(&g_nt_qpool.cv_work, &g_nt_qpool.mu);
+        if (g_nt_qpool.shutdown) break;
+
+        seen = g_nt_qpool.generation;
+        int active = g_nt_qpool.active;
+        int has_job = id < active;
+        nt_qjob job;
+        if (has_job) job = g_nt_qpool.jobs[id];
+        pthread_mutex_unlock(&g_nt_qpool.mu);
+
+        if (has_job) job.fn(job.out, job.Wq, job.x, job.r0, job.r1, job.k);
+
+        pthread_mutex_lock(&g_nt_qpool.mu);
+        if (has_job) {
+            g_nt_qpool.done++;
+            if (g_nt_qpool.done >= g_nt_qpool.active)
+                pthread_cond_signal(&g_nt_qpool.cv_done);
+        }
+    }
+    pthread_mutex_unlock(&g_nt_qpool.mu);
+    return NULL;
+}
+
+static void nt_qpool_shutdown(void) {
+    pthread_mutex_lock(&g_nt_qpool.mu);
+    g_nt_qpool.shutdown = 1;
+    g_nt_qpool.generation++;
+    pthread_cond_broadcast(&g_nt_qpool.cv_work);
+    pthread_mutex_unlock(&g_nt_qpool.mu);
+    for (int i = 0; i < g_nt_qpool.nthreads; i++)
+        pthread_join(g_nt_qpool.threads[i], NULL);
+}
+
+static void nt_qpool_init_once(void) {
+    int nt = nt_qmv_host_threads(NT_QMV_MAX_THREADS);
+    for (int i = 0; i < nt; i++) {
+        g_nt_qpool.ids[i] = i;
+        if (pthread_create(&g_nt_qpool.threads[i], NULL, nt_qpool_loop, &g_nt_qpool.ids[i]) != 0)
+            break;
+        g_nt_qpool.nthreads++;
+    }
+    g_nt_qpool.ready = g_nt_qpool.nthreads > 0;
+    if (g_nt_qpool.ready) atexit(nt_qpool_shutdown);
+}
+
+static int nt_qpool_run(const nt_qjob *jobs, int nt) {
+    if (!nt_qmv_pool_enabled()) return -1;
+    pthread_once(&g_nt_qpool_once, nt_qpool_init_once);
+    if (!g_nt_qpool.ready) return -1;
+    int worker_nt = nt - 1;
+    if (worker_nt <= 0 || worker_nt > g_nt_qpool.nthreads) return -1;
+
+    pthread_mutex_lock(&g_nt_qpool_dispatch_mu);
+    pthread_mutex_lock(&g_nt_qpool.mu);
+    for (int i = 0; i < worker_nt; i++) g_nt_qpool.jobs[i] = jobs[i];
+    g_nt_qpool.active = worker_nt;
+    g_nt_qpool.done = 0;
+    g_nt_qpool.generation++;
+    pthread_cond_broadcast(&g_nt_qpool.cv_work);
+    pthread_mutex_unlock(&g_nt_qpool.mu);
+
+    nt_qjob inline_job = jobs[worker_nt];
+    inline_job.fn(inline_job.out, inline_job.Wq, inline_job.x,
+                  inline_job.r0, inline_job.r1, inline_job.k);
+
+    pthread_mutex_lock(&g_nt_qpool.mu);
+    while (g_nt_qpool.done < g_nt_qpool.active)
+        pthread_cond_wait(&g_nt_qpool.cv_done, &g_nt_qpool.mu);
+    pthread_mutex_unlock(&g_nt_qpool.mu);
+    pthread_mutex_unlock(&g_nt_qpool_dispatch_mu);
+    return 0;
 }
 #endif
 
@@ -5275,14 +5407,11 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
     nt_qrows_fn fn = nt_qrows_for(dtype, k);
     if (!fn) return -1;
 
-    int nt = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (nt < 1) nt = 1;
-    if (nt > NT_QMV_MAX_THREADS) nt = NT_QMV_MAX_THREADS;
-    if (nt > m) nt = m;
-    // Per-call pthread_create + the 2P+4E asymmetry of Apple-Silicon-class CPUs make
-    // fan-out counterproductive for small single-token decode matvecs (measured ~6%/noise
-    // on a 360M model). Gate it high: only large matvecs (big models / batched work) thread,
-    // where the spawn cost amortizes; small decode stays single-thread.
+    int nt = nt_qmv_host_threads(m);
+    // Thread fan-out and the 2P+4E asymmetry of Apple-Silicon-class CPUs make small
+    // single-token decode matvecs counterproductive even when workers are persistent.
+    // Gate it high: only large matvecs (big models / batched work) thread; small
+    // decode stays single-thread.
     /* The 4M floor was measured on a 360M-class decoder, where fan-out was noise.
      * Other shapes exist: a 500M decoder's matrices are 2.46M and sit just under
      * it, so its whole decode stays single-threaded. Default is unchanged;
@@ -5314,6 +5443,14 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
         int r0 = t * per, r1 = (r0 + per > m) ? m : r0 + per;
         if (r0 >= m) break;
         jobs[t] = (nt_qjob){ fn, out, Wq, x, r0, r1, k };
+        launched++;
+    }
+    if (nt_qpool_run(jobs, launched) == 0) return 0;
+
+    launched = 0;
+    for (int t = 0; t < nt; t++) {
+        int r0 = t * per;
+        if (r0 >= m) break;
         if (pthread_create(&th[t], NULL, nt_qworker, &jobs[t]) != 0) {
             fn(out, Wq, x, r0, m, k);   // create failed: run the rest inline
             break;
@@ -5569,6 +5706,119 @@ static void *nt_qworker_i8(void *p) {
     j->fn(j->out, j->Wq, j->qa, j->da, j->r0, j->r1, j->k);
     return NULL;
 }
+
+// Separate i8 pool keeps the shared per-call activation quant buffers typed and
+// avoids a tagged union in the hot dispatch path.
+typedef struct {
+    pthread_mutex_t mu;
+    pthread_cond_t cv_work;
+    pthread_cond_t cv_done;
+    pthread_t threads[NT_QMV_MAX_THREADS];
+    int ids[NT_QMV_MAX_THREADS];
+    int nthreads;
+    int ready;
+    int shutdown;
+    long generation;
+    int active;
+    int done;
+    nt_qjob_i8 jobs[NT_QMV_MAX_THREADS];
+} nt_qpool_i8;
+
+static nt_qpool_i8 g_nt_qpool_i8 = {
+    PTHREAD_MUTEX_INITIALIZER,
+    PTHREAD_COND_INITIALIZER,
+    PTHREAD_COND_INITIALIZER,
+    {0},
+    {0},
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    {{0}},
+};
+static pthread_once_t g_nt_qpool_i8_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t g_nt_qpool_i8_dispatch_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static void *nt_qpool_i8_loop(void *p) {
+    int id = *(int *)p;
+    long seen = 0;
+    pthread_mutex_lock(&g_nt_qpool_i8.mu);
+    for (;;) {
+        while (!g_nt_qpool_i8.shutdown && g_nt_qpool_i8.generation == seen)
+            pthread_cond_wait(&g_nt_qpool_i8.cv_work, &g_nt_qpool_i8.mu);
+        if (g_nt_qpool_i8.shutdown) break;
+
+        seen = g_nt_qpool_i8.generation;
+        int active = g_nt_qpool_i8.active;
+        int has_job = id < active;
+        nt_qjob_i8 job;
+        if (has_job) job = g_nt_qpool_i8.jobs[id];
+        pthread_mutex_unlock(&g_nt_qpool_i8.mu);
+
+        if (has_job) job.fn(job.out, job.Wq, job.qa, job.da, job.r0, job.r1, job.k);
+
+        pthread_mutex_lock(&g_nt_qpool_i8.mu);
+        if (has_job) {
+            g_nt_qpool_i8.done++;
+            if (g_nt_qpool_i8.done >= g_nt_qpool_i8.active)
+                pthread_cond_signal(&g_nt_qpool_i8.cv_done);
+        }
+    }
+    pthread_mutex_unlock(&g_nt_qpool_i8.mu);
+    return NULL;
+}
+
+static void nt_qpool_i8_shutdown(void) {
+    pthread_mutex_lock(&g_nt_qpool_i8.mu);
+    g_nt_qpool_i8.shutdown = 1;
+    g_nt_qpool_i8.generation++;
+    pthread_cond_broadcast(&g_nt_qpool_i8.cv_work);
+    pthread_mutex_unlock(&g_nt_qpool_i8.mu);
+    for (int i = 0; i < g_nt_qpool_i8.nthreads; i++)
+        pthread_join(g_nt_qpool_i8.threads[i], NULL);
+}
+
+static void nt_qpool_i8_init_once(void) {
+    int nt = nt_qmv_host_threads(NT_QMV_MAX_THREADS);
+    for (int i = 0; i < nt; i++) {
+        g_nt_qpool_i8.ids[i] = i;
+        if (pthread_create(&g_nt_qpool_i8.threads[i], NULL, nt_qpool_i8_loop, &g_nt_qpool_i8.ids[i]) != 0)
+            break;
+        g_nt_qpool_i8.nthreads++;
+    }
+    g_nt_qpool_i8.ready = g_nt_qpool_i8.nthreads > 0;
+    if (g_nt_qpool_i8.ready) atexit(nt_qpool_i8_shutdown);
+}
+
+static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
+    if (!nt_qmv_pool_enabled()) return -1;
+    pthread_once(&g_nt_qpool_i8_once, nt_qpool_i8_init_once);
+    if (!g_nt_qpool_i8.ready) return -1;
+    int worker_nt = nt - 1;
+    if (worker_nt <= 0 || worker_nt > g_nt_qpool_i8.nthreads) return -1;
+
+    pthread_mutex_lock(&g_nt_qpool_i8_dispatch_mu);
+    pthread_mutex_lock(&g_nt_qpool_i8.mu);
+    for (int i = 0; i < worker_nt; i++) g_nt_qpool_i8.jobs[i] = jobs[i];
+    g_nt_qpool_i8.active = worker_nt;
+    g_nt_qpool_i8.done = 0;
+    g_nt_qpool_i8.generation++;
+    pthread_cond_broadcast(&g_nt_qpool_i8.cv_work);
+    pthread_mutex_unlock(&g_nt_qpool_i8.mu);
+
+    nt_qjob_i8 inline_job = jobs[worker_nt];
+    inline_job.fn(inline_job.out, inline_job.Wq, inline_job.qa, inline_job.da,
+                  inline_job.r0, inline_job.r1, inline_job.k);
+
+    pthread_mutex_lock(&g_nt_qpool_i8.mu);
+    while (g_nt_qpool_i8.done < g_nt_qpool_i8.active)
+        pthread_cond_wait(&g_nt_qpool_i8.cv_done, &g_nt_qpool_i8.mu);
+    pthread_mutex_unlock(&g_nt_qpool_i8.mu);
+    pthread_mutex_unlock(&g_nt_qpool_i8_dispatch_mu);
+    return 0;
+}
 #endif
 
 // Q4_K int8-dot rows: 144 B / 256 values against the per-32 int8 activation.
@@ -5738,10 +5988,7 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                       : (dtype == 8)  ? nt_q8_0_rows_i8
                       : (dtype == 12) ? nt_q4_k_rows_i8
                                       : nt_q6_k_rows_i8;
-    int nt = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (nt < 1) nt = 1;
-    if (nt > NT_QMV_MAX_THREADS) nt = NT_QMV_MAX_THREADS;
-    if (nt > m) nt = m;
+    int nt = nt_qmv_host_threads(m);
     if (nt <= 1 || (long)m * k < nt_qmv_thread_floor()) {
         fn(out, Wq, qa, da, 0, m, k);
         free(qa); free(da);
@@ -5765,6 +6012,18 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
         int r0 = t * per, r1 = (r0 + per > m) ? m : r0 + per;
         if (r0 >= m) break;
         jobs[t] = (nt_qjob_i8){ fn, out, Wq, qa, da, r0, r1, k };
+        launched++;
+    }
+    if (nt_qpool_i8_run(jobs, launched) == 0) {
+        free(qa);
+        free(da);
+        return 0;
+    }
+
+    launched = 0;
+    for (int t = 0; t < nt; t++) {
+        int r0 = t * per;
+        if (r0 >= m) break;
         if (pthread_create(&th[t], NULL, nt_qworker_i8, &jobs[t]) != 0) {
             fn(out, Wq, qa, da, r0, m, k);   /* create failed: run the rest inline */
             break;
