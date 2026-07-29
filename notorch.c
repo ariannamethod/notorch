@@ -5574,13 +5574,19 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                             const float *da, int r0, int r1, int k) {
     int nb = k / 256, nsub = k / 32;
     int32_t asum[NT_QMV_ASUM_MAX];
-    for (int s = 0; s < nsub; s++) {
-        const int8_t *p = qa + (long)s * 32;
-        int32_t t = 0;
-        for (int i = 0; i < 32; i++) t += p[i];
-        asum[s] = t;
-    }
     const __m256i m4 = _mm256_set1_epi8(0x0F), ones = _mm256_set1_epi16(1);
+    /* SUM(qa) per 32-value block. Scalar it is 32 dependent adds per block and it is paid on
+     * every call — in a fused MoE that is 24 calls per layer per thread. maddubs against a
+     * vector of ones turns the same sum into a handful of instructions: unsigned 1 times a
+     * signed activation is exactly the activation, so the pairwise adds come for free. */
+    { const __m256i one8 = _mm256_set1_epi8(1);
+      for (int s = 0; s < nsub; s++) {
+        __m256i v = _mm256_loadu_si256((const __m256i *)(qa + (long)s * 32));
+        __m256i w = _mm256_madd_epi16(_mm256_maddubs_epi16(one8, v), ones);
+        __m128i lo = _mm_add_epi32(_mm256_castsi256_si128(w), _mm256_extracti128_si256(w, 1));
+        lo = _mm_hadd_epi32(lo, lo); lo = _mm_hadd_epi32(lo, lo);
+        asum[s] = _mm_cvtsi128_si32(lo);
+      } }
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 144;
         float acc = 0.0f;
