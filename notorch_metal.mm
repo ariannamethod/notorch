@@ -295,6 +295,35 @@ kernel void q4k_matvec_v3(
     }
 }
 
+/* f16_matvec — dense F16 weights, no block structure.
+ *
+ * The K-quants need k % 256 == 0 and a 144/210-byte block layout. Janus v4 is
+ * E=640, M=1664 — neither divisible by 256 — so it has no K-quant path at all
+ * and would otherwise never reach the GPU. F16 has no such constraint: a row is
+ * simply k halves. One simdgroup per output row, 32 lanes striding the row,
+ * simd_sum to reduce. Accumulation is f32, matching nt_qmatvec's F16 reference. */
+kernel void f16_matvec(
+    device const half  *W   [[buffer(0)]],   /* [m * k] */
+    device const float *x   [[buffer(1)]],   /* [k]     */
+    device       float *out [[buffer(2)]],   /* [m]     */
+    constant     uint  &k   [[buffer(3)]],
+    constant     uint  &m   [[buffer(4)]],
+    uint2  gid              [[threadgroup_position_in_grid]],
+    ushort tiisg            [[thread_index_in_simdgroup]],
+    ushort sgitg            [[simdgroup_index_in_threadgroup]],
+    ushort nsg              [[simdgroups_per_threadgroup]])
+{
+    const uint row = gid.x * (uint)nsg + (uint)sgitg;
+    if (row >= m) return;               /* tail threadgroup owns no row */
+    device const half *w = W + (ulong)row * (ulong)k;
+
+    float acc = 0.0f;
+    for (uint j = tiisg; j < k; j += 32u) acc += float(w[j]) * x[j];
+
+    float sum = simd_sum(acc);
+    if (tiisg == 0) out[row] = sum;
+}
+
 kernel void q6k_matvec_sg(
     device const uchar *W   [[buffer(0)]],
     device const float *x   [[buffer(1)]],
@@ -760,6 +789,7 @@ static id<MTLComputePipelineState> g_q4k_sg_pipe = nil;   /* M3 simdgroup path *
 static id<MTLComputePipelineState> g_q4k_v3_pipe = nil;   /* v3 multi-row Q4_K (llama port) */
 static id<MTLComputePipelineState> g_q6k_v3_pipe = nil;   /* v3 multi-row Q6_K (llama port) */
 static id<MTLComputePipelineState> g_q6k_sg_pipe = nil;
+static id<MTLComputePipelineState> g_f16_pipe    = nil;   /* dense F16 (no k%256 constraint) */
 static int                         g_use_sg      = 0;     /* 0 naive | 1 sg | 2 per-format auto (set in init) */
 static int                         g_use_v3      = 0;     /* 1 = v3 multi-row Q4_K (NT_METAL_V3) */
 static int                         g_use_v3_q6   = 0;     /* 1 = v3 multi-row Q6_K (NT_METAL_V3, unless NT_METAL_V3_NOQ6) */
@@ -893,6 +923,15 @@ int nt_metal_init(void)
             g_q4k_v3_pipe = [g_device newComputePipelineStateWithFunction:fn4v error:&err];
             if (!g_q4k_v3_pipe)
                 fprintf(stderr, "nt_metal_init: q4k_v3 pipeline state failed: %s\n",
+                        err ? err.localizedDescription.UTF8String : "(no error)");
+        }
+        /* dense F16 — the only GPU path open to architectures whose inner
+         * dimension is not a multiple of 256 (Janus v4: E=640, M=1664) */
+        id<MTLFunction> fnf16 = [lib newFunctionWithName:@"f16_matvec"];
+        if (fnf16) {
+            g_f16_pipe = [g_device newComputePipelineStateWithFunction:fnf16 error:&err];
+            if (!g_f16_pipe)
+                fprintf(stderr, "nt_metal_init: f16 pipeline state failed: %s\n",
                         err ? err.localizedDescription.UTF8String : "(no error)");
         }
         id<MTLFunction> fn6v = [lib newFunctionWithName:@"q6k_matvec_v3"];
@@ -1070,11 +1109,15 @@ static int batch_drain(void)
 /* Shared encode path for both quant kernels, solo and batch modes. The
  * kernels and dispatch geometry are UNTOUCHED relative to the per-call
  * path they replace — results stay bit-identical. */
+/* row_bytes_in == 0 keeps the historical block arithmetic ((k/256) * block_bytes)
+ * so the quant paths stay bit-identical; a non-zero value is for formats with no
+ * block structure (dense F16, where a row is simply k halves). */
 static int encode_matvec(id<MTLComputePipelineState> pipe, NSUInteger block_bytes,
+                         NSUInteger row_bytes_in,
                          float *out, const uint8_t *W, const float *x, int m, int k)
 {
     const NSUInteger nblocks   = (NSUInteger)k / 256u;
-    const NSUInteger row_bytes = nblocks * block_bytes;
+    const NSUInteger row_bytes = row_bytes_in ? row_bytes_in : nblocks * block_bytes;
     const NSUInteger W_bytes   = (NSUInteger)m * row_bytes;
     const NSUInteger x_bytes   = (NSUInteger)k * sizeof(float);
     const NSUInteger out_bytes = (NSUInteger)m * sizeof(float);
@@ -1141,7 +1184,20 @@ static int encode_matvec(id<MTLComputePipelineState> pipe, NSUInteger block_byte
     uint32_t k_u32 = (uint32_t)k;
     int sg_on = sg_pipe && (g_use_sg == 1 || (g_use_sg == 2 && block_bytes == 210u));
     int v3_on = v3_pipe && ((block_bytes == 144u) ? g_use_v3 : g_use_v3_q6);
-    if (v3_on) {
+    if (pipe == g_f16_pipe) {
+        /* one simdgroup per row; threadgroups tile the rows */
+        const NSUInteger NSG = 4u;
+        NSUInteger ntg = ((NSUInteger)m + NSG - 1u) / NSG;
+        [enc setComputePipelineState:pipe];
+        [enc setBuffer:bW          offset:W_off atIndex:0];
+        [enc setBuffer:g_arena_in  offset:x_off atIndex:1];
+        [enc setBuffer:g_arena_out offset:o_off atIndex:2];
+        uint32_t m_f16 = (uint32_t)m;
+        [enc setBytes:&k_u32  length:sizeof(uint32_t) atIndex:3];
+        [enc setBytes:&m_f16  length:sizeof(uint32_t) atIndex:4];
+        [enc dispatchThreadgroups:MTLSizeMake(ntg, 1, 1)
+              threadsPerThreadgroup:MTLSizeMake(32u * NSG, 1, 1)];
+    } else if (v3_on) {
         /* v3 multi-row (Q4_K and Q6_K): NSG simdgroups x NR0 rows each. Kernel
          * uses threadgroup_position_in_grid, so dispatchThreadgroups (not
          * Threads). setBytes m at index 4 for row bounds (tail threadgroup). */
@@ -1223,7 +1279,7 @@ int nt_metal_q4k_matvec(float *out,
         return 10;
     }
     @autoreleasepool {
-        return encode_matvec(g_q4k_pipe, 144u, out, W_q4k, x, m, k);
+        return encode_matvec(g_q4k_pipe, 144u, 0, out, W_q4k, x, m, k);
     }
 }
 
@@ -1245,7 +1301,30 @@ int nt_metal_q6k_matvec(float *out,
         return 10;
     }
     @autoreleasepool {
-        return encode_matvec(g_q6k_pipe, 210u, out, W_q6k, x, m, k);
+        return encode_matvec(g_q6k_pipe, 210u, 0, out, W_q6k, x, m, k);
+    }
+}
+
+int nt_metal_f16_matvec(float *out,
+                        const uint8_t *W_f16,
+                        const float *x,
+                        int m, int k)
+{
+    if (!g_initialised) {
+        int rc = nt_metal_init();
+        if (rc != 0) return rc;
+    }
+    if (!g_f16_pipe) {
+        fprintf(stderr, "nt_metal_f16_matvec: f16 pipeline unavailable\n");
+        return 4;
+    }
+    if (k <= 0 || m <= 0) {
+        fprintf(stderr, "nt_metal_f16_matvec: m=%d k=%d must be positive\n", m, k);
+        return 10;
+    }
+    @autoreleasepool {
+        /* dense: a row is k halves, no block quantisation and no k%256 rule */
+        return encode_matvec(g_f16_pipe, 0, (NSUInteger)k * 2u, out, W_f16, x, m, k);
     }
 }
 

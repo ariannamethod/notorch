@@ -76,6 +76,22 @@ int nt_metal_q6k_matvec(float *out,
                         const float *x,
                         int m, int k);
 
+/* Dense F16 matrix-vector multiply on the GPU.
+ *
+ *   out[i] = sum_{j=0..k-1} f32(W_f16[i*k + j]) * x[j]
+ *
+ * W is row-major F16, m rows of k halves — no block structure, so k has no
+ * multiple-of-256 constraint. This is the only GPU path open to architectures
+ * whose inner dimension is not a K-quant multiple (Janus v4 is E=640, M=1664).
+ * Accumulation is f32, matching nt_qmatvec's F16 reference. Same buffer and
+ * batch semantics as the quant entries. Returns 0 on success, 4 if the kernel
+ * is unavailable, 10 on bad shape, 11 on buffer alloc, or a propagated init
+ * code. */
+int nt_metal_f16_matvec(float *out,
+                        const uint8_t *W_f16,
+                        const float *x,
+                        int m, int k);
+
 /* Phase 2 — resident weights. Register one base region (e.g. the whole packed
  * GGUF tensor block) as a single zero-copy GPU buffer (Apple unified memory).
  * After this, nt_metal_q4k_matvec binds any W that falls inside

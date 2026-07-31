@@ -101,6 +101,13 @@ install: lib
 	install -m 0644 libnotorch.a $(PREFIX)/lib/libnotorch.a
 	install -m 0644 notorch.h    $(PREFIX)/include/ariannamethod/notorch.h
 	install -m 0644 gguf.h       $(PREFIX)/include/ariannamethod/gguf.h
+ifeq ($(UNAME),Darwin)
+	$(MAKE) notorch_metal.o
+	$(AR) rcs libnotorch_metal.a notorch_metal.o
+	install -m 0644 libnotorch_metal.a $(PREFIX)/lib/libnotorch_metal.a
+	install -m 0644 notorch_metal.h    $(PREFIX)/include/ariannamethod/notorch_metal.h
+	@echo "Installed: $(PREFIX)/lib/libnotorch_metal.a + notorch_metal.h (link with -framework Metal -framework Foundation -lc++)"
+endif
 ifeq ($(USE_CUDA),1)
 	install -m 0644 libnotorch_gpu.a $(PREFIX)/lib/libnotorch_gpu.a
 	install -m 0644 notorch_cuda.h $(PREFIX)/include/ariannamethod/notorch_cuda.h
@@ -192,11 +199,21 @@ tests/test_metal_q4k: tests/test_metal_q4k.c notorch_metal.o notorch_metal.h
 		-framework Metal -framework Foundation -lc++ -lm
 	@echo "Compiled: tests/test_metal_q4k (Metal Q4_K correctness)"
 
-metal: tests/test_metal_q4k
+# Dense F16 on the GPU — the only Metal path for architectures whose inner
+# dimension is not a multiple of 256 (Janus v4: E=640, M=1664). Checked against
+# nt_qmatvec's F16 reference, so it links libnotorch.a as well.
+tests/test_metal_f16: tests/test_metal_f16.c notorch_metal.o notorch_metal.h libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -DUSE_METAL -I. -o tests/test_metal_f16 \
+		tests/test_metal_f16.c notorch_metal.o libnotorch.a \
+		-framework Metal -framework Foundation -lc++ -lm $(BLAS_LIBS)
+	@echo "Compiled: tests/test_metal_f16 (Metal dense-F16 correctness)"
+
+metal: tests/test_metal_q4k tests/test_metal_f16
 	@echo "Metal backend built. Run: make test_metal"
 
-test_metal: tests/test_metal_q4k
+test_metal: tests/test_metal_q4k tests/test_metal_f16
 	./tests/test_metal_q4k
+	./tests/test_metal_f16
 
 # Packed-Q4_K/Q6_K GGUF inference on Apple Metal — runs 24B-class quantized
 # models on a 24GB Mac (weights stay packed; Q4_K on the GPU, Q6_K per-block
