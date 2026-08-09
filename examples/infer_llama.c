@@ -23,6 +23,52 @@
   #endif
 #endif
 
+/* A weight as it sits in the file, plus the one thing worth deciding once.
+ *
+ * The previous shape of this example expanded every tensor to f32 at load. That is 6 GB
+ * for a 1.5B Q4_0 whose packed form is 1.1 GB, and on an 8 GB phone it is not a slowdown
+ * but a reboot. The packed bytes are already resident — gguf_open reads the file into one
+ * buffer — so a weight here is a pointer into it, and nothing is copied at all.
+ *
+ * f32 is the escape hatch: a dtype with no packed kernel gets expanded, alone, and the
+ * matvec falls through to BLAS for that one tensor. Probing at load rather than per call
+ * keeps the decision off the hot path. */
+typedef struct {
+    const uint8_t *q;   /* into gf->data; NULL only if the tensor is absent */
+    float *f32;         /* expanded copy, allocated only when q has no kernel */
+    int dtype, rows, cols;
+    int use_i8;         /* the integer path applies to this dtype and shape */
+} wt;
+
+/* Both entry points report whether they could take the shape, so ask them once with a
+ * single row rather than duplicating their dtype tables here and letting the two drift. */
+static void wt_probe(wt *w) {
+    if (!w->q || w->cols <= 0) return;
+    float *x = (float*)calloc(w->cols, sizeof(float));
+    float out = 0.0f;
+    if (x) {
+        w->use_i8 = (nt_qmatvec_i8(&out, w->q, w->dtype, x, 1, w->cols) == 0);
+        if (!w->use_i8 && nt_qmatvec(&out, w->q, w->dtype, x, 1, w->cols) != 0) {
+            w->q = NULL;   /* no packed path — the loader will expand it */
+        }
+        free(x);
+    }
+}
+
+static int wt_load(wt *w, gguf_file *gf, const char *name) {
+    int ti = gguf_find_tensor(gf, name);
+    if (ti < 0) return 0;
+    const gguf_tensor_info *t = &gf->tensors[ti];
+    if (!t->shape[0] || t->n_elements % t->shape[0]) return 0;
+    w->cols  = (int)t->shape[0];
+    w->rows  = (int)(t->n_elements / t->shape[0]);
+    w->dtype = (int)t->dtype;
+    w->q     = gf->data + t->offset;
+    wt_probe(w);
+    if (!w->q) w->f32 = gguf_dequant(gf, ti);
+    return (w->q || w->f32) ? 1 : 0;
+}
+
 // C[m,n] = A[m,k] @ B^T[n,k]
 static void mm_t(float *C, const float *A, const float *B, int m, int k, int n) {
 #ifdef USE_BLAS
@@ -36,6 +82,13 @@ static void mm_t(float *C, const float *A, const float *B, int m, int k, int n) 
             C[i*n+j] = s;
         }
 #endif
+}
+
+/* out[rows] = W[rows,cols] @ x[cols] — the only matmul shape decode ever asks for. */
+static void qmv(float *out, const wt *w, const float *x) {
+    if (w->use_i8 && nt_qmatvec_i8(out, w->q, w->dtype, x, w->rows, w->cols) == 0) return;
+    if (w->q && nt_qmatvec(out, w->q, w->dtype, x, w->rows, w->cols) == 0) return;
+    mm_t(out, x, w->f32, 1, w->cols, w->rows);
 }
 
 static void rmsnorm(float *out, const float *x, const float *w, int n, float eps) {
@@ -53,14 +106,22 @@ static void softmax(float *x, int n) {
     for (int i = 0; i < n; i++) x[i] /= s;
 }
 
-static void rope(float *x, int pos, int head_dim, float freq_base) {
-    for (int i = 0; i < head_dim / 2; i++) {
+/* Two rotation conventions share the name RoPE and differ only in which pairs of lanes
+ * rotate together, which makes a mismatch quiet rather than fatal: the model still emits
+ * fluent text, it just answers the wrong question. NORM pairs adjacent lanes (2i, 2i+1)
+ * and is what llama-architecture GGUFs carry; NEOX pairs a lane with its opposite half
+ * (i, i + hd/2) and is what qwen2 and friends carry. Both are here and the architecture
+ * picks, because the same binary is pointed at both kinds of file. */
+static void rope(float *x, int pos, int head_dim, float freq_base, int neox) {
+    int half = head_dim / 2;
+    for (int i = 0; i < half; i++) {
         float freq = 1.0f / powf(freq_base, 2.0f * i / head_dim);
         float angle = pos * freq;
         float cs = cosf(angle), sn = sinf(angle);
-        float x0 = x[2*i], x1 = x[2*i+1];
-        x[2*i]   = x0 * cs - x1 * sn;
-        x[2*i+1] = x0 * sn + x1 * cs;
+        int a = neox ? i : 2*i, b = neox ? i + half : 2*i + 1;
+        float x0 = x[a], x1 = x[b];
+        x[a] = x0 * cs - x1 * sn;
+        x[b] = x0 * sn + x1 * cs;
     }
 }
 
@@ -73,18 +134,22 @@ static void add_bias(float *x, const float *bias, int n) {
 typedef struct {
     int n_layers, n_heads, n_kv_heads, embed, ffn, vocab, head_dim, kv_dim, q_dim;
     float rope_base, rms_eps;
+    int rope_neox;         // 1 = pair i with i+hd/2 (qwen2 and most non-llama archs)
     int has_output_weight; // 0 = tied embeddings
 
-    float *tok_emb;     // [vocab, embed]
+    gguf_file *gf;      // the packed weights point into it; must outlive the model
+    int emb_ti;         // token_embd tensor index, for the per-token row read
+
+    wt tok_emb;         // [vocab, embed] — also the lm_head when tied
     float *out_norm;    // [embed]
-    float *out_weight;  // [vocab, embed] or NULL (tied)
+    wt out_weight;      // [vocab, embed], absent when tied
 
     struct {
         float *attn_norm;
-        float *wq, *wk, *wv, *wo;
+        wt wq, wk, wv, wo;
         float *q_bias, *k_bias, *v_bias; // Qwen has bias
         float *ffn_norm;
-        float *wgate, *wup, *wdown;
+        wt wgate, wup, wdown;
     } layers[];
 } llama_model;
 
@@ -100,6 +165,10 @@ static llama_model* llama_load(gguf_file* gf) {
     m->ffn = gf->ffn_dim;
     m->rope_base = gf->rope_freq_base;
     m->rms_eps = gf->rms_eps;
+    /* llama and its direct descendants rotate adjacent lanes; everything else in this
+     * file's reach — qwen2, and the qwen-derived checkpoints people convert — rotates
+     * halves. Unknown architectures get the llama convention, which is the older one. */
+    m->rope_neox = strcmp(gf->arch, "llama") != 0;
 
     // Detect head_dim and vocab from tensor shapes
     int ti = gguf_find_tensor(gf, "blk.0.attn_q.weight");
@@ -122,56 +191,65 @@ static llama_model* llama_load(gguf_file* gf) {
            m->embed, m->n_heads, m->n_kv_heads, m->ffn, m->vocab, nl, m->head_dim, m->q_dim);
 
     // Global weights
-    ti = gguf_find_tensor(gf, "token_embd.weight");
-    if (ti >= 0) m->tok_emb = gguf_dequant(gf, ti);
+    m->gf = gf;
+    m->emb_ti = gguf_find_tensor(gf, "token_embd.weight");
+    wt_load(&m->tok_emb, gf, "token_embd.weight");
     ti = gguf_find_tensor(gf, "output_norm.weight");
-    if (ti >= 0) m->out_norm = gguf_dequant(gf, ti);
-    ti = gguf_find_tensor(gf, "output.weight");
-    if (ti >= 0) { m->out_weight = gguf_dequant(gf, ti); m->has_output_weight = 1; }
+    if (ti >= 0) m->out_norm = gguf_dequant(gf, ti);   /* [embed], f32 either way */
+    m->has_output_weight = wt_load(&m->out_weight, gf, "output.weight");
 
     // Per-layer
     for (int l = 0; l < nl; l++) {
         char name[128];
+        /* 1-D: norms and biases are a few thousand floats and are read elementwise, so
+         * they are expanded. 2-D: everything the matvec touches stays packed. */
         #define L(field, fmt) do { \
             snprintf(name, sizeof(name), fmt, l); \
             ti = gguf_find_tensor(gf, name); \
             if (ti >= 0) m->layers[l].field = gguf_dequant(gf, ti); \
         } while(0)
+        #define W(field, fmt) do { \
+            snprintf(name, sizeof(name), fmt, l); \
+            wt_load(&m->layers[l].field, gf, name); \
+        } while(0)
         L(attn_norm, "blk.%d.attn_norm.weight");
-        L(wq, "blk.%d.attn_q.weight");
-        L(wk, "blk.%d.attn_k.weight");
-        L(wv, "blk.%d.attn_v.weight");
-        L(wo, "blk.%d.attn_output.weight");
+        W(wq, "blk.%d.attn_q.weight");
+        W(wk, "blk.%d.attn_k.weight");
+        W(wv, "blk.%d.attn_v.weight");
+        W(wo, "blk.%d.attn_output.weight");
         L(q_bias, "blk.%d.attn_q.bias");
         L(k_bias, "blk.%d.attn_k.bias");
         L(v_bias, "blk.%d.attn_v.bias");
         L(ffn_norm, "blk.%d.ffn_norm.weight");
-        L(wgate, "blk.%d.ffn_gate.weight");
-        L(wup, "blk.%d.ffn_up.weight");
-        L(wdown, "blk.%d.ffn_down.weight");
+        W(wgate, "blk.%d.ffn_gate.weight");
+        W(wup, "blk.%d.ffn_up.weight");
+        W(wdown, "blk.%d.ffn_down.weight");
         #undef L
     }
 
-    if (!m->tok_emb || !m->out_norm) {
+    if (!(m->tok_emb.q || m->tok_emb.f32) || !m->out_norm) {
         fprintf(stderr, "llama: missing critical weights\n");
         return NULL;
     }
     if (m->layers[0].q_bias) printf("  (has attention bias — qwen-style)\n");
     if (!m->has_output_weight) printf("  (tied embeddings)\n");
+    printf("  rope: %s | weights: packed%s\n", m->rope_neox ? "neox" : "norm",
+           m->tok_emb.use_i8 ? " (int8 dot)" : "");
 
     return m;
 }
 
+/* Only the expanded copies are ours; a packed pointer belongs to the gguf_file. */
 static void llama_free(llama_model* m) {
     if (!m) return;
-    free(m->tok_emb); free(m->out_norm); free(m->out_weight);
+    free(m->tok_emb.f32); free(m->out_norm); free(m->out_weight.f32);
     for (int l = 0; l < m->n_layers; l++) {
         free(m->layers[l].attn_norm);
-        free(m->layers[l].wq); free(m->layers[l].wk);
-        free(m->layers[l].wv); free(m->layers[l].wo);
+        free(m->layers[l].wq.f32); free(m->layers[l].wk.f32);
+        free(m->layers[l].wv.f32); free(m->layers[l].wo.f32);
         free(m->layers[l].q_bias); free(m->layers[l].k_bias); free(m->layers[l].v_bias);
         free(m->layers[l].ffn_norm);
-        free(m->layers[l].wgate); free(m->layers[l].wup); free(m->layers[l].wdown);
+        free(m->layers[l].wgate.f32); free(m->layers[l].wup.f32); free(m->layers[l].wdown.f32);
     }
     free(m);
 }
@@ -201,8 +279,13 @@ static void llama_forward(llama_model* m, kv_cache* kv, int token, int pos, floa
     float eps = m->rms_eps;
     int gqa = H / KV;
 
+    /* One row of the embedding table, decoded where it lies. For a 1.5B Qwen that table
+     * is the largest tensor in the file and expanding it would cost 933 MB to read 1536
+     * floats per token. */
     float *x = (float*)calloc(E, sizeof(float));
-    memcpy(x, m->tok_emb + token * E, E * sizeof(float));
+    if (m->tok_emb.f32) memcpy(x, m->tok_emb.f32 + (long)token * E, E * sizeof(float));
+    else if (gguf_dequant_row(m->gf, m->emb_ti, (uint64_t)token, x) != 0)
+        memset(x, 0, E * sizeof(float));
 
     float *xn = (float*)calloc(E, sizeof(float));
     float *q_all = (float*)calloc(Q_DIM, sizeof(float));
@@ -216,18 +299,18 @@ static void llama_forward(llama_model* m, kv_cache* kv, int token, int pos, floa
     for (int l = 0; l < m->n_layers; l++) {
         rmsnorm(xn, x, m->layers[l].attn_norm, E, eps);
 
-        mm_t(q_all, xn, m->layers[l].wq, 1, E, Q_DIM);
-        mm_t(k_new, xn, m->layers[l].wk, 1, E, KVD);
-        mm_t(v_new, xn, m->layers[l].wv, 1, E, KVD);
+        qmv(q_all, &m->layers[l].wq, xn);
+        qmv(k_new, &m->layers[l].wk, xn);
+        qmv(v_new, &m->layers[l].wv, xn);
         add_bias(q_all, m->layers[l].q_bias, Q_DIM);
         add_bias(k_new, m->layers[l].k_bias, KVD);
         add_bias(v_new, m->layers[l].v_bias, KVD);
 
         // RoPE
         for (int h = 0; h < H; h++)
-            rope(q_all + h*HD, pos, HD, m->rope_base);
+            rope(q_all + h*HD, pos, HD, m->rope_base, m->rope_neox);
         for (int h = 0; h < KV; h++)
-            rope(k_new + h*HD, pos, HD, m->rope_base);
+            rope(k_new + h*HD, pos, HD, m->rope_base, m->rope_neox);
 
         // KV cache
         long base = (long)l * kv->max_seq * KVD;
@@ -258,25 +341,25 @@ static void llama_forward(llama_model* m, kv_cache* kv, int token, int pos, floa
 
         // Output projection + residual
         float *proj = (float*)calloc(E, sizeof(float));
-        mm_t(proj, attn_out, m->layers[l].wo, 1, Q_DIM, E);
+        qmv(proj, &m->layers[l].wo, attn_out);
         for (int i = 0; i < E; i++) x[i] += proj[i];
         free(proj);
 
         // FFN: SiLU-gated
         rmsnorm(xn, x, m->layers[l].ffn_norm, E, eps);
-        mm_t(ffn_gate, xn, m->layers[l].wgate, 1, E, FFN);
-        mm_t(ffn_up, xn, m->layers[l].wup, 1, E, FFN);
+        qmv(ffn_gate, &m->layers[l].wgate, xn);
+        qmv(ffn_up, &m->layers[l].wup, xn);
         for (int i = 0; i < FFN; i++) {
             float g = ffn_gate[i];
             ffn_gate[i] = (g / (1.0f + expf(-g))) * ffn_up[i];
         }
-        mm_t(ffn_out, ffn_gate, m->layers[l].wdown, 1, FFN, E);
+        qmv(ffn_out, &m->layers[l].wdown, ffn_gate);
         for (int i = 0; i < E; i++) x[i] += ffn_out[i];
     }
 
     rmsnorm(xn, x, m->out_norm, E, eps);
-    float *lm_head = m->has_output_weight ? m->out_weight : m->tok_emb;
-    mm_t(logits, xn, lm_head, 1, E, m->vocab);
+    const wt *lm_head = m->has_output_weight ? &m->out_weight : &m->tok_emb;
+    qmv(logits, lm_head, xn);
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
     free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out);
@@ -285,6 +368,14 @@ static void llama_forward(llama_model* m, kv_cache* kv, int token, int pos, floa
 // ── Sampling + timing ────────────────────────────────────────────────────────
 
 static int sample(float *logits, int n, float temp) {
+    /* temp 0 means greedy, and dividing by it means every logit becomes an infinity, the
+     * softmax becomes NaN, the cumulative comparison never fires and the caller silently
+     * receives the last token in the vocabulary on every step. Take the argmax instead. */
+    if (temp <= 0.0f) {
+        int best = 0;
+        for (int i = 1; i < n; i++) if (logits[i] > logits[best]) best = i;
+        return best;
+    }
     for (int i = 0; i < n; i++) logits[i] /= temp;
     softmax(logits, n);
     float r = (float)rand() / (float)RAND_MAX, cum = 0;
