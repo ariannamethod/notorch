@@ -447,6 +447,58 @@ float* gguf_dequant(const gguf_file* gf, int tensor_idx) {
     return dst;
 }
 
+/* One row of a packed tensor, without materialising the rest.
+ *
+ * An embedding table is read one row per token, and in a GGUF it is usually the largest
+ * tensor in the file: Qwen2.5-1.5B keeps 151936 x 1536 there, which is 933 MB expanded to
+ * f32 against 131 MB left packed. A caller that only ever needs one row at a time should
+ * not have to pay for the other 151935.
+ *
+ * Rows are contiguous and a row length is a whole number of blocks, so a row decodes with
+ * exactly the format code gguf_dequant uses, pointed at an offset — same values, same
+ * order, no second implementation to keep in step.
+ *
+ * dst needs shape[0] floats. Returns 0, or -1 on a bad tensor index, a row past the end,
+ * a row length that is not a whole number of blocks, or a dtype with no decoder. */
+int gguf_dequant_row(const gguf_file* gf, int tensor_idx, uint64_t row, float* dst) {
+    if (!gf || !dst || tensor_idx < 0 || tensor_idx >= (int)gf->n_tensors) return -1;
+    const gguf_tensor_info* ti = &gf->tensors[tensor_idx];
+
+    uint64_t cols = ti->shape[0];
+    if (cols == 0 || ti->n_elements % cols) return -1;
+    uint64_t rows = ti->n_elements / cols;
+    if (row >= rows) return -1;
+
+    /* Zero here means the row is not a whole number of blocks — a partial block cannot be
+     * decoded on its own, and silently reading the neighbouring row's bytes would be the
+     * wrong answer rather than a slow one. */
+    uint64_t rb = gguf_dtype_nbytes(ti->dtype, cols);
+    if (rb == 0) return -1;
+
+    /* Same bounds discipline as gguf_dequant: a malformed file must not drive a read past
+     * the mapped data, and the multiply must not wrap on the way. */
+    if (rb > (UINT64_MAX - ti->offset) / (rows ? rows : 1)) return -1;
+    uint64_t off = ti->offset + row * rb;
+    if (off >= gf->data_size || rb > gf->data_size - off) return -1;
+
+    const uint8_t* src = gf->data + off;
+    switch (ti->dtype) {
+    case GGUF_TYPE_F32: memcpy(dst, src, cols * sizeof(float)); break;
+    case GGUF_TYPE_F16: {
+        const uint16_t* f16 = (const uint16_t*)src;
+        for (uint64_t i = 0; i < cols; i++) dst[i] = f16_to_f32(f16[i]);
+        break;
+    }
+    case GGUF_TYPE_Q4_0: dequant_q4_0(src, dst, cols); break;
+    case GGUF_TYPE_Q5_0: dequant_q5_0(src, dst, cols); break;
+    case GGUF_TYPE_Q8_0: dequant_q8_0(src, dst, cols); break;
+    case GGUF_TYPE_Q4_K: dequant_q4_k(src, dst, cols); break;
+    case GGUF_TYPE_Q6_K: dequant_q6_k(src, dst, cols); break;
+    default: return -1;
+    }
+    return 0;
+}
+
 void gguf_print_info(const gguf_file* gf) {
     if (!gf) return;
     printf("GGUF v%d: %llu tensors, %llu metadata\n", gf->version, gf->n_tensors, gf->n_kv);

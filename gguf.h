@@ -89,6 +89,13 @@ int gguf_find_tensor(const gguf_file* gf, const char* name);
 // Handles: F32 (copy), F16 (convert), Q8_0 (dequant), Q4_0 (dequant).
 float* gguf_dequant(const gguf_file* gf, int tensor_idx);
 
+// One row of a packed tensor, decoded in place of the whole thing. dst needs shape[0]
+// floats. Meant for embedding lookups, where the table is often the largest tensor in
+// the file and exactly one of its rows is wanted per token. Returns 0, or -1 on a bad
+// index, a row past the end, a row that is not a whole number of blocks, or a dtype with
+// no decoder.
+int gguf_dequant_row(const gguf_file* gf, int tensor_idx, uint64_t row, float* dst);
+
 // Get metadata value by key. Returns NULL if not found.
 const gguf_kv* gguf_get_kv(const gguf_file* gf, const char* key);
 
