@@ -15,6 +15,45 @@ ifeq ($(UNAME), Darwin)
   BLAS_NAME  = Accelerate
 endif
 
+# ── aarch64: turn on the SIMD the packed matvecs are already written against ──
+# The int8 row kernels are guarded on __ARM_FEATURE_DOTPROD / __ARM_FEATURE_MATMUL_INT8,
+# and clang defines those only when the target actually carries the instructions. A stock
+# aarch64 target is plain armv8-a, so on a phone the guarded kernels compile out and the
+# scalar fallback runs instead — Exynos 1580, 32000x2048, one core, scalar against SDOT:
+# Q4_0 14.139 -> 6.218 ms, Q6_K 55.280 -> 9.043 ms, output bit-identical either way.
+#
+# Ask the compiler before probing the CPU. Some arm64 toolchains — Apple's among them —
+# already target a core that carries these, and there the right number of flags to add is
+# zero. Only when the default target lacks them is the host worth reading, and the host is
+# read two ways because the two platforms expose it differently: /proc/cpuinfo on Linux
+# and Termux, sysctl on Darwin.
+#
+# The probe reads the BUILD host, so it is right for native builds and wrong for
+# cross-compilation — pass ARM_FLAGS= by hand there, or ARM_SIMD=0 to skip it entirely.
+# No -mcpu/-mtune on purpose: tuning for one core type costs ~10% on the other, and on
+# big.LITTLE the same binary runs on both.
+ARM_SIMD ?= 1
+ifneq ($(filter aarch64 arm64,$(shell uname -m)),)
+  ifeq ($(ARM_SIMD), 1)
+    ARM_HAS_DOT := $(shell echo | $(CC) -dM -E - 2>/dev/null | grep -c __ARM_FEATURE_DOTPROD)
+    ifeq ($(ARM_HAS_DOT),0)
+      ARM_MARCH := $(shell f=""; \
+        { grep -qwm1 asimddp /proc/cpuinfo 2>/dev/null || \
+          [ "$$(sysctl -n hw.optional.arm.FEAT_DotProd 2>/dev/null)" = 1 ]; } && f="$$f+dotprod"; \
+        { grep -qwm1 i8mm /proc/cpuinfo 2>/dev/null || \
+          [ "$$(sysctl -n hw.optional.arm.FEAT_I8MM 2>/dev/null)" = 1 ]; } && f="$$f+i8mm"; \
+        [ -n "$$f" ] && echo "-march=armv8.2-a$$f")
+      # Only keep it if this compiler actually accepts the arch string.
+      ARM_FLAGS ?= $(shell [ -n "$(ARM_MARCH)" ] && \
+        $(CC) $(ARM_MARCH) -E -x c /dev/null >/dev/null 2>&1 && echo "$(ARM_MARCH)")
+      CFLAGS += $(ARM_FLAGS)
+      ARM_NAME = $(if $(ARM_FLAGS),$(ARM_FLAGS),baseline armv8-a)
+    else
+      ARM_NAME = compiler default (already carries SDOT)
+    endif
+  endif
+endif
+
 # ── Linux: OpenBLAS ──
 # Prefer pkg-config when available — handles distros that ship cblas.h in
 # a subdir (Termux: /usr/include/openblas/) and custom $PREFIX layouts.
@@ -34,33 +73,6 @@ ifeq ($(UNAME), Linux)
   BLAS_NAME = OpenBLAS
 endif
 
-# ── aarch64: turn on the SIMD the packed matvecs are already written against ──
-# The int8 row kernels are guarded on __ARM_FEATURE_DOTPROD / __ARM_FEATURE_MATMUL_INT8,
-# and clang defines those only when the target actually carries the instructions. The
-# default aarch64 target is plain armv8-a, so on a phone the guarded kernels compile out
-# and the scalar fallback runs instead — 1.9x slower on a Cortex-A720 (Exynos 1580,
-# Q4_0 4096x4096: 3.607 ms scalar vs 1.873 ms with SDOT, bit-identical output).
-#
-# The probe reads the build host, so it is right for native builds (Termux, ARM boards)
-# and wrong for cross-compilation — pass ARM_FLAGS= by hand there, or ARM_SIMD=0 to skip
-# the probe entirely. No -mcpu/-mtune on purpose: tuning for one core type costs ~10% on
-# the other, and on big.LITTLE the same binary runs on both.
-ARM_SIMD ?= 1
-ifeq ($(UNAME), Linux)
-  ifneq ($(filter aarch64 arm64,$(shell uname -m)),)
-    ifeq ($(ARM_SIMD), 1)
-      ARM_MARCH := $(shell f=""; \
-        grep -qwm1 asimddp /proc/cpuinfo 2>/dev/null && f="$$f+dotprod"; \
-        grep -qwm1 i8mm    /proc/cpuinfo 2>/dev/null && f="$$f+i8mm"; \
-        [ -n "$$f" ] && echo "-march=armv8.2-a$$f")
-      # Only keep it if this compiler actually accepts the arch string.
-      ARM_FLAGS ?= $(shell [ -n "$(ARM_MARCH)" ] && \
-        $(CC) $(ARM_MARCH) -E -x c /dev/null >/dev/null 2>&1 && echo "$(ARM_MARCH)")
-      CFLAGS += $(ARM_FLAGS)
-      ARM_NAME = $(if $(ARM_FLAGS),$(ARM_FLAGS),baseline armv8-a)
-    endif
-  endif
-endif
 
 # ── In-house SIMD: AVX2 + FMA (no external BLAS) ──
 # Hand-rolled cblas_* shim in notorch_simd.h. Pure C + intrinsics + pthread.
