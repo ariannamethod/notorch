@@ -72,7 +72,7 @@ SIMD_LIBS  = -lpthread
 
 # ── Targets ──
 
-.PHONY: all test test_js clean cpu gpu simd help lib install metal test_metal infer_gguf_metal
+.PHONY: all test test_qpool test_js clean cpu gpu simd help lib install metal test_metal infer_gguf_metal
 
 all: notorch_test
 	@echo "Built with $(BLAS_NAME). Run: ./notorch_test"
@@ -262,9 +262,14 @@ endif
 
 # ── Test & Clean ──
 
-test: notorch_test test_vision
+test_qpool: tests/test_qpool.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qpool tests/test_qpool.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: test_qpool (threading determinism, $(BLAS_NAME))"
+
+test: notorch_test test_vision test_qpool
 	./notorch_test
 	./test_vision
+	./test_qpool
 
 test_js:
 	node js-edition/test_op_parity.mjs
