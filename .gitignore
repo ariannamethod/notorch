@@ -19,6 +19,7 @@ train_grpo
 train_distillation
 test_sigmoid_scale
 test_vision
+test_qpool
 *.dSYM
 
 # build artifacts
