@@ -34,6 +34,34 @@ ifeq ($(UNAME), Linux)
   BLAS_NAME = OpenBLAS
 endif
 
+# ── aarch64: turn on the SIMD the packed matvecs are already written against ──
+# The int8 row kernels are guarded on __ARM_FEATURE_DOTPROD / __ARM_FEATURE_MATMUL_INT8,
+# and clang defines those only when the target actually carries the instructions. The
+# default aarch64 target is plain armv8-a, so on a phone the guarded kernels compile out
+# and the scalar fallback runs instead — 1.9x slower on a Cortex-A720 (Exynos 1580,
+# Q4_0 4096x4096: 3.607 ms scalar vs 1.873 ms with SDOT, bit-identical output).
+#
+# The probe reads the build host, so it is right for native builds (Termux, ARM boards)
+# and wrong for cross-compilation — pass ARM_FLAGS= by hand there, or ARM_SIMD=0 to skip
+# the probe entirely. No -mcpu/-mtune on purpose: tuning for one core type costs ~10% on
+# the other, and on big.LITTLE the same binary runs on both.
+ARM_SIMD ?= 1
+ifeq ($(UNAME), Linux)
+  ifneq ($(filter aarch64 arm64,$(shell uname -m)),)
+    ifeq ($(ARM_SIMD), 1)
+      ARM_MARCH := $(shell f=""; \
+        grep -qwm1 asimddp /proc/cpuinfo 2>/dev/null && f="$$f+dotprod"; \
+        grep -qwm1 i8mm    /proc/cpuinfo 2>/dev/null && f="$$f+i8mm"; \
+        [ -n "$$f" ] && echo "-march=armv8.2-a$$f")
+      # Only keep it if this compiler actually accepts the arch string.
+      ARM_FLAGS ?= $(shell [ -n "$(ARM_MARCH)" ] && \
+        $(CC) $(ARM_MARCH) -E -x c /dev/null >/dev/null 2>&1 && echo "$(ARM_MARCH)")
+      CFLAGS += $(ARM_FLAGS)
+      ARM_NAME = $(if $(ARM_FLAGS),$(ARM_FLAGS),baseline armv8-a)
+    endif
+  endif
+endif
+
 # ── In-house SIMD: AVX2 + FMA (no external BLAS) ──
 # Hand-rolled cblas_* shim in notorch_simd.h. Pure C + intrinsics + pthread.
 # Drop-in replacement on x86_64 Haswell+ (Intel 2013, AMD 2015). Mutually

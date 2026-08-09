@@ -5605,6 +5605,7 @@ static void nt_q8_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 // vdup/vcombine/vtst/and quartet the high-bit expansion used to cost per half-block. The
 // table is 2 KB and stays resident; entries are pre-shifted to position four, which is
 // where the nibble expects the bit, so no shift is needed after the load.
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 static const uint64_t nt_q5_hi[256] = {
     0x0000000000000000ULL, 0x0000000000000010ULL, 0x0000000000001000ULL, 0x0000000000001010ULL,
     0x0000000000100000ULL, 0x0000000000100010ULL, 0x0000000000101000ULL, 0x0000000000101010ULL,
@@ -5671,6 +5672,7 @@ static const uint64_t nt_q5_hi[256] = {
     0x1010101010000000ULL, 0x1010101010000010ULL, 0x1010101010001000ULL, 0x1010101010001010ULL,
     0x1010101010100000ULL, 0x1010101010100010ULL, 0x1010101010101000ULL, 0x1010101010101010ULL,
 };
+#endif
 
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 static void nt_q5_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
@@ -5827,6 +5829,59 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                           + (float)sc[j0 + 1] * (float)t[g + 4]);
                 }
             }
+        }
+        out[row] = acc;
+    }
+}
+#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+// The 16/32 seam that costs AVX2 a lane argument costs NEON nothing: a Q6 sub-scale
+// covers 16 values and SDOT consumes exactly 16 int8 lanes, so one sub-block is one
+// vdotq_s32 and ssum[j] is written once rather than accumulated. Q6 lands in [-32,31]
+// after the -32 bias, which is signed int8, so SDOT applies directly — none of the
+// unsigned/sign-flip choreography _mm256_maddubs_epi16 forces on the x86 path.
+// The float tail below is character-for-character the scalar one: the integer dots are
+// exact, so keeping the same expression and the same ascending j order makes this kernel
+// bit-identical to the fallback it replaces, and that is what the micro-bench asserts.
+static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 256;
+    const uint8x16_t m4 = vdupq_n_u8(0x0F), m3 = vdupq_n_u8(3);
+    const int8x16_t  b32 = vdupq_n_s8(32);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 210;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 210, *ql = b, *qh = b + 128;
+            const int8_t *sc = (const int8_t *)(b + 192);
+            float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
+            const int8_t *qab = qa + (long)blk * 256;
+            const float  *dab = da + (long)blk * 8;
+            int32_t ssum[16];
+            for (int n = 0; n < 256; n += 128) {
+                const uint8_t *qlh = ql + (n / 128) * 64, *qhh = qh + (n / 128) * 32;
+                int base = (n / 128) * 8;
+                for (int is = 0; is < 2; is++) {
+                    uint8x16_t la = vld1q_u8(qlh + is * 16);        /* elems l      */
+                    uint8x16_t lb = vld1q_u8(qlh + 32 + is * 16);   /* elems l + 32 */
+                    uint8x16_t hv = vld1q_u8(qhh + is * 16);        /* four 2-bit tops */
+                    int8x16_t w1 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                        vandq_u8(la, m4), vshlq_n_u8(vandq_u8(hv, m3), 4))), b32);
+                    int8x16_t w2 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                        vandq_u8(lb, m4), vshlq_n_u8(vandq_u8(vshrq_n_u8(hv, 2), m3), 4))), b32);
+                    int8x16_t w3 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                        vshrq_n_u8(la, 4), vshlq_n_u8(vandq_u8(vshrq_n_u8(hv, 4), m3), 4))), b32);
+                    int8x16_t w4 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                        vshrq_n_u8(lb, 4), vshlq_n_u8(vshrq_n_u8(hv, 6), 4))), b32);
+                    const int8_t *x = qab + n + is * 16;
+                    const int32x4_t z = vdupq_n_s32(0);
+                    ssum[base + is + 0] = vaddvq_s32(vdotq_s32(z, w1, vld1q_s8(x)));
+                    ssum[base + is + 2] = vaddvq_s32(vdotq_s32(z, w2, vld1q_s8(x + 32)));
+                    ssum[base + is + 4] = vaddvq_s32(vdotq_s32(z, w3, vld1q_s8(x + 64)));
+                    ssum[base + is + 6] = vaddvq_s32(vdotq_s32(z, w4, vld1q_s8(x + 96)));
+                }
+            }
+            for (int j = 0; j < 16; j++)
+                acc += d * (float)sc[j] * dab[j / 2] * (float)ssum[j];
         }
         out[row] = acc;
     }
@@ -6086,6 +6141,62 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                 int sub = blk * 8 + j;
                 acc += da[sub] * (d * (float)ls[j] * (float)dots[j]
                                 - dmin * (float)lm[j] * (float)asum[sub]);
+            }
+        }
+        out[row] = acc;
+    }
+}
+#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+// Q4_K on NEON needs no sign trick either, for a different reason than Q6_K: the nibble is
+// already unsigned [0,15], and 15 is representable in int8, so reinterpreting it as signed
+// is the identity and plain SDOT is exact. USDOT would also serve, but it is an i8mm
+// instruction and this kernel has no reason to demand the wider baseline.
+// SUM(qa) is a dot against a vector of ones — the same lift the x86 path takes, minus the
+// maddubs detour. Two 16-lane SDOTs cover a 32-value sub-block, so a whole 256-value block
+// is eight of them plus eight drains, against 256 scalar multiply-adds in the fallback.
+// The float tail is the scalar one verbatim, ascending by sub-block: integer dots are exact,
+// so this kernel and the fallback must agree bit for bit.
+static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 256, nsub = k / 32;
+    int32_t asum[NT_QMV_ASUM_MAX];
+    const uint8x16_t m4 = vdupq_n_u8(0x0F);
+    const int8x16_t  one8 = vdupq_n_s8(1);
+    for (int s = 0; s < nsub; s++) {
+        const int8_t *p = qa + (long)s * 32;
+        int32x4_t t = vdotq_s32(vdupq_n_s32(0), one8, vld1q_s8(p));
+        t = vdotq_s32(t, one8, vld1q_s8(p + 16));
+        asum[s] = vaddvq_s32(t);
+    }
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 144;
+        float acc = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 144;
+            float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+            float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
+            const uint8_t *sc = b + 4, *qs = b + 16;
+            /* One 32-byte weight load feeds two sub-blocks: low nibbles the even one, high
+             * nibbles the odd one — the same pairing the fallback expresses as (j >> 1). */
+            int32_t dots[8];
+            for (int p = 0; p < 4; p++) {
+                uint8x16_t q0 = vld1q_u8(qs + p * 32);
+                uint8x16_t q1 = vld1q_u8(qs + p * 32 + 16);
+                const int8_t *a0 = qa + (long)(blk * 8 + 2 * p) * 32;
+                const int8_t *a1 = qa + (long)(blk * 8 + 2 * p + 1) * 32;
+                const int32x4_t z = vdupq_n_s32(0);
+                int32x4_t e = vdotq_s32(z, vreinterpretq_s8_u8(vandq_u8(q0, m4)), vld1q_s8(a0));
+                e = vdotq_s32(e, vreinterpretq_s8_u8(vandq_u8(q1, m4)), vld1q_s8(a0 + 16));
+                int32x4_t o = vdotq_s32(z, vreinterpretq_s8_u8(vshrq_n_u8(q0, 4)), vld1q_s8(a1));
+                o = vdotq_s32(o, vreinterpretq_s8_u8(vshrq_n_u8(q1, 4)), vld1q_s8(a1 + 16));
+                dots[2 * p]     = vaddvq_s32(e);
+                dots[2 * p + 1] = vaddvq_s32(o);
+            }
+            for (int j = 0; j < 8; j++) {
+                uint8_t s6, m6; nt_get_scale_min_k4(j, sc, &s6, &m6);
+                int sub = blk * 8 + j;
+                acc += da[sub] * (d * (float)s6 * (float)dots[j]
+                                - dmin * (float)m6 * (float)asum[sub]);
             }
         }
         out[row] = acc;
