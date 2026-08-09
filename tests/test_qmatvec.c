@@ -197,20 +197,26 @@ static int run_f32(void) {
 }
 
 /* int8 dynamic-activation-quant path vs the f32-dequant reference (APPROXIMATE:
- * int8 activation quant trades a little accuracy for speed -> tolerance, not bit-close). */
-static int run_i8_q4_0(void) {
+ * int8 activation quant trades a little accuracy for speed -> tolerance, not bit-close).
+ *
+ * This used to test Q4_0 and only Q4_0, with the dtype and the block stride written into
+ * the body. That is how Q5_0 went for a release with no int8 kernel at all and nobody
+ * noticed: the harness never asked for one. It is parameterised now, so a dtype that
+ * loses its fast path fails here instead of in someone profile. */
+static int run_i8(const char *name, int dtype, int blk_bytes, int blk_vals,
+                  void (*set_scale)(uint8_t *)) {
     int m = 512, k = 2048;
-    long nb = (long)k / 32;
-    uint8_t *W = malloc((long)m * nb * 18);
-    for (long i = 0; i < (long)m * nb * 18; i++) W[i] = (uint8_t)(rand() & 0xFF);
+    long nb = (long)k / blk_vals;
+    uint8_t *W = malloc((long)m * nb * blk_bytes);
+    for (long i = 0; i < (long)m * nb * blk_bytes; i++) W[i] = (uint8_t)(rand() & 0xFF);
     for (long row = 0; row < m; row++)
-        for (long b = 0; b < nb; b++) { uint8_t *bl = W + (row*nb + b)*18; bl[0] = 0x66; bl[1] = 0x2A; }
+        for (long b = 0; b < nb; b++) set_scale(W + (row*nb + b)*blk_bytes);
     float *x = malloc(sizeof(float) * k);
     for (int i = 0; i < k; i++) x[i] = (float)((double)rand()/RAND_MAX*2.0 - 1.0);
     float *ref = malloc(sizeof(float)*m), *got = malloc(sizeof(float)*m);
-    nt_qmatvec(ref, W, 2, x, m, k);                 /* f32 dequant = exact oracle */
-    int rc = nt_qmatvec_i8(got, W, 2, x, m, k), ok; /* int8 dynamic-quant approx */
-    if (rc != 0) { printf("FAIL  i8Q4_0 nt_qmatvec_i8 rc=%d\n", rc); ok = 0; }
+    nt_qmatvec(ref, W, dtype, x, m, k);                 /* f32 dequant = exact oracle */
+    int rc = nt_qmatvec_i8(got, W, dtype, x, m, k), ok; /* int8 dynamic-quant approx */
+    if (rc != 0) { printf("FAIL  i8%s nt_qmatvec_i8 rc=%d\n", name, rc); ok = 0; }
     else {
         float maxabs = 0, maxref = 0;
         for (int i = 0; i < m; i++) {
@@ -219,8 +225,8 @@ static int run_i8_q4_0(void) {
         }
         float rel = maxref > 0 ? maxabs/maxref : maxabs;
         ok = rel < 2e-2f;
-        printf("i8Q4_0 vs f32-dequant [m=%d k=%d] rel %.2g  %s (int8 approx, tol 2e-2)\n",
-               m, k, rel, ok ? "PASS" : "FAIL");
+        printf("i8%-5s vs f32-dequant [m=%d k=%d] rel %.2g  %s (int8 approx, tol 2e-2)\n",
+               name, m, k, rel, ok ? "PASS" : "FAIL");
     }
     free(W); free(x); free(ref); free(got);
     return ok ? 0 : 1;
@@ -232,11 +238,16 @@ int main(void) {
     fails += run_f32();
     fails += run_f16();
     fails += run_fmt("Q4_0", 2,  18,  32, ref_q4_0, set_s32);
-    fails += run_i8_q4_0();
     fails += run_fmt("Q5_0", 6,  22,  32, ref_q5_0, set_s32);
     fails += run_fmt("Q8_0", 8,  34,  32, ref_q8_0, set_s32);
     fails += run_fmt("Q4_K", 12, 144, 256, ref_q4_k, set_q4k);
     fails += run_fmt("Q6_K", 14, 210, 256, ref_q6_k, set_q6k);
+    /* every dtype the int8 dispatch claims, checked against the exact path */
+    fails += run_i8("Q4_0", 2,  18,  32,  set_s32);
+    fails += run_i8("Q5_0", 6,  22,  32,  set_s32);
+    fails += run_i8("Q8_0", 8,  34,  32,  set_s32);
+    fails += run_i8("Q4_K", 12, 144, 256, set_q4k);
+    fails += run_i8("Q6_K", 14, 210, 256, set_q6k);
     if (fails == 0) { printf("ALL PASS\n"); return 0; }
     printf("%d format(s) FAILED\n", fails); return 1;
 }

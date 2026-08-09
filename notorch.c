@@ -5587,6 +5587,91 @@ static void nt_q8_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #endif
 
+// Q5_0 int8-dot rows: 22 B/32 vals — an f16 scale, a 32-bit mask carrying one high bit
+// per value, then 16 nibble-bytes. The value is (nibble | high<<4) - 16.
+//
+// Two properties keep this cheap. The reconstructed q is [0,31], representable as signed
+// int8, so SDOT applies with no sign handling — unlike the Q4_0 path there is nothing to
+// bias into range first. And the -16 lifts out of the dot the way Q4_K's minimum does:
+// SUM((q-16)*x) is SUM(q*x) - 16*SUM(x), so the per-block activation sum is computed once
+// per call and the subtraction never touches a vector lane.
+//
+// The high bits need no lookup table, which is the usual approach. Broadcasting a mask
+// byte across eight lanes and testing it against the powers of two expands one bit per
+// lane in a single vtstq_u8; masking with 0x10 puts each bit straight into position four,
+// where the nibble expects it. Block bytes 2-3 cover lanes 0-15 and bytes 4-5 cover 16-31,
+// the same split the nibble halves already use.
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+static void nt_q5_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 32;
+    int32_t asum[NT_QMV_ASUM_MAX];
+    const int8x16_t one8 = vdupq_n_s8(1);
+    for (int b = 0; b < nb; b++) {
+        const int8_t *p = qa + (long)b * 32;
+        int32x4_t t = vdotq_s32(vdupq_n_s32(0), one8, vld1q_s8(p));
+        t = vdotq_s32(t, one8, vld1q_s8(p + 16));
+        asum[b] = vaddvq_s32(t);
+    }
+    const uint8x16_t m4 = vdupq_n_u8(0x0F), hbit = vdupq_n_u8(0x10);
+    const uint8_t pow2[16] = { 1,2,4,8,16,32,64,128, 1,2,4,8,16,32,64,128 };
+    const uint8x16_t pw = vld1q_u8(pow2);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 22;
+        float acc = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 22;
+            float d = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            uint8x16_t qh_a = vcombine_u8(vdup_n_u8(blk[2]), vdup_n_u8(blk[3]));
+            uint8x16_t qh_b = vcombine_u8(vdup_n_u8(blk[4]), vdup_n_u8(blk[5]));
+            uint8x16_t h0 = vandq_u8(vtstq_u8(qh_a, pw), hbit);
+            uint8x16_t h1 = vandq_u8(vtstq_u8(qh_b, pw), hbit);
+            uint8x16_t pk = vld1q_u8(blk + 6);
+            int8x16_t lo = vreinterpretq_s8_u8(vorrq_u8(vandq_u8(pk, m4), h0));
+            int8x16_t hi = vreinterpretq_s8_u8(vorrq_u8(vshrq_n_u8(pk, 4), h1));
+            const int8_t *qab = qa + (long)b * 32;
+            int32x4_t t = vdupq_n_s32(0);
+            t = vdotq_s32(t, lo, vld1q_s8(qab));
+            t = vdotq_s32(t, hi, vld1q_s8(qab + 16));
+            acc += d * da[b] * (float)(vaddvq_s32(t) - 16 * asum[b]);
+        }
+        out[row] = acc;
+    }
+}
+#else
+static void nt_q5_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, int r0, int r1, int k) {
+    int nb = k / 32;
+    int32_t asum[NT_QMV_ASUM_MAX];
+    for (int b = 0; b < nb; b++) {
+        const int8_t *p = qa + (long)b * 32;
+        int32_t t = 0;
+        for (int i = 0; i < 32; i++) t += p[i];
+        asum[b] = t;
+    }
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 22;
+        float acc = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 22;
+            float d = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            uint32_t qh = (uint32_t)blk[2] | ((uint32_t)blk[3] << 8)
+                        | ((uint32_t)blk[4] << 16) | ((uint32_t)blk[5] << 24);
+            const uint8_t *qs = blk + 6;
+            const int8_t *qab = qa + (long)b * 32;
+            int32_t s = 0;
+            for (int j = 0; j < 16; j++) {
+                int q0 = (qs[j] & 0x0F) | (((qh >> j) & 1) << 4);
+                int q1 = (qs[j] >> 4)   | (((qh >> (j + 16)) & 1) << 4);
+                s += q0 * qab[j]; s += q1 * qab[j + 16];
+            }
+            acc += d * da[b] * (float)(s - 16 * asum[b]);
+        }
+        out[row] = acc;
+    }
+}
+#endif
+
 // Q6_K int8-dot rows: 210 B/256 vals against the per-32 int8 activation.
 // The two block grids line up, which is what makes this path exact-by-subblock: a weight
 // sub-scale covers 16 values, an activation block covers 32, and 16j..16j+15 always sits
@@ -5952,6 +6037,7 @@ static nt_qrows_i8_fn nt_qrows_i8_for(int dtype, int k) {
     if (k % 32) return NULL;
     switch (dtype) {
     case 2:  return nt_q4_0_rows_i8;
+    case 6:  return nt_q5_0_rows_i8;
     case 8:  return nt_q8_0_rows_i8;
     case 12: return (k % 256) ? NULL : nt_q4_k_rows_i8;
     case 14: return (k % 256) ? NULL : nt_q6_k_rows_i8;
@@ -5974,7 +6060,8 @@ int nt_qmatvec_i8_rows(float *out, const uint8_t *Wq, int dtype,
 
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k) {
-    if (dtype != 2 && dtype != 8 && dtype != 12 && dtype != 14) return -1;  /* Q4_0/Q8_0/Q4_K/Q6_K */
+    if (dtype != 2 && dtype != 6 && dtype != 8 && dtype != 12 && dtype != 14)
+        return -1;                                       /* Q4_0/Q5_0/Q8_0/Q4_K/Q6_K */
     if (k % 32) return -1;
     if ((dtype == 12 || dtype == 14) && (k % 256)) return -1;
     if (k / 32 > NT_QMV_ASUM_MAX) return -1;      /* per-call activation sums are stack-held */
@@ -5984,10 +6071,11 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
     if (!qa || !da) { free(qa); free(da); return -1; }
     nt_quant_act_q8(x, k, qa, da);
 
-    nt_qrows_i8_fn fn = (dtype == 2)  ? nt_q4_0_rows_i8
-                      : (dtype == 8)  ? nt_q8_0_rows_i8
-                      : (dtype == 12) ? nt_q4_k_rows_i8
-                                      : nt_q6_k_rows_i8;
+    /* Selected by table, not by a ternary chain whose last arm is a default. That shape
+     * is why widening the guard above without touching this line sent Q5_0 into the Q6_K
+     * kernel and read 210-byte blocks out of a 22-byte-block buffer. */
+    nt_qrows_i8_fn fn = nt_qrows_i8_for(dtype, k);
+    if (!fn) { free(qa); free(da); return -1; }
     int nt = nt_qmv_host_threads(m);
     if (nt <= 1 || (long)m * k < nt_qmv_thread_floor()) {
         fn(out, Wq, qa, da, 0, m, k);
