@@ -131,6 +131,7 @@ Schedules: `Schedule.cosine`, `Schedule.step`.
 Inference helpers: `KVCache`.
 Adapters: `LoRAPair`, `saveLoRA`, `loadLoRA`, `mergeLoRAInto`.
 Loaders: `loadNotorchBin`, `loadSafetensors`, `saveNotorchBin`.
+Packed kernels: `qmatvec` (matvec straight off packed GGUF bytes).
 Tokenizers: `CharTokenizer`, `BPETokenizer`.
 
 ---
@@ -275,12 +276,19 @@ GGUF in JS via `loadGGUF(arrayBuffer)` reads GGUF v3 and dequantizes
 **F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K** to f32 on load. the block routines
 mirror `gguf.c` byte-for-byte and are verified against the C path by
 `test_gguf_dequant.mjs` — Q4_K/Q6_K/Q8_0/Q4_0 match C to ~5e-9 across real
-models (Qwen3-0.6B, smallcoder Q8_0, wtf360 Q4_0); Q5_0 is mirrored from
-`gguf.c` but had no local Q5_0 file to run against yet. weights are f32 after
-load, so a real quantized GGUF loads in the browser today; the packed /
-WebGPU quant matvec (mirroring the C Metal `nt_metal_q4k_matvec`) is the next
-step, so very large models still want the C edition for now.
+models (Qwen3-0.6B, smallcoder Q8_0, wtf360 Q4_0), Q5_0 to 5e-8 on
+nano_arianna Q4_K_M, whose 32000×576 `token_embd.weight` is Q5_0.
 `loadSafetensors` works for HF F32 weights.
+
+`loadGGUF` still expands every tensor to f32 on load, which is 4 B/weight
+where Q4_K on disk is ~0.55 — a 170 MB file becomes north of a gigabyte in a
+tab. `qmatvec(out, Wq, dtype, x, m, k)` is the way out and the port of C
+`nt_qmatvec`: it dots a row straight out of the packed bytes, unpacking one
+block at a time into locals, so no dense tensor is ever built. It covers F32,
+F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K and returns -1 on a dtype or a `k` it has no
+kernel for, same contract as C. Moving the loader itself onto packed storage
+is the next step; the WebGPU quant matvec (mirroring the C Metal
+`nt_metal_q4k_matvec`) is the one after.
 
 To run the parity test:
 ```bash
@@ -293,6 +301,16 @@ The lightweight JS/C op-contract gate is:
 ```bash
 make test_js
 # or: cd js-edition && npm test
+```
+
+`test_qmatvec.mjs` (part of both of the above) checks the packed kernels
+against an independent dequant oracle at the C threshold of 1e-3. Pass
+`--cref` to add the second hand — the C kernel run on the identical bytes
+rather than on a second generator believed to agree:
+```bash
+cc -std=c11 -O2 -I. tests/js_qmatvec_ref.c notorch.c -lm -o /tmp/js_qmatvec_ref
+cd js-edition && node test_qmatvec.mjs --cref /tmp/js_qmatvec_ref
+# → each format PASS with C ~1e-6 (f64 accumulator in JS vs f32 in C)
 ```
 
 ### Running a GGUF end-to-end (`infer_gguf.mjs`)

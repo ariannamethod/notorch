@@ -13,6 +13,44 @@ Newest entries on top.
 
 ---
 
+## 2026-08-18 — js-edition gets the packed matvec, and its own gate learns to see NaN
+
+The JS edition had drifted behind the C kernels: op parity was intact (0–36, all
+37 `NT_OP_*` defines), but `loadGGUF` still expanded every quantized tensor to f32
+on load — 4 B/weight where Q4_K on disk is ~0.55, so a 170 MB file becomes north of
+a gigabyte in a browser tab. `qmatvec(out, Wq, dtype, x, m, k)` ports `nt_qmatvec`:
+one block unpacked into locals at a time, no dense tensor ever built. F32, F16,
+Q4_0, Q5_0, Q8_0, Q4_K, Q6_K; `-1` for a dtype or a `k` with no kernel, same
+contract as `nt_qrows_for` (`notorch.c:5230`). `loadGGUF` is untouched — moving
+storage onto packed bytes is its own step with its own gate.
+
+The gate found its own blind spot first. The clean run showed `rel 0.00e+0` across
+all seven formats, and a byte-swapped f16 kernel still **passed**: the kernel
+returned NaN, NaN fails every comparison in the error reducer, and `maxAbs` stayed
+at zero. Proximity was being measured where finiteness was never checked. Fixed,
+then re-falsified per format.
+
+Proof (neo, Accelerate, node v25.9.0):
+
+- `make test_js` and `npm test` — `JS_OP_PARITY_OK` + `JS_QMATVEC_OK`, 7/7 PASS.
+- Red hand, one defect per format, all FAIL at rc=1: Q4_0 zero-point dropped
+  `2.46e-1`, Q5_0 high bit swapped `8.10e-1`, Q8_0 sign-extend dropped `1.88e+0`,
+  Q4_K min subtract dropped `3.93e-2`, Q6_K wrong sub-scale `6.61e-1`, F16 and F32
+  byte-swapped `Infinity`.
+- Second hand: `tests/js_qmatvec_ref.c` runs `nt_qmatvec` on the identical bytes
+  handed over through a file, not on a second generator believed to agree. JS vs C
+  is `1.02e-6`–`1.68e-6` across the seven — the width of the accumulator, f64 in JS
+  against f32 in C, three orders under the 1e-3 threshold.
+- README debt closed by measurement: it claimed Q5_0 had no local file to run
+  against. nano_arianna Q4_K_M carries `token_embd.weight` 32000×576 in Q5_0;
+  `test_gguf_dequant.mjs` puts it at `maxAbs=5.00e-8` against C.
+- Regression: `infer_gguf.mjs` generates token-for-token identically on the HEAD
+  `notorch.js` and this one.
+
+Noted, not touched: `infer_gguf.mjs` decodes without word separators
+(`resonance is,akindofthefield,a`) on both versions — a BPE-decode defect that
+predates this change.
+
 ## 2026-07-30 — qmatvec pthread worker reuse (non-OpenMP path)
 
 WTForacle surfaced the remaining per-call pthread overhead in the packed matvec path.
