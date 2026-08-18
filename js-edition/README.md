@@ -131,7 +131,8 @@ Schedules: `Schedule.cosine`, `Schedule.step`.
 Inference helpers: `KVCache`.
 Adapters: `LoRAPair`, `saveLoRA`, `loadLoRA`, `mergeLoRAInto`.
 Loaders: `loadNotorchBin`, `loadSafetensors`, `saveNotorchBin`.
-Packed kernels: `qmatvec` (matvec straight off packed GGUF bytes).
+Packed kernels: `qmatvec` (exact), `qmatvecI8` / `qmatvecI8Rows` / `quantAct`
+(int8-activation fast path).
 Tokenizers: `CharTokenizer`, `BPETokenizer`.
 
 ---
@@ -286,9 +287,28 @@ tab. `qmatvec(out, Wq, dtype, x, m, k)` is the way out and the port of C
 `nt_qmatvec`: it dots a row straight out of the packed bytes, unpacking one
 block at a time into locals, so no dense tensor is ever built. It covers F32,
 F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K and returns -1 on a dtype or a `k` it has no
-kernel for, same contract as C. Moving the loader itself onto packed storage
-is the next step; the WebGPU quant matvec (mirroring the C Metal
-`nt_metal_q4k_matvec`) is the one after.
+kernel for, same contract as C.
+
+`qmatvecI8` is the same matvec with the activation quantized to per-32 int8 and
+the dot accumulated in integers — C's `nt_qmatvec_i8`, the llama.cpp / MNN fast
+path. Approximate by construction, `qmatvec` stays the exact reference, and the
+gate holds it to the C tolerance of 2e-2 (measured 3.1e-3 to 4.1e-3). Where C
+banks on SDOT and VNNI, JS banks on the type: an int32 accumulator stays in V8's
+small-integer form instead of running an f32 dependency chain, and no weight is
+ever widened to a float. `quantAct` + `qmatvecI8Rows` are the split entry, for a
+consumer dotting one row against many matrices — a MoE against its experts —
+that should quantize the row once rather than once per matrix.
+
+Two details there are load-bearing and neither is visible on random input.
+C's `lrintf` rounds ties to even; `Math.round` rounds them up, and on activations
+that land on exact halves that is a whole int8 step — 16 of 32 in the test case.
+And C holds the scale, its reciprocal, and the scaled activation at f32 where JS
+would carry f64: 13 of 6.4M random activations move by one step when that is
+dropped. Both are pinned by searched-out literals in `test_qmatvec.mjs`, because
+a uniform-random check finds the second maybe one run in thirty.
+
+Moving the loader itself onto packed storage is the next step; the WebGPU quant
+matvec (mirroring the C Metal `nt_metal_q4k_matvec`) is the one after.
 
 To run the parity test:
 ```bash

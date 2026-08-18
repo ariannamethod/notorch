@@ -3819,6 +3819,251 @@ export function qmatvec(out, Wq, dtype, x, m, k) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// INT8-ACTIVATION MATVEC — the llama.cpp / MNN fast path, ported from C
+// nt_qmatvec_i8 (notorch.h:551). The activation is quantized to per-32 int8
+// and dotted against the packed weights with INTEGER accumulation. Where C
+// wins on SDOT/VNNI, JS wins on the type: an int32 accumulator stays in V8's
+// small-integer representation instead of running an f32 dependency chain,
+// and no weight is ever widened to a float.
+//
+// APPROXIMATE by construction — the activation quant trades accuracy for
+// speed, and `qmatvec` above stays the exact reference, exactly as in C.
+//
+// C's NT_QMV_ASUM_MAX (notorch.c:5244) caps k at 65536 because its
+// activation sums live on the stack. That is a C storage detail, not
+// semantics, so it is not reproduced here: this path takes any k that
+// divides into whole blocks.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Round half to even. C's lrintf (notorch.c:5515) rounds ties to even under
+ * the default FE_TONEAREST; Math.round rounds them up, which walks the two
+ * runtimes one int8 step apart on every exact .5 — and .5 is not rare when
+ * the divisor is a power-of-two-ish scale.
+ */
+function rintTiesEven(v) {
+  const f = Math.floor(v), diff = v - f;
+  if (diff > 0.5) return f + 1;
+  if (diff < 0.5) return f;
+  return (f % 2 === 0) ? f : f + 1;
+}
+
+/**
+ * Quantize one activation row to the layout the i8 matvecs expect: per-32
+ * symmetric int8 (nt_quant_act_q8, notorch.c:5505). Split out so a consumer
+ * dotting the SAME row against many matrices quantizes it once.
+ *
+ * Math.fround at the three places C holds an f32 — the scale, its reciprocal,
+ * and the scaled activation — because the f64 JS would otherwise carry lands
+ * on the other side of a rounding boundary often enough to move the integer.
+ *
+ * @param {Float32Array} x   length k
+ * @param {Int8Array}    qa  length k, written
+ * @param {Float32Array} da  length k/32, written
+ */
+export function quantAct(x, k, qa, da) {
+  const nb = k / 32;
+  for (let b = 0; b < nb; b++) {
+    const xo = b * 32;
+    let amax = 0;
+    for (let i = 0; i < 32; i++) { const a = Math.abs(x[xo + i]); if (a > amax) amax = a; }
+    const d = Math.fround(amax / 127);
+    const id = d > 0 ? Math.fround(1 / d) : 0;
+    da[b] = d;
+    for (let i = 0; i < 32; i++) {
+      let q = rintTiesEven(Math.fround(x[xo + i] * id));
+      if (q > 127) q = 127; else if (q < -127) q = -127;
+      qa[xo + i] = q;
+    }
+  }
+}
+
+/** Q4_0 int8 dot — nibble minus 8, integer accumulation (notorch.c:5554). */
+function qmvI8Q4_0(out, W, qa, da, r0, r1, k) {
+  const nb = k / 32;
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 18;
+    let acc = 0;
+    for (let b = 0; b < nb; b++) {
+      const blk = rb + b * 18, qo = b * 32;
+      const dw = ggufHalfToFloat(W[blk] | (W[blk + 1] << 8));
+      let s = 0;
+      for (let i = 0; i < 16; i++) {
+        const byte = W[blk + 2 + i];
+        s += ((byte & 0x0F) - 8) * qa[qo + i];
+        s += ((byte >> 4)   - 8) * qa[qo + i + 16];
+      }
+      acc += dw * da[b] * s;
+    }
+    out[row] = acc;
+  }
+}
+
+/** Q8_0 int8 dot — weights are already integers, nothing to unpack (notorch.c:5603). */
+function qmvI8Q8_0(out, W, qa, da, r0, r1, k) {
+  const nb = k / 32;
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 34;
+    let acc = 0;
+    for (let b = 0; b < nb; b++) {
+      const blk = rb + b * 34, qo = b * 32;
+      const dw = ggufHalfToFloat(W[blk] | (W[blk + 1] << 8));
+      let s = 0;
+      for (let i = 0; i < 32; i++) s += ((W[blk + 2 + i] << 24) >> 24) * qa[qo + i];
+      acc += dw * da[b] * s;
+    }
+    out[row] = acc;
+  }
+}
+
+/**
+ * Q5_0 int8 dot (notorch.c:5773). The -16 lifts out of the dot the way Q4_K's
+ * minimum does: SUM((q-16)*x) is SUM(q*x) - 16*SUM(x), so the per-block
+ * activation sum is computed once and the subtraction never enters the loop.
+ */
+function qmvI8Q5_0(out, W, qa, da, r0, r1, k) {
+  const nb = k / 32;
+  const asum = new Int32Array(nb);
+  for (let b = 0; b < nb; b++) {
+    let t = 0;
+    for (let i = 0; i < 32; i++) t += qa[b * 32 + i];
+    asum[b] = t;
+  }
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 22;
+    let acc = 0;
+    for (let b = 0; b < nb; b++) {
+      const blk = rb + b * 22, qs = blk + 6, qo = b * 32;
+      const d = ggufHalfToFloat(W[blk] | (W[blk + 1] << 8));
+      const qh = (W[blk + 2] | (W[blk + 3] << 8) | (W[blk + 4] << 16) | (W[blk + 5] << 24)) >>> 0;
+      let s = 0;
+      for (let j = 0; j < 16; j++) {
+        const q0 = (W[qs + j] & 0x0F) | (((qh >>> j) & 1) << 4);
+        const q1 = (W[qs + j] >> 4)   | (((qh >>> (j + 16)) & 1) << 4);
+        s += q0 * qa[qo + j];
+        s += q1 * qa[qo + j + 16];
+      }
+      acc += d * da[b] * (s - 16 * asum[b]);
+    }
+    out[row] = acc;
+  }
+}
+
+/**
+ * Q4_K int8 dot (notorch.c:6257). Same lift as Q5_0, per 32-value sub-block:
+ * the packed min comes out of the dot as dmin*m6*SUM(x) and the integer loop
+ * only ever sees raw nibbles.
+ */
+function qmvI8Q4_K(out, W, qa, da, r0, r1, k) {
+  const nb = k / 256, nsub = k / 32;
+  const asum = new Int32Array(nsub);
+  for (let s = 0; s < nsub; s++) {
+    let t = 0;
+    for (let i = 0; i < 32; i++) t += qa[s * 32 + i];
+    asum[s] = t;
+  }
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 144;
+    let acc = 0;
+    for (let blk = 0; blk < nb; blk++) {
+      const b = rb + blk * 144, sc = b + 4, qs = b + 16;
+      const d    = ggufHalfToFloat(W[b]     | (W[b + 1] << 8));
+      const dmin = ggufHalfToFloat(W[b + 2] | (W[b + 3] << 8));
+      for (let j = 0; j < 8; j++) {
+        const p = qmvScaleMinK4(j, W, sc), s6 = p & 0xFF, m6 = p >> 8;
+        const sub = blk * 8 + j, qsp = qs + (j >> 1) * 32, qo = sub * 32;
+        let dot = 0;
+        if (j & 1) for (let l = 0; l < 32; l++) dot += (W[qsp + l] >> 4)   * qa[qo + l];
+        else       for (let l = 0; l < 32; l++) dot += (W[qsp + l] & 0x0F) * qa[qo + l];
+        acc += da[sub] * (d * s6 * dot - dmin * m6 * asum[sub]);
+      }
+    }
+    out[row] = acc;
+  }
+}
+
+/**
+ * Q6_K int8 dot (notorch.c:5923). The two block grids line up — a weight
+ * sub-scale covers 16 values, an activation block covers 32, so 16j..16j+15
+ * always sits inside activation block j/2 and never straddles. The integer
+ * accumulator is therefore per weight sub-block, and d*sc[j]*da[j/2] is
+ * applied once after it rather than per value.
+ */
+function qmvI8Q6_K(out, W, qa, da, r0, r1, k) {
+  const nb = k / 256;
+  const ssum = new Int32Array(16);
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 210;
+    let acc = 0;
+    for (let blk = 0; blk < nb; blk++) {
+      const b = rb + blk * 210, ql = b, qh = b + 128, sc = b + 192;
+      const d = ggufHalfToFloat(W[b + 208] | (W[b + 209] << 8));
+      const qo = blk * 256, dao = blk * 8;
+      ssum.fill(0);
+      for (let n = 0; n < 256; n += 128) {
+        const half = (n / 128) | 0;
+        const qlh = ql + half * 64, qhh = qh + half * 32, base = half * 8;
+        for (let l = 0; l < 32; l++) {
+          const is = (l / 16) | 0;
+          const lo = W[qlh + l], lo32 = W[qlh + l + 32], hb = W[qhh + l];
+          ssum[base + is]     += (((lo   & 0x0F) | (((hb >> 0) & 3) << 4)) - 32) * qa[qo + n + l];
+          ssum[base + is + 2] += (((lo32 & 0x0F) | (((hb >> 2) & 3) << 4)) - 32) * qa[qo + n + l + 32];
+          ssum[base + is + 4] += (((lo   >> 4)   | (((hb >> 4) & 3) << 4)) - 32) * qa[qo + n + l + 64];
+          ssum[base + is + 6] += (((lo32 >> 4)   | (((hb >> 6) & 3) << 4)) - 32) * qa[qo + n + l + 96];
+        }
+      }
+      for (let j = 0; j < 16; j++)
+        acc += d * ((W[sc + j] << 24) >> 24) * da[dao + (j >> 1)] * ssum[j];
+    }
+    out[row] = acc;
+  }
+}
+
+/** Pick the i8 row kernel, or null — mirrors nt_qrows_i8_for (notorch.c:6294). */
+function qmvI8For(dtype, k) {
+  if (k % 32) return null;
+  switch (dtype) {
+    case GGML_TYPE_Q4_0: return qmvI8Q4_0;
+    case GGML_TYPE_Q5_0: return qmvI8Q5_0;
+    case GGML_TYPE_Q8_0: return qmvI8Q8_0;
+    case GGML_TYPE_Q4_K: return (k % 256) ? null : qmvI8Q4_K;
+    case GGML_TYPE_Q6_K: return (k % 256) ? null : qmvI8Q6_K;
+    default: return null;
+  }
+}
+
+/**
+ * Row-range i8 matvec against a PRE-quantized activation
+ * (nt_qmatvec_i8_rows, notorch.h:538). The entry a MoE wants: one quantAct
+ * per layer, then this against each expert, instead of re-quantizing the same
+ * row once per matrix.
+ *
+ * @returns {number} 0, or -1 if the dtype has no i8 kernel or k does not fit it.
+ */
+export function qmatvecI8Rows(out, Wq, dtype, qa, da, r0, r1, k) {
+  const fn = qmvI8For(dtype, k);
+  if (!fn) return -1;
+  if (r1 > r0) fn(out, Wq, qa, da, r0, r1, k);
+  return 0;
+}
+
+/**
+ * out[m] = Wq[m,k] @ x[k] with an int8-quantized activation and integer
+ * accumulation (nt_qmatvec_i8, notorch.h:558). Q4_0, Q5_0, Q8_0, Q4_K, Q6_K;
+ * the K-quants need k divisible by 256, the others by 32.
+ *
+ * @returns {number} 0, or -1 if there is no i8 kernel for this dtype/shape.
+ */
+export function qmatvecI8(out, Wq, dtype, x, m, k) {
+  const fn = qmvI8For(dtype, k);
+  if (!fn) return -1;
+  const qa = new Int8Array(k), da = new Float32Array(k / 32);
+  quantAct(x, k, qa, da);
+  fn(out, Wq, qa, da, 0, m, k);
+  return 0;
+}
+
 /**
  * Load a GGUF v3 file. Returns { metadata: Map, tensors: Map<name, Tensor> }.
  * `metadata` holds arch keys (`llama.block_count`, `llama.embedding_length`,

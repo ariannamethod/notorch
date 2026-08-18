@@ -20,7 +20,7 @@ import { writeFileSync, readFileSync, mkdtempSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { qmatvec } from './notorch.js';
+import { qmatvec, qmatvecI8, qmatvecI8Rows, quantAct } from './notorch.js';
 
 // ── deterministic input, so a failure is reproducible and C sees these bytes ──
 let _s = 0x9E3779B9;
@@ -143,7 +143,7 @@ const cref = (() => {
 const tmp = cref ? mkdtempSync(join(tmpdir(), 'ntjs-qmv-')) : null;
 
 /** Run the C kernel on the identical bytes and return its out[], or null. */
-function cSecondHand(tag, W, dtype, x, m, k) {
+function cSecondHand(tag, W, dtype, x, m, k, i8 = false) {
   if (!cref) return null;
   const inPath = join(tmp, `${tag}.in`), outPath = join(tmp, `${tag}.out`);
   const head = Buffer.alloc(16);
@@ -151,7 +151,7 @@ function cSecondHand(tag, W, dtype, x, m, k) {
   head.writeInt32LE(W.length, 12);
   writeFileSync(inPath, Buffer.concat([head, Buffer.from(W.buffer, W.byteOffset, W.byteLength),
                                        Buffer.from(x.buffer, x.byteOffset, x.byteLength)]));
-  execFileSync(cref, [inPath, outPath]);
+  execFileSync(cref, i8 ? [inPath, outPath, '--i8'] : [inPath, outPath]);
   const raw = readFileSync(outPath);
   return new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
 }
@@ -172,10 +172,10 @@ function relErr(ref, got, m) {
 
 let fails = 0;
 
-function report(name, rel, relC) {
-  const ok = rel < 1e-3 && (relC === null || relC < 1e-3);
+function report(name, rel, relC, tol = 1e-3) {
+  const ok = rel < tol && (relC === null || relC < tol);
   const cTxt = relC === null ? '' : `  C ${relC.toExponential(2)}`;
-  console.log(`${name.padEnd(5)} [m=${M} k=${K}] rel ${rel.toExponential(2)}${cTxt}  ${ok ? 'PASS' : 'FAIL'}`);
+  console.log(`${name.padEnd(7)} [m=${M} k=${K}] rel ${rel.toExponential(2)}${cTxt}  ${ok ? 'PASS' : 'FAIL'}`);
   if (!ok) fails++;
 }
 
@@ -202,6 +202,28 @@ for (const f of FORMATS) {
 
   const c = cSecondHand(f.name, W, f.dtype, x, M, K);
   report(f.name, relErr(ref, got, M), c ? relErr(c, got, M) : null);
+
+  // int8 dynamic-activation path against the exact packed path just measured.
+  // APPROXIMATE by construction (notorch.h:551) — tolerance, not bit-close,
+  // at the C threshold (run_i8, tests/test_qmatvec.c:227). The second hand is
+  // C's OWN i8 kernel, not its f32 one: two approximations of the same shape.
+  const gotI8 = new Float32Array(M);
+  const rcI8 = qmatvecI8(gotI8, W, f.dtype, x, M, K);
+  if (rcI8 !== 0) { console.log(`i8${f.name} qmatvecI8 rc=${rcI8}  FAIL`); fails++; continue; }
+  const cI8 = cSecondHand(`i8${f.name}`, W, f.dtype, x, M, K, true);
+  report(`i8${f.name}`, relErr(got, gotI8, M), cI8 ? relErr(cI8, gotI8, M) : null, 2e-2);
+
+  // qmatvecI8Rows over two disjoint ranges must reproduce the single call
+  // exactly — the row split is arithmetic-free, so this is equality, not
+  // tolerance. A shared accumulator or a row-base off by a block shows here.
+  const qa = new Int8Array(K), da = new Float32Array(K / 32);
+  quantAct(x, K, qa, da);
+  const split = new Float32Array(M);
+  const rcA = qmatvecI8Rows(split, W, f.dtype, qa, da, 0, 173, K);
+  const rcB = qmatvecI8Rows(split, W, f.dtype, qa, da, 173, M, K);
+  let identical = rcA === 0 && rcB === 0;
+  for (let i = 0; identical && i < M; i++) if (split[i] !== gotI8[i]) identical = false;
+  if (!identical) { console.log(`i8${f.name} rows split != whole call  FAIL`); fails++; }
 }
 
 // F16 / F32 have no block structure — sane weights, dedicated runners
@@ -253,6 +275,72 @@ for (const [dtype, badK, name] of [[2, 48, 'Q4_0'], [6, 48, 'Q5_0'], [8, 48, 'Q8
                                    [12, 128, 'Q4_K'], [14, 128, 'Q6_K'], [99, 32, 'unknown']]) {
   const rc = qmatvec(new Float32Array(1), new Uint8Array(1024), dtype, new Float32Array(badK), 1, badK);
   if (rc !== -1) { console.log(`${name} k=${badK} expected rc=-1, got ${rc}  FAIL`); fails++; }
+}
+
+// quantAct must round ties to even, the way C's lrintf does under the default
+// FE_TONEAREST (notorch.c:5515) — Math.round rounds them up instead. On uniform
+// input the two never disagree: measured 0 exact halves in 14336 activations, so
+// every random-input check above is blind to the difference. This case builds the
+// halves on purpose. x[0] = 127 forces amax = 127, hence d = 1 and id = 1, so the
+// value being rounded IS the activation, and every other entry sits on .5 exactly.
+// The expectations are written out from the definition rather than computed, so
+// this cannot agree with the implementation by sharing its mistake.
+{
+  const K = 32, x = new Float32Array(K);
+  x[0] = 127;
+  for (let i = 1; i < K; i++) x[i] = i - 16.5;
+  const want = [127,
+    -16, -14, -14, -12, -12, -10, -10, -8, -8, -6, -6, -4, -4, -2, -2, 0,
+    0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14];
+  const qa = new Int8Array(K), da = new Float32Array(1);
+  quantAct(x, K, qa, da);
+  let bad = 0;
+  for (let i = 0; i < K; i++) if (qa[i] !== want[i]) bad++;
+  if (da[0] !== 1) { console.log(`quantAct halves: expected d=1, got ${da[0]}  FAIL`); fails++; }
+  if (bad) {
+    console.log(`quantAct ties-to-even: ${bad}/${K} activations off  FAIL`);
+    fails++;
+  } else {
+    console.log(`ties    [k=${K}] 32/32 activations round to even  PASS`);
+  }
+}
+
+// quantAct must also hold the scale and the scaled activation at f32, because C
+// does (notorch.c:5511-5512) and JS would otherwise carry f64 into the rounding.
+// This is rarer than the ties case — 13 of 6.4M random activations move by one
+// int8 step when the frounds are dropped — so a random-input check finds it maybe
+// one run in thirty. These two literals were searched out to make it certain:
+// with the frounds the pair quantizes to 76, without them to 75.
+// Two pairs, because the three frounds are not one guard: the first moves only
+// when the fround on the product goes, the second only when the scale and its
+// reciprocal stop being f32. Each was searched out to make a rare event certain.
+for (const [name, amax, v, want] of [
+  ['product', 0.24229010939598083, 0.14403860270977020, 76],
+  ['scale',   0.92275577783584595, 0.41051736474037170, 56],
+]) {
+  const K = 32, x = new Float32Array(K);
+  x[0] = amax;   // largest in the block, so it sets d and its reciprocal
+  x[1] = v;
+  const qa = new Int8Array(K), da = new Float32Array(1);
+  quantAct(x, K, qa, da);
+  if (qa[1] !== want) {
+    console.log(`quantAct f32 ${name}: qa[1]=${qa[1]}, expected ${want}  FAIL`);
+    fails++;
+  } else {
+    console.log(`fround  [${name.padEnd(7)}] activation held at f32, qa[1]=${want}  PASS`);
+  }
+}
+
+// The i8 dispatch refuses the same shapes plus the two dense dtypes, which have
+// no integer kernel at all (nt_qrows_i8_for, notorch.c:6294).
+for (const [dtype, badK, name] of [[2, 48, 'Q4_0'], [6, 48, 'Q5_0'], [8, 48, 'Q8_0'],
+                                   [12, 128, 'Q4_K'], [14, 128, 'Q6_K'],
+                                   [0, 2048, 'F32'], [1, 2048, 'F16'], [99, 32, 'unknown']]) {
+  const rc = qmatvecI8(new Float32Array(1), new Uint8Array(65536), dtype, new Float32Array(badK), 1, badK);
+  if (rc !== -1) { console.log(`i8${name} k=${badK} expected rc=-1, got ${rc}  FAIL`); fails++; }
+  const rcRows = qmatvecI8Rows(new Float32Array(1), new Uint8Array(65536), dtype,
+                               new Int8Array(badK), new Float32Array(badK / 32 + 1), 0, 1, badK);
+  if (rcRows !== -1) { console.log(`i8${name}Rows k=${badK} expected rc=-1, got ${rcRows}  FAIL`); fails++; }
 }
 
 console.log(fails === 0 ? 'JS_QMATVEC_OK' : `${fails} FAILED`);

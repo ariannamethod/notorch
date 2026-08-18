@@ -13,6 +13,52 @@ Newest entries on top.
 
 ---
 
+## 2026-08-18 — js-edition gets the int8-activation matvec, and two rounding guards that random input cannot see
+
+`qmatvecI8` / `qmatvecI8Rows` / `quantAct` port `nt_qmatvec_i8`,
+`nt_qmatvec_i8_rows` and `nt_quant_act_q8`: the activation goes to per-32 int8,
+the dot accumulates in integers. Q4_0, Q5_0, Q8_0, Q4_K, Q6_K, with the Q5_0 and
+Q4_K lifts intact — `SUM((q-16)*x)` as `SUM(q*x) - 16*SUM(x)`, and Q4_K's minimum
+the same way — so the integer loop never sees a subtraction. Approximate by
+construction; `qmatvec` stays the exact reference, as in C.
+
+C's `NT_QMV_ASUM_MAX` (`notorch.c:5244`) is not reproduced: it caps k at 65536
+because its activation sums are stack-held, which is a C storage detail rather
+than semantics. The JS contract takes any k that divides into whole blocks.
+
+Two guards carry the port and neither shows up under random input:
+
+- `lrintf` (`notorch.c:5515`) rounds ties to even; `Math.round` rounds them up.
+  Measured 0 exact halves in 14336 uniform activations — every random check is
+  blind to this. On an input built to land on halves, 16 of 32 activations move
+  by a full int8 step.
+- C holds the scale, its reciprocal and the scaled activation at f32
+  (`notorch.c:5511-5512`); JS would carry f64 into the rounding. 13 of 6.4M
+  random activations move by one step when the `Math.fround`s are dropped —
+  about one test run in thirty would notice.
+
+Both are now pinned by literals searched out for the purpose, since a gate that
+only fires one run in thirty is not a gate.
+
+Proof (neo, Accelerate, node v25.9.0):
+
+- `make test_js` / `npm test` — 12 matvec rows + 3 rounding rows, `JS_QMATVEC_OK`.
+- i8 vs the exact packed path: `4.07e-3` Q4_0, `3.13e-3` Q5_0, `3.64e-3` Q8_0,
+  `3.34e-3` Q4_K, `3.25e-3` Q6_K — against the C tolerance of 2e-2
+  (`tests/test_qmatvec.c:227`).
+- Second hand against C's OWN i8 kernel (`--i8` on `tests/js_qmatvec_ref.c`, same
+  bytes through a file): `1.73e-7` to `3.25e-7` — an order tighter than the
+  packed path's `1e-6`, because most of the work is integer, where f64 and f32
+  cannot differ.
+- Red hand, all FAIL: Q4_0 zero-point `2.48e-1`, Q8_0 sign-extend `1.89e+0`,
+  Q5_0 without the `16*asum` lift `9.78e-1`, Q4_K without the `dmin` lift
+  `5.59e-2`, Q6_K on the wrong activation scale `4.26e-2`; `Math.round` for the
+  ties `16/32 off`; each `Math.fround` dropped separately.
+- `qmatvecI8Rows` over `[0,173)` and `[173,512)` equals the single call exactly.
+  The first defect tried against this guard — forcing `r0 = 0` — was a bad one:
+  the second call rewrites every row correctly, so it proves nothing. A row base
+  of `(row - r0)` does fail it.
+
 ## 2026-08-18 — js-edition gets the packed matvec, and its own gate learns to see NaN
 
 The JS edition had drifted behind the C kernels: op parity was intact (0–36, all
