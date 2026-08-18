@@ -76,7 +76,10 @@ class GgufBPE {
 function loadModel(path) {
   const buf = readFileSync(path);
   const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-  const { metadata, tensors } = loadGGUF(ab);
+  // NT_PACKED=1 keeps the quantized weights in their GGUF blocks instead of
+  // expanding them to f32 on load. Same generation either way — that is the
+  // point of the switch, and what the gate checks.
+  const { metadata, tensors } = loadGGUF(ab, { packed: process.env.NT_PACKED === '1' });
   const arch = metadata.get('general.architecture');
   const g = (k, d) => { const v = metadata.get(`${arch}.${k}`); return v === undefined ? d : v; };
   const m = {

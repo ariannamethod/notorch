@@ -13,6 +13,142 @@ Newest entries on top.
 
 ---
 
+## 2026-08-18 — js-edition stops unpacking the weights it now knows how to read
+
+`loadGGUF(ab, { packed: true })` leaves the quantized families in their blocks:
+the tensor holds a `Uint8Array` view onto the file's own bytes and its GGUF
+dtype (`Tensor.fromPacked`). `seqLinear` branches through `qmatvec`, `embedding`
+through the new `dequantRow` — the port of `gguf_dequant_row`, one row decoded
+where the dense path decodes the table. F32 and F16 still expand; their
+consumers here are norms and other non-matvec ops that read dense data.
+
+The default stays f32. Both paths have to run on one model for the gate to mean
+anything, so the switch exists either way, and flipping the default is its own
+decision.
+
+Packed weights are inference-only, and both backward paths say so by name.
+Without that, `SEQ_MATVEC` backward reads `W.data[i*inDim+j]` on an empty array
+and fills the gradient with NaN — a wrong answer wearing the shape of a working
+one, which is the failure mode this whole step exists to avoid.
+
+nano_arianna Q4_K_M, 69.4 MB, 93 of 120 tensors packed:
+
+| | dense | packed |
+|---|---|---|
+| f32 bytes built at load | 354,546,432 | 62,208 |
+| heap + external after load | +339.8 MB | +1.9 MB |
+| load time | 190 ms | 5 ms |
+| peak RSS, 8 tokens | 538 MB | 287 MB |
+| wall time, 8 tokens | 4.68 s | 6.55 s |
+
+Load collapses to 5 ms because a packed tensor is a view onto the buffer already
+read, not a copy of it. The 40% slower generation is the honest trade as it
+stands: `qmatvec` re-decodes a block every pass where the dense path decoded once
+at load. `qmatvecI8` is the answer and already exists, but `seqLinear` does not
+reach for it yet — an approximate kernel can move the tokens, so the identity
+check below would have to change shape first. Separate step, separate gate.
+
+Proof (neo, node v25.9.0):
+
+- Generation byte-for-byte identical across 24 greedy tokens, `NT_PACKED=0` vs
+  `NT_PACKED=1`, on a prompt long enough to walk every layer.
+- `make test_js` / `npm test` green; real-model dequant parity unchanged
+  (`JS_DEQUANT_OK`, `maxAbs=5.00e-8`).
+- Red hand, each caught: `dequantRow` reading the next row — 5 formats FAIL;
+  its bounds check removed — `RangeError` out of the DataView; the backward
+  refusals removed — 2 FAIL; packed `seqLinear` writing row 0 — generation
+  diverges; `embedding` reading `tid+1` — generation diverges.
+
+A measurement instrument lied during this step and is worth recording: a
+`kill -0` loop reported the test as hung past 40 s because nothing reaped the
+background process, and `kill -0` succeeds on a zombie. Timed directly, the same
+run was 0.28 s. The harness was wrong, not the code — check the instrument
+before believing the anomaly.
+
+## 2026-08-18 — js-edition gets the int8-activation matvec, and two rounding guards that random input cannot see
+
+`qmatvecI8` / `qmatvecI8Rows` / `quantAct` port `nt_qmatvec_i8`,
+`nt_qmatvec_i8_rows` and `nt_quant_act_q8`: the activation goes to per-32 int8,
+the dot accumulates in integers. Q4_0, Q5_0, Q8_0, Q4_K, Q6_K, with the Q5_0 and
+Q4_K lifts intact — `SUM((q-16)*x)` as `SUM(q*x) - 16*SUM(x)`, and Q4_K's minimum
+the same way — so the integer loop never sees a subtraction. Approximate by
+construction; `qmatvec` stays the exact reference, as in C.
+
+C's `NT_QMV_ASUM_MAX` (`notorch.c:5244`) is not reproduced: it caps k at 65536
+because its activation sums are stack-held, which is a C storage detail rather
+than semantics. The JS contract takes any k that divides into whole blocks.
+
+Two guards carry the port and neither shows up under random input:
+
+- `lrintf` (`notorch.c:5515`) rounds ties to even; `Math.round` rounds them up.
+  Measured 0 exact halves in 14336 uniform activations — every random check is
+  blind to this. On an input built to land on halves, 16 of 32 activations move
+  by a full int8 step.
+- C holds the scale, its reciprocal and the scaled activation at f32
+  (`notorch.c:5511-5512`); JS would carry f64 into the rounding. 13 of 6.4M
+  random activations move by one step when the `Math.fround`s are dropped —
+  about one test run in thirty would notice.
+
+Both are now pinned by literals searched out for the purpose, since a gate that
+only fires one run in thirty is not a gate.
+
+Proof (neo, Accelerate, node v25.9.0):
+
+- `make test_js` / `npm test` — 12 matvec rows + 3 rounding rows, `JS_QMATVEC_OK`.
+- i8 vs the exact packed path: `4.07e-3` Q4_0, `3.13e-3` Q5_0, `3.64e-3` Q8_0,
+  `3.34e-3` Q4_K, `3.25e-3` Q6_K — against the C tolerance of 2e-2
+  (`tests/test_qmatvec.c:227`).
+- Second hand against C's OWN i8 kernel (`--i8` on `tests/js_qmatvec_ref.c`, same
+  bytes through a file): `1.73e-7` to `3.25e-7` — an order tighter than the
+  packed path's `1e-6`, because most of the work is integer, where f64 and f32
+  cannot differ.
+- Red hand, all FAIL: Q4_0 zero-point `2.48e-1`, Q8_0 sign-extend `1.89e+0`,
+  Q5_0 without the `16*asum` lift `9.78e-1`, Q4_K without the `dmin` lift
+  `5.59e-2`, Q6_K on the wrong activation scale `4.26e-2`; `Math.round` for the
+  ties `16/32 off`; each `Math.fround` dropped separately.
+- `qmatvecI8Rows` over `[0,173)` and `[173,512)` equals the single call exactly.
+  The first defect tried against this guard — forcing `r0 = 0` — was a bad one:
+  the second call rewrites every row correctly, so it proves nothing. A row base
+  of `(row - r0)` does fail it.
+
+## 2026-08-18 — js-edition gets the packed matvec, and its own gate learns to see NaN
+
+The JS edition had drifted behind the C kernels: op parity was intact (0–36, all
+37 `NT_OP_*` defines), but `loadGGUF` still expanded every quantized tensor to f32
+on load — 4 B/weight where Q4_K on disk is ~0.55, so a 170 MB file becomes north of
+a gigabyte in a browser tab. `qmatvec(out, Wq, dtype, x, m, k)` ports `nt_qmatvec`:
+one block unpacked into locals at a time, no dense tensor ever built. F32, F16,
+Q4_0, Q5_0, Q8_0, Q4_K, Q6_K; `-1` for a dtype or a `k` with no kernel, same
+contract as `nt_qrows_for` (`notorch.c:5230`). `loadGGUF` is untouched — moving
+storage onto packed bytes is its own step with its own gate.
+
+The gate found its own blind spot first. The clean run showed `rel 0.00e+0` across
+all seven formats, and a byte-swapped f16 kernel still **passed**: the kernel
+returned NaN, NaN fails every comparison in the error reducer, and `maxAbs` stayed
+at zero. Proximity was being measured where finiteness was never checked. Fixed,
+then re-falsified per format.
+
+Proof (neo, Accelerate, node v25.9.0):
+
+- `make test_js` and `npm test` — `JS_OP_PARITY_OK` + `JS_QMATVEC_OK`, 7/7 PASS.
+- Red hand, one defect per format, all FAIL at rc=1: Q4_0 zero-point dropped
+  `2.46e-1`, Q5_0 high bit swapped `8.10e-1`, Q8_0 sign-extend dropped `1.88e+0`,
+  Q4_K min subtract dropped `3.93e-2`, Q6_K wrong sub-scale `6.61e-1`, F16 and F32
+  byte-swapped `Infinity`.
+- Second hand: `tests/js_qmatvec_ref.c` runs `nt_qmatvec` on the identical bytes
+  handed over through a file, not on a second generator believed to agree. JS vs C
+  is `1.02e-6`–`1.68e-6` across the seven — the width of the accumulator, f64 in JS
+  against f32 in C, three orders under the 1e-3 threshold.
+- README debt closed by measurement: it claimed Q5_0 had no local file to run
+  against. nano_arianna Q4_K_M carries `token_embd.weight` 32000×576 in Q5_0;
+  `test_gguf_dequant.mjs` puts it at `maxAbs=5.00e-8` against C.
+- Regression: `infer_gguf.mjs` generates token-for-token identically on the HEAD
+  `notorch.js` and this one.
+
+Noted, not touched: `infer_gguf.mjs` decodes without word separators
+(`resonance is,akindofthefield,a`) on both versions — a BPE-decode defect that
+predates this change.
+
 ## 2026-07-30 — qmatvec pthread worker reuse (non-OpenMP path)
 
 WTForacle surfaced the remaining per-call pthread overhead in the packed matvec path.

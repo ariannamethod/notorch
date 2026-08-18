@@ -131,6 +131,8 @@ Schedules: `Schedule.cosine`, `Schedule.step`.
 Inference helpers: `KVCache`.
 Adapters: `LoRAPair`, `saveLoRA`, `loadLoRA`, `mergeLoRAInto`.
 Loaders: `loadNotorchBin`, `loadSafetensors`, `saveNotorchBin`.
+Packed kernels: `qmatvec` (exact), `qmatvecI8` / `qmatvecI8Rows` / `quantAct`
+(int8-activation fast path).
 Tokenizers: `CharTokenizer`, `BPETokenizer`.
 
 ---
@@ -275,12 +277,71 @@ GGUF in JS via `loadGGUF(arrayBuffer)` reads GGUF v3 and dequantizes
 **F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K** to f32 on load. the block routines
 mirror `gguf.c` byte-for-byte and are verified against the C path by
 `test_gguf_dequant.mjs` — Q4_K/Q6_K/Q8_0/Q4_0 match C to ~5e-9 across real
-models (Qwen3-0.6B, smallcoder Q8_0, wtf360 Q4_0); Q5_0 is mirrored from
-`gguf.c` but had no local Q5_0 file to run against yet. weights are f32 after
-load, so a real quantized GGUF loads in the browser today; the packed /
-WebGPU quant matvec (mirroring the C Metal `nt_metal_q4k_matvec`) is the next
-step, so very large models still want the C edition for now.
+models (Qwen3-0.6B, smallcoder Q8_0, wtf360 Q4_0), Q5_0 to 5e-8 on
+nano_arianna Q4_K_M, whose 32000×576 `token_embd.weight` is Q5_0.
 `loadSafetensors` works for HF F32 weights.
+
+`loadGGUF` still expands every tensor to f32 on load, which is 4 B/weight
+where Q4_K on disk is ~0.55 — a 170 MB file becomes north of a gigabyte in a
+tab. `qmatvec(out, Wq, dtype, x, m, k)` is the way out and the port of C
+`nt_qmatvec`: it dots a row straight out of the packed bytes, unpacking one
+block at a time into locals, so no dense tensor is ever built. It covers F32,
+F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K and returns -1 on a dtype or a `k` it has no
+kernel for, same contract as C.
+
+`qmatvecI8` is the same matvec with the activation quantized to per-32 int8 and
+the dot accumulated in integers — C's `nt_qmatvec_i8`, the llama.cpp / MNN fast
+path. Approximate by construction, `qmatvec` stays the exact reference, and the
+gate holds it to the C tolerance of 2e-2 (measured 3.1e-3 to 4.1e-3). Where C
+banks on SDOT and VNNI, JS banks on the type: an int32 accumulator stays in V8's
+small-integer form instead of running an f32 dependency chain, and no weight is
+ever widened to a float. `quantAct` + `qmatvecI8Rows` are the split entry, for a
+consumer dotting one row against many matrices — a MoE against its experts —
+that should quantize the row once rather than once per matrix.
+
+Two details there are load-bearing and neither is visible on random input.
+C's `lrintf` rounds ties to even; `Math.round` rounds them up, and on activations
+that land on exact halves that is a whole int8 step — 16 of 32 in the test case.
+And C holds the scale, its reciprocal, and the scaled activation at f32 where JS
+would carry f64: 13 of 6.4M random activations move by one step when that is
+dropped. Both are pinned by searched-out literals in `test_qmatvec.mjs`, because
+a uniform-random check finds the second maybe one run in thirty.
+
+`loadGGUF(ab, { packed: true })` stops expanding the quantized families
+altogether: the tensor keeps a `Uint8Array` view onto the file's own bytes, and
+`Tensor.fromPacked` carries the GGUF dtype alongside it. `seqLinear` and
+`embedding` branch on that — the first through `qmatvec`, the second through
+`dequantRow`, which decodes one row where the dense path decodes the table.
+F32 and F16 still expand: their consumers here are norms and other non-matvec
+ops that read dense data, and F16 only ever buys a factor of two.
+
+On nano_arianna Q4_K_M, 69.4 MB on disk, 93 of 120 tensors packed:
+
+| | dense | packed |
+|---|---|---|
+| f32 bytes built at load | 354,546,432 | 62,208 |
+| heap + external after load | +339.8 MB | +1.9 MB |
+| load time | 190 ms | 5 ms |
+| peak RSS, 8-token generation | 538 MB | 287 MB |
+| wall time, 8-token generation | 4.68 s | 6.55 s |
+
+Generation is byte-for-byte identical across 24 greedy tokens — that is the
+gate, and it is what makes the memory number mean anything. The load collapses
+to 5 ms because the packed tensor is a view onto the buffer already read, not a
+copy of it.
+
+The 40% slower generation is real and is the honest trade as it stands:
+`qmatvec` re-decodes a block on every pass where the dense path decoded once at
+load. `qmatvecI8` is the answer and already exists, but `seqLinear` does not
+reach for it yet — that is a separate step with its own gate, since an
+approximate kernel can move the tokens and the check above would have to change
+shape.
+
+Packed weights are inference-only. `SEQ_MATVEC` and `EMBEDDING` backward refuse
+them by name rather than reading an empty `data` and filling the gradient with
+NaN.
+
+Then the WebGPU quant matvec (mirroring the C Metal `nt_metal_q4k_matvec`).
 
 To run the parity test:
 ```bash
@@ -293,6 +354,16 @@ The lightweight JS/C op-contract gate is:
 ```bash
 make test_js
 # or: cd js-edition && npm test
+```
+
+`test_qmatvec.mjs` (part of both of the above) checks the packed kernels
+against an independent dequant oracle at the C threshold of 1e-3. Pass
+`--cref` to add the second hand — the C kernel run on the identical bytes
+rather than on a second generator believed to agree:
+```bash
+cc -std=c11 -O2 -I. tests/js_qmatvec_ref.c notorch.c -lm -o /tmp/js_qmatvec_ref
+cd js-edition && node test_qmatvec.mjs --cref /tmp/js_qmatvec_ref
+# → each format PASS with C ~1e-6 (f64 accumulator in JS vs f32 in C)
 ```
 
 ### Running a GGUF end-to-end (`infer_gguf.mjs`)

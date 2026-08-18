@@ -20,6 +20,22 @@ export class Tensor {
     this.shape = Array.isArray(shape) ? shape.slice() : [this.data.length];
     this.len = this.data.length;
     this.gpuBuffer = null;
+    this.packed = null;   // Uint8Array when the weight stays in its GGUF blocks
+    this.dtype = 0;       // GGUF type code; only meaningful alongside `packed`
+  }
+
+  /**
+   * A weight that keeps its GGUF bytes instead of being expanded to f32.
+   * `data` stays empty: the packed kernels read `packed` directly, and any
+   * op that needs dense floats has to say so rather than silently read zeros.
+   * Inference only — there is no gradient with respect to packed blocks.
+   */
+  static fromPacked(bytes, shape, dtype) {
+    const t = new Tensor(new Float32Array(0), shape);
+    t.len = shape.reduce((a, b) => a * b, 1);
+    t.packed = bytes;
+    t.dtype = dtype;
+    return t;
   }
 
   static zeros(shape) {
@@ -412,6 +428,13 @@ export class Tape {
         if (e.parent1 >= 0 && e.parent2 >= 0) {
           const W = this.entries[e.parent1].output;
           const X = this.entries[e.parent2].output;
+          // A packed weight has no dense data and no gradient. Without this the
+          // loop below reads W.data[...] = undefined and quietly fills dX with
+          // NaN — a wrong answer dressed as a working one.
+          if (W.packed) {
+            throw new Error('SEQ_MATVEC backward: weight is packed (GGUF dtype '
+              + W.dtype + '); packed weights are inference-only');
+          }
           const T = e.aux | 0;
           const outDim = W.shape[0];
           const inDim = W.shape.length >= 2 ? W.shape[1] : (W.len / outDim);
@@ -900,6 +923,10 @@ export class Tape {
         // y[t,d] = table[ids[t], d]; dtable[ids[t], d] += dout[t,d]
         if (e.parent1 >= 0) {
           const table = this.entries[e.parent1].output;
+          if (table.packed) {
+            throw new Error('EMBEDDING backward: table is packed (GGUF dtype '
+              + table.dtype + '); packed weights are inference-only');
+          }
           const ids = this.entries[e.parent2].output.data;
           const T = e.aux | 0, D = e.aux2 | 0;
           const rows = (table.len / D) | 0;
@@ -2122,6 +2149,19 @@ export class Notorch {
     const inDim = W.shape.length >= 2 ? W.shape[1] : (W.len / outDim);
     const out = Tensor.zeros([T, outDim]);
     const Wd = W.data, Xd = X.data, Yd = out.data;
+    if (W.packed) {
+      // The weight never becomes a dense tensor: qmatvec walks its blocks per
+      // position. Forward only — SEQ_MATVEC backward refuses a packed parent.
+      const acc = new Float32Array(outDim);
+      for (let t = 0; t < T; t++) {
+        const xv = Xd.subarray(t * inDim, (t + 1) * inDim);
+        if (qmatvec(acc, W.packed, W.dtype, xv, outDim, inDim) !== 0) {
+          throw new Error(`seqLinear: no packed kernel for GGUF dtype ${W.dtype} at k=${inDim}`);
+        }
+        Yd.set(acc, t * outDim);
+      }
+      return this.tape.record(out, OP.SEQ_MATVEC, wIdx, xIdx, -1, T);
+    }
     for (let t = 0; t < T; t++) {
       const xOff = t * inDim, yOff = t * outDim;
       for (let i = 0; i < outDim; i++) {
@@ -2301,11 +2341,21 @@ export class Notorch {
     const ids = this.tape.entries[idsIdx].output.data;
     const rows = (W.len / D) | 0;
     const out = Tensor.zeros([T, D]);
+    // The embedding table is usually the largest tensor in a GGUF and exactly
+    // one of its rows is wanted per token — packed, that row is decoded alone.
+    const rowBuf = W.packed ? new Float32Array(D) : null;
     for (let t = 0; t < T; t++) {
       let tid = ids[t] | 0;
       if (tid < 0) tid = 0;
       if (tid >= rows) tid = rows - 1;
-      out.data.set(W.data.subarray(tid * D, (tid + 1) * D), t * D);
+      if (W.packed) {
+        if (dequantRow(rowBuf, W.packed, W.dtype, tid, D) !== 0) {
+          throw new Error(`embedding: cannot decode row ${tid} of a GGUF dtype ${W.dtype} table with D=${D}`);
+        }
+        out.data.set(rowBuf, t * D);
+      } else {
+        out.data.set(W.data.subarray(tid * D, (tid + 1) * D), t * D);
+      }
     }
     return this.tape.record(out, OP.EMBEDDING, tableIdx, idsIdx, -1, T, D);
   }
@@ -3639,6 +3689,469 @@ function ggufDequantQ6_K(dv, base, n, out) {
   }
 }
 
+/** Block geometry per GGUF quant type: [bytes per block, values per block]. */
+const GGUF_BLOCK = {
+  [GGML_TYPE_Q4_0]: [18, 32],  [GGML_TYPE_Q5_0]: [22, 32], [GGML_TYPE_Q8_0]: [34, 32],
+  [GGML_TYPE_Q4_K]: [144, 256], [GGML_TYPE_Q6_K]: [210, 256],
+};
+
+/**
+ * One row of a packed tensor, decoded in place of the whole thing — the port
+ * of C gguf_dequant_row (gguf.c). Meant for embedding lookups, where the table
+ * is often the largest tensor in the file and exactly one of its rows is wanted
+ * per token.
+ *
+ * @param {Float32Array} dst    length cols, written
+ * @param {Uint8Array}   packed the tensor's GGUF bytes, row-major
+ * @returns {number} 0, or -1 on an unknown dtype, a row that is not a whole
+ *   number of blocks, or a row that would read past the end. A partial block
+ *   cannot be decoded on its own, and reading the neighbouring row's bytes
+ *   would be the wrong answer rather than a slow one.
+ */
+export function dequantRow(dst, packed, dtype, row, cols) {
+  const geom = GGUF_BLOCK[dtype];
+  if (!geom) return -1;
+  const [blkBytes, blkVals] = geom;
+  if (cols <= 0 || cols % blkVals) return -1;
+  const rowBytes = (cols / blkVals) * blkBytes;
+  const off = row * rowBytes;
+  if (row < 0 || off < 0 || off + rowBytes > packed.length) return -1;
+  const dv = new DataView(packed.buffer, packed.byteOffset, packed.byteLength);
+  switch (dtype) {
+    case GGML_TYPE_Q4_0: ggufDequantQ4_0(dv, off, cols, dst); return 0;
+    case GGML_TYPE_Q5_0: ggufDequantQ5_0(dv, off, cols, dst); return 0;
+    case GGML_TYPE_Q8_0: ggufDequantQ8_0(dv, off, cols, dst); return 0;
+    case GGML_TYPE_Q4_K: ggufDequantQ4_K(dv, off, cols, dst); return 0;
+    case GGML_TYPE_Q6_K: ggufDequantQ6_K(dv, off, cols, dst); return 0;
+    default: return -1;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PACKED MATVEC — out[m] = Wq[m,k] @ x[k] with the weights left PACKED.
+// Port of C nt_qmatvec (notorch.h:519). Each block is unpacked into locals and
+// consumed on the spot, so a quantized tensor is never expanded to dense f32 —
+// the difference between 0.55 B/weight and 4 B/weight in a browser tab.
+// Accumulation order mirrors the C scalar kernels (notorch.c:5013-5225) op for
+// op; the results are not bit-identical because JS accumulates in f64 where C
+// accumulates in f32, which makes the JS answer the slightly more accurate one.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Q4_0 — 18 B / 32 vals (nt_q4_0_rows, notorch.c:5013). */
+function qmvQ4_0(out, W, x, r0, r1, k) {
+  const nb = k / 32;
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 18;
+    let acc = 0;
+    for (let blk = 0; blk < nb; blk++) {
+      const b = rb + blk * 18, xo = blk * 32;
+      const d = ggufHalfToFloat(W[b] | (W[b + 1] << 8));
+      for (let i = 0; i < 16; i++) {
+        const byte = W[b + 2 + i];
+        acc += d * ((byte & 0x0F) - 8) * x[xo + i];
+        acc += d * ((byte >> 4)   - 8) * x[xo + i + 16];
+      }
+    }
+    out[row] = acc;
+  }
+}
+
+/** Q8_0 — 34 B / 32 vals (nt_q8_0_rows, notorch.c:5035). */
+function qmvQ8_0(out, W, x, r0, r1, k) {
+  const nb = k / 32;
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 34;
+    let acc = 0;
+    for (let blk = 0; blk < nb; blk++) {
+      const b = rb + blk * 34, xo = blk * 32;
+      const d = ggufHalfToFloat(W[b] | (W[b + 1] << 8));
+      for (let i = 0; i < 32; i++) acc += d * ((W[b + 2 + i] << 24) >> 24) * x[xo + i];
+    }
+    out[row] = acc;
+  }
+}
+
+/** Q5_0 — 22 B / 32 vals, 5th bit out of the high-bit word (nt_q5_0_rows, notorch.c:5054). */
+function qmvQ5_0(out, W, x, r0, r1, k) {
+  const nb = k / 32;
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 22;
+    let acc = 0;
+    for (let blk = 0; blk < nb; blk++) {
+      const b = rb + blk * 22, qs = b + 6, xo = blk * 32;
+      const d = ggufHalfToFloat(W[b] | (W[b + 1] << 8));
+      const qh = (W[b + 2] | (W[b + 3] << 8) | (W[b + 4] << 16) | (W[b + 5] << 24)) >>> 0;
+      for (let j = 0; j < 16; j++) {
+        const byte = W[qs + j], lo = byte & 0x0F, hi = byte >> 4;
+        const hb0 = (qh >>> j) & 1, hb1 = (qh >>> (j + 16)) & 1;
+        acc += d * ((lo | (hb0 << 4)) - 16) * x[xo + j];
+        acc += d * ((hi | (hb1 << 4)) - 16) * x[xo + j + 16];
+      }
+    }
+    out[row] = acc;
+  }
+}
+
+/**
+ * get_scale_min_k4 over packed bytes (nt_get_scale_min_k4, notorch.c:5080).
+ * Returns scale | (min << 8) rather than a pair — this runs 8x per super-block
+ * and a fresh array each time would allocate its way through the matvec.
+ */
+function qmvScaleMinK4(j, W, sc) {
+  if (j < 4) return (W[sc + j] & 63) | ((W[sc + j + 4] & 63) << 8);
+  return ((W[sc + j + 4] & 0x0F) | ((W[sc + j - 4] >> 6) << 4))
+       | (((W[sc + j + 4] >> 4)  | ((W[sc + j]     >> 6) << 4)) << 8);
+}
+
+/** Q4_K — 144 B / 256 vals (nt_q4_k_rows, notorch.c:5087). */
+function qmvQ4_K(out, W, x, r0, r1, k) {
+  const nb = k / 256;
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 144;
+    let acc = 0;
+    for (let blk = 0; blk < nb; blk++) {
+      const b = rb + blk * 144, sc = b + 4, qs = b + 16, xo = blk * 256;
+      const d    = ggufHalfToFloat(W[b]     | (W[b + 1] << 8));
+      const dmin = ggufHalfToFloat(W[b + 2] | (W[b + 3] << 8));
+      let is = 0, qi = 0;
+      for (let j = 0; j < 256; j += 64) {
+        const p0 = qmvScaleMinK4(is, W, sc), p1 = qmvScaleMinK4(is + 1, W, sc);
+        const d1 = d * (p0 & 0xFF), mm1 = dmin * (p0 >> 8);
+        const d2 = d * (p1 & 0xFF), mm2 = dmin * (p1 >> 8);
+        for (let l = 0; l < 32; l++)
+          acc += (d1 * (W[qs + qi + l] & 0x0F) - mm1) * x[xo + j + l];
+        for (let l = 0; l < 32; l++)
+          acc += (d2 * (W[qs + qi + l] >> 4)   - mm2) * x[xo + j + 32 + l];
+        qi += 32; is += 2;
+      }
+    }
+    out[row] = acc;
+  }
+}
+
+/** Q6_K — 210 B / 256 vals (nt_q6_k_rows scalar branch, notorch.c:5181). */
+function qmvQ6_K(out, W, x, r0, r1, k) {
+  const nb = k / 256;
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 210;
+    let acc = 0;
+    for (let blk = 0; blk < nb; blk++) {
+      const b = rb + blk * 210, ql = b, qh = b + 128, sc = b + 192, xo = blk * 256;
+      const d = ggufHalfToFloat(W[b + 208] | (W[b + 209] << 8));
+      for (let n = 0; n < 256; n += 128) {
+        const half = (n / 128) | 0;
+        const qlh = ql + half * 64, qhh = qh + half * 32, sch = sc + half * 8;
+        for (let l = 0; l < 32; l++) {
+          const is = (l / 16) | 0;
+          const lo = W[qlh + l], lo32 = W[qlh + l + 32], hb = W[qhh + l];
+          const q1 = ((lo   & 0x0F) | (((hb >> 0) & 3) << 4)) - 32;
+          const q2 = ((lo32 & 0x0F) | (((hb >> 2) & 3) << 4)) - 32;
+          const q3 = ((lo   >> 4)   | (((hb >> 4) & 3) << 4)) - 32;
+          const q4 = ((lo32 >> 4)   | (((hb >> 6) & 3) << 4)) - 32;
+          acc += d * ((W[sch + is]     << 24) >> 24) * q1 * x[xo + n + l];
+          acc += d * ((W[sch + is + 2] << 24) >> 24) * q2 * x[xo + n + l + 32];
+          acc += d * ((W[sch + is + 4] << 24) >> 24) * q3 * x[xo + n + l + 64];
+          acc += d * ((W[sch + is + 6] << 24) >> 24) * q4 * x[xo + n + l + 96];
+        }
+      }
+    }
+    out[row] = acc;
+  }
+}
+
+/** F16 — contiguous halves, 2 B/param, never materialized (nt_f16_rows, notorch.c:5204). */
+function qmvF16(out, dv, x, r0, r1, k) {
+  for (let row = r0; row < r1; row++) {
+    const rb = row * k * 2;
+    let acc = 0;
+    for (let j = 0; j < k; j++) acc += ggufHalfToFloat(dv.getUint16(rb + j * 2, true)) * x[j];
+    out[row] = acc;
+  }
+}
+
+/** F32 — dense dot through the same entry (nt_f32_rows, notorch.c:5216). */
+function qmvF32(out, dv, x, r0, r1, k) {
+  for (let row = r0; row < r1; row++) {
+    const rb = row * k * 4;
+    let acc = 0;
+    for (let j = 0; j < k; j++) acc += dv.getFloat32(rb + j * 4, true) * x[j];
+    out[row] = acc;
+  }
+}
+
+/**
+ * out[m] = Wq[m,k] @ x[k], weights read straight out of their packed GGUF bytes.
+ *
+ * @param {Float32Array} out  length m, overwritten
+ * @param {Uint8Array}   Wq   packed weights, row-major, one row = k values
+ * @param {number}       dtype GGUF type code: 0 F32, 1 F16, 2 Q4_0, 6 Q5_0,
+ *                             8 Q8_0, 12 Q4_K, 14 Q6_K
+ * @param {Float32Array} x    length k
+ * @returns {number} 0, or -1 if the dtype has no packed kernel or k does not
+ *   divide into whole blocks (32 for the Q*_0 family, 256 for the K-quants) —
+ *   same contract as C nt_qrows_for (notorch.c:5230), so a caller that gets -1
+ *   falls back to dequant + a dense matvec exactly as the C consumers do.
+ */
+export function qmatvec(out, Wq, dtype, x, m, k) {
+  switch (dtype) {
+    case GGML_TYPE_F32:
+      qmvF32(out, new DataView(Wq.buffer, Wq.byteOffset, Wq.byteLength), x, 0, m, k); return 0;
+    case GGML_TYPE_F16:
+      qmvF16(out, new DataView(Wq.buffer, Wq.byteOffset, Wq.byteLength), x, 0, m, k); return 0;
+    case GGML_TYPE_Q4_0: if (k % 32)  return -1; qmvQ4_0(out, Wq, x, 0, m, k); return 0;
+    case GGML_TYPE_Q5_0: if (k % 32)  return -1; qmvQ5_0(out, Wq, x, 0, m, k); return 0;
+    case GGML_TYPE_Q8_0: if (k % 32)  return -1; qmvQ8_0(out, Wq, x, 0, m, k); return 0;
+    case GGML_TYPE_Q4_K: if (k % 256) return -1; qmvQ4_K(out, Wq, x, 0, m, k); return 0;
+    case GGML_TYPE_Q6_K: if (k % 256) return -1; qmvQ6_K(out, Wq, x, 0, m, k); return 0;
+    default: return -1;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INT8-ACTIVATION MATVEC — the llama.cpp / MNN fast path, ported from C
+// nt_qmatvec_i8 (notorch.h:551). The activation is quantized to per-32 int8
+// and dotted against the packed weights with INTEGER accumulation. Where C
+// wins on SDOT/VNNI, JS wins on the type: an int32 accumulator stays in V8's
+// small-integer representation instead of running an f32 dependency chain,
+// and no weight is ever widened to a float.
+//
+// APPROXIMATE by construction — the activation quant trades accuracy for
+// speed, and `qmatvec` above stays the exact reference, exactly as in C.
+//
+// C's NT_QMV_ASUM_MAX (notorch.c:5244) caps k at 65536 because its
+// activation sums live on the stack. That is a C storage detail, not
+// semantics, so it is not reproduced here: this path takes any k that
+// divides into whole blocks.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Round half to even. C's lrintf (notorch.c:5515) rounds ties to even under
+ * the default FE_TONEAREST; Math.round rounds them up, which walks the two
+ * runtimes one int8 step apart on every exact .5 — and .5 is not rare when
+ * the divisor is a power-of-two-ish scale.
+ */
+function rintTiesEven(v) {
+  const f = Math.floor(v), diff = v - f;
+  if (diff > 0.5) return f + 1;
+  if (diff < 0.5) return f;
+  return (f % 2 === 0) ? f : f + 1;
+}
+
+/**
+ * Quantize one activation row to the layout the i8 matvecs expect: per-32
+ * symmetric int8 (nt_quant_act_q8, notorch.c:5505). Split out so a consumer
+ * dotting the SAME row against many matrices quantizes it once.
+ *
+ * Math.fround at the three places C holds an f32 — the scale, its reciprocal,
+ * and the scaled activation — because the f64 JS would otherwise carry lands
+ * on the other side of a rounding boundary often enough to move the integer.
+ *
+ * @param {Float32Array} x   length k
+ * @param {Int8Array}    qa  length k, written
+ * @param {Float32Array} da  length k/32, written
+ */
+export function quantAct(x, k, qa, da) {
+  const nb = k / 32;
+  for (let b = 0; b < nb; b++) {
+    const xo = b * 32;
+    let amax = 0;
+    for (let i = 0; i < 32; i++) { const a = Math.abs(x[xo + i]); if (a > amax) amax = a; }
+    const d = Math.fround(amax / 127);
+    const id = d > 0 ? Math.fround(1 / d) : 0;
+    da[b] = d;
+    for (let i = 0; i < 32; i++) {
+      let q = rintTiesEven(Math.fround(x[xo + i] * id));
+      if (q > 127) q = 127; else if (q < -127) q = -127;
+      qa[xo + i] = q;
+    }
+  }
+}
+
+/** Q4_0 int8 dot — nibble minus 8, integer accumulation (notorch.c:5554). */
+function qmvI8Q4_0(out, W, qa, da, r0, r1, k) {
+  const nb = k / 32;
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 18;
+    let acc = 0;
+    for (let b = 0; b < nb; b++) {
+      const blk = rb + b * 18, qo = b * 32;
+      const dw = ggufHalfToFloat(W[blk] | (W[blk + 1] << 8));
+      let s = 0;
+      for (let i = 0; i < 16; i++) {
+        const byte = W[blk + 2 + i];
+        s += ((byte & 0x0F) - 8) * qa[qo + i];
+        s += ((byte >> 4)   - 8) * qa[qo + i + 16];
+      }
+      acc += dw * da[b] * s;
+    }
+    out[row] = acc;
+  }
+}
+
+/** Q8_0 int8 dot — weights are already integers, nothing to unpack (notorch.c:5603). */
+function qmvI8Q8_0(out, W, qa, da, r0, r1, k) {
+  const nb = k / 32;
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 34;
+    let acc = 0;
+    for (let b = 0; b < nb; b++) {
+      const blk = rb + b * 34, qo = b * 32;
+      const dw = ggufHalfToFloat(W[blk] | (W[blk + 1] << 8));
+      let s = 0;
+      for (let i = 0; i < 32; i++) s += ((W[blk + 2 + i] << 24) >> 24) * qa[qo + i];
+      acc += dw * da[b] * s;
+    }
+    out[row] = acc;
+  }
+}
+
+/**
+ * Q5_0 int8 dot (notorch.c:5773). The -16 lifts out of the dot the way Q4_K's
+ * minimum does: SUM((q-16)*x) is SUM(q*x) - 16*SUM(x), so the per-block
+ * activation sum is computed once and the subtraction never enters the loop.
+ */
+function qmvI8Q5_0(out, W, qa, da, r0, r1, k) {
+  const nb = k / 32;
+  const asum = new Int32Array(nb);
+  for (let b = 0; b < nb; b++) {
+    let t = 0;
+    for (let i = 0; i < 32; i++) t += qa[b * 32 + i];
+    asum[b] = t;
+  }
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 22;
+    let acc = 0;
+    for (let b = 0; b < nb; b++) {
+      const blk = rb + b * 22, qs = blk + 6, qo = b * 32;
+      const d = ggufHalfToFloat(W[blk] | (W[blk + 1] << 8));
+      const qh = (W[blk + 2] | (W[blk + 3] << 8) | (W[blk + 4] << 16) | (W[blk + 5] << 24)) >>> 0;
+      let s = 0;
+      for (let j = 0; j < 16; j++) {
+        const q0 = (W[qs + j] & 0x0F) | (((qh >>> j) & 1) << 4);
+        const q1 = (W[qs + j] >> 4)   | (((qh >>> (j + 16)) & 1) << 4);
+        s += q0 * qa[qo + j];
+        s += q1 * qa[qo + j + 16];
+      }
+      acc += d * da[b] * (s - 16 * asum[b]);
+    }
+    out[row] = acc;
+  }
+}
+
+/**
+ * Q4_K int8 dot (notorch.c:6257). Same lift as Q5_0, per 32-value sub-block:
+ * the packed min comes out of the dot as dmin*m6*SUM(x) and the integer loop
+ * only ever sees raw nibbles.
+ */
+function qmvI8Q4_K(out, W, qa, da, r0, r1, k) {
+  const nb = k / 256, nsub = k / 32;
+  const asum = new Int32Array(nsub);
+  for (let s = 0; s < nsub; s++) {
+    let t = 0;
+    for (let i = 0; i < 32; i++) t += qa[s * 32 + i];
+    asum[s] = t;
+  }
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 144;
+    let acc = 0;
+    for (let blk = 0; blk < nb; blk++) {
+      const b = rb + blk * 144, sc = b + 4, qs = b + 16;
+      const d    = ggufHalfToFloat(W[b]     | (W[b + 1] << 8));
+      const dmin = ggufHalfToFloat(W[b + 2] | (W[b + 3] << 8));
+      for (let j = 0; j < 8; j++) {
+        const p = qmvScaleMinK4(j, W, sc), s6 = p & 0xFF, m6 = p >> 8;
+        const sub = blk * 8 + j, qsp = qs + (j >> 1) * 32, qo = sub * 32;
+        let dot = 0;
+        if (j & 1) for (let l = 0; l < 32; l++) dot += (W[qsp + l] >> 4)   * qa[qo + l];
+        else       for (let l = 0; l < 32; l++) dot += (W[qsp + l] & 0x0F) * qa[qo + l];
+        acc += da[sub] * (d * s6 * dot - dmin * m6 * asum[sub]);
+      }
+    }
+    out[row] = acc;
+  }
+}
+
+/**
+ * Q6_K int8 dot (notorch.c:5923). The two block grids line up — a weight
+ * sub-scale covers 16 values, an activation block covers 32, so 16j..16j+15
+ * always sits inside activation block j/2 and never straddles. The integer
+ * accumulator is therefore per weight sub-block, and d*sc[j]*da[j/2] is
+ * applied once after it rather than per value.
+ */
+function qmvI8Q6_K(out, W, qa, da, r0, r1, k) {
+  const nb = k / 256;
+  const ssum = new Int32Array(16);
+  for (let row = r0; row < r1; row++) {
+    const rb = row * nb * 210;
+    let acc = 0;
+    for (let blk = 0; blk < nb; blk++) {
+      const b = rb + blk * 210, ql = b, qh = b + 128, sc = b + 192;
+      const d = ggufHalfToFloat(W[b + 208] | (W[b + 209] << 8));
+      const qo = blk * 256, dao = blk * 8;
+      ssum.fill(0);
+      for (let n = 0; n < 256; n += 128) {
+        const half = (n / 128) | 0;
+        const qlh = ql + half * 64, qhh = qh + half * 32, base = half * 8;
+        for (let l = 0; l < 32; l++) {
+          const is = (l / 16) | 0;
+          const lo = W[qlh + l], lo32 = W[qlh + l + 32], hb = W[qhh + l];
+          ssum[base + is]     += (((lo   & 0x0F) | (((hb >> 0) & 3) << 4)) - 32) * qa[qo + n + l];
+          ssum[base + is + 2] += (((lo32 & 0x0F) | (((hb >> 2) & 3) << 4)) - 32) * qa[qo + n + l + 32];
+          ssum[base + is + 4] += (((lo   >> 4)   | (((hb >> 4) & 3) << 4)) - 32) * qa[qo + n + l + 64];
+          ssum[base + is + 6] += (((lo32 >> 4)   | (((hb >> 6) & 3) << 4)) - 32) * qa[qo + n + l + 96];
+        }
+      }
+      for (let j = 0; j < 16; j++)
+        acc += d * ((W[sc + j] << 24) >> 24) * da[dao + (j >> 1)] * ssum[j];
+    }
+    out[row] = acc;
+  }
+}
+
+/** Pick the i8 row kernel, or null — mirrors nt_qrows_i8_for (notorch.c:6294). */
+function qmvI8For(dtype, k) {
+  if (k % 32) return null;
+  switch (dtype) {
+    case GGML_TYPE_Q4_0: return qmvI8Q4_0;
+    case GGML_TYPE_Q5_0: return qmvI8Q5_0;
+    case GGML_TYPE_Q8_0: return qmvI8Q8_0;
+    case GGML_TYPE_Q4_K: return (k % 256) ? null : qmvI8Q4_K;
+    case GGML_TYPE_Q6_K: return (k % 256) ? null : qmvI8Q6_K;
+    default: return null;
+  }
+}
+
+/**
+ * Row-range i8 matvec against a PRE-quantized activation
+ * (nt_qmatvec_i8_rows, notorch.h:538). The entry a MoE wants: one quantAct
+ * per layer, then this against each expert, instead of re-quantizing the same
+ * row once per matrix.
+ *
+ * @returns {number} 0, or -1 if the dtype has no i8 kernel or k does not fit it.
+ */
+export function qmatvecI8Rows(out, Wq, dtype, qa, da, r0, r1, k) {
+  const fn = qmvI8For(dtype, k);
+  if (!fn) return -1;
+  if (r1 > r0) fn(out, Wq, qa, da, r0, r1, k);
+  return 0;
+}
+
+/**
+ * out[m] = Wq[m,k] @ x[k] with an int8-quantized activation and integer
+ * accumulation (nt_qmatvec_i8, notorch.h:558). Q4_0, Q5_0, Q8_0, Q4_K, Q6_K;
+ * the K-quants need k divisible by 256, the others by 32.
+ *
+ * @returns {number} 0, or -1 if there is no i8 kernel for this dtype/shape.
+ */
+export function qmatvecI8(out, Wq, dtype, x, m, k) {
+  const fn = qmvI8For(dtype, k);
+  if (!fn) return -1;
+  const qa = new Int8Array(k), da = new Float32Array(k / 32);
+  quantAct(x, k, qa, da);
+  fn(out, Wq, qa, da, 0, m, k);
+  return 0;
+}
+
 /**
  * Load a GGUF v3 file. Returns { metadata: Map, tensors: Map<name, Tensor> }.
  * `metadata` holds arch keys (`llama.block_count`, `llama.embedding_length`,
@@ -3649,7 +4162,7 @@ function ggufDequantQ6_K(dv, base, n, out) {
  * (`token_embd.weight`, `blk.{i}.attn_q.weight`, `output.weight`, …); shapes
  * are row-major. F16 tensors are expanded to F32 on load.
  */
-export function loadGGUF(arrayBuffer) {
+export function loadGGUF(arrayBuffer, opts = {}) {
   const dv = new DataView(arrayBuffer);
   const u8 = new Uint8Array(arrayBuffer);
   const dec = new TextDecoder('utf-8');
@@ -3718,6 +4231,20 @@ export function loadGGUF(arrayBuffer) {
   for (const info of infos) {
     const base = dataStart + info.offset;
     const len = info.dims.reduce((a, b) => a * b, 1);
+    // Packed mode keeps the quantized families in their blocks — that is where
+    // the 4 B/weight goes back to ~0.55. F32 and F16 still expand: their
+    // consumers here are norms and other non-matvec ops that read dense data,
+    // and F16 only ever buys a factor of two.
+    const geom = opts.packed ? GGUF_BLOCK[info.gtype] : undefined;
+    if (geom) {
+      const cols = info.dims[info.dims.length - 1];
+      if (cols % geom[1]) {
+        throw new Error(`loadGGUF: tensor "${info.name}" has ${cols} columns, not a whole number of ${geom[1]}-value blocks`);
+      }
+      const nbytes = (len / geom[1]) * geom[0];
+      tensors.set(info.name, Tensor.fromPacked(u8.subarray(base, base + nbytes), info.dims, info.gtype));
+      continue;
+    }
     const data = new Float32Array(len);
     if (info.gtype === GGML_TYPE_F32) {
       for (let i = 0; i < len; i++) data[i] = dv.getFloat32(base + i * 4, true);
