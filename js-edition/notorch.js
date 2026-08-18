@@ -20,6 +20,22 @@ export class Tensor {
     this.shape = Array.isArray(shape) ? shape.slice() : [this.data.length];
     this.len = this.data.length;
     this.gpuBuffer = null;
+    this.packed = null;   // Uint8Array when the weight stays in its GGUF blocks
+    this.dtype = 0;       // GGUF type code; only meaningful alongside `packed`
+  }
+
+  /**
+   * A weight that keeps its GGUF bytes instead of being expanded to f32.
+   * `data` stays empty: the packed kernels read `packed` directly, and any
+   * op that needs dense floats has to say so rather than silently read zeros.
+   * Inference only — there is no gradient with respect to packed blocks.
+   */
+  static fromPacked(bytes, shape, dtype) {
+    const t = new Tensor(new Float32Array(0), shape);
+    t.len = shape.reduce((a, b) => a * b, 1);
+    t.packed = bytes;
+    t.dtype = dtype;
+    return t;
   }
 
   static zeros(shape) {
@@ -412,6 +428,13 @@ export class Tape {
         if (e.parent1 >= 0 && e.parent2 >= 0) {
           const W = this.entries[e.parent1].output;
           const X = this.entries[e.parent2].output;
+          // A packed weight has no dense data and no gradient. Without this the
+          // loop below reads W.data[...] = undefined and quietly fills dX with
+          // NaN — a wrong answer dressed as a working one.
+          if (W.packed) {
+            throw new Error('SEQ_MATVEC backward: weight is packed (GGUF dtype '
+              + W.dtype + '); packed weights are inference-only');
+          }
           const T = e.aux | 0;
           const outDim = W.shape[0];
           const inDim = W.shape.length >= 2 ? W.shape[1] : (W.len / outDim);
@@ -900,6 +923,10 @@ export class Tape {
         // y[t,d] = table[ids[t], d]; dtable[ids[t], d] += dout[t,d]
         if (e.parent1 >= 0) {
           const table = this.entries[e.parent1].output;
+          if (table.packed) {
+            throw new Error('EMBEDDING backward: table is packed (GGUF dtype '
+              + table.dtype + '); packed weights are inference-only');
+          }
           const ids = this.entries[e.parent2].output.data;
           const T = e.aux | 0, D = e.aux2 | 0;
           const rows = (table.len / D) | 0;
@@ -2122,6 +2149,19 @@ export class Notorch {
     const inDim = W.shape.length >= 2 ? W.shape[1] : (W.len / outDim);
     const out = Tensor.zeros([T, outDim]);
     const Wd = W.data, Xd = X.data, Yd = out.data;
+    if (W.packed) {
+      // The weight never becomes a dense tensor: qmatvec walks its blocks per
+      // position. Forward only — SEQ_MATVEC backward refuses a packed parent.
+      const acc = new Float32Array(outDim);
+      for (let t = 0; t < T; t++) {
+        const xv = Xd.subarray(t * inDim, (t + 1) * inDim);
+        if (qmatvec(acc, W.packed, W.dtype, xv, outDim, inDim) !== 0) {
+          throw new Error(`seqLinear: no packed kernel for GGUF dtype ${W.dtype} at k=${inDim}`);
+        }
+        Yd.set(acc, t * outDim);
+      }
+      return this.tape.record(out, OP.SEQ_MATVEC, wIdx, xIdx, -1, T);
+    }
     for (let t = 0; t < T; t++) {
       const xOff = t * inDim, yOff = t * outDim;
       for (let i = 0; i < outDim; i++) {
@@ -2301,11 +2341,21 @@ export class Notorch {
     const ids = this.tape.entries[idsIdx].output.data;
     const rows = (W.len / D) | 0;
     const out = Tensor.zeros([T, D]);
+    // The embedding table is usually the largest tensor in a GGUF and exactly
+    // one of its rows is wanted per token — packed, that row is decoded alone.
+    const rowBuf = W.packed ? new Float32Array(D) : null;
     for (let t = 0; t < T; t++) {
       let tid = ids[t] | 0;
       if (tid < 0) tid = 0;
       if (tid >= rows) tid = rows - 1;
-      out.data.set(W.data.subarray(tid * D, (tid + 1) * D), t * D);
+      if (W.packed) {
+        if (dequantRow(rowBuf, W.packed, W.dtype, tid, D) !== 0) {
+          throw new Error(`embedding: cannot decode row ${tid} of a GGUF dtype ${W.dtype} table with D=${D}`);
+        }
+        out.data.set(rowBuf, t * D);
+      } else {
+        out.data.set(W.data.subarray(tid * D, (tid + 1) * D), t * D);
+      }
     }
     return this.tape.record(out, OP.EMBEDDING, tableIdx, idsIdx, -1, T, D);
   }
@@ -3639,6 +3689,44 @@ function ggufDequantQ6_K(dv, base, n, out) {
   }
 }
 
+/** Block geometry per GGUF quant type: [bytes per block, values per block]. */
+const GGUF_BLOCK = {
+  [GGML_TYPE_Q4_0]: [18, 32],  [GGML_TYPE_Q5_0]: [22, 32], [GGML_TYPE_Q8_0]: [34, 32],
+  [GGML_TYPE_Q4_K]: [144, 256], [GGML_TYPE_Q6_K]: [210, 256],
+};
+
+/**
+ * One row of a packed tensor, decoded in place of the whole thing — the port
+ * of C gguf_dequant_row (gguf.c). Meant for embedding lookups, where the table
+ * is often the largest tensor in the file and exactly one of its rows is wanted
+ * per token.
+ *
+ * @param {Float32Array} dst    length cols, written
+ * @param {Uint8Array}   packed the tensor's GGUF bytes, row-major
+ * @returns {number} 0, or -1 on an unknown dtype, a row that is not a whole
+ *   number of blocks, or a row that would read past the end. A partial block
+ *   cannot be decoded on its own, and reading the neighbouring row's bytes
+ *   would be the wrong answer rather than a slow one.
+ */
+export function dequantRow(dst, packed, dtype, row, cols) {
+  const geom = GGUF_BLOCK[dtype];
+  if (!geom) return -1;
+  const [blkBytes, blkVals] = geom;
+  if (cols <= 0 || cols % blkVals) return -1;
+  const rowBytes = (cols / blkVals) * blkBytes;
+  const off = row * rowBytes;
+  if (row < 0 || off < 0 || off + rowBytes > packed.length) return -1;
+  const dv = new DataView(packed.buffer, packed.byteOffset, packed.byteLength);
+  switch (dtype) {
+    case GGML_TYPE_Q4_0: ggufDequantQ4_0(dv, off, cols, dst); return 0;
+    case GGML_TYPE_Q5_0: ggufDequantQ5_0(dv, off, cols, dst); return 0;
+    case GGML_TYPE_Q8_0: ggufDequantQ8_0(dv, off, cols, dst); return 0;
+    case GGML_TYPE_Q4_K: ggufDequantQ4_K(dv, off, cols, dst); return 0;
+    case GGML_TYPE_Q6_K: ggufDequantQ6_K(dv, off, cols, dst); return 0;
+    default: return -1;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PACKED MATVEC — out[m] = Wq[m,k] @ x[k] with the weights left PACKED.
 // Port of C nt_qmatvec (notorch.h:519). Each block is unpacked into locals and
@@ -4074,7 +4162,7 @@ export function qmatvecI8(out, Wq, dtype, x, m, k) {
  * (`token_embd.weight`, `blk.{i}.attn_q.weight`, `output.weight`, …); shapes
  * are row-major. F16 tensors are expanded to F32 on load.
  */
-export function loadGGUF(arrayBuffer) {
+export function loadGGUF(arrayBuffer, opts = {}) {
   const dv = new DataView(arrayBuffer);
   const u8 = new Uint8Array(arrayBuffer);
   const dec = new TextDecoder('utf-8');
@@ -4143,6 +4231,20 @@ export function loadGGUF(arrayBuffer) {
   for (const info of infos) {
     const base = dataStart + info.offset;
     const len = info.dims.reduce((a, b) => a * b, 1);
+    // Packed mode keeps the quantized families in their blocks — that is where
+    // the 4 B/weight goes back to ~0.55. F32 and F16 still expand: their
+    // consumers here are norms and other non-matvec ops that read dense data,
+    // and F16 only ever buys a factor of two.
+    const geom = opts.packed ? GGUF_BLOCK[info.gtype] : undefined;
+    if (geom) {
+      const cols = info.dims[info.dims.length - 1];
+      if (cols % geom[1]) {
+        throw new Error(`loadGGUF: tensor "${info.name}" has ${cols} columns, not a whole number of ${geom[1]}-value blocks`);
+      }
+      const nbytes = (len / geom[1]) * geom[0];
+      tensors.set(info.name, Tensor.fromPacked(u8.subarray(base, base + nbytes), info.dims, info.gtype));
+      continue;
+    }
     const data = new Float32Array(len);
     if (info.gtype === GGML_TYPE_F32) {
       for (let i = 0; i < len; i++) data[i] = dv.getFloat32(base + i * 4, true);

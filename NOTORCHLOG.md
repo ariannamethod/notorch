@@ -13,6 +13,58 @@ Newest entries on top.
 
 ---
 
+## 2026-08-18 — js-edition stops unpacking the weights it now knows how to read
+
+`loadGGUF(ab, { packed: true })` leaves the quantized families in their blocks:
+the tensor holds a `Uint8Array` view onto the file's own bytes and its GGUF
+dtype (`Tensor.fromPacked`). `seqLinear` branches through `qmatvec`, `embedding`
+through the new `dequantRow` — the port of `gguf_dequant_row`, one row decoded
+where the dense path decodes the table. F32 and F16 still expand; their
+consumers here are norms and other non-matvec ops that read dense data.
+
+The default stays f32. Both paths have to run on one model for the gate to mean
+anything, so the switch exists either way, and flipping the default is its own
+decision.
+
+Packed weights are inference-only, and both backward paths say so by name.
+Without that, `SEQ_MATVEC` backward reads `W.data[i*inDim+j]` on an empty array
+and fills the gradient with NaN — a wrong answer wearing the shape of a working
+one, which is the failure mode this whole step exists to avoid.
+
+nano_arianna Q4_K_M, 69.4 MB, 93 of 120 tensors packed:
+
+| | dense | packed |
+|---|---|---|
+| f32 bytes built at load | 354,546,432 | 62,208 |
+| heap + external after load | +339.8 MB | +1.9 MB |
+| load time | 190 ms | 5 ms |
+| peak RSS, 8 tokens | 538 MB | 287 MB |
+| wall time, 8 tokens | 4.68 s | 6.55 s |
+
+Load collapses to 5 ms because a packed tensor is a view onto the buffer already
+read, not a copy of it. The 40% slower generation is the honest trade as it
+stands: `qmatvec` re-decodes a block every pass where the dense path decoded once
+at load. `qmatvecI8` is the answer and already exists, but `seqLinear` does not
+reach for it yet — an approximate kernel can move the tokens, so the identity
+check below would have to change shape first. Separate step, separate gate.
+
+Proof (neo, node v25.9.0):
+
+- Generation byte-for-byte identical across 24 greedy tokens, `NT_PACKED=0` vs
+  `NT_PACKED=1`, on a prompt long enough to walk every layer.
+- `make test_js` / `npm test` green; real-model dequant parity unchanged
+  (`JS_DEQUANT_OK`, `maxAbs=5.00e-8`).
+- Red hand, each caught: `dequantRow` reading the next row — 5 formats FAIL;
+  its bounds check removed — `RangeError` out of the DataView; the backward
+  refusals removed — 2 FAIL; packed `seqLinear` writing row 0 — generation
+  diverges; `embedding` reading `tid+1` — generation diverges.
+
+A measurement instrument lied during this step and is worth recording: a
+`kill -0` loop reported the test as hung past 40 s because nothing reaped the
+background process, and `kill -0` succeeds on a zombie. Timed directly, the same
+run was 0.28 s. The harness was wrong, not the code — check the instrument
+before believing the anomaly.
+
 ## 2026-08-18 — js-edition gets the int8-activation matvec, and two rounding guards that random input cannot see
 
 `qmatvecI8` / `qmatvecI8Rows` / `quantAct` port `nt_qmatvec_i8`,

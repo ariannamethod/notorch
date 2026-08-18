@@ -20,7 +20,7 @@ import { writeFileSync, readFileSync, mkdtempSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { qmatvec, qmatvecI8, qmatvecI8Rows, quantAct } from './notorch.js';
+import { qmatvec, qmatvecI8, qmatvecI8Rows, quantAct, dequantRow, Notorch, Tensor } from './notorch.js';
 
 // ── deterministic input, so a failure is reproducible and C sees these bytes ──
 let _s = 0x9E3779B9;
@@ -203,6 +203,23 @@ for (const f of FORMATS) {
   const c = cSecondHand(f.name, W, f.dtype, x, M, K);
   report(f.name, relErr(ref, got, M), c ? relErr(c, got, M) : null);
 
+  // dequantRow decodes ONE row where the dense path decodes the tensor. Checked
+  // against the same independent unpacker the matvec above is checked against,
+  // on rows chosen at both ends and in the middle, and required to be exact —
+  // it is a copy of the block decode, not an accumulation, so anything but
+  // equality is a bug (gguf_dequant_row, gguf.c).
+  {
+    const stride1 = (K / f.blkVals) * f.blkBytes;
+    const rowVals2 = new Float32Array(K), rowGot = new Float32Array(K);
+    let rowBad = 0;
+    for (const rw of [0, 1, 200, M - 1]) {
+      if (dequantRow(rowGot, W, f.dtype, rw, K) !== 0) { rowBad++; continue; }
+      f.ref(W, rw * stride1, rowVals2, K);
+      for (let i = 0; i < K; i++) if (rowGot[i] !== rowVals2[i]) { rowBad++; break; }
+    }
+    if (rowBad) { console.log(`row${f.name} dequantRow mismatch on ${rowBad} row(s)  FAIL`); fails++; }
+  }
+
   // int8 dynamic-activation path against the exact packed path just measured.
   // APPROXIMATE by construction (notorch.h:551) — tolerance, not bit-close,
   // at the C threshold (run_i8, tests/test_qmatvec.c:227). The second hand is
@@ -341,6 +358,58 @@ for (const [dtype, badK, name] of [[2, 48, 'Q4_0'], [6, 48, 'Q5_0'], [8, 48, 'Q8
   const rcRows = qmatvecI8Rows(new Float32Array(1), new Uint8Array(65536), dtype,
                                new Int8Array(badK), new Float32Array(badK / 32 + 1), 0, 1, badK);
   if (rcRows !== -1) { console.log(`i8${name}Rows k=${badK} expected rc=-1, got ${rcRows}  FAIL`); fails++; }
+}
+
+// dequantRow refuses what it cannot decode whole, rather than reading into the
+// neighbouring row: unknown dtype, a column count that is not whole blocks, and
+// a row index off either end.
+{
+  const bytes = new Uint8Array(4096);
+  const dst = new Float32Array(256);
+  const bad = [
+    [1, 0, 256, 'F16 has no block decode'],
+    [12, 0, 128, 'Q4_K with 128 columns'],
+    [8, -1, 256, 'negative row'],
+    [8, 1 << 20, 256, 'row past the end'],
+    [99, 0, 256, 'unknown dtype'],
+  ];
+  for (const [dtype, row, cols, why] of bad) {
+    const rc = dequantRow(dst, bytes, dtype, row, cols);
+    if (rc !== -1) { console.log(`dequantRow ${why}: expected -1, got ${rc}  FAIL`); fails++; }
+  }
+}
+
+// A packed weight is inference-only. Backward must say so instead of reading
+// W.data[...] = undefined and filling the gradient with NaN.
+{
+  const K2 = 256, OUT = 8, nb2 = K2 / 32;
+  const W = new Uint8Array(OUT * nb2 * 34);          // Q8_0
+  for (let i = 0; i < W.length; i++) W[i] = rndByte();
+  for (let row = 0; row < OUT; row++)
+    for (let b = 0; b < nb2; b++) setS32(W, (row * nb2 + b) * 34);
+
+  for (const which of ['seqLinear', 'embedding']) {
+    const nt = new Notorch();
+    const wIdx = nt.leaf(Tensor.fromPacked(W, which === 'seqLinear' ? [OUT, K2] : [OUT, K2], 8));
+    let yIdx;
+    if (which === 'seqLinear') {
+      const x = new Float32Array(K2);
+      for (let i = 0; i < K2; i++) x[i] = rndUnit();
+      yIdx = nt.seqLinear(wIdx, nt.leaf(new Tensor(x, [1, K2])), 1);
+    } else {
+      yIdx = nt.embedding(wIdx, nt.leaf(new Tensor(Float32Array.from([2]), [1])), 1, K2);
+    }
+    if (!Number.isFinite(nt.get(yIdx).data[0])) {
+      console.log(`${which} packed forward produced a non-finite value  FAIL`); fails++;
+    }
+    let threw = '';
+    try { nt.backward(yIdx); } catch (err) { threw = String(err.message); }
+    if (!/packed/.test(threw)) {
+      console.log(`${which} backward on a packed weight: expected a refusal, got "${threw || 'no throw'}"  FAIL`);
+      fails++;
+    }
+  }
+  console.log('packed  [backward] seqLinear and embedding refuse packed weights  PASS');
 }
 
 console.log(fails === 0 ? 'JS_QMATVEC_OK' : `${fails} FAILED`);

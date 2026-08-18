@@ -307,8 +307,41 @@ would carry f64: 13 of 6.4M random activations move by one step when that is
 dropped. Both are pinned by searched-out literals in `test_qmatvec.mjs`, because
 a uniform-random check finds the second maybe one run in thirty.
 
-Moving the loader itself onto packed storage is the next step; the WebGPU quant
-matvec (mirroring the C Metal `nt_metal_q4k_matvec`) is the one after.
+`loadGGUF(ab, { packed: true })` stops expanding the quantized families
+altogether: the tensor keeps a `Uint8Array` view onto the file's own bytes, and
+`Tensor.fromPacked` carries the GGUF dtype alongside it. `seqLinear` and
+`embedding` branch on that — the first through `qmatvec`, the second through
+`dequantRow`, which decodes one row where the dense path decodes the table.
+F32 and F16 still expand: their consumers here are norms and other non-matvec
+ops that read dense data, and F16 only ever buys a factor of two.
+
+On nano_arianna Q4_K_M, 69.4 MB on disk, 93 of 120 tensors packed:
+
+| | dense | packed |
+|---|---|---|
+| f32 bytes built at load | 354,546,432 | 62,208 |
+| heap + external after load | +339.8 MB | +1.9 MB |
+| load time | 190 ms | 5 ms |
+| peak RSS, 8-token generation | 538 MB | 287 MB |
+| wall time, 8-token generation | 4.68 s | 6.55 s |
+
+Generation is byte-for-byte identical across 24 greedy tokens — that is the
+gate, and it is what makes the memory number mean anything. The load collapses
+to 5 ms because the packed tensor is a view onto the buffer already read, not a
+copy of it.
+
+The 40% slower generation is real and is the honest trade as it stands:
+`qmatvec` re-decodes a block on every pass where the dense path decoded once at
+load. `qmatvecI8` is the answer and already exists, but `seqLinear` does not
+reach for it yet — that is a separate step with its own gate, since an
+approximate kernel can move the tokens and the check above would have to change
+shape.
+
+Packed weights are inference-only. `SEQ_MATVEC` and `EMBEDDING` backward refuse
+them by name rather than reading an empty `data` and filling the gradient with
+NaN.
+
+Then the WebGPU quant matvec (mirroring the C Metal `nt_metal_q4k_matvec`).
 
 To run the parity test:
 ```bash
