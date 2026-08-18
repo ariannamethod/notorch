@@ -273,17 +273,19 @@ copy the GPU output back into the CPU mirror **before** calling
 - `saveNotorchBin(tensors)` — writes a `Map<name, Tensor>` to the
   native `.bin` format.
 
-GGUF in JS via `loadGGUF(arrayBuffer)` reads GGUF v3 and dequantizes
-**F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K** to f32 on load. the block routines
+GGUF in JS via `loadGGUF(arrayBuffer)` reads GGUF v3 and understands
+**F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K**. The quantized families stay in their
+blocks by default; `{ packed: false }` restores the old behaviour of expanding
+every tensor to f32 on load. Either way the block routines
 mirror `gguf.c` byte-for-byte and are verified against the C path by
 `test_gguf_dequant.mjs` — Q4_K/Q6_K/Q8_0/Q4_0 match C to ~5e-9 across real
 models (Qwen3-0.6B, smallcoder Q8_0, wtf360 Q4_0), Q5_0 to 5e-8 on
 nano_arianna Q4_K_M, whose 32000×576 `token_embd.weight` is Q5_0.
 `loadSafetensors` works for HF F32 weights.
 
-`loadGGUF` still expands every tensor to f32 on load, which is 4 B/weight
-where Q4_K on disk is ~0.55 — a 170 MB file becomes north of a gigabyte in a
-tab. `qmatvec(out, Wq, dtype, x, m, k)` is the way out and the port of C
+Expanding every tensor to f32 costs 4 B/weight where Q4_K on disk is ~0.55 — a
+170 MB file becomes north of a gigabyte in a tab, which is why that is no longer
+the default. `qmatvec(out, Wq, dtype, x, m, k)` is the way out and the port of C
 `nt_qmatvec`: it dots a row straight out of the packed bytes, unpacking one
 block at a time into locals, so no dense tensor is ever built. It covers F32,
 F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K and returns -1 on a dtype or a `k` it has no
@@ -307,8 +309,8 @@ would carry f64: 13 of 6.4M random activations move by one step when that is
 dropped. Both are pinned by searched-out literals in `test_qmatvec.mjs`, because
 a uniform-random check finds the second maybe one run in thirty.
 
-`loadGGUF(ab, { packed: true })` stops expanding the quantized families
-altogether: the tensor keeps a `Uint8Array` view onto the file's own bytes, and
+Packed is the default, and `{ packed: false }` is the way back to dense. Packed,
+the tensor keeps a `Uint8Array` view onto the file's own bytes, and
 `Tensor.fromPacked` carries the GGUF dtype alongside it. `seqLinear` and
 `embedding` branch on that — the first through `qmatvec`, the second through
 `dequantRow`, which decodes one row where the dense path decodes the table.

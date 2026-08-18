@@ -4162,7 +4162,7 @@ export function qmatvecI8(out, Wq, dtype, x, m, k) {
  * (`token_embd.weight`, `blk.{i}.attn_q.weight`, `output.weight`, …); shapes
  * are row-major. F16 tensors are expanded to F32 on load.
  */
-export function loadGGUF(arrayBuffer, opts = {}) {
+export function loadGGUF(arrayBuffer, { packed = true } = {}) {
   const dv = new DataView(arrayBuffer);
   const u8 = new Uint8Array(arrayBuffer);
   const dec = new TextDecoder('utf-8');
@@ -4235,7 +4235,7 @@ export function loadGGUF(arrayBuffer, opts = {}) {
     // the 4 B/weight goes back to ~0.55. F32 and F16 still expand: their
     // consumers here are norms and other non-matvec ops that read dense data,
     // and F16 only ever buys a factor of two.
-    const geom = opts.packed ? GGUF_BLOCK[info.gtype] : undefined;
+    const geom = packed ? GGUF_BLOCK[info.gtype] : undefined;
     if (geom) {
       const cols = info.dims[info.dims.length - 1];
       if (cols % geom[1]) {

@@ -13,6 +13,32 @@ Newest entries on top.
 
 ---
 
+## 2026-08-18 — packed becomes the default in js-edition, and the slowness gets a number
+
+`loadGGUF` now keeps quantized weights packed unless asked for `{ packed: false }`.
+`test_gguf_dequant.mjs` asks for dense explicitly — it exists to check the f32
+block decode against C, which is a different question — and gained a check that
+the default is packed, because the numeric part of that test is blind to it:
+flipping the default back leaves `maxAbs=5.000e-8` untouched while costing
+4 B/weight. `infer_gguf.mjs` takes `NT_PACKED=0` to force the old path.
+
+Generation on nano_arianna Q4_K_M is byte-for-byte identical across 24 greedy
+tokens between the new default, the forced-dense path, and the reference saved
+before the switch.
+
+Where the time actually goes, since 8 tokens out of an 89M model in 6.55 s is
+not a kernel problem:
+
+- `infer_gguf.mjs` re-forwards the whole prefix per token. 11-token prompt,
+  8 generated: 6.15 GMAC against 1.13 GMAC with a KV cache. **5.4x of the work
+  is thrown away.** `KVCache` exists (`notorch.js:3150`) and nothing uses it.
+- What is left is throughput: 0.94 GMAC/s packed, 1.31 GMAC/s dense, scalar
+  single-threaded JS. The packed gap is `qmatvec` re-decoding a block per pass.
+
+Order of return, measured rather than guessed: KV cache (5.4x, pure
+architecture) far ahead of i8 in `seqLinear` (kernel), ahead of workers
+(parallelism).
+
 ## 2026-08-18 — js-edition stops unpacking the weights it now knows how to read
 
 `loadGGUF(ab, { packed: true })` leaves the quantized families in their blocks:

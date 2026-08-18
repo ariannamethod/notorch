@@ -14,7 +14,9 @@ if (!ggufPath || !refPath) { console.error('usage: node test_gguf_dequant.mjs mo
 const ref = JSON.parse(readFileSync(refPath, 'utf8'));
 const buf = readFileSync(ggufPath);
 const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-const { tensors } = loadGGUF(ab);
+// Explicitly dense: this test exists to check the f32 block decode against C,
+// which is a different question from whether the loader keeps weights packed.
+const { tensors } = loadGGUF(ab, { packed: false });
 
 const DTYPE = { 0: 'F32', 1: 'F16', 2: 'Q4_0', 6: 'Q5_0', 8: 'Q8_0', 12: 'Q4_K', 14: 'Q6_K' };
 let maxAbs = 0, maxRel = 0, checked = 0, fail = 0;
@@ -34,7 +36,16 @@ for (const [name, r] of Object.entries(ref)) {
   console.log(`  ${name.padEnd(26)} ${(DTYPE[r.dtype] || r.dtype).padEnd(5)} n=${String(r.n).padEnd(9)} maxAbs=${tAbs.toExponential(2)}`);
 }
 
-console.log(`\nchecked=${checked} values | maxAbs=${maxAbs.toExponential(3)} maxRel=${maxRel.toExponential(3)} | missing=${fail}`);
-const ok = fail === 0 && maxAbs < 1e-4 && checked > 0;
+// The loader keeps quantized weights packed unless told otherwise. Checked here
+// because it needs a real GGUF, and because a default that silently flips back
+// costs 4 B/weight without changing a single number above.
+const { tensors: dflt } = loadGGUF(ab);
+let nPacked = 0, nDense = 0;
+for (const [, t] of dflt) (t.packed ? nPacked++ : nDense++);
+const defaultOk = nPacked > 0;
+console.log(`\ndefault load: ${nPacked} packed, ${nDense} dense — ${defaultOk ? 'packed by default' : 'DEFAULT NOT PACKED'}`);
+
+console.log(`checked=${checked} values | maxAbs=${maxAbs.toExponential(3)} maxRel=${maxRel.toExponential(3)} | missing=${fail}`);
+const ok = fail === 0 && maxAbs < 1e-4 && checked > 0 && defaultOk;
 console.log(ok ? 'JS_DEQUANT_OK' : 'JS_DEQUANT_FAIL');
 process.exit(ok ? 0 : 1);
