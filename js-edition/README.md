@@ -139,7 +139,7 @@ Tokenizers: `CharTokenizer`, `BPETokenizer`.
 
 ## Op parity table
 
-37 C op codes (0–36, matching C `notorch.h:91-127` numbering) + 7 JS-specific
+37 C op codes (0–36, matching C `notorch.h:91-127` numbering) + 8 JS-specific
 extension codes (100+). RELU is C op 35 in both runtimes.
 
 | OP | # | Forward method | Notes |
@@ -162,7 +162,7 @@ extension codes (100+). RELU is C op 35 in both runtimes.
 | SEQ_CROSSENT        | 15 | `seqCrossEntropyLoss(logits, targets, T, V)`   | |
 | MH_CAUSAL_ATTN      | 16 | `attention(q, k, v, T, headDim)`               | |
 | GEGLU               | 17 | `geglu(x, W1, W2, T, dIn, dOut)`               | Gemma-3 fused FFN |
-| ROPE                | 18 | `rope(x, T, headDim, freqBase)`                | |
+| ROPE                | 18 | `rope(x, T, headDim, freqBase, posOffset)`     | `posOffset` defaults to 0 |
 | DROPOUT             | 19 | `dropout(x, p)`                                | mask saved on tape |
 | LAYERNORM           | 20 | `layernorm(x, γ, β, eps)`                      | |
 | SEQ_LAYERNORM       | 21 | `seqLayernorm(x, γ, β, T, D, eps)`             | |
@@ -193,6 +193,7 @@ extension codes (100+). RELU is C op 35 in both runtimes.
 | TANH      | 104 | `tanh(x)`                           |                             |
 | EMBEDDING | 106 | `embedding(W, ids, T, D)`           | sequence embedding lookup   |
 | MSE       | 107 | `mseLoss(pred, target)`             | mean-squared error          |
+| GQA_ATTN_KV | 108 | `gqaAttentionKV(q, k, v, Tq, hD, nH, nKV)` | Tq queries against a KV cache; inference-only |
 
 ---
 
@@ -342,6 +343,37 @@ shape.
 Packed weights are inference-only. `SEQ_MATVEC` and `EMBEDDING` backward refuse
 them by name rather than reading an empty `data` and filling the gradient with
 NaN.
+
+### KV cache
+
+`infer_gguf.mjs` used to re-forward the whole prefix for every token: an
+11-token prompt and 24 generated is 6.15 GMAC of work against 1.13 GMAC with a
+cache. `KVCache` had been sitting in the file unused since it was written.
+
+Two things had to exist first. `rope(x, T, headDim, freqBase, posOffset)` takes
+the absolute position of the window, since a single-token step is at position
+`pos`, not at 0. And `gqaAttentionKV(q, k, v, Tq, ...)` reads Tkv from K's own
+shape, so Tq queries attend to every key in the cache with the query at `i`
+answering for position `Tkv - Tq + i`. At `Tq === Tkv` it is
+`gqaCausalAttention` to the bit, which is how the two stay honest.
+
+nano_arianna Q4_K_M, packed, greedy, same prompt throughout:
+
+| tokens | no cache | KV cache | speedup |
+|---|---|---|---|
+| 8 | 11.73 s | 2.02 s | 5.81x |
+| 24 | 49.98 s | 3.73 s | 13.40x |
+
+Output is byte-for-byte identical in both rows, and identical again with
+`NT_PACKED=0`. `test_kvcache.mjs` holds the property that makes the cache safe
+without needing a model: feeding T positions at once equals feeding them one at
+a time. An off-by-one in the mask, a RoPE position taken from the window instead
+of the sequence, a stale prefix — each breaks that equality, and nothing else
+has to be inspected to catch them.
+
+Cached attention is inference-only: the causal structure comes from the cache
+length rather than from the tape, so `GQA_ATTN_KV` backward refuses instead of
+handing back a gradient for a mask that was never there.
 
 Then the WebGPU quant matvec (mirroring the C Metal `nt_metal_q4k_matvec`).
 
