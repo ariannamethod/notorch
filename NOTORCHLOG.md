@@ -13,6 +13,79 @@ Newest entries on top.
 
 ---
 
+## 2026-08-20 — js-edition stops recomputing the prefix it already computed
+
+The 5.4x measured two days ago is collected. `infer_gguf.mjs` prefills the
+prompt once and then feeds one token per step through per-layer `KVCache` —
+the class had been in the file, unused, since it was written.
+
+Two pieces had to exist first:
+
+- `rope(x, T, headDim, freqBase, posOffset)`. A single-token step sits at
+  absolute position `pos`, not at 0, and the same offset goes into ROPE
+  backward, where the angle is recomputed. `posOffset` defaults to 0, so every
+  existing caller is untouched.
+- `gqaAttentionKV(q, k, v, Tq, headDim, nHeads, nKvHeads)`, JS extension op 108.
+  Tkv comes from K's own shape rather than a fifth aux slot, and the query at
+  `i` answers for absolute position `Tkv - Tq + i`. At `Tq === Tkv` it equals
+  `gqaCausalAttention` to the bit.
+
+Inference-only, and `GQA_ATTN_KV` backward says so: the causal structure came
+from the cache length, not from the tape.
+
+nano_arianna Q4_K_M, packed, greedy, one prompt throughout:
+
+| tokens | no cache | KV cache | speedup |
+|---|---|---|---|
+| 8 | 11.73 s | 2.02 s | 5.81x |
+| 24 | 49.98 s | 3.73 s | 13.40x |
+
+These are not comparable to the 6.55 s quoted in the entry below — that run used
+a shorter prompt. Within the table everything is one prompt on one machine.
+
+Proof (neo, node v25.9.0):
+
+- Output byte-for-byte identical to the pre-cache reference at 24 tokens, and
+  identical again under `NT_PACKED=0`.
+- `test_kvcache.mjs`, wired into `make test_js` and `npm test`: the cached op
+  equals `gqaCausalAttention` at Tq=Tkv; one pass over T positions equals T
+  single-token cached passes; a `posOffset` row equals the corresponding
+  full-window row; backward refuses; Tkv < Tq refuses.
+- Red hand, each caught: mask dropping the cache prefix — 384/432 elements
+  differ, worst 1.16e+0; forward RoPE ignoring `posOffset` — 384 elements
+  differ; both refusals removed — FAIL. On the real model, a query RoPE offset
+  by one and a mask without the prefix each derail the generation outright.
+
+The property the test holds is the one worth stating plainly: a cache is correct
+when feeding T positions at once and feeding them one at a time give the same
+numbers. Speed is what you get afterwards, not what you check.
+
+## 2026-08-18 — packed becomes the default in js-edition, and the slowness gets a number
+
+`loadGGUF` now keeps quantized weights packed unless asked for `{ packed: false }`.
+`test_gguf_dequant.mjs` asks for dense explicitly — it exists to check the f32
+block decode against C, which is a different question — and gained a check that
+the default is packed, because the numeric part of that test is blind to it:
+flipping the default back leaves `maxAbs=5.000e-8` untouched while costing
+4 B/weight. `infer_gguf.mjs` takes `NT_PACKED=0` to force the old path.
+
+Generation on nano_arianna Q4_K_M is byte-for-byte identical across 24 greedy
+tokens between the new default, the forced-dense path, and the reference saved
+before the switch.
+
+Where the time actually goes, since 8 tokens out of an 89M model in 6.55 s is
+not a kernel problem:
+
+- `infer_gguf.mjs` re-forwards the whole prefix per token. 11-token prompt,
+  8 generated: 6.15 GMAC against 1.13 GMAC with a KV cache. **5.4x of the work
+  is thrown away.** `KVCache` exists (`notorch.js:3150`) and nothing uses it.
+- What is left is throughput: 0.94 GMAC/s packed, 1.31 GMAC/s dense, scalar
+  single-threaded JS. The packed gap is `qmatvec` re-decoding a block per pass.
+
+Order of return, measured rather than guessed: KV cache (5.4x, pure
+architecture) far ahead of i8 in `seqLinear` (kernel), ahead of workers
+(parallelism).
+
 ## 2026-08-18 — js-edition stops unpacking the weights it now knows how to read
 
 `loadGGUF(ab, { packed: true })` leaves the quantized families in their blocks:

@@ -155,6 +155,7 @@ export const OP = Object.freeze({
   TANH: 104,
   EMBEDDING: 106,
   MSE: 107,
+  GQA_ATTN_KV: 108,   // GQA against a KV cache: Tq queries against Tkv keys
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -967,12 +968,13 @@ export class Tape {
           const D = (total / T) | 0;
           const nHeads = (D / headDim) | 0;
           const freqBase = e.aux3 || 10000;
+          const posOffset = e.aux4 | 0;
           const gx = new Float32Array(total);
           for (let t = 0; t < T; t++) {
             for (let h = 0; h < nHeads; h++) {
               const off = t * D + h * headDim;
               for (let k = 0; k < headDim; k += 2) {
-                const theta = t / Math.pow(freqBase, k / headDim);
+                const theta = (posOffset + t) / Math.pow(freqBase, k / headDim);
                 const c = Math.cos(theta), s = Math.sin(theta);
                 const dx = dout[off + k];
                 const dy = dout[off + k + 1];
@@ -1103,6 +1105,12 @@ export class Tape {
           this.accGrad(e.parent1, dl);
         }
         return;
+      }
+
+      case OP.GQA_ATTN_KV: {
+        // Inference-only: the mask this op applied came from the cache length,
+        // not from anything on the tape, so there is no gradient to hand back.
+        throw new Error('GQA_ATTN_KV backward: attention against a KV cache is inference-only');
       }
 
       case OP.GQA_ATTN: {
@@ -2454,6 +2462,64 @@ export class Notorch {
     return this.tape.record(out, OP.GQA_ATTN, qIdx, kIdx, vIdx, T, headDim, nHeads, nKvHeads);
   }
 
+  /**
+   * GQA attention against a KV cache: Tq query positions against every key and
+   * value already in the cache. Tkv is read from K's own shape, so the query at
+   * i answers for absolute position Tkv - Tq + i and attends to j <= that.
+   * With Tq === Tkv this is exactly gqaCausalAttention.
+   *
+   * Inference only. The causal structure here is a function of the cache, not
+   * of the tape, so GQA_ATTN_KV backward refuses rather than producing a
+   * gradient for a mask that was never there.
+   */
+  gqaAttentionKV(qIdx, kIdx, vIdx, Tq, headDim, nHeads, nKvHeads) {
+    if (nHeads % nKvHeads !== 0) {
+      throw new Error(`gqaAttentionKV: nHeads=${nHeads} must be divisible by nKvHeads=${nKvHeads}`);
+    }
+    const Q = this.tape.entries[qIdx].output.data;
+    const Kt = this.tape.entries[kIdx].output;
+    const V = this.tape.entries[vIdx].output.data;
+    const Q_D = nHeads * headDim;
+    const KV_D = nKvHeads * headDim;
+    const Tkv = Kt.shape.length >= 2 ? Kt.shape[0] : (Kt.len / KV_D) | 0;
+    if (Tkv < Tq) throw new Error(`gqaAttentionKV: cache holds ${Tkv} keys, fewer than the ${Tq} queries`);
+    const K = Kt.data;
+    const gqaRatio = nHeads / nKvHeads;
+    const sc = 1 / Math.sqrt(headDim);
+    const base = Tkv - Tq;
+    const out = Tensor.zeros([Tq, Q_D]);
+    const Yd = out.data;
+    const scores = new Float32Array(Tkv);
+    for (let h = 0; h < nHeads; h++) {
+      const kvH = Math.floor(h / gqaRatio);
+      const qOff = h * headDim;
+      const kvOff = kvH * headDim;
+      for (let i = 0; i < Tq; i++) {
+        const last = base + i;                 // absolute position of this query
+        const qiOff = i * Q_D + qOff;
+        let mx = -Infinity;
+        for (let j = 0; j <= last; j++) {
+          const kjOff = j * KV_D + kvOff;
+          let dot = 0;
+          for (let d = 0; d < headDim; d++) dot += Q[qiOff + d] * K[kjOff + d];
+          scores[j] = dot * sc;
+          if (scores[j] > mx) mx = scores[j];
+        }
+        let sum = 0;
+        for (let j = 0; j <= last; j++) { scores[j] = Math.exp(scores[j] - mx); sum += scores[j]; }
+        if (sum > 0) for (let j = 0; j <= last; j++) scores[j] /= sum;
+        const yiOff = i * Q_D + qOff;
+        for (let d = 0; d < headDim; d++) Yd[yiOff + d] = 0;
+        for (let j = 0; j <= last; j++) {
+          const vjOff = j * KV_D + kvOff;
+          const aj = scores[j];
+          for (let d = 0; d < headDim; d++) Yd[yiOff + d] += aj * V[vjOff + d];
+        }
+      }
+    }
+    return this.tape.record(out, OP.GQA_ATTN_KV, qIdx, kIdx, vIdx, Tq, headDim, nHeads, nKvHeads);
+  }
+
   // ═════════════════════════════════════════════════════════════════════════
   // SwiGLU MLP — full block: gate = silu(x @ W1), out = (gate * (x @ W3)) @ W2
   // Matches LLaMA-style FFN: gate_proj, up_proj, down_proj.
@@ -2801,7 +2867,7 @@ export class Notorch {
   // ROPE — rotary positional embedding (in-place style; new tensor with rotation)
   // ═════════════════════════════════════════════════════════════════════════
 
-  rope(xIdx, T, headDim, freqBase = 10000) {
+  rope(xIdx, T, headDim, freqBase = 10000, posOffset = 0) {
     const x = this.tape.entries[xIdx].output;
     const out = Tensor.zeros(x.shape);
     const total = x.len;
@@ -2811,7 +2877,7 @@ export class Notorch {
       for (let h = 0; h < nHeads; h++) {
         const off = t * D + h * headDim;
         for (let k = 0; k < headDim; k += 2) {
-          const theta = t / Math.pow(freqBase, k / headDim);
+          const theta = (posOffset + t) / Math.pow(freqBase, k / headDim);
           const c = Math.cos(theta), s = Math.sin(theta);
           const x0 = x.data[off + k], x1 = x.data[off + k + 1];
           out.data[off + k]     = x0 * c - x1 * s;
@@ -2819,7 +2885,7 @@ export class Notorch {
         }
       }
     }
-    return this.tape.record(out, OP.ROPE, xIdx, -1, -1, T, headDim, freqBase);
+    return this.tape.record(out, OP.ROPE, xIdx, -1, -1, T, headDim, freqBase, posOffset);
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -4162,7 +4228,7 @@ export function qmatvecI8(out, Wq, dtype, x, m, k) {
  * (`token_embd.weight`, `blk.{i}.attn_q.weight`, `output.weight`, …); shapes
  * are row-major. F16 tensors are expanded to F32 on load.
  */
-export function loadGGUF(arrayBuffer, opts = {}) {
+export function loadGGUF(arrayBuffer, { packed = true } = {}) {
   const dv = new DataView(arrayBuffer);
   const u8 = new Uint8Array(arrayBuffer);
   const dec = new TextDecoder('utf-8');
@@ -4235,7 +4301,7 @@ export function loadGGUF(arrayBuffer, opts = {}) {
     // the 4 B/weight goes back to ~0.55. F32 and F16 still expand: their
     // consumers here are norms and other non-matvec ops that read dense data,
     // and F16 only ever buys a factor of two.
-    const geom = opts.packed ? GGUF_BLOCK[info.gtype] : undefined;
+    const geom = packed ? GGUF_BLOCK[info.gtype] : undefined;
     if (geom) {
       const cols = info.dims[info.dims.length - 1];
       if (cols % geom[1]) {

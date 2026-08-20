@@ -8,7 +8,7 @@
 //   node infer_gguf.mjs model.gguf "prompt" [maxTokens] [temp]
 //
 import { readFileSync } from 'fs';
-import { Notorch, Tensor, loadGGUF } from './notorch.js';
+import { Notorch, Tensor, loadGGUF, KVCache } from './notorch.js';
 
 // ── GGUF byte-level BPE (mirror of examples/bpe.c) ──────────────────────────
 function buildByteTable() {
@@ -76,10 +76,10 @@ class GgufBPE {
 function loadModel(path) {
   const buf = readFileSync(path);
   const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-  // NT_PACKED=1 keeps the quantized weights in their GGUF blocks instead of
-  // expanding them to f32 on load. Same generation either way — that is the
-  // point of the switch, and what the gate checks.
-  const { metadata, tensors } = loadGGUF(ab, { packed: process.env.NT_PACKED === '1' });
+  // Packed by default: the quantized weights stay in their GGUF blocks instead
+  // of being expanded to f32 on load. NT_PACKED=0 forces the old dense path —
+  // the generation is identical either way, which is what the gate checks.
+  const { metadata, tensors } = loadGGUF(ab, { packed: process.env.NT_PACKED !== '0' });
   const arch = metadata.get('general.architecture');
   const g = (k, d) => { const v = metadata.get(`${arch}.${k}`); return v === undefined ? d : v; };
   const m = {
@@ -103,8 +103,11 @@ function loadModel(path) {
   return m;
 }
 
-// ── forward (full sequence; returns last-position logits Float32Array) ───────
-function forwardLastLogits(nt, m, ids) {
+// ── forward (KV-cached; returns last-position logits Float32Array) ──────────
+// Called once with the whole prompt, then once per generated token. `pos` is
+// the absolute position of ids[0], which is what RoPE needs and what the
+// cache length already knows.
+function forwardLastLogits(nt, m, ids, caches, pos) {
   const T = ids.length, E = m.E, H = m.H, KV = m.KV, HD = m.HD;
   nt.resetTape();
   const W = (t) => nt.leaf(t);
@@ -113,10 +116,15 @@ function forwardLastLogits(nt, m, ids) {
   for (let l = 0; l < m.L; l++) {
     const g = (n) => m.tensors.get(`blk.${l}.${n}`);
     const xn = nt.seqRmsnorm(x, W(g('attn_norm.weight')), T, E, m.eps);
-    const q = nt.rope(nt.seqLinear(W(g('attn_q.weight')), xn, T), T, HD, m.ropeBase);
-    const k = nt.rope(nt.seqLinear(W(g('attn_k.weight')), xn, T), T, HD, m.ropeBase);
-    const v = nt.seqLinear(W(g('attn_v.weight')), xn, T);
-    const ao = nt.gqaCausalAttention(q, k, v, T, HD, H, KV);
+    const q = nt.rope(nt.seqLinear(W(g('attn_q.weight')), xn, T), T, HD, m.ropeBase, pos);
+    const kNew = nt.rope(nt.seqLinear(W(g('attn_k.weight')), xn, T), T, HD, m.ropeBase, pos);
+    const vNew = nt.seqLinear(W(g('attn_v.weight')), xn, T);
+    // The new keys and values join the cache before the attention reads it, so
+    // Tkv is prefix + T and the query at i answers for absolute position pos+i.
+    caches[l].appendBatch(nt.get(kNew).data, nt.get(vNew).data, T);
+    const kAll = W(caches[l].Ktensor());
+    const vAll = W(caches[l].Vtensor());
+    const ao = nt.gqaAttentionKV(q, kAll, vAll, T, HD, H, KV);
     const o = nt.seqLinear(W(g('attn_output.weight')), ao, T);
     x = nt.add(x, o);
     const fn = nt.seqRmsnorm(x, W(g('ffn_norm.weight')), T, E, m.eps);
@@ -139,13 +147,20 @@ const nt = new Notorch();
 const ids = m.tok.encode(prompt);
 console.error(`prompt "${prompt}" -> ${ids.length} tokens`);
 let out = '';
+const caches = Array.from({ length: m.L }, () => new KVCache(ids.length + maxTok + 1, m.KV * m.HD));
+let pos = 0;
+let logits = forwardLastLogits(nt, m, ids, caches, pos);   // prefill the prompt
+pos += ids.length;
 for (let step = 0; step < maxTok; step++) {
-  const logits = forwardLastLogits(nt, m, ids);
   let next = 0; for (let i = 1; i < logits.length; i++) if (logits[i] > logits[next]) next = i;
   if (next === m.eos) break;
   ids.push(next);
   out += m.tok.decode([next]);
   process.stderr.write('.');
+  if (step + 1 < maxTok) {
+    logits = forwardLastLogits(nt, m, [next], caches, pos);   // one token, cache does the rest
+    pos += 1;
+  }
 }
 console.error('');
 console.log(prompt + out);

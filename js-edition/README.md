@@ -139,7 +139,7 @@ Tokenizers: `CharTokenizer`, `BPETokenizer`.
 
 ## Op parity table
 
-37 C op codes (0–36, matching C `notorch.h:91-127` numbering) + 7 JS-specific
+37 C op codes (0–36, matching C `notorch.h:91-127` numbering) + 8 JS-specific
 extension codes (100+). RELU is C op 35 in both runtimes.
 
 | OP | # | Forward method | Notes |
@@ -162,7 +162,7 @@ extension codes (100+). RELU is C op 35 in both runtimes.
 | SEQ_CROSSENT        | 15 | `seqCrossEntropyLoss(logits, targets, T, V)`   | |
 | MH_CAUSAL_ATTN      | 16 | `attention(q, k, v, T, headDim)`               | |
 | GEGLU               | 17 | `geglu(x, W1, W2, T, dIn, dOut)`               | Gemma-3 fused FFN |
-| ROPE                | 18 | `rope(x, T, headDim, freqBase)`                | |
+| ROPE                | 18 | `rope(x, T, headDim, freqBase, posOffset)`     | `posOffset` defaults to 0 |
 | DROPOUT             | 19 | `dropout(x, p)`                                | mask saved on tape |
 | LAYERNORM           | 20 | `layernorm(x, γ, β, eps)`                      | |
 | SEQ_LAYERNORM       | 21 | `seqLayernorm(x, γ, β, T, D, eps)`             | |
@@ -193,6 +193,7 @@ extension codes (100+). RELU is C op 35 in both runtimes.
 | TANH      | 104 | `tanh(x)`                           |                             |
 | EMBEDDING | 106 | `embedding(W, ids, T, D)`           | sequence embedding lookup   |
 | MSE       | 107 | `mseLoss(pred, target)`             | mean-squared error          |
+| GQA_ATTN_KV | 108 | `gqaAttentionKV(q, k, v, Tq, hD, nH, nKV)` | Tq queries against a KV cache; inference-only |
 
 ---
 
@@ -273,17 +274,19 @@ copy the GPU output back into the CPU mirror **before** calling
 - `saveNotorchBin(tensors)` — writes a `Map<name, Tensor>` to the
   native `.bin` format.
 
-GGUF in JS via `loadGGUF(arrayBuffer)` reads GGUF v3 and dequantizes
-**F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K** to f32 on load. the block routines
+GGUF in JS via `loadGGUF(arrayBuffer)` reads GGUF v3 and understands
+**F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K**. The quantized families stay in their
+blocks by default; `{ packed: false }` restores the old behaviour of expanding
+every tensor to f32 on load. Either way the block routines
 mirror `gguf.c` byte-for-byte and are verified against the C path by
 `test_gguf_dequant.mjs` — Q4_K/Q6_K/Q8_0/Q4_0 match C to ~5e-9 across real
 models (Qwen3-0.6B, smallcoder Q8_0, wtf360 Q4_0), Q5_0 to 5e-8 on
 nano_arianna Q4_K_M, whose 32000×576 `token_embd.weight` is Q5_0.
 `loadSafetensors` works for HF F32 weights.
 
-`loadGGUF` still expands every tensor to f32 on load, which is 4 B/weight
-where Q4_K on disk is ~0.55 — a 170 MB file becomes north of a gigabyte in a
-tab. `qmatvec(out, Wq, dtype, x, m, k)` is the way out and the port of C
+Expanding every tensor to f32 costs 4 B/weight where Q4_K on disk is ~0.55 — a
+170 MB file becomes north of a gigabyte in a tab, which is why that is no longer
+the default. `qmatvec(out, Wq, dtype, x, m, k)` is the way out and the port of C
 `nt_qmatvec`: it dots a row straight out of the packed bytes, unpacking one
 block at a time into locals, so no dense tensor is ever built. It covers F32,
 F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K and returns -1 on a dtype or a `k` it has no
@@ -307,8 +310,8 @@ would carry f64: 13 of 6.4M random activations move by one step when that is
 dropped. Both are pinned by searched-out literals in `test_qmatvec.mjs`, because
 a uniform-random check finds the second maybe one run in thirty.
 
-`loadGGUF(ab, { packed: true })` stops expanding the quantized families
-altogether: the tensor keeps a `Uint8Array` view onto the file's own bytes, and
+Packed is the default, and `{ packed: false }` is the way back to dense. Packed,
+the tensor keeps a `Uint8Array` view onto the file's own bytes, and
 `Tensor.fromPacked` carries the GGUF dtype alongside it. `seqLinear` and
 `embedding` branch on that — the first through `qmatvec`, the second through
 `dequantRow`, which decodes one row where the dense path decodes the table.
@@ -340,6 +343,37 @@ shape.
 Packed weights are inference-only. `SEQ_MATVEC` and `EMBEDDING` backward refuse
 them by name rather than reading an empty `data` and filling the gradient with
 NaN.
+
+### KV cache
+
+`infer_gguf.mjs` used to re-forward the whole prefix for every token: an
+11-token prompt and 24 generated is 6.15 GMAC of work against 1.13 GMAC with a
+cache. `KVCache` had been sitting in the file unused since it was written.
+
+Two things had to exist first. `rope(x, T, headDim, freqBase, posOffset)` takes
+the absolute position of the window, since a single-token step is at position
+`pos`, not at 0. And `gqaAttentionKV(q, k, v, Tq, ...)` reads Tkv from K's own
+shape, so Tq queries attend to every key in the cache with the query at `i`
+answering for position `Tkv - Tq + i`. At `Tq === Tkv` it is
+`gqaCausalAttention` to the bit, which is how the two stay honest.
+
+nano_arianna Q4_K_M, packed, greedy, same prompt throughout:
+
+| tokens | no cache | KV cache | speedup |
+|---|---|---|---|
+| 8 | 11.73 s | 2.02 s | 5.81x |
+| 24 | 49.98 s | 3.73 s | 13.40x |
+
+Output is byte-for-byte identical in both rows, and identical again with
+`NT_PACKED=0`. `test_kvcache.mjs` holds the property that makes the cache safe
+without needing a model: feeding T positions at once equals feeding them one at
+a time. An off-by-one in the mask, a RoPE position taken from the window instead
+of the sequence, a stale prefix — each breaks that equality, and nothing else
+has to be inspected to catch them.
+
+Cached attention is inference-only: the causal structure comes from the cache
+length rather than from the tape, so `GQA_ATTN_KV` backward refuses instead of
+handing back a gradient for a mask that was never there.
 
 Then the WebGPU quant matvec (mirroring the C Metal `nt_metal_q4k_matvec`).
 
