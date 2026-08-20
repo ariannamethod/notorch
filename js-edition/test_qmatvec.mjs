@@ -294,6 +294,38 @@ for (const [dtype, badK, name] of [[2, 48, 'Q4_0'], [6, 48, 'Q5_0'], [8, 48, 'Q8
   if (rc !== -1) { console.log(`${name} k=${badK} expected rc=-1, got ${rc}  FAIL`); fails++; }
 }
 
+// ggufHalfToFloat rebuilds the f32 bit pattern instead of going through
+// Math.pow twice. Faster only matters if it is also the same function, so every
+// one of the 65536 half patterns is checked — subnormals, both infinities, and
+// the whole NaN payload range included. The comparison runs each side through
+// the kernel's own arithmetic (accumulate from 0, land in an f32), because a
+// negative-zero half is -0 as a value and +0 once summed, and that difference
+// belongs to the accumulator, not to the conversion.
+{
+  const x1 = new Float32Array(1); x1[0] = 1;
+  const o1 = new Float32Array(1);
+  const half = new Uint16Array(1);
+  const halfBytes = new Uint8Array(half.buffer);
+  const viaPow = (h) => {
+    const sg = (h & 0x8000) ? -1 : 1, e = (h >> 10) & 0x1F, f = h & 0x3FF;
+    if (e === 0) return sg * Math.pow(2, -14) * (f / 1024);
+    if (e === 0x1F) return f ? NaN : sg * Infinity;
+    return sg * Math.pow(2, e - 15) * (1 + f / 1024);
+  };
+  let bad = 0, firstBad = null;
+  for (let h = 0; h < 65536; h++) {
+    half[0] = h;
+    if (qmatvec(o1, halfBytes, 1, x1, 1, 1) !== 0) { bad++; continue; }
+    const want = Math.fround(0 + viaPow(h) * 1), got = o1[0];
+    if (!(Object.is(want, got) || (Number.isNaN(want) && Number.isNaN(got)))) {
+      bad++;
+      if (!firstBad) firstBad = `0x${h.toString(16)}: ${want} vs ${got}`;
+    }
+  }
+  if (bad) { console.log(`ggufHalfToFloat: ${bad}/65536 patterns disagree (${firstBad})  FAIL`); fails++; }
+  else console.log('f16     [65536]  every half pattern matches the Math.pow form  PASS');
+}
+
 // quantAct must round ties to even, the way C's lrintf does under the default
 // FE_TONEAREST (notorch.c:5515) — Math.round rounds them up instead. On uniform
 // input the two never disagree: measured 0 exact halves in 14336 activations, so

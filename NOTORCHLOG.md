@@ -13,6 +13,47 @@ Newest entries on top.
 
 ---
 
+## 2026-08-20 — four accumulators instead of one, and an int8 claim withdrawn
+
+The packed kernels ran one serial `acc +=` per block, so every addition waited
+on the previous one. Four independent accumulators let them overlap; the scale
+moves out of the inner loop with them, and in Q6_K the sub-scale index is
+constant across each 16-wide half and hoists as well. `ggufHalfToFloat` rebuilds
+the f32 bit pattern rather than calling `Math.pow` twice.
+
+nano_arianna Q4_K_M shapes, median of five:
+
+| shape | dtype | before | after | |
+|---|---|---|---|---|
+| 576×576 | Q5_0 | 0.321 ms | 0.212 ms | 1.51x |
+| 1536×576 | Q5_0 | 0.835 ms | 0.563 ms | 1.48x |
+| 576×1536 | Q6_K | 0.837 ms | 0.590 ms | 1.42x |
+| 32000×576 | Q8_0 | 16.59 ms | 11.11 ms | 1.49x |
+
+End to end, 24 greedy tokens: 2.95 s to 2.05 s. Output byte-for-byte unchanged,
+packed and dense alike — reordering the sums moves nothing that survives
+rounding to f32 — and the distance to the C kernels stays at ~1e-6.
+
+**Withdrawn: the int8 path is not faster in JS.** The entry of 2026-08-18 and
+the README both claimed it would win on the type, an int32 accumulator staying
+in V8's small-integer form instead of running an f32 dependency chain. That was
+reasoning, not measurement. Measured twice, on real shapes, median of five:
+0.97x / 0.95x / 1.02x / 1.01x before the unroll, and 0.95x / 0.94x / 0.82x /
+1.01x after it — at best a wash, usually a loss. `quantAct` is not the cost
+either, it measures 0.001–0.004 ms. The thing that makes i8 cheaper in C is one
+instruction covering sixteen products, and JS has no such instruction; what
+would change it is WASM SIMD, a different artifact with a build step.
+
+A private microbenchmark did show i8 ahead by 19%, which is why the claim
+survived as long as it did. It fed the kernel a pre-quantized activation and a
+synthetic shape, and neither held up against the real ones. A benchmark that
+does not run the code the way the program runs it is a hypothesis wearing a
+number.
+
+`qmatvecI8` stays: it is the C contract, it is verified against C's own i8
+kernel to 3e-7, and it is what a SIMD backend would call. It just no longer
+promises anything about speed here.
+
 ## 2026-08-20 — js-edition stops recomputing the prefix it already computed
 
 The 5.4x measured two days ago is collected. `infer_gguf.mjs` prefills the
