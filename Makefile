@@ -3,7 +3,11 @@
 
 CC = cc
 AR ?= ar
-CFLAGS = -O2 -Wall -Wextra -std=c11 -pthread -I.
+# gnu11, не c11: под строгим ISO glibc прячет strdup / getpagesize / posix_memalign,
+# они становятся implicit и «возвращают» int — указатель усекается до 32 бит и
+# первое же разыменование даёт SIGSEGV. Bionic отдаёт их и при -std=c11, поэтому в
+# Termux это не проявлялось.
+CFLAGS = -O2 -Wall -Wextra -std=gnu11 -pthread -I.
 
 # Detect platform
 UNAME := $(shell uname)
