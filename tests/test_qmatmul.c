@@ -37,8 +37,30 @@ static uint8_t *make_q4_0(int m, int k, unsigned seed) {
     return W;
 }
 
-static int check(int m, int k, int n, int *pass, int *fail) {
-    uint8_t *W = make_q4_0(m, k, 1234u + (unsigned)n);
+/* Q4_K super-block: d, dmin (f16), 12 bytes of packed 6-bit (scale,min) pairs, 128 nibble
+ * bytes. The scale bytes are left random on purpose — every 6-bit pair the packing can
+ * produce is a legal weight, and pinning them would test one arm of nt_get_scale_min_k4. */
+static uint8_t *make_q4_k(int m, int k, unsigned seed) {
+    long nb = k / 256;
+    uint8_t *W = (uint8_t *)malloc((size_t)m * nb * 144);
+    if (!W) return NULL;
+    srand(seed);
+    for (long r = 0; r < m; r++)
+        for (long b = 0; b < nb; b++) {
+            uint8_t *bl = W + (r * nb + b) * 144;
+            bl[0] = 0x66; bl[1] = 0x2A;                 /* d    ~0.05 */
+            bl[2] = 0x00; bl[3] = 0x24;                 /* dmin ~0.016 */
+            for (int i = 4; i < 144; i++) bl[i] = (uint8_t)(rand() & 0xFF);
+        }
+    return W;
+}
+
+static uint8_t *make_weights(int dtype, int m, int k, unsigned seed) {
+    return dtype == 2 ? make_q4_0(m, k, seed) : make_q4_k(m, k, seed);
+}
+
+static int check(int dtype, int m, int k, int n, int *pass, int *fail) {
+    uint8_t *W = make_weights(dtype, m, k, 1234u + (unsigned)n);
     float *X   = (float *)malloc(sizeof(float) * (size_t)k * n);
     float *ref = (float *)malloc(sizeof(float) * (size_t)m * n);
     float *got = (float *)malloc(sizeof(float) * (size_t)m * n);
@@ -47,12 +69,12 @@ static int check(int m, int k, int n, int *pass, int *fail) {
     for (long i = 0; i < (long)k * n; i++) X[i] = (float)((double)rand() / RAND_MAX * 2.0 - 1.0);
 
     for (int j = 0; j < n; j++)
-        if (nt_qmatvec_i8(ref + (long)j * m, W, 2, X + (long)j * k, m, k) != 0) {
-            printf("  m=%d k=%d n=%d: reference matvec refused\n", m, k, n); (*fail)++;
+        if (nt_qmatvec_i8(ref + (long)j * m, W, dtype, X + (long)j * k, m, k) != 0) {
+            printf("  dtype=%d m=%d k=%d n=%d: reference matvec refused\n", dtype, m, k, n); (*fail)++;
             free(W); free(X); free(ref); free(got); return -1;
         }
-    if (nt_qmatmul_i8(got, W, 2, X, m, k, n) != 0) {
-        printf("  m=%d k=%d n=%d: batched matmul refused\n", m, k, n); (*fail)++;
+    if (nt_qmatmul_i8(got, W, dtype, X, m, k, n) != 0) {
+        printf("  dtype=%d m=%d k=%d n=%d: batched matmul refused\n", dtype, m, k, n); (*fail)++;
         free(W); free(X); free(ref); free(got); return -1;
     }
 
@@ -60,46 +82,59 @@ static int check(int m, int k, int n, int *pass, int *fail) {
     for (long i = 0; i < (long)m * n; i++)
         if (memcmp(&ref[i], &got[i], sizeof(float)) != 0) bad++;
     if (bad) {
-        printf("  FAIL m=%d k=%d n=%d: %ld of %ld outputs differ (first ref=%g got=%g)\n",
-               m, k, n, bad, (long)m * n, ref[0], got[0]);
+        printf("  FAIL dtype=%d m=%d k=%d n=%d: %ld of %ld outputs differ (first ref=%g got=%g)\n",
+               dtype, m, k, n, bad, (long)m * n, ref[0], got[0]);
         (*fail)++;
     } else {
-        printf("  PASS m=%d k=%d n=%d: %ld outputs identical\n", m, k, n, (long)m * n);
+        printf("  PASS dtype=%2d m=%4d k=%4d n=%3d: %ld outputs identical\n", dtype, m, k, n, (long)m * n);
         (*pass)++;
     }
     free(W); free(X); free(ref); free(got);
     return bad ? -1 : 0;
 }
 
-int main(void) {
-    printf("notorch batched packed matmul (Q4_0)\n");
-    int pass = 0, fail = 0;
-
-    check(64,   256,  1, &pass, &fail);   /* n = 1 delegates to the matvec entry */
-    check(64,   256,  3, &pass, &fail);
-    check(128,  512, 31, &pass, &fail);   /* just under the tile */
-    check(128,  512, 32, &pass, &fail);   /* exactly the tile */
-    check(128,  512, 33, &pass, &fail);   /* one past it: two passes, second is short */
-    check(2048, 4096, 8, &pass, &fail);   /* over the threading gate: fan-out engaged */
-
-    /* Not an assertion, a number to look at: how much the single unpack actually buys. */
-    int m = 2048, k = 4096, n = 32;
-    uint8_t *W = make_q4_0(m, k, 7u);
+/* Not an assertion, a number to look at: what the single unpack actually buys. */
+static void timing(int dtype, int m, int k, int n) {
+    uint8_t *W = make_weights(dtype, m, k, 7u);
     float *X   = (float *)malloc(sizeof(float) * (size_t)k * n);
     float *out = (float *)malloc(sizeof(float) * (size_t)m * n);
     if (W && X && out) {
         for (long i = 0; i < (long)k * n; i++) X[i] = (float)((double)rand() / RAND_MAX);
         double t0 = now_s();
-        for (int j = 0; j < n; j++) nt_qmatvec_i8(out + (long)j * m, W, 2, X + (long)j * k, m, k);
+        for (int j = 0; j < n; j++)
+            nt_qmatvec_i8(out + (long)j * m, W, dtype, X + (long)j * k, m, k);
         double per_token = now_s() - t0;
         double t1 = now_s();
-        nt_qmatmul_i8(out, W, 2, X, m, k, n);
+        nt_qmatmul_i8(out, W, dtype, X, m, k, n);
         double batched = now_s() - t1;
-        printf("  timing m=%d k=%d n=%d: per-token %.1f ms, batched %.1f ms (%.2fx)\n",
-               m, k, n, per_token * 1e3, batched * 1e3,
+        printf("  timing dtype=%2d m=%d k=%d n=%d: per-token %.1f ms, batched %.1f ms (%.2fx)\n",
+               dtype, m, k, n, per_token * 1e3, batched * 1e3,
                batched > 0 ? per_token / batched : 0.0);
     }
     free(W); free(X); free(out);
+}
+
+int main(void) {
+    printf("notorch batched packed matmul (Q4_0 = dtype 2, Q4_K = dtype 12)\n");
+    int pass = 0, fail = 0;
+
+    check(2,  64,   256,  1, &pass, &fail);   /* n = 1 delegates to the matvec entry */
+    check(2,  64,   256,  3, &pass, &fail);
+    check(2,  128,  512, 31, &pass, &fail);   /* just under the tile */
+    check(2,  128,  512, 32, &pass, &fail);   /* exactly the tile */
+    check(2,  128,  512, 33, &pass, &fail);   /* one past it: two passes, second is short */
+    check(2,  2048, 4096, 8, &pass, &fail);   /* over the threading gate: fan-out engaged */
+
+    check(12, 64,   256,  1, &pass, &fail);
+    check(12, 64,   256,  3, &pass, &fail);
+    check(12, 128,  512, 31, &pass, &fail);
+    check(12, 128,  512, 32, &pass, &fail);
+    check(12, 128,  512, 33, &pass, &fail);
+    check(12, 2048, 4096, 8, &pass, &fail);
+    check(12, 256, 1024, 17, &pass, &fail);   /* k with four super-blocks, odd tile */
+
+    timing(2,  2048, 4096, 32);
+    timing(12, 2048, 4096, 32);
 
     printf("\nResults: %d passed, %d failed\n", pass, fail);
     return fail ? 1 : 0;

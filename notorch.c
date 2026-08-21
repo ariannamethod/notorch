@@ -6427,7 +6427,9 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
 
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
-                             const float *da, int r0, int r1, int k, int n) {
+                             const float *da, const int32_t *asum,
+                             int r0, int r1, int k, int n) {
+    (void)asum;                                  /* Q4_0 has no min term to lift */
     int nb = k / 32;
     const uint8x16_t mask0f = vdupq_n_u8(0x0F);
     const int8x16_t  eight  = vdupq_n_s8(8);
@@ -6457,7 +6459,9 @@ static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
 }
 #else
 static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
-                             const float *da, int r0, int r1, int k, int n) {
+                             const float *da, const int32_t *asum,
+                             int r0, int r1, int k, int n) {
+    (void)asum;                                  /* Q4_0 has no min term to lift */
     int nb = k / 32;
     for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
         int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
@@ -6486,10 +6490,109 @@ static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
 }
 #endif
 
+// Q4_K batched: 144 B / 256 values, eight sub-blocks whose grid coincides with the
+// activation's. Per (row, block) the affine format costs an unpack of eight 6-bit
+// (scale, min) pairs and four 32-byte nibble loads before a single dot happens; per token
+// that overhead is paid again for the same bytes. Here it is paid once for the tile, and
+// SUM(qa) — the activation half of the min term — is precomputed once for the whole call
+// rather than once per row range. The float tail keeps the per-token order, ascending by
+// sub-block, so the batched and the per-token result are the same bits.
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
+                             const float *da, const int32_t *asum,
+                             int r0, int r1, int k, int n) {
+    int nb = k / 256, nsub = k / 32;
+    const uint8x16_t m4 = vdupq_n_u8(0x0F);
+    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
+        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 144;
+            float acc[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            for (int blk = 0; blk < nb; blk++) {
+                const uint8_t *b = rb + (long)blk * 144;
+                float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+                float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
+                const uint8_t *sc = b + 4, *qs = b + 16;
+                uint8_t ls[8], lm[8];
+                for (int s = 0; s < 8; s++) nt_get_scale_min_k4(s, sc, &ls[s], &lm[s]);
+                for (int p = 0; p < 4; p++) {
+                    uint8x16_t q0 = vld1q_u8(qs + p * 32);
+                    uint8x16_t q1 = vld1q_u8(qs + p * 32 + 16);
+                    int8x16_t e0 = vreinterpretq_s8_u8(vandq_u8(q0, m4));
+                    int8x16_t e1 = vreinterpretq_s8_u8(vandq_u8(q1, m4));
+                    int8x16_t o0 = vreinterpretq_s8_u8(vshrq_n_u8(q0, 4));
+                    int8x16_t o1 = vreinterpretq_s8_u8(vshrq_n_u8(q1, 4));
+                    int sub_e = blk * 8 + 2 * p, sub_o = sub_e + 1;
+                    for (int j = 0; j < jn; j++) {
+                        const int8_t *a0 = qa + (long)(j0 + j) * k + (long)sub_e * 32;
+                        const int8_t *a1 = a0 + 32;
+                        const float *daj = da + (long)(j0 + j) * nsub;
+                        const int32_t *asj = asum + (long)(j0 + j) * nsub;
+                        const int32x4_t z = vdupq_n_s32(0);
+                        int32x4_t e = vdotq_s32(z, e0, vld1q_s8(a0));
+                        e = vdotq_s32(e, e1, vld1q_s8(a0 + 16));
+                        int32x4_t o = vdotq_s32(z, o0, vld1q_s8(a1));
+                        o = vdotq_s32(o, o1, vld1q_s8(a1 + 16));
+                        acc[j] += daj[sub_e] * (d * (float)ls[2*p] * (float)vaddvq_s32(e)
+                                              - dmin * (float)lm[2*p] * (float)asj[sub_e]);
+                        acc[j] += daj[sub_o] * (d * (float)ls[2*p+1] * (float)vaddvq_s32(o)
+                                              - dmin * (float)lm[2*p+1] * (float)asj[sub_o]);
+                    }
+                }
+            }
+            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+        }
+    }
+}
+#else
+static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
+                             const float *da, const int32_t *asum,
+                             int r0, int r1, int k, int n) {
+    int nb = k / 256, nsub = k / 32;
+    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
+        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 144;
+            float acc[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            for (int blk = 0; blk < nb; blk++) {
+                const uint8_t *b = rb + (long)blk * 144;
+                float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+                float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
+                const uint8_t *sc = b + 4, *qs = b + 16;
+                uint8_t ls[8], lm[8];
+                for (int s = 0; s < 8; s++) nt_get_scale_min_k4(s, sc, &ls[s], &lm[s]);
+                for (int s = 0; s < 8; s++) {
+                    int sub = blk * 8 + s;
+                    const uint8_t *qsb = qs + (s >> 1) * 32;
+                    int shift = (s & 1) * 4;
+                    for (int j = 0; j < jn; j++) {
+                        const int8_t *a = qa + (long)(j0 + j) * k + (long)sub * 32;
+                        int32_t dot = 0;
+                        for (int i = 0; i < 32; i++)
+                            dot += (int32_t)((qsb[i] >> shift) & 0x0F) * a[i];
+                        acc[j] += da[(long)(j0 + j) * nsub + sub]
+                                * (d * (float)ls[s] * (float)dot
+                                 - dmin * (float)lm[s] * (float)asum[(long)(j0 + j) * nsub + sub]);
+                    }
+                }
+            }
+            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+        }
+    }
+}
+#endif
+
+typedef void (*nt_qmmrows_fn)(float *out, int m, const uint8_t *W, const int8_t *qa,
+                              const float *da, const int32_t *asum,
+                              int r0, int r1, int k, int n);
+
 /* Row chunks are pulled, not dealt out: on big.LITTLE a static split makes every matmul
  * wait for the slow cluster's share, and the pool above learned that the same way. */
 typedef struct {
-    float *out; const uint8_t *W; const int8_t *qa; const float *da;
+    nt_qmmrows_fn fn;
+    float *out; const uint8_t *W; const int8_t *qa; const float *da; const int32_t *asum;
     int m, k, n, hi, chunk;
     int next;
 } nt_qmm_job;
@@ -6499,7 +6602,7 @@ static void nt_qmm_drain(nt_qmm_job *j) {
         int r0 = __atomic_fetch_add(&j->next, j->chunk, __ATOMIC_RELAXED);
         if (r0 >= j->hi) return;
         int r1 = r0 + j->chunk; if (r1 > j->hi) r1 = j->hi;
-        nt_q4_0_rows_i8n(j->out, j->m, j->W, j->qa, j->da, r0, r1, j->k, j->n);
+        j->fn(j->out, j->m, j->W, j->qa, j->da, j->asum, r0, r1, j->k, j->n);
     }
 }
 
@@ -6509,26 +6612,48 @@ int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *X, int m, int k, int n) {
     if (m <= 0 || k <= 0 || n <= 0) return -1;
     if (n == 1) return nt_qmatvec_i8(out, Wq, dtype, X, m, k);
-    if (dtype != 2) return -1;            /* Q4_0 first; the rest still go per token */
+    if (dtype != 2 && dtype != 12) return -1;   /* Q4_0, Q4_K; the rest go per token */
     if (k % 32) return -1;
+    if (dtype == 12 && (k % 256)) return -1;
+    nt_qmmrows_fn fn = (dtype == 2) ? nt_q4_0_rows_i8n : nt_q4_k_rows_i8n;
 
-    int nb = k / 32;
+    int nsub = k / 32;
     int8_t *qa = (int8_t *)malloc((size_t)k * (size_t)n);
-    float  *da = (float *)malloc((size_t)nb * (size_t)n * sizeof(float));
+    float  *da = (float *)malloc((size_t)nsub * (size_t)n * sizeof(float));
+    int32_t *asum = NULL;
     if (!qa || !da) { free(qa); free(da); return -1; }
     for (int j = 0; j < n; j++)
-        nt_quant_act_q8(X + (long)j * k, k, qa + (long)j * k, da + (long)j * nb);
+        nt_quant_act_q8(X + (long)j * k, k, qa + (long)j * k, da + (long)j * nsub);
 
+    /* Q4_K's min term needs SUM(qa) per sub-block. It depends on the activation alone, so
+     * every row range and every tile reads the same numbers — computed once, here. */
+    if (dtype == 12) {
+        asum = (int32_t *)malloc((size_t)nsub * (size_t)n * sizeof(int32_t));
+        if (!asum) { free(qa); free(da); return -1; }
+        for (int j = 0; j < n; j++)
+            for (int s = 0; s < nsub; s++) {
+                const int8_t *p = qa + (long)j * k + (long)s * 32;
+                int32_t t = 0;
+                for (int i = 0; i < 32; i++) t += p[i];
+                asum[(long)j * nsub + s] = t;
+            }
+    }
+
+    /* The gate counts the work, and a batched call does n times the work of one matvec:
+     * a 0.5B Qwen's query projection is 896x896, under the 4M floor and therefore
+     * single-threaded per token, while the same projection over a chunk of 32 positions is
+     * 25M and belongs on every core. Leaving n out of this comparison left most of a
+     * prefill on one core and hid the batched kernel's own speedup behind it. */
     int nt = nt_qmv_host_threads(m);
-    if (nt <= 1 || (long)m * k < nt_qmv_thread_floor()) {
-        nt_q4_0_rows_i8n(out, m, Wq, qa, da, 0, m, k, n);
-        free(qa); free(da);
+    if (nt <= 1 || (long)m * k * (long)n < nt_qmv_thread_floor()) {
+        fn(out, m, Wq, qa, da, asum, 0, m, k, n);
+        free(qa); free(da); free(asum);
         return 0;
     }
 
     /* One fan-out per matmul, not per token: a 24-layer prefill opens seven of these per
      * layer instead of seven per layer per token, so pthread_create lands in the noise. */
-    nt_qmm_job job = { out, Wq, qa, da, m, k, n, m, 0, 0 };
+    nt_qmm_job job = { fn, out, Wq, qa, da, asum, m, k, n, m, 0, 0 };
     job.chunk = m / (nt * 8); if (job.chunk < 1) job.chunk = 1;
     pthread_t th[NT_QMV_MAX_THREADS];
     int launched = 0;
@@ -6539,7 +6664,7 @@ int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
     nt_qmm_drain(&job);                   /* the caller is a worker too */
     for (int t = 0; t < launched; t++) pthread_join(th[t], NULL);
 
-    free(qa); free(da);
+    free(qa); free(da); free(asum);
     return 0;
 }
 
