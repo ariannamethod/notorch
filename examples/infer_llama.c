@@ -357,9 +357,15 @@ static void llama_forward(llama_model* m, kv_cache* kv, int token, int pos, floa
         for (int i = 0; i < E; i++) x[i] += ffn_out[i];
     }
 
-    rmsnorm(xn, x, m->out_norm, E, eps);
-    const wt *lm_head = m->has_output_weight ? &m->out_weight : &m->tok_emb;
-    qmv(logits, lm_head, xn);
+    /* logits == NULL asks for the KV cache alone. Prefill needs a distribution only at the
+     * last position, and the head is the single largest matvec in the model — 151936 rows
+     * against 896 for a 0.5B Qwen — so computing it at every prompt position spends about
+     * a quarter of the prefill producing numbers nobody reads. */
+    if (logits) {
+        rmsnorm(xn, x, m->out_norm, E, eps);
+        const wt *lm_head = m->has_output_weight ? &m->out_weight : &m->tok_emb;
+        qmv(logits, lm_head, xn);
+    }
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
     free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out);
@@ -445,7 +451,7 @@ int main(int argc, char **argv) {
     // Prefill
     double gen0 = now_ms();
     for (int i = 0; i < n_tok; i++)
-        llama_forward(model, kv, tokens[i], i, logits);
+        llama_forward(model, kv, tokens[i], i, i == n_tok - 1 ? logits : NULL);
     double prefill_ms = now_ms() - gen0;
 
     printf("%s", prompt);
