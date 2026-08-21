@@ -3,6 +3,12 @@
 // Copyright (C) 2026 Oleg Ataeff & Arianna Method contributors
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
+/* sched_getaffinity is a GNU extension behind _GNU_SOURCE on glibc; Bionic and musl expose
+ * it unguarded. The define has to land before the first libc header so features.h sees it. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #include "notorch.h"
 #include <stdio.h>
 #include <string.h>
@@ -11,6 +17,9 @@
 #include <sys/time.h>
 #include <pthread.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sched.h>
+#endif
 #include <stdlib.h>
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -5255,9 +5264,32 @@ static long nt_qmv_thread_floor(void) {
     return g_qmv_thread_min;
 }
 
+/* _SC_NPROCESSORS_ONLN counts the cores the KERNEL has online, not the cores THIS process
+ * is allowed to run on. Every big.LITTLE benchmark pins to the fast cluster — `taskset 0xF0`
+ * on an 8-core phone — and there the old count returned 8 while four cores were usable, so
+ * the pool oversubscribed 2:1 and each matvec ended up waiting on a context switch instead
+ * of on memory. The affinity mask is the honest number. NT_QMV_THREADS overrides both, which
+ * is what an A/B run needs and what a caller that already owns a thread budget wants. */
 static int nt_qmv_host_threads(int m) {
-    int nt = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (nt < 1) nt = 1;
+    static int host = -1;
+    if (host < 0) {
+        const char *e = getenv("NT_QMV_THREADS");
+        long want = e ? atol(e) : 0;
+        if (want > 0) {
+            host = (int)want;
+        } else {
+#if defined(__linux__)
+            cpu_set_t set;
+            CPU_ZERO(&set);
+            host = (sched_getaffinity(0, sizeof(set), &set) == 0) ? CPU_COUNT(&set) : 0;
+#else
+            host = 0;
+#endif
+            if (host < 1) host = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        }
+        if (host < 1) host = 1;
+    }
+    int nt = host;
     if (nt > NT_QMV_MAX_THREADS) nt = NT_QMV_MAX_THREADS;
     if (nt > m) nt = m;
     return nt;
