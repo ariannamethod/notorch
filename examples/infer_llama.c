@@ -273,96 +273,130 @@ static void kv_free(kv_cache* kv) { if (!kv) return; free(kv->k); free(kv->v); f
 
 // ── Forward (single token with KV cache) ─────────────────────────────────────
 
-static void llama_forward(llama_model* m, kv_cache* kv, int token, int pos, float* logits) {
+/* n activation rows through one weight matrix. The batched packed kernel reads the
+ * weights once for the whole group; where it has no kernel for the dtype it says so and
+ * we fall back to the row-at-a-time path, which is correct and merely slower. */
+/* Prompt positions carried through the weights together. Wider amortizes the weight read
+ * further; past the caches it starts paying it back in misses, and 32 is where the batched
+ * kernel's own tile sits. */
+#ifndef NT_PREFILL_CHUNK
+#define NT_PREFILL_CHUNK 32
+#endif
+
+static void qmm(float *out, const wt *w, const float *X, int n) {
+    if (n > 1 && w->use_i8 && w->q &&
+        nt_qmatmul_i8(out, w->q, w->dtype, X, w->rows, w->cols, n) == 0) return;
+    for (int j = 0; j < n; j++)
+        qmv(out + (long)j * w->rows, w, X + (long)j * w->cols);
+}
+
+/* One forward for a group of consecutive positions. Decode calls it with n = 1 and gets
+ * exactly the old arithmetic; prefill calls it with a chunk of the prompt and the weight
+ * traffic drops by the chunk width, which is the whole difference between a prompt that
+ * costs the same as generating it and one that does not. Attention still runs per row —
+ * it reads the KV cache rather than the weights, so batching it buys little and costs a
+ * mask. logits, when asked for, are produced for the LAST row only: that is the only
+ * position anybody samples from. */
+static void llama_forward(llama_model* m, kv_cache* kv, const int *tokens, int n,
+                          int pos0, float* logits) {
     int E = m->embed, H = m->n_heads, KV = m->n_kv_heads;
     int HD = m->head_dim, KVD = m->kv_dim, FFN = m->ffn, Q_DIM = m->q_dim;
     float eps = m->rms_eps;
     int gqa = H / KV;
 
-    /* One row of the embedding table, decoded where it lies. For a 1.5B Qwen that table
-     * is the largest tensor in the file and expanding it would cost 933 MB to read 1536
+    /* Rows of the embedding table, decoded where they lie. For a 1.5B Qwen that table is
+     * the largest tensor in the file and expanding it would cost 933 MB to read 1536
      * floats per token. */
-    float *x = (float*)calloc(E, sizeof(float));
-    if (m->tok_emb.f32) memcpy(x, m->tok_emb.f32 + (long)token * E, E * sizeof(float));
-    else if (gguf_dequant_row(m->gf, m->emb_ti, (uint64_t)token, x) != 0)
-        memset(x, 0, E * sizeof(float));
+    float *x = (float*)calloc((size_t)n * E, sizeof(float));
+    for (int j = 0; j < n; j++) {
+        float *xj = x + (long)j * E;
+        if (m->tok_emb.f32) memcpy(xj, m->tok_emb.f32 + (long)tokens[j] * E, E * sizeof(float));
+        else if (gguf_dequant_row(m->gf, m->emb_ti, (uint64_t)tokens[j], xj) != 0)
+            memset(xj, 0, E * sizeof(float));
+    }
 
-    float *xn = (float*)calloc(E, sizeof(float));
-    float *q_all = (float*)calloc(Q_DIM, sizeof(float));
-    float *k_new = (float*)calloc(KVD, sizeof(float));
-    float *v_new = (float*)calloc(KVD, sizeof(float));
-    float *attn_out = (float*)calloc(Q_DIM, sizeof(float));
-    float *ffn_gate = (float*)calloc(FFN, sizeof(float));
-    float *ffn_up = (float*)calloc(FFN, sizeof(float));
-    float *ffn_out = (float*)calloc(E, sizeof(float));
+    float *xn = (float*)calloc((size_t)n * E, sizeof(float));
+    float *q_all = (float*)calloc((size_t)n * Q_DIM, sizeof(float));
+    float *k_new = (float*)calloc((size_t)n * KVD, sizeof(float));
+    float *v_new = (float*)calloc((size_t)n * KVD, sizeof(float));
+    float *attn_out = (float*)calloc((size_t)n * Q_DIM, sizeof(float));
+    float *ffn_gate = (float*)calloc((size_t)n * FFN, sizeof(float));
+    float *ffn_up = (float*)calloc((size_t)n * FFN, sizeof(float));
+    float *ffn_out = (float*)calloc((size_t)n * E, sizeof(float));
 
     for (int l = 0; l < m->n_layers; l++) {
-        rmsnorm(xn, x, m->layers[l].attn_norm, E, eps);
+        for (int j = 0; j < n; j++)
+            rmsnorm(xn + (long)j * E, x + (long)j * E, m->layers[l].attn_norm, E, eps);
 
-        qmv(q_all, &m->layers[l].wq, xn);
-        qmv(k_new, &m->layers[l].wk, xn);
-        qmv(v_new, &m->layers[l].wv, xn);
-        add_bias(q_all, m->layers[l].q_bias, Q_DIM);
-        add_bias(k_new, m->layers[l].k_bias, KVD);
-        add_bias(v_new, m->layers[l].v_bias, KVD);
+        qmm(q_all, &m->layers[l].wq, xn, n);
+        qmm(k_new, &m->layers[l].wk, xn, n);
+        qmm(v_new, &m->layers[l].wv, xn, n);
+        for (int j = 0; j < n; j++) {
+            add_bias(q_all + (long)j * Q_DIM, m->layers[l].q_bias, Q_DIM);
+            add_bias(k_new + (long)j * KVD, m->layers[l].k_bias, KVD);
+            add_bias(v_new + (long)j * KVD, m->layers[l].v_bias, KVD);
+        }
 
-        // RoPE
-        for (int h = 0; h < H; h++)
-            rope(q_all + h*HD, pos, HD, m->rope_base, m->rope_neox);
-        for (int h = 0; h < KV; h++)
-            rope(k_new + h*HD, pos, HD, m->rope_base, m->rope_neox);
-
-        // KV cache
         long base = (long)l * kv->max_seq * KVD;
-        memcpy(kv->k + base + pos * KVD, k_new, KVD * sizeof(float));
-        memcpy(kv->v + base + pos * KVD, v_new, KVD * sizeof(float));
+        for (int j = 0; j < n; j++) {
+            int pos = pos0 + j;
+            float *qj = q_all + (long)j * Q_DIM, *kj = k_new + (long)j * KVD;
+            for (int h = 0; h < H; h++)
+                rope(qj + h*HD, pos, HD, m->rope_base, m->rope_neox);
+            for (int h = 0; h < KV; h++)
+                rope(kj + h*HD, pos, HD, m->rope_base, m->rope_neox);
+            memcpy(kv->k + base + (long)pos * KVD, kj, KVD * sizeof(float));
+            memcpy(kv->v + base + (long)pos * KVD, v_new + (long)j * KVD, KVD * sizeof(float));
+        }
 
-        // GQA attention
+        // GQA attention, causal: row j sees positions 0..pos0+j, all already in the cache
         float scale = 1.0f / sqrtf((float)HD);
-        memset(attn_out, 0, Q_DIM * sizeof(float));
-        for (int h = 0; h < H; h++) {
-            int kv_h = h / gqa;
-            float *q = q_all + h * HD;
-            float *scores = (float*)calloc(pos + 1, sizeof(float));
-            for (int j = 0; j <= pos; j++) {
-                float *kj = kv->k + base + j * KVD + kv_h * HD;
-                float dot = 0;
-                for (int d = 0; d < HD; d++) dot += q[d] * kj[d];
-                scores[j] = dot * scale;
+        memset(attn_out, 0, (size_t)n * Q_DIM * sizeof(float));
+        for (int j = 0; j < n; j++) {
+            int pos = pos0 + j;
+            for (int h = 0; h < H; h++) {
+                int kv_h = h / gqa;
+                float *q = q_all + (long)j * Q_DIM + h * HD;
+                float *scores = (float*)calloc(pos + 1, sizeof(float));
+                for (int t = 0; t <= pos; t++) {
+                    float *kt = kv->k + base + (long)t * KVD + kv_h * HD;
+                    float dot = 0;
+                    for (int d = 0; d < HD; d++) dot += q[d] * kt[d];
+                    scores[t] = dot * scale;
+                }
+                softmax(scores, pos + 1);
+                float *out_h = attn_out + (long)j * Q_DIM + h * HD;
+                for (int t = 0; t <= pos; t++) {
+                    float *vt = kv->v + base + (long)t * KVD + kv_h * HD;
+                    for (int d = 0; d < HD; d++) out_h[d] += scores[t] * vt[d];
+                }
+                free(scores);
             }
-            softmax(scores, pos + 1);
-            float *out_h = attn_out + h * HD;
-            for (int j = 0; j <= pos; j++) {
-                float *vj = kv->v + base + j * KVD + kv_h * HD;
-                for (int d = 0; d < HD; d++) out_h[d] += scores[j] * vj[d];
-            }
-            free(scores);
         }
 
         // Output projection + residual
-        float *proj = (float*)calloc(E, sizeof(float));
-        qmv(proj, &m->layers[l].wo, attn_out);
-        for (int i = 0; i < E; i++) x[i] += proj[i];
-        free(proj);
+        qmm(ffn_out, &m->layers[l].wo, attn_out, n);
+        for (long i = 0; i < (long)n * E; i++) x[i] += ffn_out[i];
 
         // FFN: SiLU-gated
-        rmsnorm(xn, x, m->layers[l].ffn_norm, E, eps);
-        qmv(ffn_gate, &m->layers[l].wgate, xn);
-        qmv(ffn_up, &m->layers[l].wup, xn);
-        for (int i = 0; i < FFN; i++) {
+        for (int j = 0; j < n; j++)
+            rmsnorm(xn + (long)j * E, x + (long)j * E, m->layers[l].ffn_norm, E, eps);
+        qmm(ffn_gate, &m->layers[l].wgate, xn, n);
+        qmm(ffn_up, &m->layers[l].wup, xn, n);
+        for (long i = 0; i < (long)n * FFN; i++) {
             float g = ffn_gate[i];
             ffn_gate[i] = (g / (1.0f + expf(-g))) * ffn_up[i];
         }
-        qmv(ffn_out, &m->layers[l].wdown, ffn_gate);
-        for (int i = 0; i < E; i++) x[i] += ffn_out[i];
+        qmm(ffn_out, &m->layers[l].wdown, ffn_gate, n);
+        for (long i = 0; i < (long)n * E; i++) x[i] += ffn_out[i];
     }
 
-    /* logits == NULL asks for the KV cache alone. Prefill needs a distribution only at the
-     * last position, and the head is the single largest matvec in the model — 151936 rows
-     * against 896 for a 0.5B Qwen — so computing it at every prompt position spends about
-     * a quarter of the prefill producing numbers nobody reads. */
+    /* logits == NULL asks for the KV cache alone, and even when asked for they are produced
+     * for the last row only. The head is the single largest matvec in the model — 151936
+     * rows against 896 for a 0.5B Qwen — so running it at every prompt position spends a
+     * tenth of the prefill on distributions nobody reads. */
     if (logits) {
-        rmsnorm(xn, x, m->out_norm, E, eps);
+        rmsnorm(xn, x + (long)(n - 1) * E, m->out_norm, E, eps);
         const wt *lm_head = m->has_output_weight ? &m->out_weight : &m->tok_emb;
         qmv(logits, lm_head, xn);
     }
@@ -450,8 +484,14 @@ int main(int argc, char **argv) {
 
     // Prefill
     double gen0 = now_ms();
-    for (int i = 0; i < n_tok; i++)
-        llama_forward(model, kv, tokens[i], i, i == n_tok - 1 ? logits : NULL);
+    /* Chunked rather than one call for the whole prompt: the batch buffers are n × FFN
+     * floats, and a chunk of 32 is where the weight traffic is already amortized while the
+     * working set still fits the caches. The KV cache carries the context across chunks,
+     * so a chunk sees every position before it exactly as a single pass would. */
+    for (int i = 0; i < n_tok; i += NT_PREFILL_CHUNK) {
+        int cn = n_tok - i; if (cn > NT_PREFILL_CHUNK) cn = NT_PREFILL_CHUNK;
+        llama_forward(model, kv, tokens + i, cn, i, (i + cn == n_tok) ? logits : NULL);
+    }
     double prefill_ms = now_ms() - gen0;
 
     printf("%s", prompt);
@@ -476,7 +516,7 @@ int main(int argc, char **argv) {
 
         int pos = n_tok + step;
         if (pos >= max_seq - 1) break;
-        llama_forward(model, kv, next, pos, logits);
+        llama_forward(model, kv, &next, 1, pos, logits);
     }
 
     double total_ms = now_ms() - gen0;

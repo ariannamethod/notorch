@@ -558,6 +558,15 @@ void nt_qmv_set_thread_min(long elems);
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k);
 
+// Batched int8 matvec: n activation vectors against ONE packed weight matrix, which is
+// what prefill does and what the per-token entry above pays for n times over. X is
+// [n, k] row-major, out is [n, m] row-major. Same quantization and the same per-row
+// accumulation order as nt_qmatvec_i8, so results are identical to calling it n times,
+// not merely close. Returns 0, or -1 if the dtype has no batched kernel yet (Q4_0 so
+// far) — a caller that gets -1 loops nt_qmatvec_i8 and is correct, only slower.
+int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
+                  const float *X, int m, int k, int n);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // IMAGE OPS — forward-only conv2d + group norm for diffusion inference engines
 // ═══════════════════════════════════════════════════════════════════════════════

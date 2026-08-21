@@ -6414,6 +6414,135 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
     return 0;
 }
 
+// ── batched int8 matmul — one pass over the weights, many activations ───────────
+// Prefill pushes n token vectors through the same weight matrix, and the per-token
+// entry above re-reads every packed byte for each of them: a 0.5B Qwen streams 373 MiB
+// of weights per token, so a 241-token prompt streams them 241 times and prefill runs
+// at decode speed. Here a row is unpacked once and dotted against a tile of activations,
+// which divides the weight traffic by the tile width. The activation side is bit for bit
+// the per-32-block int8 of nt_qmatvec_i8 and the accumulation order per row is the same,
+// so a batched prefill and a token-by-token one produce identical floats, not merely
+// close ones — the test asserts equality, not a tolerance.
+#define NT_QMM_TILE 32   /* activations carried through one pass over the weights */
+
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
+                             const float *da, int r0, int r1, int k, int n) {
+    int nb = k / 32;
+    const uint8x16_t mask0f = vdupq_n_u8(0x0F);
+    const int8x16_t  eight  = vdupq_n_s8(8);
+    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
+        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 18;
+            float acc[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            for (int b = 0; b < nb; b++) {
+                const uint8_t *blk = rb + (long)b * 18;
+                float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+                uint8x16_t packed = vld1q_u8(blk + 2);
+                int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(packed, mask0f)), eight);
+                int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(packed, 4)), eight);
+                for (int j = 0; j < jn; j++) {
+                    const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
+                    int32x4_t s4 = vdupq_n_s32(0);
+                    s4 = vdotq_s32(s4, lo, vld1q_s8(qab));
+                    s4 = vdotq_s32(s4, hi, vld1q_s8(qab + 16));
+                    acc[j] += d_w * da[(long)(j0 + j) * nb + b] * (float)vaddvq_s32(s4);
+                }
+            }
+            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+        }
+    }
+}
+#else
+static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
+                             const float *da, int r0, int r1, int k, int n) {
+    int nb = k / 32;
+    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
+        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 18;
+            float acc[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            for (int b = 0; b < nb; b++) {
+                const uint8_t *blk = rb + (long)b * 18;
+                float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+                int8_t wv[32];
+                for (int i = 0; i < 16; i++) {
+                    wv[i]      = (int8_t)((int)(blk[2 + i] & 0x0F) - 8);
+                    wv[i + 16] = (int8_t)((int)(blk[2 + i] >> 4)   - 8);
+                }
+                for (int j = 0; j < jn; j++) {
+                    const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
+                    int32_t s = 0;
+                    for (int i = 0; i < 32; i++) s += wv[i] * qab[i];
+                    acc[j] += d_w * da[(long)(j0 + j) * nb + b] * (float)s;
+                }
+            }
+            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+        }
+    }
+}
+#endif
+
+/* Row chunks are pulled, not dealt out: on big.LITTLE a static split makes every matmul
+ * wait for the slow cluster's share, and the pool above learned that the same way. */
+typedef struct {
+    float *out; const uint8_t *W; const int8_t *qa; const float *da;
+    int m, k, n, hi, chunk;
+    int next;
+} nt_qmm_job;
+
+static void nt_qmm_drain(nt_qmm_job *j) {
+    for (;;) {
+        int r0 = __atomic_fetch_add(&j->next, j->chunk, __ATOMIC_RELAXED);
+        if (r0 >= j->hi) return;
+        int r1 = r0 + j->chunk; if (r1 > j->hi) r1 = j->hi;
+        nt_q4_0_rows_i8n(j->out, j->m, j->W, j->qa, j->da, r0, r1, j->k, j->n);
+    }
+}
+
+static void *nt_qmm_worker(void *p) { nt_qmm_drain((nt_qmm_job *)p); return NULL; }
+
+int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
+                  const float *X, int m, int k, int n) {
+    if (m <= 0 || k <= 0 || n <= 0) return -1;
+    if (n == 1) return nt_qmatvec_i8(out, Wq, dtype, X, m, k);
+    if (dtype != 2) return -1;            /* Q4_0 first; the rest still go per token */
+    if (k % 32) return -1;
+
+    int nb = k / 32;
+    int8_t *qa = (int8_t *)malloc((size_t)k * (size_t)n);
+    float  *da = (float *)malloc((size_t)nb * (size_t)n * sizeof(float));
+    if (!qa || !da) { free(qa); free(da); return -1; }
+    for (int j = 0; j < n; j++)
+        nt_quant_act_q8(X + (long)j * k, k, qa + (long)j * k, da + (long)j * nb);
+
+    int nt = nt_qmv_host_threads(m);
+    if (nt <= 1 || (long)m * k < nt_qmv_thread_floor()) {
+        nt_q4_0_rows_i8n(out, m, Wq, qa, da, 0, m, k, n);
+        free(qa); free(da);
+        return 0;
+    }
+
+    /* One fan-out per matmul, not per token: a 24-layer prefill opens seven of these per
+     * layer instead of seven per layer per token, so pthread_create lands in the noise. */
+    nt_qmm_job job = { out, Wq, qa, da, m, k, n, m, 0, 0 };
+    job.chunk = m / (nt * 8); if (job.chunk < 1) job.chunk = 1;
+    pthread_t th[NT_QMV_MAX_THREADS];
+    int launched = 0;
+    for (int t = 0; t + 1 < nt; t++) {
+        if (pthread_create(&th[t], NULL, nt_qmm_worker, &job) != 0) break;
+        launched++;
+    }
+    nt_qmm_drain(&job);                   /* the caller is a worker too */
+    for (int t = 0; t < launched; t++) pthread_join(th[t], NULL);
+
+    free(qa); free(da);
+    return 0;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // IMAGE OPS — conv2d (im2col + GEMM) + group norm — forward-only inference ops
 // for diffusion engines (Stable-Diffusion UNet/VAE). Companions to nt_qmatvec:
