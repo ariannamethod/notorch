@@ -13,6 +13,64 @@ Newest entries on top.
 
 ---
 
+## 2026-08-21 — the phone front: batched prefill, honest core counts, and a segfault that only glibc could see
+
+Five commits from Defender (Galaxy A56, Exynos 1580, Termux and a glibc chroot),
+recorded here because the log had not caught up with them. Everything below is
+their measurement, on their hardware.
+
+**Batched prefill** (`1eb756c`, `e83809a`). Prefill pushed one token at a time
+through the packed matvec, so every weight byte was read once per prompt token —
+a 0.5B Qwen streams 373 MiB per token, and a 241-token prompt streamed it 241
+times. Prefill cost exactly what generation cost, which is the wrong shape for an
+agent: long prompt, short answer. `nt_qmatmul_i8` unpacks a weight row once and
+dots it against a tile of activations, so the traffic divides by the tile width.
+The activation side is the same per-32-block int8 and the per-row accumulation
+order is unchanged, so outputs are bit-identical rather than merely close;
+`tests/test_qmatmul.c` asserts equality across the tile boundary (n = 31, 32, 33)
+and on both sides of the threading gate. Q4_0 landed first, then Q4_K — the
+format almost every GGUF on the hub actually carries, and the one whose per-block
+overhead is most worth amortizing: eight 6-bit (scale, min) pairs unpacked from
+twelve bytes, and `SUM(qa)` now built once per call instead of once per row range.
+
+Isolated at m=2048 k=4096 n=32: 7.0 ms batched against 22.5 ms per-token on Q4_0
+(3.19x), 8.0 ms against 26.3 ms on Q4_K (3.30x). End to end on a 241-token prompt:
+Q4_0 prefill 19.3 t/s against 12.9 with the chunk forced to 1; Q4_K 27.4 / 26.0 /
+25.3 t/s against 24.9 / 24.1 / 23.9 with the per-token fallback. Greedy
+continuations unchanged.
+
+**The threading gate was measuring the wrong quantity** (`e83809a`). It counted one
+matvec's work while the call performs n of them, so a 0.5B Qwen's 896x896 query
+projection sat under the 4M floor and a 32-position chunk of it — 25M weight
+elements — stayed on one core.
+
+**Core counts** (`4281b5f`). `nt_qmv_host_threads` sized the pool from
+`sysconf(_SC_NPROCESSORS_ONLN)`, which reports the cores the kernel has online, not
+the cores this process may run on. Every big.LITTLE measurement pins to the fast
+cluster, and there the old count returned 8 while four were usable — the pool
+oversubscribed two to one and each matvec waited on a context switch instead of on
+memory. The affinity mask is the honest number; `NT_QMV_THREADS` overrides both.
+Three interleaved repeats of 96 tokens: 21.6 / 20.4 / 19.5 t/s against
+20.0 / 18.3 / 18.5, mean 20.5 against 18.9, text unchanged character for character.
+
+**Logits nobody reads** (`42d930e`). Prefill ran the full forward for every prompt
+token, head included, then discarded every distribution but the last. The head is
+the largest matvec in the model — 151936 rows against 896 columns on a 0.5B Qwen —
+so a 241-token prompt spent a tenth of its time producing 240 unread
+distributions. A NULL logits pointer now means "KV cache only". 24.3 and 21.5 t/s
+against 22.0 and 19.7.
+
+**A segfault only glibc could see** (`925cc2d`). `-std=c11` asks glibc for strict
+ISO, and under it `strdup`, `getpagesize` and `posix_memalign` are not declared:
+they become implicit ints, the returned pointer truncates to 32 bits, and the first
+dereference is a SIGSEGV. Bionic declares them at c11 regardless, which is why
+Termux builds never showed it and the glibc chroot on the same phone did. `gnu11`
+is the same language with the declarations present.
+
+Note for the JS edition: `seqLinear` has the identical prefill hole — it calls
+`qmatvec` once per position and re-reads every weight T times. The batched shape
+above is the fix, and it needs no threading and no headers to work in a browser.
+
 ## 2026-08-20 — four accumulators instead of one, and an int8 claim withdrawn
 
 The packed kernels ran one serial `acc +=` per block, so every addition waited
