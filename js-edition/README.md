@@ -295,12 +295,29 @@ kernel for, same contract as C.
 `qmatvecI8` is the same matvec with the activation quantized to per-32 int8 and
 the dot accumulated in integers — C's `nt_qmatvec_i8`, the llama.cpp / MNN fast
 path. Approximate by construction, `qmatvec` stays the exact reference, and the
-gate holds it to the C tolerance of 2e-2 (measured 3.1e-3 to 4.1e-3). Where C
-banks on SDOT and VNNI, JS banks on the type: an int32 accumulator stays in V8's
-small-integer form instead of running an f32 dependency chain, and no weight is
-ever widened to a float. `quantAct` + `qmatvecI8Rows` are the split entry, for a
-consumer dotting one row against many matrices — a MoE against its experts —
-that should quantize the row once rather than once per matrix.
+gate holds it to the C tolerance of 2e-2 (measured 3.1e-3 to 4.1e-3).
+`quantAct` + `qmatvecI8Rows` are the split entry, for a consumer dotting one row
+against many matrices — a MoE against its experts — that should quantize the row
+once rather than once per matrix.
+
+**It is not faster in JS, and this file used to claim otherwise.** The claim was
+that an int32 accumulator would stay in V8's small-integer form and beat an f32
+dependency chain. Measured on real model shapes, median of five, it does not:
+
+| shape | dtype | exact | i8 |
+|---|---|---|---|
+| 576×576 | Q5_0 | 0.206 ms | 0.218 ms |
+| 1536×576 | Q5_0 | 0.548 ms | 0.584 ms |
+| 576×1536 | Q6_K | 0.558 ms | 0.677 ms |
+| 32000×576 | Q8_0 | 11.40 ms | 11.25 ms |
+
+`quantAct` is not the cost — it measures 0.001–0.004 ms. The integer kernel
+itself simply is not cheaper than the float one here, because the thing that
+makes it cheaper in C is one instruction covering sixteen products, and JS has
+no such instruction. What would change that is WASM SIMD
+(`i32x4.dot_i16x8_s`), which is a different artifact with a build step, not
+this file. `qmatvecI8` stays because it is the C contract, it is verified
+against C's own i8 kernel to 3e-7, and it is what a SIMD backend would call.
 
 Two details there are load-bearing and neither is visible on random input.
 C's `lrintf` rounds ties to even; `Math.round` rounds them up, and on activations
@@ -343,6 +360,35 @@ shape.
 Packed weights are inference-only. `SEQ_MATVEC` and `EMBEDDING` backward refuse
 them by name rather than reading an empty `data` and filling the gradient with
 NaN.
+
+### Kernel shape
+
+Every packed kernel runs four independent accumulators over its block instead of
+one serial `acc +=`. A single chain makes each addition wait for the previous
+one; four chains let them overlap. The scale leaves the inner loop with it —
+applied once per block rather than once per weight — and in Q6_K the sub-scale
+index is constant across each 16-wide half, so it hoists too.
+
+`ggufHalfToFloat` rebuilds the f32 bit pattern instead of calling `Math.pow`
+twice. That is 1.70x on the conversion alone and barely visible in the block
+formats, where it runs once per block — but `qmvF16` calls it once per *weight*,
+and there it counts. It agrees with the old form on all 65536 half patterns,
+subnormals and NaN payloads included, and `test_qmatvec.mjs` checks every one:
+an off-by-one in the subnormal path moves 2046 patterns and nothing else in the
+suite notices.
+
+Measured on nano_arianna Q4_K_M shapes, median of five:
+
+| shape | dtype | before | after | |
+|---|---|---|---|---|
+| 576×576 | Q5_0 | 0.321 ms | 0.212 ms | 1.51x |
+| 1536×576 | Q5_0 | 0.835 ms | 0.563 ms | 1.48x |
+| 576×1536 | Q6_K | 0.837 ms | 0.590 ms | 1.42x |
+| 32000×576 | Q8_0 | 16.59 ms | 11.11 ms | 1.49x |
+
+End to end, 24 greedy tokens: 2.95 s to 2.05 s. Every output is byte-for-byte
+what it was before — reordering the sums moves nothing that survives rounding to
+f32, and the distance to the C kernels is unchanged at ~1e-6.
 
 ### KV cache
 
