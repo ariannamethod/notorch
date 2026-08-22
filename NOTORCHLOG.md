@@ -13,6 +13,32 @@ Newest entries on top.
 
 ---
 
+## 2026-08-22 — notorch answers to `from notorch import`
+
+`make shared` builds libnotorch.so (dylib on macOS), and `python/notorch.py` is
+a ctypes layer over it: 246 lines of type declarations and no arithmetic. No
+numpy, no build step on the Python side, no dependencies — ctypes is standard
+library. Weights stay packed: `tensor.packed` is a pointer into the file's own
+bytes and the kernels read them in place, so a Q4_K tensor costs roughly half a
+byte per weight in Python exactly as it does in C.
+
+The failure mode a binding like this has is not a crash. A ctypes Structure
+whose offsets have drifted from the header reads its neighbouring fields and
+reports them as data, and nothing about that looks wrong. So
+`tests/gguf_layout.c` prints what the compiler actually laid out, and
+`make test_python MODEL=…` compares every offset against it before touching a
+model. Red hand, all three caught: a field dropped from gguf_file (sizeof 443544
+against 443552), a name array one size short (tensor_info 184 against 192),
+GGUF_MAX_TENSORS off by one (443360 against 443552).
+
+Then it checks a real file: nano_arianna Q4_K_M reads back as
+`llama L=13 E=576 V=32000 tensors=120`, `gguf_dequant_row` equals its slice of
+`gguf_dequant`, and `nt_qmatvec` matches dequant-then-matvec at rel 8.6e-07.
+
+The README says so on the second screen rather than the last, because someone
+who wants to read a GGUF and multiply by it should not have to scroll to find
+out they can.
+
 ## 2026-08-22 — a worker pool for js-edition, and a batched matmul that measured its way back out
 
 Two experiments, one kept.

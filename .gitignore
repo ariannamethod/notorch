@@ -54,3 +54,9 @@ examples/train_*
 
 # stepped checkpoints (e.g. model.bin.step100)
 *.bin.*
+
+# shared library, built by `make shared`
+libnotorch.so
+libnotorch.dylib
+__pycache__/
+*.pyc
