@@ -394,6 +394,44 @@ End to end, 24 greedy tokens: 2.95 s to 2.05 s. Every output is byte-for-byte
 what it was before — reordering the sums moves nothing that survives rounding to
 f32, and the distance to the C kernels is unchanged at ~1e-6.
 
+### SIMD, through WebAssembly
+
+Everything above runs in plain JS and is bounded by it. The one thing JS cannot
+express is sixteen multiplications in a single instruction, and that is exactly
+what an int8 dot wants. `notorch-wasm.mjs` loads a small freestanding wasm
+module — 6 KB, no libc, no imports — where the same kernel is written against
+`i8x16` SIMD: `i16x8.extmul` over a pair of vectors, folded by
+`i32x4.extadd_pairwise`.
+
+```js
+import { WasmKernels } from './notorch-wasm.mjs';
+const w = await WasmKernels.create();
+const ptr = w.put(tensor.packed);          // weights into the module's memory
+w.qmatvecI8(out, ptr, tensor.dtype, x, m, k);
+```
+
+A18 Pro, each path measured in its own process and warmed to steady state:
+
+| shape | dtype | plain JS | wasm SIMD | |
+|---|---|---|---|---|
+| 576×576 | Q5_0 | 0.333 ms | 0.101 ms | 3.3x |
+| 32000×576 | Q8_0 | 16.34 ms | 1.34 ms | 12.2x |
+
+One caveat worth stating rather than hiding: the JS baseline moves with how
+warm V8 is. The same kernel in a script that had already run it a few hundred
+times on other shapes measured 11.95 ms rather than 16.34, which would make the
+head 8.9x instead of 12.2x. Both numbers are real; the honest claim is that the
+head gets roughly an order of magnitude, and the small matrices about 3x.
+
+Q4_0, Q5_0 and Q8_0 have wasm kernels. Anything else returns -1 and the caller
+falls back to notorch.js, correct and only as slow as before. The kernel is
+approximate by construction, like C's `nt_qmatvec_i8`, and it agrees with
+notorch.js's own int8 path to ~1e-7 — same quantization, same round-half-to-even,
+differing only in the order sixteen products get summed.
+
+The `.wasm` is checked in. Nobody needs a toolchain to use notorch.js;
+`wasm/build.sh` is there for whoever changes the kernels.
+
 ### Workers
 
 `notorch-workers.mjs` is the optional second file: a resident pool that splits

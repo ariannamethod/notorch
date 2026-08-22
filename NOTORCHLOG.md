@@ -13,6 +13,57 @@ Newest entries on top.
 
 ---
 
+## 2026-08-22 — the instruction JS does not have
+
+Everything the JS edition could reach had been reached: unrolling bought 1.4x,
+workers bought 2.7x, int8 bought nothing and batching bought nothing, and the
+measurement that explained all of it was 0.556 ns per element on 306 KB against
+0.569 on 19 MB — compute-bound, with no memory win left to take. What remained
+was the operation count itself, and one instruction JS cannot express: sixteen
+products at once.
+
+`js-edition/wasm/qkernels.c` is that kernel, freestanding wasm32 with
+`-msimd128`: 6 KB, no libc, no imports, nothing but pointers into the one linear
+memory the host owns. `i16x8.extmul` over an `i8x16` pair, folded by
+`i32x4.extadd_pairwise`. Q4_0, Q5_0 and Q8_0; anything else returns -1 and the
+caller falls back to notorch.js, correct and only as slow as before. The
+activation quantizer is the C one down to lrintf's round-half-to-even.
+
+A18 Pro, each path in its own process, warmed to steady state:
+
+| shape | dtype | plain JS | wasm SIMD | |
+|---|---|---|---|---|
+| 576×576 | Q5_0 | 0.333 ms | 0.101 ms | 3.3x |
+| 32000×576 | Q8_0 | 16.34 ms | 1.34 ms | 12.2x |
+
+The JS baseline moves with V8 warmth and the number deserves the caveat: the
+same kernel in a script that had already run it hundreds of times on other
+shapes measured 11.95 ms rather than 16.34, which puts the head at 8.9x instead
+of 12.2x. Both are real. The honest claim is an order of magnitude on the head
+and about 3x on small matrices.
+
+Getting an honest number took three tries, each wrong in its own way, and all
+three are worth naming because they are the same mistake in different clothes —
+measuring the harness instead of the code. First the two paths were timed
+through a shared closure, which gave the JS side a polymorphic call the wasm
+side did not pay: 50% handed to wasm for free. Then they were timed in one
+process, where whichever ran second inherited a cold cache. Then in separate
+processes but with different warm-up histories, which is the 11.95-against-16.34
+above.
+
+Correctness took one correction too. The gate first held wasm to 2e-2 against
+the exact path at every m, and m=1 Q4_0 failed at 5.76e-2 — but notorch.js's own
+int8 kernel misses by exactly the same 5.759e-2 on that row. The tolerance is a
+statistic over many rows (C measures it at m=512); at m=1 it is one number
+divided by one number, and int8 quantization alone lands there. Agreement with
+the JS int8 path, which holds at ~1e-7 for every m, is the check that actually
+tests the port.
+
+Red hand: Q4_0 zero-point off by one, an arithmetic shift where the nibble
+needs a logical one, Q5_0 without its -16 lift — all caught. Ties-to-even was
+not, until the same built-half input the JS gate uses was added here too; then
+16 of 32 activations round the wrong way.
+
 ## 2026-08-22 — notorch answers to `from notorch import`
 
 `make shared` builds libnotorch.so (dylib on macOS), and `python/notorch.py` is

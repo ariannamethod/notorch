@@ -320,6 +320,7 @@ test_js:
 	cd js-edition && node test_qmatvec.mjs
 	cd js-edition && node test_kvcache.mjs
 	cd js-edition && node test_workers.mjs
+	cd js-edition && node test_wasm.mjs
 
 # SIMD correctness harness (vs scalar reference at nanollama shapes)
 tests/test_simd_correctness: tests/test_simd_correctness.c notorch_simd.h
