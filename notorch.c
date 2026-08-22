@@ -6624,6 +6624,68 @@ static void nt_q5_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
     }
 }
 
+// Q6_K batched: 210 B / 256 values as sixteen 16-value sub-blocks, each with its own int8
+// scale. The unpack is the heaviest here — four vectors built from a nibble, a 2-bit top
+// and a -32 bias, per quarter of the block — so it is the one that most wants doing once.
+// The sixteen integer sums are kept per activation and drained in ascending sub-block
+// order afterwards, which is the order the per-token kernel adds them in; accumulating
+// them as they are produced would be the same arithmetic in a different order, and a
+// different order is a different float.
+static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
+                             const float *da, const int32_t *asum,
+                             int r0, int r1, int k, int n) {
+    (void)asum;
+    int nb = k / 256;
+    const uint8x16_t m4 = vdupq_n_u8(0x0F), m3 = vdupq_n_u8(3);
+    const int8x16_t  b32 = vdupq_n_s8(32);
+    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
+        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 210;
+            float acc[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            for (int blk = 0; blk < nb; blk++) {
+                const uint8_t *b = rb + (long)blk * 210, *ql = b, *qh = b + 128;
+                const int8_t *sc = (const int8_t *)(b + 192);
+                float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
+                int32_t ssum[NT_QMM_TILE][16];
+                for (int nn = 0; nn < 256; nn += 128) {
+                    const uint8_t *qlh = ql + (nn / 128) * 64, *qhh = qh + (nn / 128) * 32;
+                    int base = (nn / 128) * 8;
+                    for (int is = 0; is < 2; is++) {
+                        uint8x16_t la = vld1q_u8(qlh + is * 16);
+                        uint8x16_t lb = vld1q_u8(qlh + 32 + is * 16);
+                        uint8x16_t hv = vld1q_u8(qhh + is * 16);
+                        int8x16_t w1 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                            vandq_u8(la, m4), vshlq_n_u8(vandq_u8(hv, m3), 4))), b32);
+                        int8x16_t w2 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                            vandq_u8(lb, m4), vshlq_n_u8(vandq_u8(vshrq_n_u8(hv, 2), m3), 4))), b32);
+                        int8x16_t w3 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                            vshrq_n_u8(la, 4), vshlq_n_u8(vandq_u8(vshrq_n_u8(hv, 4), m3), 4))), b32);
+                        int8x16_t w4 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                            vshrq_n_u8(lb, 4), vshlq_n_u8(vshrq_n_u8(hv, 6), 4))), b32);
+                        for (int j = 0; j < jn; j++) {
+                            const int8_t *x = qa + (long)(j0 + j) * k + (long)blk * 256
+                                            + nn + is * 16;
+                            const int32x4_t z = vdupq_n_s32(0);
+                            ssum[j][base + is + 0] = vaddvq_s32(vdotq_s32(z, w1, vld1q_s8(x)));
+                            ssum[j][base + is + 2] = vaddvq_s32(vdotq_s32(z, w2, vld1q_s8(x + 32)));
+                            ssum[j][base + is + 4] = vaddvq_s32(vdotq_s32(z, w3, vld1q_s8(x + 64)));
+                            ssum[j][base + is + 6] = vaddvq_s32(vdotq_s32(z, w4, vld1q_s8(x + 96)));
+                        }
+                    }
+                }
+                for (int j = 0; j < jn; j++) {
+                    const float *dab = da + (long)(j0 + j) * (k / 32) + (long)blk * 8;
+                    for (int s = 0; s < 16; s++)
+                        acc[j] += d * (float)sc[s] * dab[s / 2] * (float)ssum[j][s];
+                }
+            }
+            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+        }
+    }
+}
+
 // Q8_0 batched: 34 B / 32 values, the weights already int8. Nothing to unpack, so what is
 // saved here is the weight traffic itself — one pass over the row per tile instead of per
 // token — and that is the whole reason prefill was reading 373 MiB per position.
@@ -6715,6 +6777,53 @@ static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
         }
     }
 }
+
+static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
+                             const float *da, const int32_t *asum,
+                             int r0, int r1, int k, int n) {
+    (void)asum;
+    int nb = k / 256;
+    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
+        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 210;
+            float acc[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            for (int blk = 0; blk < nb; blk++) {
+                const uint8_t *b = rb + (long)blk * 210, *ql = b, *qh = b + 128;
+                const int8_t *sc = (const int8_t *)(b + 192);
+                float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
+                int32_t ssum[NT_QMM_TILE][16];
+                for (int j = 0; j < jn; j++)
+                    for (int s = 0; s < 16; s++) ssum[j][s] = 0;
+                for (int nn = 0; nn < 256; nn += 128) {
+                    const uint8_t *qlh = ql + (nn / 128) * 64, *qhh = qh + (nn / 128) * 32;
+                    int base = (nn / 128) * 8;
+                    for (int l = 0; l < 32; l++) {
+                        int is = l / 16;
+                        int q1 = (int)((qlh[l]      & 0x0F) | (((qhh[l] >> 0) & 3) << 4)) - 32;
+                        int q2 = (int)((qlh[l + 32] & 0x0F) | (((qhh[l] >> 2) & 3) << 4)) - 32;
+                        int q3 = (int)((qlh[l]      >> 4)   | (((qhh[l] >> 4) & 3) << 4)) - 32;
+                        int q4 = (int)((qlh[l + 32] >> 4)   | (((qhh[l] >> 6) & 3) << 4)) - 32;
+                        for (int j = 0; j < jn; j++) {
+                            const int8_t *qab = qa + (long)(j0 + j) * k + (long)blk * 256;
+                            ssum[j][base + is + 0] += q1 * (int)qab[nn + l];
+                            ssum[j][base + is + 2] += q2 * (int)qab[nn + l + 32];
+                            ssum[j][base + is + 4] += q3 * (int)qab[nn + l + 64];
+                            ssum[j][base + is + 6] += q4 * (int)qab[nn + l + 96];
+                        }
+                    }
+                }
+                for (int j = 0; j < jn; j++) {
+                    const float *dab = da + (long)(j0 + j) * (k / 32) + (long)blk * 8;
+                    for (int s = 0; s < 16; s++)
+                        acc[j] += d * (float)sc[s] * dab[s / 2] * (float)ssum[j][s];
+                }
+            }
+            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+        }
+    }
+}
 #endif
 
 typedef void (*nt_qmmrows_fn)(float *out, int m, const uint8_t *W, const int8_t *qa,
@@ -6746,13 +6855,14 @@ int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
     if (m <= 0 || k <= 0 || n <= 0) return -1;
     if (n == 1) return nt_qmatvec_i8(out, Wq, dtype, X, m, k);
     if (k % 32) return -1;
-    if (dtype == 12 && (k % 256)) return -1;
+    if ((dtype == 12 || dtype == 14) && (k % 256)) return -1;
     nt_qmmrows_fn fn;
     switch (dtype) {                     /* dtypes without a batched kernel go per token */
     case 2:  fn = nt_q4_0_rows_i8n; break;
     case 6:  fn = nt_q5_0_rows_i8n; break;
     case 8:  fn = nt_q8_0_rows_i8n; break;
     case 12: fn = nt_q4_k_rows_i8n; break;
+    case 14: fn = nt_q6_k_rows_i8n; break;
     default: return -1;
     }
 

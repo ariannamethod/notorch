@@ -70,11 +70,29 @@ static uint8_t *make_block32(int m, int k, int bytes, unsigned seed) {
     return W;
 }
 
+/* Q6_K: 128 low-nibble bytes, 64 two-bit-top bytes, 16 signed sub-block scales, an f16 d.
+ * Scales stay random — every int8 is a legal scale, including the negative half, which is
+ * the arm a kernel that reads them unsigned would get wrong. */
+static uint8_t *make_q6_k(int m, int k, unsigned seed) {
+    long nb = k / 256;
+    uint8_t *W = (uint8_t *)malloc((size_t)m * nb * 210);
+    if (!W) return NULL;
+    srand(seed);
+    for (long r = 0; r < m; r++)
+        for (long b = 0; b < nb; b++) {
+            uint8_t *bl = W + (r * nb + b) * 210;
+            for (int i = 0; i < 208; i++) bl[i] = (uint8_t)(rand() & 0xFF);
+            bl[208] = 0x66; bl[209] = 0x2A;             /* d ~0.05 */
+        }
+    return W;
+}
+
 static uint8_t *make_weights(int dtype, int m, int k, unsigned seed) {
     switch (dtype) {
     case 2:  return make_q4_0(m, k, seed);
     case 6:  return make_block32(m, k, 22, seed);
     case 8:  return make_block32(m, k, 34, seed);
+    case 14: return make_q6_k(m, k, seed);
     default: return make_q4_k(m, k, seed);
     }
 }
@@ -163,10 +181,17 @@ int main(void) {
     check(8,  128,  512, 33, &pass, &fail);
     check(8,  2048, 4096, 8, &pass, &fail);
 
+    check(14, 64,   256,  3, &pass, &fail);
+    check(14, 128,  512, 32, &pass, &fail);
+    check(14, 128,  512, 33, &pass, &fail);
+    check(14, 2048, 4096, 8, &pass, &fail);
+    check(14, 896, 4864, 17, &pass, &fail);   /* a real down-projection shape */
+
     timing(2,  2048, 4096, 32);
     timing(6,  2048, 4096, 32);
     timing(8,  2048, 4096, 32);
     timing(12, 2048, 4096, 32);
+    timing(14, 2048, 4096, 32);
 
     printf("\nResults: %d passed, %d failed\n", pass, fail);
     return fail ? 1 : 0;
