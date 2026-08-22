@@ -4,8 +4,10 @@
 
 JavaScript port of the [notorch](https://github.com/ariannamethod/notorch)
 C tensor library. Same API surface, same Chuck optimizer, same naming.
-Different lifecycle: everything in **one ES module file** (no CPU/GPU
-lib split), runs in Node and the browser, optional WebGPU matmul.
+Different lifecycle: the engine is **one ES module file** (no CPU/GPU lib split),
+runs in Node and the browser, optional WebGPU matmul. Threads live in a second,
+optional file — they need SharedArrayBuffer, and that needs headers a static host
+may not be able to set.
 
 ---
 
@@ -31,7 +33,8 @@ Janus, Leo, Yent, Dario). JS is the **distribution** path:
 
 ## Install
 
-No package manager, no build step. Single file.
+No package manager, no build step. One file for the engine, a second only if you
+want threads.
 
 ```bash
 curl -O https://raw.githubusercontent.com/ariannamethod/notorch/main/js-edition/notorch.js
@@ -131,8 +134,9 @@ Schedules: `Schedule.cosine`, `Schedule.step`.
 Inference helpers: `KVCache`.
 Adapters: `LoRAPair`, `saveLoRA`, `loadLoRA`, `mergeLoRAInto`.
 Loaders: `loadNotorchBin`, `loadSafetensors`, `saveNotorchBin`.
-Packed kernels: `qmatvec` (exact), `qmatvecI8` / `qmatvecI8Rows` / `quantAct`
-(int8-activation fast path).
+Packed kernels: `qmatvec` / `qmatvecRows` (exact), `qmatvecI8` / `qmatvecI8Rows` /
+`quantAct` (int8-activation path), `dequantRow`.
+Threads: `WorkerPool`, `toShared` — in `notorch-workers.mjs`, optional.
 Tokenizers: `CharTokenizer`, `BPETokenizer`.
 
 ---
@@ -389,6 +393,50 @@ Measured on nano_arianna Q4_K_M shapes, median of five:
 End to end, 24 greedy tokens: 2.95 s to 2.05 s. Every output is byte-for-byte
 what it was before — reordering the sums moves nothing that survives rounding to
 f32, and the distance to the C kernels is unchanged at ~1e-6.
+
+### Workers
+
+`notorch-workers.mjs` is the optional second file: a resident pool that splits
+a matvec's rows across threads. `notorch.js` works without it and behaves
+identically — the pool changes who is idle, not what is computed. Rows are
+independent and write disjoint slots, so the output is bit-identical to
+`qmatvec`, and the gate asserts equality rather than a tolerance.
+
+```js
+import { WorkerPool, toShared } from './notorch-workers.mjs';
+const sab = toShared(await (await fetch(url)).arrayBuffer());
+const { tensors } = loadGGUF(sab);
+engine.pool = await WorkerPool.create(sab, maxRows, maxCols);
+```
+
+Rows are claimed from a shared cursor rather than divided up front. On 2
+performance and 4 efficiency cores an even split measured 1.72x where the cursor
+measured 1.94x — the fast cores stop waiting on the slow ones. That is C's
+discipline too (`notorch.c`, commit 8c7026e).
+
+A18 Pro, 6 workers, against a clean single-threaded baseline:
+
+| shape | dtype | single | pool | |
+|---|---|---|---|---|
+| 576×576 | Q5_0 | 0.21 ms | 0.10 ms | 2.10x |
+| 576×1536 | Q4_K | 0.45 ms | 0.21 ms | 2.14x |
+| 32000×576 | Q8_0 | 10.77 ms | 4.01 ms | 2.69x |
+
+End to end, 24 greedy tokens: 2.04 s to 1.09 s, output identical.
+`NT_WORKERS=6 node infer_gguf.mjs …` turns it on.
+
+Three constraints, none of them hideable. SharedArrayBuffer needs COOP/COEP
+headers in a browser, so a static host that cannot set headers cannot use this
+file — which is why it is a separate file. Everything the workers touch lives in
+one shared blob, bound at construction: a packed GGUF already has every tensor
+as a view onto one buffer, so a call names its matrix by byte offset. And the
+caller blocks on `Atomics.wait`, which a browser's main thread forbids — run the
+engine inside a worker there. In Node it is fine.
+
+The pool gives up after 30 s and throws rather than waiting forever. That is not
+belt-and-braces: a wedged pool blocks the thread inside `Atomics.wait`, the
+event loop stops, and no timer can fire to notice. Liveness has to live in the
+thing that blocks.
 
 ### KV cache
 

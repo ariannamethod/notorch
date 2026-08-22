@@ -5,7 +5,7 @@
   "type": "module",
   "main": "notorch.js",
   "scripts": {
-    "test": "node test_op_parity.mjs && node test_qmatvec.mjs && node test_kvcache.mjs"
+    "test": "node test_op_parity.mjs && node test_qmatvec.mjs && node test_kvcache.mjs && node test_workers.mjs"
   },
   "license": "GPL-3.0-or-later"
 }
