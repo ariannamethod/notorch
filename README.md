@@ -13,6 +13,7 @@
 ## table of contents
 
 - [what is this](#what)
+- [use it from Python](#use-it-from-python)
 - [why](#why)
 - [the funeral](#the-funeral)
 - [architecture](#architecture)
@@ -59,6 +60,49 @@ it's part of [the Arianna Method](https://github.com/ariannamethod/ariannamethod
 extracted from the core of [ariannamethod.ai](https://ariannamethod.ai) where it actually runs in production. training actual models. in C. like adults.
 
 ---
+
+## use it from Python
+
+notorch is C, and it stays C. But the thing most people want on a Tuesday is to
+read a GGUF and multiply something by it without installing a framework first,
+so there is a ctypes binding: no numpy, no build step for the Python side, no
+dependencies at all. `ctypes` ships with Python; the shared library is one make
+target.
+
+```bash
+make shared          # libnotorch.so, or libnotorch.dylib on macOS
+```
+
+```python
+from notorch import Notorch
+
+nt = Notorch()                       # finds libnotorch next to the repo, or $NOTORCH_LIB
+
+with nt.open("model.gguf") as g:
+    print(g)                         # <GGUF llama L=13 E=576 V=32000 tensors=120>
+
+    w = g["output.weight"]           # <Tensor output.weight (32000, 576) Q8_0>
+    row = w.dequant_row(3)           # one row, decoded on its own — an embedding lookup
+
+    import ctypes
+    x = (ctypes.c_float * w.shape[1])()
+    out = (ctypes.c_float * w.shape[0])()
+    nt.qmatvec(out, w.packed, w.dtype, x, w.shape[0], w.shape[1])
+```
+
+Nothing is computed in Python. `w.packed` is a pointer into the file's own
+bytes, `qmatvec` is the C kernel reading them in place, and the weights are
+never expanded to f32 — a Q4_K tensor stays at roughly half a byte per weight
+instead of four. Buffers are plain ctypes arrays, so `memoryview(out)` reads
+them with no copy, and `numpy.frombuffer(out)` does too if you happen to want
+numpy. Nothing here requires it.
+
+The binding is `python/notorch.py`, 246 lines of type declarations and no
+arithmetic. What can silently break in a layer like this is the struct layout —
+a field description that has drifted reads its neighbours and reports them as
+data — so `make test_python MODEL=your.gguf` compares every offset ctypes
+believes in against what the C compiler actually emitted, then checks a real
+model through both paths.
 
 ## why
 
@@ -457,6 +501,9 @@ make gpu
 # Apple Silicon Metal — packed-Q4_K/Q6_K GGUF inference (runs 24B on a 24GB Mac)
 make metal               # Q4_K matvec correctness test
 make infer_gguf_metal    # the GGUF inference binary
+
+# Shared library (for ctypes, Node FFI, Ruby Fiddle — anything that dlopens)
+make shared
 
 # Static library (for embedding in your project)
 make lib

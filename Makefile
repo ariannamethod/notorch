@@ -88,7 +88,7 @@ SIMD_LIBS  = -lpthread
 
 # ── Targets ──
 
-.PHONY: all test test_qpool test_js clean cpu gpu simd help lib install metal test_metal infer_gguf_metal
+.PHONY: all test test_qpool test_js test_python clean cpu gpu simd help lib shared install metal test_metal infer_gguf_metal
 
 all: notorch_test
 	@echo "Built with $(BLAS_NAME). Run: ./notorch_test"
@@ -136,6 +136,29 @@ libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda
 	nvcc -O2 -DUSE_CUDA -c notorch_cuda.cu -o notorch_cuda.o
 	$(AR) rcs libnotorch_gpu.a notorch_gpu.o gguf_gpu.o notorch_cuda.o
 	@echo "Built: libnotorch_gpu.a (CPU + BLAS + CUDA)"
+
+# ── Python binding gate ──
+# The binding is ctypes over the shared library: no numpy, no build step. What
+# can silently go wrong is the struct layout, so the gate compares every offset
+# ctypes believes in against what the C compiler actually produced.
+test_python: shared
+	$(CC) -O2 -I. tests/gguf_layout.c -o /tmp/gguf_layout
+	/tmp/gguf_layout > /tmp/gguf_layout.txt
+	python3 python/test_binding.py /tmp/gguf_layout.txt $(MODEL)
+
+# ── Shared library — for callers that dlopen rather than link ──
+# ctypes, Node's ffi bindings, Ruby's Fiddle, anything with a C FFI. The static
+# library is what organisms link; this is what a script loads at runtime.
+SOEXT = so
+ifeq ($(UNAME), Darwin)
+  SOEXT = dylib
+endif
+
+shared: libnotorch.$(SOEXT)
+
+libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c -lm $(BLAS_LIBS)
+	@echo "Built: libnotorch.$(SOEXT) ($(BLAS_NAME)) — load it with any FFI"
 
 # ── Install — system-wide baseline at $PREFIX (default /opt/homebrew) ──
 PREFIX ?= /opt/homebrew
