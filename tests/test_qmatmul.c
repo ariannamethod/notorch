@@ -55,8 +55,28 @@ static uint8_t *make_q4_k(int m, int k, unsigned seed) {
     return W;
 }
 
+/* Q5_0: f16 scale, a 32-bit high-bit mask, 16 nibble bytes. Q8_0: f16 scale, 32 int8. */
+static uint8_t *make_block32(int m, int k, int bytes, unsigned seed) {
+    long nb = k / 32;
+    uint8_t *W = (uint8_t *)malloc((size_t)m * nb * bytes);
+    if (!W) return NULL;
+    srand(seed);
+    for (long r = 0; r < m; r++)
+        for (long b = 0; b < nb; b++) {
+            uint8_t *bl = W + (r * nb + b) * bytes;
+            bl[0] = 0x66; bl[1] = 0x2A;                 /* f16 ~0.05 */
+            for (int i = 2; i < bytes; i++) bl[i] = (uint8_t)(rand() & 0xFF);
+        }
+    return W;
+}
+
 static uint8_t *make_weights(int dtype, int m, int k, unsigned seed) {
-    return dtype == 2 ? make_q4_0(m, k, seed) : make_q4_k(m, k, seed);
+    switch (dtype) {
+    case 2:  return make_q4_0(m, k, seed);
+    case 6:  return make_block32(m, k, 22, seed);
+    case 8:  return make_block32(m, k, 34, seed);
+    default: return make_q4_k(m, k, seed);
+    }
 }
 
 static int check(int dtype, int m, int k, int n, int *pass, int *fail) {
@@ -133,7 +153,19 @@ int main(void) {
     check(12, 2048, 4096, 8, &pass, &fail);
     check(12, 256, 1024, 17, &pass, &fail);   /* k with four super-blocks, odd tile */
 
+    check(6,  64,   256,  3, &pass, &fail);
+    check(6,  128,  512, 32, &pass, &fail);
+    check(6,  128,  512, 33, &pass, &fail);
+    check(6,  2048, 4096, 8, &pass, &fail);
+    check(6,  4864,  896, 32, &pass, &fail);  /* a real FFN shape: k is not a multiple of 256 */
+
+    check(8,  64,   256,  3, &pass, &fail);
+    check(8,  128,  512, 33, &pass, &fail);
+    check(8,  2048, 4096, 8, &pass, &fail);
+
     timing(2,  2048, 4096, 32);
+    timing(6,  2048, 4096, 32);
+    timing(8,  2048, 4096, 32);
     timing(12, 2048, 4096, 32);
 
     printf("\nResults: %d passed, %d failed\n", pass, fail);
