@@ -90,19 +90,17 @@ with nt.open("model.gguf") as g:
     nt.qmatvec(out, w.packed, w.dtype, x, w.shape[0], w.shape[1])
 ```
 
-Nothing is computed in Python. `w.packed` is a pointer into the file's own
-bytes, `qmatvec` is the C kernel reading them in place, and the weights are
-never expanded to f32 — a Q4_K tensor stays at roughly half a byte per weight
-instead of four. Buffers are plain ctypes arrays, so `memoryview(out)` reads
-them with no copy, and `numpy.frombuffer(out)` does too if you happen to want
-numpy. Nothing here requires it.
+`w.packed` is a pointer into the file's own bytes, `qmatvec` is the C kernel reading 
+them in place, and the weights are never expanded to f32 — a Q4_K tensor stays at 
+roughly half a byte per weight instead of four. Buffers are plain ctypes arrays, 
+so `memoryview(out)` reads them with no copy, and `numpy.frombuffer(out)` does too if 
+you happen to want numpy. But nothing here requires it.
 
-The binding is `python/notorch.py`, 246 lines of type declarations and no
-arithmetic. What can silently break in a layer like this is the struct layout —
-a field description that has drifted reads its neighbours and reports them as
-data — so `make test_python MODEL=your.gguf` compares every offset ctypes
-believes in against what the C compiler actually emitted, then checks a real
-model through both paths.
+The binding is `python/notorch.py`, 246 lines of type declarations. What can silently 
+break in a layer like this is the struct layout — a field description that has drifted 
+reads its neighbours and reports them as data — so `make test_python MODEL=your.gguf` 
+compares every offset ctypes believes in against what the C compiler actually emitted, 
+then checks a real model through both paths.
 
 ## why
 
