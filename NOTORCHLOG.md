@@ -44,8 +44,30 @@ llama.cpp's 88.6 on the same file where it was 30. `tests/test_qmatmul.c` covers
 across four dtypes, all bit-identical to the per-token path, including 4864x896 where k is
 not a multiple of 256.
 
-Q6_K is the dtype still going per token, and it holds half the down projections here.
-Measured on the phone, one node, four cores; other hardware will read differently.
+Q6_K followed (`da1802d`), the last format still walking the prompt one token at a time and
+the holder of half the down projections in this file. Its sixteen integer sub-block sums are
+kept per activation and drained afterwards in ascending order — the order the per-token
+kernel adds them in — because folding each into the accumulator as it appears would be the
+same arithmetic in a different order, and a different order is a different float. Isolated:
+11.1 ms batched against 35.2 per token, 3.16x. End to end: prefill 61.7 / 58.7 / 57.4 t/s
+against 51.9 / 50.7 / 48.9.
+
+With the matmuls no longer dominating, attention surfaced as the second line of the profile
+— 725 ms of 3861 — still scalar over head_dim. Four lanes with a scalar tail (`1ceb044`):
+prefill 70.3 / 69.6 / 68.4 t/s against 62.7 / 59.8 / 59.3, the section down to 218 ms.
+Decode is unchanged within noise; its KV is short and attention was never its cost.
+
+**That last one is not bit-identical and must not be read as if it were.** Four partial sums
+are a different summation order from one running sum, and greedy generation is a chain of
+argmaxes over numbers that moved: the 24-token continuation of "The capital of France is"
+now ends "It is also the capital of the" where it read "It is located in the south of".
+The matmul kernels stay bit-exact and their test still asserts equality — this is attention
+alone.
+
+The line as a whole, on this file: prefill 20.85 t/s before any of it, 69.4 after, against
+llama.cpp's 88.6 on the same weights. The profile now reads 3331 ms as 2438 ms of FFN
+matmul, 278 qkv, 218 attention, 164 projection, 136 SiLU. Measured on the phone, one node,
+four cores; other hardware will read differently.
 
 ---
 
