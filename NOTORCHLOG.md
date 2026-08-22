@@ -13,6 +13,42 @@ Newest entries on top.
 
 ---
 
+## 2026-08-22 — a section profiler, and the formats the file was actually made of
+
+`NT_PROFILE=1` on `infer_llama` (`e32a6f1`) accumulates wall time around ten sections of
+the forward — embedding, norms, qkv, rope and cache writes, attention, projections, FFN
+matmuls, SiLU, residuals, head — and prints prefill and decode separately. Unset, each
+call is a predicted branch on a static int.
+
+It was asked because batching had removed the weight traffic and left a guess in its
+place, and it answered against the guess. Qwen2.5-0.5B Q4_K_M, 241-token prompt, four big
+cores of an Exynos 1580: of 8446 ms, the FFN matmuls take 5719, qkv 1008, the attention
+projection 781, attention itself 709. Norms, rope, SiLU, residuals and the head together
+are 229 ms — 2.7 percent. Nothing around the kernels is worth touching.
+
+What was worth touching is which kernels run at all (`292be7a`). A file called Q4_K_M is
+mostly not Q4_K: this model's hidden size is 896, no K-quant block divides it, and
+`llama_model_loader` reports 133 tensors q5_0, 13 q8_0, 12 q4_K, 12 q6_K. The batched path
+covered 12 of 170 tensors, which is why the Q4_K work measured 8 percent end to end while
+its isolated kernel measured 3.3x.
+
+Q5_0 and Q8_0 now have batched kernels. Q5_0 gains most — its unpack is two table loads,
+an AND, a shift and two ORs before a single dot, now paid once per tile rather than once
+per token — and its -16 bias lifts out as `16*SUM(qa)`, the same lift Q4_K's affine
+minimum takes, so both read the per-block activation sum the call already builds.
+
+Isolated at m=2048 k=4096 n=32: Q5_0 7.2 ms batched against 34.7 per token (4.79x), Q8_0
+6.8 against 21.6 (3.18x). End to end, same model and prompt, three interleaved repeats:
+prefill 52.0 / 47.2 / 46.4 t/s against 27.1 / 25.4 / 24.6 — 1.9x, and 55 percent of
+llama.cpp's 88.6 on the same file where it was 30. `tests/test_qmatmul.c` covers 21 shapes
+across four dtypes, all bit-identical to the per-token path, including 4864x896 where k is
+not a multiple of 256.
+
+Q6_K is the dtype still going per token, and it holds half the down projections here.
+Measured on the phone, one node, four cores; other hardware will read differently.
+
+---
+
 ## 2026-08-22 — notorch answers to `from notorch import`
 
 `make shared` builds libnotorch.so (dylib on macOS), and `python/notorch.py` is
