@@ -13,6 +13,58 @@ Newest entries on top.
 
 ---
 
+## 2026-08-22 — a worker pool for js-edition, and a batched matmul that measured its way back out
+
+Two experiments, one kept.
+
+**Kept: `notorch-workers.mjs`**, an optional resident pool that splits a matvec's
+rows across threads. Rows are independent and write disjoint slots, so output is
+bit-identical to `qmatvec` and the gate asserts equality. Rows are claimed from a
+shared cursor, not divided up front: on 2 performance and 4 efficiency cores an
+even split measured 1.72x where the cursor measured 1.94x. `qmatvecRows` is now
+exported for it, and `seqLinear` uses a pool when one is attached to the engine.
+
+A18 Pro, 6 workers, against a clean single-threaded baseline measured in its own
+process — the in-process baseline runs ~10% slow once a pool has been alive
+beside it, which would have inflated these:
+
+| shape | dtype | single | pool | |
+|---|---|---|---|---|
+| 576×576 | Q5_0 | 0.21 ms | 0.10 ms | 2.10x |
+| 576×1536 | Q4_K | 0.45 ms | 0.21 ms | 2.14x |
+| 32000×576 | Q8_0 | 10.77 ms | 4.01 ms | 2.69x |
+
+End to end, 24 greedy tokens: 2.04 s to 1.09 s, output identical.
+
+**Dropped: the batched matmul.** Porting C's `nt_qmatmul_i8` shape to JS —
+unpack a weight row once, dot it against a tile of activations — measured
+1.15x at n=32 on Q8_0, 1.08x on Q4_K, and *below one* at n=2 and n=8. In C the
+same shape is worth 3.19x, because there the win is memory traffic. In JS there
+is no such win to take, which a direct measurement makes plain: the same kernel
+costs 0.556 ns per element on a 306 KB working set and 0.569 ns on a 19 MB one.
+JS inference is compute-bound end to end; cache residency changes nothing.
+
+That single number explains the whole trajectory of this work. int8 does not help
+(the win needs an instruction JS does not have). Batching does not help (it saves
+bandwidth nobody was short of). Unrolling helped, 1.4x, because it removes
+operations and dependencies. Workers help, because they add executors. Only those
+two levers exist here.
+
+Three notes on gates, all learned the hard way in this step:
+
+- The pool's first version passed buffers by `postMessage` and reported every
+  round complete having computed nothing: the caller blocks on `Atomics.wait`, so
+  the workers' event loops never processed the message. Everything shared is now
+  bound at construction.
+- A `setTimeout` deadlock guard in the test was useless for the same reason — a
+  wedged pool stops the event loop the timer lives in. The pool times out its own
+  wait instead and throws, and the test lets that through.
+- Two of three red-hand defects did not fail the gate, and both times the defect
+  was the problem, not the test. A worker ignoring its chunk end recomputes rows
+  with identical values; a caller waiting on the wrong slot degrades parking into
+  a spin. Neither changes an answer. The one that does — dropping a row from each
+  chunk — was caught at 1/501 and 16/501.
+
 ## 2026-08-21 — the phone front: batched prefill, honest core counts, and a segfault that only glibc could see
 
 Five commits from Defender (Galaxy A56, Exynos 1580, Termux and a glibc chroot),

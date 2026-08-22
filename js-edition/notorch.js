@@ -2160,10 +2160,21 @@ export class Notorch {
     if (W.packed) {
       // The weight never becomes a dense tensor: qmatvec walks its blocks per
       // position. Forward only — SEQ_MATVEC backward refuses a packed parent.
+      //
+      // With a pool attached (notorch-workers.mjs) the same rows are split
+      // across workers. Rows are independent and write disjoint slots, so the
+      // result is bit-identical either way — the pool changes who is idle, not
+      // what is computed. It only applies to weights inside the blob the pool
+      // was built on; anything else falls through to the single-threaded path.
+      const usePool = this.pool && W.packed.buffer === this.pool.weights
+        && outDim <= this.pool.out.length && inDim <= this.pool.x.length;
       const acc = new Float32Array(outDim);
       for (let t = 0; t < T; t++) {
         const xv = Xd.subarray(t * inDim, (t + 1) * inDim);
-        if (qmatvec(acc, W.packed, W.dtype, xv, outDim, inDim) !== 0) {
+        const rc = usePool
+          ? this.pool.qmatvec(acc, W.packed.byteOffset, W.dtype, xv, outDim, inDim)
+          : qmatvec(acc, W.packed, W.dtype, xv, outDim, inDim);
+        if (rc !== 0) {
           throw new Error(`seqLinear: no packed kernel for GGUF dtype ${W.dtype} at k=${inDim}`);
         }
         Yd.set(acc, t * outDim);
@@ -4023,16 +4034,29 @@ function qmvF32(out, dv, x, r0, r1, k) {
  *   falls back to dequant + a dense matvec exactly as the C consumers do.
  */
 export function qmatvec(out, Wq, dtype, x, m, k) {
+  return qmatvecRows(out, Wq, dtype, x, 0, m, k);
+}
+
+/**
+ * The same matvec over a row range only, writing out[r0..r1). Rows are
+ * independent and write disjoint slots, so a caller owning a parallel region
+ * hands each of its workers a range — the entry `notorch-workers.mjs` builds on,
+ * and the shape C exposes for the same reason (nt_qmatvec_i8_rows, notorch.h:538).
+ *
+ * @returns {number} 0, or -1 on a dtype or k with no packed kernel.
+ */
+export function qmatvecRows(out, Wq, dtype, x, r0, r1, k) {
+  if (r1 <= r0) return 0;
   switch (dtype) {
     case GGML_TYPE_F32:
-      qmvF32(out, new DataView(Wq.buffer, Wq.byteOffset, Wq.byteLength), x, 0, m, k); return 0;
+      qmvF32(out, new DataView(Wq.buffer, Wq.byteOffset, Wq.byteLength), x, r0, r1, k); return 0;
     case GGML_TYPE_F16:
-      qmvF16(out, new DataView(Wq.buffer, Wq.byteOffset, Wq.byteLength), x, 0, m, k); return 0;
-    case GGML_TYPE_Q4_0: if (k % 32)  return -1; qmvQ4_0(out, Wq, x, 0, m, k); return 0;
-    case GGML_TYPE_Q5_0: if (k % 32)  return -1; qmvQ5_0(out, Wq, x, 0, m, k); return 0;
-    case GGML_TYPE_Q8_0: if (k % 32)  return -1; qmvQ8_0(out, Wq, x, 0, m, k); return 0;
-    case GGML_TYPE_Q4_K: if (k % 256) return -1; qmvQ4_K(out, Wq, x, 0, m, k); return 0;
-    case GGML_TYPE_Q6_K: if (k % 256) return -1; qmvQ6_K(out, Wq, x, 0, m, k); return 0;
+      qmvF16(out, new DataView(Wq.buffer, Wq.byteOffset, Wq.byteLength), x, r0, r1, k); return 0;
+    case GGML_TYPE_Q4_0: if (k % 32)  return -1; qmvQ4_0(out, Wq, x, r0, r1, k); return 0;
+    case GGML_TYPE_Q5_0: if (k % 32)  return -1; qmvQ5_0(out, Wq, x, r0, r1, k); return 0;
+    case GGML_TYPE_Q8_0: if (k % 32)  return -1; qmvQ8_0(out, Wq, x, r0, r1, k); return 0;
+    case GGML_TYPE_Q4_K: if (k % 256) return -1; qmvQ4_K(out, Wq, x, r0, r1, k); return 0;
+    case GGML_TYPE_Q6_K: if (k % 256) return -1; qmvQ6_K(out, Wq, x, r0, r1, k); return 0;
     default: return -1;
   }
 }

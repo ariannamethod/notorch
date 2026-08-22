@@ -8,6 +8,7 @@
 //   node infer_gguf.mjs model.gguf "prompt" [maxTokens] [temp]
 //
 import { readFileSync } from 'fs';
+import { toShared } from './notorch-workers.mjs';
 import { Notorch, Tensor, loadGGUF, KVCache } from './notorch.js';
 
 // ── GGUF byte-level BPE (mirror of examples/bpe.c) ──────────────────────────
@@ -75,7 +76,9 @@ class GgufBPE {
 // ── model load ──────────────────────────────────────────────────────────────
 function loadModel(path) {
   const buf = readFileSync(path);
-  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  let ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  // NT_WORKERS=N puts the weights in shared memory so a pool can reach them.
+  if (process.env.NT_WORKERS) ab = toShared(ab);
   // Packed by default: the quantized weights stay in their GGUF blocks instead
   // of being expanded to f32 on load. NT_PACKED=0 forces the old dense path —
   // the generation is identical either way, which is what the gate checks.
@@ -100,6 +103,7 @@ function loadModel(path) {
   const merges = metadata.get('tokenizer.ggml.merges');
   m.tok = new GgufBPE(tokens, merges);
   m.eos = metadata.get('tokenizer.ggml.eos_token_id');
+  m.weightsBuffer = ab;
   return m;
 }
 
@@ -144,6 +148,17 @@ const maxTok = parseInt(maxTokStr), temp = parseFloat(tempStr);
 const m = loadModel(path);
 console.error(`model: arch=${m.arch} E=${m.E} H=${m.H} KV=${m.KV} HD=${m.HD} FFN=${m.FFN} L=${m.L} V=${m.vocab} rope=${m.ropeBase} eos=${m.eos}`);
 const nt = new Notorch();
+if (process.env.NT_WORKERS) {
+  const { WorkerPool } = await import('./notorch-workers.mjs');
+  let maxM = 0, maxK = 0;
+  for (const [, t] of m.tensors) {
+    if (!t.packed || t.shape.length < 2) continue;
+    if (t.shape[0] > maxM) maxM = t.shape[0];
+    if (t.shape[1] > maxK) maxK = t.shape[1];
+  }
+  nt.pool = await WorkerPool.create(m.weightsBuffer, maxM, maxK, parseInt(process.env.NT_WORKERS));
+  console.error(`pool: ${nt.pool.n} workers`);
+}
 const ids = m.tok.encode(prompt);
 console.error(`prompt "${prompt}" -> ${ids.length} tokens`);
 let out = '';
@@ -164,3 +179,4 @@ for (let step = 0; step < maxTok; step++) {
 }
 console.error('');
 console.log(prompt + out);
+if (nt.pool) await nt.pool.terminate();
