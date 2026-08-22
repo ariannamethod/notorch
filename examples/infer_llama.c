@@ -15,6 +15,9 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 
 #ifdef USE_BLAS
   #ifdef ACCELERATE
@@ -122,6 +125,33 @@ static void qmv(float *out, const wt *w, const float *x) {
     if (w->use_i8 && nt_qmatvec_i8(out, w->q, w->dtype, x, w->rows, w->cols) == 0) return;
     if (w->q && nt_qmatvec(out, w->q, w->dtype, x, w->rows, w->cols) == 0) return;
     mm_t(out, x, w->f32, 1, w->cols, w->rows);
+}
+
+/* Attention reads the KV cache, not the weights, so batching left it untouched — and once
+ * the matmuls stopped dominating it surfaced as the second line of the profile, 725 ms of
+ * 3861. Both loops are f32 over head_dim, which is 64 or 128 in every model here and
+ * always a multiple of four, so four lanes cover them with a scalar tail for anything odd.
+ * The four partial sums make this a different summation order from the scalar loop, hence
+ * a different last bit; that is a change to attention's arithmetic, not to its meaning. */
+static float dot_f32(const float *a, const float *b, int n) {
+    int i = 0; float s = 0.0f;
+#if defined(__ARM_NEON)
+    float32x4_t acc = vdupq_n_f32(0.0f);
+    for (; i + 4 <= n; i += 4) acc = vfmaq_f32(acc, vld1q_f32(a + i), vld1q_f32(b + i));
+    s = vaddvq_f32(acc);
+#endif
+    for (; i < n; i++) s += a[i] * b[i];
+    return s;
+}
+
+static void axpy_f32(float *y, float alpha, const float *x, int n) {
+    int i = 0;
+#if defined(__ARM_NEON)
+    float32x4_t va = vdupq_n_f32(alpha);
+    for (; i + 4 <= n; i += 4)
+        vst1q_f32(y + i, vfmaq_f32(vld1q_f32(y + i), va, vld1q_f32(x + i)));
+#endif
+    for (; i < n; i++) y[i] += alpha * x[i];
 }
 
 static void rmsnorm(float *out, const float *x, const float *w, int n, float eps) {
@@ -401,16 +431,14 @@ static void llama_forward(llama_model* m, kv_cache* kv, const int *tokens, int n
                 float *q = q_all + (long)j * Q_DIM + h * HD;
                 float *scores = (float*)calloc(pos + 1, sizeof(float));
                 for (int t = 0; t <= pos; t++) {
-                    float *kt = kv->k + base + (long)t * KVD + kv_h * HD;
-                    float dot = 0;
-                    for (int d = 0; d < HD; d++) dot += q[d] * kt[d];
-                    scores[t] = dot * scale;
+                    const float *kt = kv->k + base + (long)t * KVD + kv_h * HD;
+                    scores[t] = dot_f32(q, kt, HD) * scale;
                 }
                 softmax(scores, pos + 1);
                 float *out_h = attn_out + (long)j * Q_DIM + h * HD;
                 for (int t = 0; t <= pos; t++) {
-                    float *vt = kv->v + base + (long)t * KVD + kv_h * HD;
-                    for (int d = 0; d < HD; d++) out_h[d] += scores[t] * vt[d];
+                    const float *vt = kv->v + base + (long)t * KVD + kv_h * HD;
+                    axpy_f32(out_h, scores[t], vt, HD);
                 }
                 free(scores);
             }
