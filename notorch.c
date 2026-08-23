@@ -17,6 +17,9 @@
 #include <sys/time.h>
 #include <pthread.h>
 #include <unistd.h>
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 #if defined(__linux__)
 #include <sched.h>
 #endif
@@ -5007,6 +5010,18 @@ void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n) {
 // examples/infer_gguf_metal.c and dequant_q4_0 in gguf.c.
 
 // IEEE half -> float (GGUF block scales are stored as f16).
+/* Every packed kernel converts one f16 scale per block, so this sits in the innermost loop
+ * of every matvec in the library: a 0.5B decode calls it about eleven million times per
+ * token. The portable version below is a branch, a shift chain and a loop for subnormals —
+ * twenty-odd instructions next to the two SDOTs it accompanies. aarch64 has had the
+ * conversion in hardware since armv8: one FCVT, same IEEE result. */
+#if defined(__aarch64__)
+static inline float nt_f16_to_f32(uint16_t h) {
+    __fp16 v;
+    memcpy(&v, &h, sizeof(v));
+    return (float)v;
+}
+#else
 static float nt_f16_to_f32(uint16_t h) {
     uint32_t s = (h >> 15) & 1, e = (h >> 10) & 0x1F, m = h & 0x3FF, bits;
     if (e == 0) {
@@ -5017,6 +5032,7 @@ static float nt_f16_to_f32(uint16_t h) {
     else bits = (s << 31) | ((e - 15 + 127) << 23) | (m << 13);
     float f; memcpy(&f, &bits, 4); return f;
 }
+#endif
 
 // Q4_0: 18 B/block, 32 vals — f16 scale + 16 bytes of (lo,hi) nibbles, each (-8).
 static void nt_q4_0_rows(float *out, const uint8_t *W, const float *x,
@@ -5570,6 +5586,31 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
 // the exact reference. Phase 2b: Q4_0, scalar (SDOT/VNNI + more dtypes next).
 
 // x[k] -> per-32-block symmetric int8: qa[k] (int8) + da[k/32] (block scales).
+/* SUM(qa) per 32-value block, which is what Q5_0's -16 bias and Q4_K's affine minimum lift
+ * out of the integer dot. NEON where SDOT exists — a dot against a vector of ones is exactly
+ * the sum, and the pairwise adds come free — and a plain loop elsewhere. Either way the
+ * result is an exact integer, so the two agree bit for bit and the kernels do not care which
+ * one ran. */
+static void nt_act_block_sums(const int8_t *qa, int k, int32_t *asum) {
+    int nb = k / 32;
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    const int8x16_t one8 = vdupq_n_s8(1);
+    for (int b = 0; b < nb; b++) {
+        const int8_t *p = qa + (long)b * 32;
+        int32x4_t t = vdotq_s32(vdupq_n_s32(0), one8, vld1q_s8(p));
+        t = vdotq_s32(t, one8, vld1q_s8(p + 16));
+        asum[b] = vaddvq_s32(t);
+    }
+#else
+    for (int b = 0; b < nb; b++) {
+        const int8_t *p = qa + (long)b * 32;
+        int32_t t = 0;
+        for (int i = 0; i < 32; i++) t += p[i];
+        asum[b] = t;
+    }
+#endif
+}
+
 static void nt_quant_act_q8(const float *x, int k, int8_t *qa, float *da) {
     int nb = k / 32;
     for (int b = 0; b < nb; b++) {
@@ -5594,7 +5635,9 @@ static void nt_quant_act_q8(const float *x, int k, int8_t *qa, float *da) {
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 #include <arm_neon.h>
 static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    (void)asum;                                  /* no bias term to lift for this format */
     int nb = k / 32;
     const uint8x16_t mask0f = vdupq_n_u8(0x0F);
     const int8x16_t  eight  = vdupq_n_s8(8);
@@ -5620,7 +5663,9 @@ static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #else
 static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    (void)asum;                                  /* no bias term to lift for this format */
     int nb = k / 32;
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 18;
@@ -5649,7 +5694,9 @@ static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 // dot is int8 x int8 straight through, per-block result scaled by d_w * d_a.
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 static void nt_q8_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    (void)asum;                                  /* no bias term to lift for this format */
     int nb = k / 32;
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 34;
@@ -5669,7 +5716,9 @@ static void nt_q8_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #else
 static void nt_q8_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    (void)asum;                                  /* no bias term to lift for this format */
     int nb = k / 32;
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 34;
@@ -5777,16 +5826,9 @@ static const uint64_t nt_q5_hi[256] = {
 
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 static void nt_q5_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
     int nb = k / 32;
-    int32_t asum[NT_QMV_ASUM_MAX];
-    const int8x16_t one8 = vdupq_n_s8(1);
-    for (int b = 0; b < nb; b++) {
-        const int8_t *p = qa + (long)b * 32;
-        int32x4_t t = vdotq_s32(vdupq_n_s32(0), one8, vld1q_s8(p));
-        t = vdotq_s32(t, one8, vld1q_s8(p + 16));
-        asum[b] = vaddvq_s32(t);
-    }
     const uint8x16_t m4 = vdupq_n_u8(0x0F);
     // Four blocks retired together: vaddvq_s32 is a full horizontal reduction in the
     // dependency chain, and four of them collapse into two pairwise vpaddq_s32. The float
@@ -5839,15 +5881,9 @@ static void nt_q5_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #else
 static void nt_q5_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
     int nb = k / 32;
-    int32_t asum[NT_QMV_ASUM_MAX];
-    for (int b = 0; b < nb; b++) {
-        const int8_t *p = qa + (long)b * 32;
-        int32_t t = 0;
-        for (int i = 0; i < 32; i++) t += p[i];
-        asum[b] = t;
-    }
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 22;
         float acc = 0.0f;
@@ -5883,7 +5919,9 @@ static void nt_q5_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 // [-32,31], and |w|*|x| <= 32*127, two of them still clear int16.
 #if defined(__AVX2__) && defined(__FMA__)
 static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    (void)asum;                                  /* no bias term to lift for this format */
     int nb = k / 256;
     const __m256i m4 = _mm256_set1_epi8(0x0F), m3 = _mm256_set1_epi8(3),
                   b32 = _mm256_set1_epi8(32), ones = _mm256_set1_epi16(1);
@@ -5944,7 +5982,9 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 // exact, so keeping the same expression and the same ascending j order makes this kernel
 // bit-identical to the fallback it replaces, and that is what the micro-bench asserts.
 static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    (void)asum;                                  /* no bias term to lift for this format */
     int nb = k / 256;
     const uint8x16_t m4 = vdupq_n_u8(0x0F), m3 = vdupq_n_u8(3);
     const int8x16_t  b32 = vdupq_n_s8(32);
@@ -5989,7 +6029,9 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #else
 static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    (void)asum;                                  /* no bias term to lift for this format */
     int nb = k / 256;
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 210;
@@ -6031,16 +6073,16 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
  * state, not per-row. Without this a 151936-row head ran single-threaded and the integer
  * kernel lost to the f32 one it was meant to replace. */
 typedef void (*nt_qrows_i8_fn)(float *, const uint8_t *, const int8_t *, const float *,
-                               int, int, int);
+                               const int32_t *, int, int, int);
 typedef struct {
     nt_qrows_i8_fn fn; float *out; const uint8_t *Wq;
-    const int8_t *qa; const float *da; int r0, r1, k;
+    const int8_t *qa; const float *da; const int32_t *asum; int r0, r1, k;
 } nt_qjob_i8;
 
 #ifndef _OPENMP   /* only the pthread fan-out uses a worker entry point */
 static void *nt_qworker_i8(void *p) {
     nt_qjob_i8 *j = (nt_qjob_i8 *)p;
-    j->fn(j->out, j->Wq, j->qa, j->da, j->r0, j->r1, j->k);
+    j->fn(j->out, j->Wq, j->qa, j->da, j->asum, j->r0, j->r1, j->k);
     return NULL;
 }
 
@@ -6110,7 +6152,7 @@ static void nt_qpool_i8_drain(void) {
         int r0 = __atomic_fetch_add(&g_nt_qpool_i8.next, ch, __ATOMIC_RELAXED);
         if (r0 >= hi) return;
         int r1 = r0 + ch; if (r1 > hi) r1 = hi;
-        j.fn(j.out, j.Wq, j.qa, j.da, r0, r1, j.k);
+        j.fn(j.out, j.Wq, j.qa, j.da, j.asum, r0, r1, j.k);
     }
 }
 
@@ -6216,22 +6258,10 @@ static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
 // trick, and 15*127*2 = 3810 clears int16 with room to spare.
 #if defined(__AVX2__) && defined(__FMA__)
 static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
     int nb = k / 256, nsub = k / 32;
-    int32_t asum[NT_QMV_ASUM_MAX];
     const __m256i m4 = _mm256_set1_epi8(0x0F), ones = _mm256_set1_epi16(1);
-    /* SUM(qa) per 32-value block. Scalar it is 32 dependent adds per block and it is paid on
-     * every call — in a fused MoE that is 24 calls per layer per thread. maddubs against a
-     * vector of ones turns the same sum into a handful of instructions: unsigned 1 times a
-     * signed activation is exactly the activation, so the pairwise adds come for free. */
-    { const __m256i one8 = _mm256_set1_epi8(1);
-      for (int s = 0; s < nsub; s++) {
-        __m256i v = _mm256_loadu_si256((const __m256i *)(qa + (long)s * 32));
-        __m256i w = _mm256_madd_epi16(_mm256_maddubs_epi16(one8, v), ones);
-        __m128i lo = _mm_add_epi32(_mm256_castsi256_si128(w), _mm256_extracti128_si256(w, 1));
-        lo = _mm_hadd_epi32(lo, lo); lo = _mm_hadd_epi32(lo, lo);
-        asum[s] = _mm_cvtsi128_si32(lo);
-      } }
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 144;
         float acc = 0.0f;
@@ -6304,17 +6334,10 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 // The float tail is the scalar one verbatim, ascending by sub-block: integer dots are exact,
 // so this kernel and the fallback must agree bit for bit.
 static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
-    int nb = k / 256, nsub = k / 32;
-    int32_t asum[NT_QMV_ASUM_MAX];
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    int nb = k / 256;
     const uint8x16_t m4 = vdupq_n_u8(0x0F);
-    const int8x16_t  one8 = vdupq_n_s8(1);
-    for (int s = 0; s < nsub; s++) {
-        const int8_t *p = qa + (long)s * 32;
-        int32x4_t t = vdotq_s32(vdupq_n_s32(0), one8, vld1q_s8(p));
-        t = vdotq_s32(t, one8, vld1q_s8(p + 16));
-        asum[s] = vaddvq_s32(t);
-    }
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 144;
         float acc = 0.0f;
@@ -6350,15 +6373,9 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #else
 static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
-                            const float *da, int r0, int r1, int k) {
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
     int nb = k / 256, nsub = k / 32;
-    int32_t asum[NT_QMV_ASUM_MAX];
-    for (int s = 0; s < nsub; s++) {
-        const int8_t *p = qa + (long)s * 32;
-        int32_t t = 0;
-        for (int i = 0; i < 32; i++) t += p[i];
-        asum[s] = t;
-    }
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 144;
         float acc = 0.0f;
@@ -6406,7 +6423,13 @@ int nt_qmatvec_i8_rows(float *out, const uint8_t *Wq, int dtype,
     nt_qrows_i8_fn fn = nt_qrows_i8_for(dtype, k);
     if (!fn) return -1;
     if (k / 32 > NT_QMV_ASUM_MAX) return -1;
-    if (r1 > r0) fn(out, Wq, qa, da, r0, r1, k);
+    /* This entry takes the activation already quantized and knows nothing about how many
+     * times the caller will hand it another row range, so the block sums are rebuilt here.
+     * The pooled entry below builds them once beside the quantization, which is where they
+     * belong when one call owns the whole matrix. */
+    int32_t asum[NT_QMV_ASUM_MAX];
+    nt_act_block_sums(qa, k, asum);
+    if (r1 > r0) fn(out, Wq, qa, da, asum, r0, r1, k);
     return 0;
 }
 
@@ -6416,12 +6439,19 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
         return -1;                                       /* Q4_0/Q5_0/Q8_0/Q4_K/Q6_K */
     if (k % 32) return -1;
     if ((dtype == 12 || dtype == 14) && (k % 256)) return -1;
-    if (k / 32 > NT_QMV_ASUM_MAX) return -1;      /* per-call activation sums are stack-held */
     int nb = k / 32;
     int8_t *qa = (int8_t *)malloc((size_t)k);
     float  *da = (float *)malloc((size_t)nb * sizeof(float));
-    if (!qa || !da) { free(qa); free(da); return -1; }
+    /* Q5_0's -16 bias and Q4_K's affine minimum both lift out of the integer dot as a
+     * multiple of SUM(qa) per block, and the sum depends on the activation alone. The
+     * kernels used to rebuild it on entry, which meant once per ROW CHUNK — with eight
+     * chunks a worker that is thirty-two rebuilds of the same numbers per matvec, and about
+     * four percent of a decode. It is built here now, once, beside the quantization that
+     * produces the bytes it sums. */
+    int32_t *asum = (int32_t *)malloc((size_t)nb * sizeof(int32_t));
+    if (!qa || !da || !asum) { free(qa); free(da); free(asum); return -1; }
     nt_quant_act_q8(x, k, qa, da);
+    nt_act_block_sums(qa, k, asum);
 
     /* Selected by table, not by a ternary chain whose last arm is a default. That shape
      * is why widening the guard above without touching this line sent Q5_0 into the Q6_K
@@ -6430,7 +6460,7 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
     if (!fn) { free(qa); free(da); return -1; }
     int nt = nt_qmv_host_threads(m);
     if (nt <= 1 || (long)m * k < nt_qmv_thread_floor()) {
-        fn(out, Wq, qa, da, 0, m, k);
+        fn(out, Wq, qa, da, asum, 0, m, k);
         free(qa); free(da);
         return 0;
     }
@@ -6442,7 +6472,7 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
     #pragma omp parallel for schedule(static)
     for (int t = 0; t < nt; t++) {
         int r0 = t * per_omp, r1 = (r0 + per_omp > m) ? m : r0 + per_omp;
-        if (r0 < m) fn(out, Wq, qa, da, r0, r1, k);
+        if (r0 < m) fn(out, Wq, qa, da, asum, r0, r1, k);
     }
 #else
     pthread_t th[NT_QMV_MAX_THREADS];
@@ -6451,7 +6481,7 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
     for (int t = 0; t < nt; t++) {
         int r0 = t * per, r1 = (r0 + per > m) ? m : r0 + per;
         if (r0 >= m) break;
-        jobs[t] = (nt_qjob_i8){ fn, out, Wq, qa, da, r0, r1, k };
+        jobs[t] = (nt_qjob_i8){ fn, out, Wq, qa, da, asum, r0, r1, k };
         launched++;
     }
     if (nt_qpool_i8_run(jobs, launched) == 0) {
@@ -6465,7 +6495,7 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
         int r0 = t * per;
         if (r0 >= m) break;
         if (pthread_create(&th[t], NULL, nt_qworker_i8, &jobs[t]) != 0) {
-            fn(out, Wq, qa, da, r0, m, k);   /* create failed: run the rest inline */
+            fn(out, Wq, qa, da, asum, r0, m, k);   /* create failed: run the rest inline */
             break;
         }
         launched++;
