@@ -6212,13 +6212,13 @@ static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
     if (worker_nt <= 0 || worker_nt > g_nt_qpool_i8.nthreads) return -1;
 
     int lo = jobs[0].r0, hi = jobs[worker_nt].r1;
-    /* Eight chunks per worker, which is a compromise and worth naming as one. Coarser is
-     * better when the cores are equal and worse when they are not; on an Exynos 1580
-     * decoding Qwen2.5-0.5B, chunks per worker against t/s: 2 -> 36.4 pinned to the four
-     * big cores but 21.6 across all eight, 4 -> 36.0 / 25.5, 8 -> 35.5 / 27.8,
-     * 16 -> 35.2 / 28.3. Eight gives up two percent on the homogeneous case to keep a
-     * quarter of the heterogeneous one, because a phone runs both ways. */
-    int chunk = (hi - lo) / (nt * 8); if (chunk < 1) chunk = 1;
+    /* Four chunks per worker. Granularity trades load balance against per-chunk cost, and
+     * the balance point moved once the kernels got faster — re-measured rather than
+     * inherited. Exynos 1580, Qwen2.5-0.5B decode, chunks per worker against t/s pinned to
+     * the four big cores and then across all eight: 1 -> 38.8, 2 -> 40.0 / 24.7,
+     * 4 -> 39.6 / 26.3, 8 -> 38.6 / 25.1. Four is one percent off the pinned best and the
+     * best of the three unpinned, so it is the one number that is not wrong either way. */
+    int chunk = (hi - lo) / (nt * 4); if (chunk < 1) chunk = 1;
 
     pthread_mutex_lock(&g_nt_qpool_i8_dispatch_mu);   /* one dispatch in flight at a time */
     g_nt_qpool_i8.shared = jobs[0];
