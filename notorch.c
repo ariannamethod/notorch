@@ -6170,7 +6170,13 @@ static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
     if (worker_nt <= 0 || worker_nt > g_nt_qpool_i8.nthreads) return -1;
 
     int lo = jobs[0].r0, hi = jobs[worker_nt].r1;
-    int chunk = (hi - lo) / (nt * 16); if (chunk < 1) chunk = 1;
+    /* Eight chunks per worker, which is a compromise and worth naming as one. Coarser is
+     * better when the cores are equal and worse when they are not; on an Exynos 1580
+     * decoding Qwen2.5-0.5B, chunks per worker against t/s: 2 -> 36.4 pinned to the four
+     * big cores but 21.6 across all eight, 4 -> 36.0 / 25.5, 8 -> 35.5 / 27.8,
+     * 16 -> 35.2 / 28.3. Eight gives up two percent on the homogeneous case to keep a
+     * quarter of the heterogeneous one, because a phone runs both ways. */
+    int chunk = (hi - lo) / (nt * 8); if (chunk < 1) chunk = 1;
 
     pthread_mutex_lock(&g_nt_qpool_i8_dispatch_mu);   /* one dispatch in flight at a time */
     g_nt_qpool_i8.shared = jobs[0];
