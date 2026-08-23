@@ -13,6 +13,39 @@ Newest entries on top.
 
 ---
 
+## 2026-08-23 — SMMLA: the instruction nothing else on this phone uses
+
+The batched kernels were bound by feeding, not by arithmetic. Doubling the SDOTs at constant
+loads measured free on an Exynos 1580 — 7.7 ms against 7.9 for the same shape — which says
+the four 16-byte activation loads per 64 multiply-accumulates were the constraint. SMMLA
+multiplies two 2x8 int8 matrices in a single instruction: two weight rows in one operand,
+two activations in the other, four dot products of eight retired at once. Each activation
+half is then read once and serves two rows, and the bytes per MAC halve (`4ecf6f6`).
+
+All five dtypes take it, with the odd row and the odd activation handed back to the SDOT
+path. Isolated at m=2048 k=4096 n=32, measured against the SDOT batched kernel in the same
+thermal window: Q4_0 5.4 ms against 9.1, 1.66x. End to end on four big cores, 241-token
+prompt: Qwen2.5-1.5B Q4_0 prefill 33.0 / 33.2 t/s against 27.8 / 25.8 / 25.5; Qwen2.5-0.5B
+Q4_K_M 81.9 / 81.9 / 81.9 against 72.1 / 72.4 / 71.9. llama.cpp on those two files does 26.5
+and 88.6.
+
+**A bit-identity trap worth naming.** Q4_K and Q6_K compute a product chain and an
+accumulate that the compiler is free to contract into fused instructions, and it chose
+differently in the SDOT kernel and the SMMLA one — same arithmetic, last bit apart, 2358 of
+4096 outputs flagged. Neither result is wrong and no tolerance would have caught it as a
+problem; the test compares bits, and the fix is to stop leaving the choice to the compiler.
+`nt_q4k_acc` and `nt_q6k_acc` name both fused operations explicitly, so every kernel rounds
+where those lines say it rounds. `tests/test_qmatmul.c` is now 34 shapes across five dtypes,
+including odd row counts, all identical to the per-token path.
+
+Where this leaves the phone, on a 241-token prompt: prefill on the 0.5B went 20.85 → 26.2 →
+48.5 → 59.3 → 69.4 → 81.9 t/s across the last three days, against llama.cpp's 88.6 on the
+same weights, and on the 1.5B Q4_0 it is 33.2 against 26.5 — past it. Decode is untouched at
+21-22 t/s against 45.6 and is the next thing worth a plan, not a patch: it is one activation
+against the whole model, which is the shape SMMLA cannot help.
+
+---
+
 ## 2026-08-22 — a section profiler, and the formats the file was actually made of
 
 `NT_PROFILE=1` on `infer_llama` (`e32a6f1`) accumulates wall time around ten sections of
