@@ -162,6 +162,9 @@ int main(void) {
     check(2,  128,  512, 32, &pass, &fail);   /* exactly the tile */
     check(2,  128,  512, 33, &pass, &fail);   /* one past it: two passes, second is short */
     check(2,  2048, 4096, 8, &pass, &fail);   /* over the threading gate: fan-out engaged */
+    check(2,  127,  512, 32, &pass, &fail);   /* odd row count: the i8mm pair loop leaves one */
+    check(2,  127,  512, 31, &pass, &fail);   /* odd rows and odd activations at once */
+    check(2,  1,    512,  8, &pass, &fail);   /* a single row: no pair to make at all */
 
     check(12, 64,   256,  1, &pass, &fail);
     check(12, 64,   256,  3, &pass, &fail);
@@ -186,6 +189,12 @@ int main(void) {
     check(14, 128,  512, 33, &pass, &fail);
     check(14, 2048, 4096, 8, &pass, &fail);
     check(14, 896, 4864, 17, &pass, &fail);   /* a real down-projection shape */
+
+    check(6,  127,  512, 32, &pass, &fail);   /* odd rows on every dtype: the pair loop leaves one */
+    check(8,  127,  512, 32, &pass, &fail);
+    check(12, 127,  512, 32, &pass, &fail);
+    check(14, 127,  512, 32, &pass, &fail);
+    check(14, 127,  512, 31, &pass, &fail);
 
     timing(2,  2048, 4096, 32);
     timing(6,  2048, 4096, 32);

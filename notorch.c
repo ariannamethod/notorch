@@ -5092,6 +5092,31 @@ static void nt_get_scale_min_k4(int j, const uint8_t *sc, uint8_t *s, uint8_t *m
            *mn = (sc[j + 4] >> 4)  | ((sc[j]     >> 6) << 4); }
 }
 
+/* One Q4_K sub-block's contribution to the running float, in one place so that every kernel
+ * that computes it — per token, batched, SMMLA — emits the same instruction sequence. Spelled
+ * out at each site instead, the compiler is free to contract d*ls*dot - dmin*lm*asum into a
+ * multiply-subtract in one kernel and leave it as two operations in another; both are correct
+ * and they differ in the last bit, which is exactly what a test comparing bits will report. */
+/* Q6_K's sub-block term, fused for the same reason as Q4_K's: the product chain and the
+ * accumulate that follows it are contractible, so if they are left as expressions the kernels
+ * are free to disagree in the last bit. */
+static inline float nt_q6k_acc(float acc, float d, float sc, float da, int32_t dot) {
+    return __builtin_fmaf(d * sc * da, (float)dot, acc);
+}
+
+static inline float nt_q4k_acc(float acc, float da, float d, float ls, int32_t dot,
+                               float dmin, float lm, int32_t asum) {
+    /* Both fused operations are spelled out rather than left to the compiler, and the
+     * accumulate is inside the helper for the same reason as the subtract. Written as
+     * ordinary expressions, `d*ls*dot - dmin*lm*asum` and the `acc +=` that consumes it
+     * contract into fused instructions at some call sites and not at others — that alone
+     * made the SDOT and SMMLA kernels disagree in the last bit, and a test that compares
+     * bits is right to call that a failure. Naming the operations removes the choice:
+     * every kernel rounds where these two lines say it rounds. */
+    return __builtin_fmaf(da, __builtin_fmaf(d * ls, (float)dot,
+                                             -(dmin * lm * (float)asum)), acc);
+}
+
 // Q4_K: 144 B/block, 256 vals — d, dmin (f16) + 12 B packed scales/mins + 128 nibbles.
 static void nt_q4_k_rows(float *out, const uint8_t *W, const float *x,
                          int r0, int r1, int k) {
@@ -5946,7 +5971,7 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                 }
             }
             for (int j = 0; j < 16; j++)
-                acc += d * (float)sc[j] * dab[j / 2] * (float)ssum[j];
+                acc = nt_q6k_acc(acc, d, (float)sc[j], dab[j / 2], ssum[j]);
         }
         out[row] = acc;
     }
@@ -5982,7 +6007,7 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                 }
             }
             for (int j = 0; j < 16; j++)
-                acc += d * (float)sc[j] * dab[j / 2] * (float)ssum[j];
+                acc = nt_q6k_acc(acc, d, (float)sc[j], dab[j / 2], ssum[j]);
         }
         out[row] = acc;
     }
@@ -6222,8 +6247,7 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
             _mm256_storeu_si256((__m256i *)dots, sums);
             for (int j = 0; j < 8; j++) {
                 int sub = blk * 8 + j;
-                acc += da[sub] * (d * (float)ls[j] * (float)dots[j]
-                                - dmin * (float)lm[j] * (float)asum[sub]);
+                acc = nt_q4k_acc(acc, da[sub], d, (float)ls[j], dots[j], dmin, (float)lm[j], asum[sub]);
             }
         }
         out[row] = acc;
@@ -6278,8 +6302,7 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
             for (int j = 0; j < 8; j++) {
                 uint8_t s6, m6; nt_get_scale_min_k4(j, sc, &s6, &m6);
                 int sub = blk * 8 + j;
-                acc += da[sub] * (d * (float)s6 * (float)dots[j]
-                                - dmin * (float)m6 * (float)asum[sub]);
+                acc = nt_q4k_acc(acc, da[sub], d, (float)s6, dots[j], dmin, (float)m6, asum[sub]);
             }
         }
         out[row] = acc;
@@ -6312,8 +6335,7 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                 int32_t dot = 0;
                 if (j & 1) for (int l = 0; l < 32; l++) dot += (int32_t)(qsp[l] >> 4)   * qab[l];
                 else       for (int l = 0; l < 32; l++) dot += (int32_t)(qsp[l] & 0x0F) * qab[l];
-                acc += da[sub] * (d * (float)s6 * (float)dot
-                                - dmin * (float)m6 * (float)asum[sub]);
+                acc = nt_q4k_acc(acc, da[sub], d, (float)s6, dot, dmin, (float)m6, asum[sub]);
             }
         }
         out[row] = acc;
@@ -6426,35 +6448,129 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
 #define NT_QMM_TILE 32   /* activations carried through one pass over the weights */
 
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+/* One row range against one range of activations, SDOT. Split out because the i8mm path
+ * below covers rows and activations two at a time and has to hand the odd one back. */
+static void nt_q4_0_sdot_range(float *out, int m, const uint8_t *W, const int8_t *qa,
+                               const float *da, int r0, int r1, int k, int j0, int jn) {
+    int nb = k / 32;
+    const uint8x16_t mask0f = vdupq_n_u8(0x0F);
+    const int8x16_t  eight  = vdupq_n_s8(8);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 18;
+        float acc[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 18;
+            float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            uint8x16_t packed = vld1q_u8(blk + 2);
+            int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(packed, mask0f)), eight);
+            int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(packed, 4)), eight);
+            for (int j = 0; j < jn; j++) {
+                const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
+                int32x4_t s4 = vdupq_n_s32(0);
+                s4 = vdotq_s32(s4, lo, vld1q_s8(qab));
+                s4 = vdotq_s32(s4, hi, vld1q_s8(qab + 16));
+                acc[j] += d_w * da[(long)(j0 + j) * nb + b] * (float)vaddvq_s32(s4);
+            }
+        }
+        for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+    }
+}
+
+#if defined(__ARM_FEATURE_MATMUL_INT8)
+/* SMMLA takes two 2x8 int8 operands and returns their 2x2 product in one instruction:
+ * put two WEIGHT rows in one and two ACTIVATION rows in the other and a single instruction
+ * retires four dot products of eight. That is 32 multiply-accumulates against SDOT's 16,
+ * but the reason it is here is the other half of the ledger. Doubling the SDOTs at constant
+ * loads measured free on this core — 7.7 ms against 7.9 for the same shape — so the kernel
+ * was never arithmetic-bound; it was bound by feeding, four 16-byte activation loads per 64
+ * MACs. Under SMMLA each activation half-vector is read once and serves two rows, so the
+ * bytes per MAC halve. Nothing about the arithmetic changes: integer dots are exact and the
+ * float tail still walks blocks ascending per (row, activation), so the result is the same
+ * bits as the SDOT path, which is what tests/test_qmatmul.c asserts.
+ *
+ * i8mm is unused on this phone by anything else — the llama.cpp shipped for Termux carries
+ * neither SMMLA nor SDOT in its CPU backend — so this is the one lane where the Method is
+ * not catching up with anybody. */
+static void nt_q4_0_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t *qa,
+                              const float *da, int r0, int r1, int k, int j0, int jn) {
+    int nb = k / 32;
+    const uint8x16_t mask0f = vdupq_n_u8(0x0F);
+    const int8x16_t  eight  = vdupq_n_s8(8);
+    int rpair = r0 + ((r1 - r0) & ~1);
+    int jpair = jn & ~1;
+
+    for (int row = r0; row < rpair; row += 2) {
+        const uint8_t *rb0 = W + (long)row * nb * 18;
+        const uint8_t *rb1 = rb0 + (long)nb * 18;
+        float acc0[NT_QMM_TILE], acc1[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) { acc0[j] = 0.0f; acc1[j] = 0.0f; }
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk0 = rb0 + (long)b * 18, *blk1 = rb1 + (long)b * 18;
+            float d0 = nt_f16_to_f32((uint16_t)(blk0[0] | (blk0[1] << 8)));
+            float d1 = nt_f16_to_f32((uint16_t)(blk1[0] | (blk1[1] << 8)));
+            uint8x16_t p0 = vld1q_u8(blk0 + 2), p1 = vld1q_u8(blk1 + 2);
+            int8x16_t lo0 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(p0, mask0f)), eight);
+            int8x16_t hi0 = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(p0, 4)), eight);
+            int8x16_t lo1 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(p1, mask0f)), eight);
+            int8x16_t hi1 = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(p1, 4)), eight);
+            /* Four 2x8 weight tiles: elements 0-7, 8-15 (low nibbles), 16-23, 24-31 (high),
+             * each carrying row and row+1 stacked, built once for the whole activation tile. */
+            int8x16_t A0 = vcombine_s8(vget_low_s8(lo0),  vget_low_s8(lo1));
+            int8x16_t A1 = vcombine_s8(vget_high_s8(lo0), vget_high_s8(lo1));
+            int8x16_t A2 = vcombine_s8(vget_low_s8(hi0),  vget_low_s8(hi1));
+            int8x16_t A3 = vcombine_s8(vget_high_s8(hi0), vget_high_s8(hi1));
+            for (int j = 0; j < jpair; j += 2) {
+                const int8_t *x0 = qa + (long)(j0 + j) * k + (long)b * 32;
+                const int8_t *x1 = x0 + k;
+                int8x16_t B0 = vcombine_s8(vld1_s8(x0),      vld1_s8(x1));
+                int8x16_t B1 = vcombine_s8(vld1_s8(x0 + 8),  vld1_s8(x1 + 8));
+                int8x16_t B2 = vcombine_s8(vld1_s8(x0 + 16), vld1_s8(x1 + 16));
+                int8x16_t B3 = vcombine_s8(vld1_s8(x0 + 24), vld1_s8(x1 + 24));
+                int32x4_t s = vmmlaq_s32(vdupq_n_s32(0), A0, B0);
+                s = vmmlaq_s32(s, A1, B1);
+                s = vmmlaq_s32(s, A2, B2);
+                s = vmmlaq_s32(s, A3, B3);
+                /* lanes: row.j, row.j+1, row+1.j, row+1.j+1 */
+                float da0 = da[(long)(j0 + j) * nb + b], da1 = da[(long)(j0 + j + 1) * nb + b];
+                acc0[j]     += d0 * da0 * (float)vgetq_lane_s32(s, 0);
+                acc0[j + 1] += d0 * da1 * (float)vgetq_lane_s32(s, 1);
+                acc1[j]     += d1 * da0 * (float)vgetq_lane_s32(s, 2);
+                acc1[j + 1] += d1 * da1 * (float)vgetq_lane_s32(s, 3);
+            }
+            if (jpair < jn) {                    /* odd activation: SDOT against both rows */
+                const int8_t *x = qa + (long)(j0 + jpair) * k + (long)b * 32;
+                int8x16_t X0 = vld1q_s8(x), X1 = vld1q_s8(x + 16);
+                int32x4_t t0 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), lo0, X0), hi0, X1);
+                int32x4_t t1 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), lo1, X0), hi1, X1);
+                float daj = da[(long)(j0 + jpair) * nb + b];
+                acc0[jpair] += d0 * daj * (float)vaddvq_s32(t0);
+                acc1[jpair] += d1 * daj * (float)vaddvq_s32(t1);
+            }
+        }
+        for (int j = 0; j < jn; j++) {
+            out[(long)(j0 + j) * m + row]     = acc0[j];
+            out[(long)(j0 + j) * m + row + 1] = acc1[j];
+        }
+    }
+    if (rpair < r1)                              /* odd row: the plain path takes it */
+        nt_q4_0_sdot_range(out, m, W, qa, da, rpair, r1, k, j0, jn);
+}
+#endif
+
 static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
     (void)asum;                                  /* Q4_0 has no min term to lift */
-    int nb = k / 32;
-    const uint8x16_t mask0f = vdupq_n_u8(0x0F);
-    const int8x16_t  eight  = vdupq_n_s8(8);
     for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
         int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
-        for (int row = r0; row < r1; row++) {
-            const uint8_t *rb = W + (long)row * nb * 18;
-            float acc[NT_QMM_TILE];
-            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
-            for (int b = 0; b < nb; b++) {
-                const uint8_t *blk = rb + (long)b * 18;
-                float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
-                uint8x16_t packed = vld1q_u8(blk + 2);
-                int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(packed, mask0f)), eight);
-                int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(packed, 4)), eight);
-                for (int j = 0; j < jn; j++) {
-                    const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
-                    int32x4_t s4 = vdupq_n_s32(0);
-                    s4 = vdotq_s32(s4, lo, vld1q_s8(qab));
-                    s4 = vdotq_s32(s4, hi, vld1q_s8(qab + 16));
-                    acc[j] += d_w * da[(long)(j0 + j) * nb + b] * (float)vaddvq_s32(s4);
-                }
-            }
-            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+#if defined(__ARM_FEATURE_MATMUL_INT8)
+        if (jn >= 2 && (r1 - r0) >= 2) {
+            nt_q4_0_rows_i8mm(out, m, W, qa, da, r0, r1, k, j0, jn);
+            continue;
         }
+#endif
+        nt_q4_0_sdot_range(out, m, W, qa, da, r0, r1, k, j0, jn);
     }
 }
 #else
@@ -6498,51 +6614,178 @@ static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
 // rather than once per row range. The float tail keeps the per-token order, ascending by
 // sub-block, so the batched and the per-token result are the same bits.
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+static void nt_q4_k_rows_i8n_sdot(float *out, int m, const uint8_t *W, const int8_t *qa,
+                                  const float *da, const int32_t *asum,
+                                  int r0, int r1, int k, int j0, int jn) {
+    int nb = k / 256, nsub = k / 32;
+    const uint8x16_t m4 = vdupq_n_u8(0x0F);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 144;
+        float acc[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 144;
+            float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+            float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
+            const uint8_t *sc = b + 4, *qs = b + 16;
+            uint8_t ls[8], lm[8];
+            for (int s = 0; s < 8; s++) nt_get_scale_min_k4(s, sc, &ls[s], &lm[s]);
+            for (int p = 0; p < 4; p++) {
+                uint8x16_t q0 = vld1q_u8(qs + p * 32);
+                uint8x16_t q1 = vld1q_u8(qs + p * 32 + 16);
+                int8x16_t e0 = vreinterpretq_s8_u8(vandq_u8(q0, m4));
+                int8x16_t e1 = vreinterpretq_s8_u8(vandq_u8(q1, m4));
+                int8x16_t o0 = vreinterpretq_s8_u8(vshrq_n_u8(q0, 4));
+                int8x16_t o1 = vreinterpretq_s8_u8(vshrq_n_u8(q1, 4));
+                int sub_e = blk * 8 + 2 * p, sub_o = sub_e + 1;
+                for (int j = 0; j < jn; j++) {
+                    const int8_t *a0 = qa + (long)(j0 + j) * k + (long)sub_e * 32;
+                    const int8_t *a1 = a0 + 32;
+                    const float *daj = da + (long)(j0 + j) * nsub;
+                    const int32_t *asj = asum + (long)(j0 + j) * nsub;
+                    const int32x4_t z = vdupq_n_s32(0);
+                    int32x4_t e = vdotq_s32(z, e0, vld1q_s8(a0));
+                    e = vdotq_s32(e, e1, vld1q_s8(a0 + 16));
+                    int32x4_t o = vdotq_s32(z, o0, vld1q_s8(a1));
+                    o = vdotq_s32(o, o1, vld1q_s8(a1 + 16));
+                    acc[j] = nt_q4k_acc(acc[j], daj[sub_e], d, (float)ls[2*p],   vaddvq_s32(e), dmin, (float)lm[2*p],   asj[sub_e]);
+                    acc[j] = nt_q4k_acc(acc[j], daj[sub_o], d, (float)ls[2*p+1], vaddvq_s32(o), dmin, (float)lm[2*p+1], asj[sub_o]);
+                }
+            }
+        }
+        for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+    }
+}
+
+#if defined(__ARM_FEATURE_MATMUL_INT8)
+/* Q4_K under SMMLA. A super-block is eight 32-value sub-blocks, and each of those is two
+ * 16-value halves in the packing, so one sub-block is four 2x8 tiles once a row pair is
+ * stacked. Everything else — the affine minimum lifted as dmin*lm*SUM(qa), the ascending
+ * sub-block order in the float tail — is the SDOT kernel's, unchanged, because changing it
+ * would change the last bit and the test compares bits. */
+static void nt_q4_k_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t *qa,
+                              const float *da, const int32_t *asum,
+                              int r0, int r1, int k, int j0, int jn) {
+    int nb = k / 256, nsub = k / 32;
+    const uint8x16_t m4 = vdupq_n_u8(0x0F);
+    int rpair = r0 + ((r1 - r0) & ~1);
+    int jpair = jn & ~1;
+    for (int row = r0; row < rpair; row += 2) {
+        const uint8_t *rb0 = W + (long)row * nb * 144;
+        const uint8_t *rb1 = rb0 + (long)nb * 144;
+        float acc0[NT_QMM_TILE], acc1[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) { acc0[j] = 0.0f; acc1[j] = 0.0f; }
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b0 = rb0 + (long)blk * 144, *b1 = rb1 + (long)blk * 144;
+            float d0    = nt_f16_to_f32((uint16_t)(b0[0] | (b0[1] << 8)));
+            float dmin0 = nt_f16_to_f32((uint16_t)(b0[2] | (b0[3] << 8)));
+            float d1    = nt_f16_to_f32((uint16_t)(b1[0] | (b1[1] << 8)));
+            float dmin1 = nt_f16_to_f32((uint16_t)(b1[2] | (b1[3] << 8)));
+            const uint8_t *sc0 = b0 + 4, *qs0 = b0 + 16;
+            const uint8_t *sc1 = b1 + 4, *qs1 = b1 + 16;
+            uint8_t ls0[8], lm0[8], ls1[8], lm1[8];
+            for (int s = 0; s < 8; s++) {
+                nt_get_scale_min_k4(s, sc0, &ls0[s], &lm0[s]);
+                nt_get_scale_min_k4(s, sc1, &ls1[s], &lm1[s]);
+            }
+            for (int p = 0; p < 4; p++) {
+                uint8x16_t w00 = vld1q_u8(qs0 + p * 32), w01 = vld1q_u8(qs0 + p * 32 + 16);
+                uint8x16_t w10 = vld1q_u8(qs1 + p * 32), w11 = vld1q_u8(qs1 + p * 32 + 16);
+                int8x16_t e00 = vreinterpretq_s8_u8(vandq_u8(w00, m4));
+                int8x16_t e01 = vreinterpretq_s8_u8(vandq_u8(w01, m4));
+                int8x16_t o00 = vreinterpretq_s8_u8(vshrq_n_u8(w00, 4));
+                int8x16_t o01 = vreinterpretq_s8_u8(vshrq_n_u8(w01, 4));
+                int8x16_t e10 = vreinterpretq_s8_u8(vandq_u8(w10, m4));
+                int8x16_t e11 = vreinterpretq_s8_u8(vandq_u8(w11, m4));
+                int8x16_t o10 = vreinterpretq_s8_u8(vshrq_n_u8(w10, 4));
+                int8x16_t o11 = vreinterpretq_s8_u8(vshrq_n_u8(w11, 4));
+                int8x16_t E0 = vcombine_s8(vget_low_s8(e00),  vget_low_s8(e10));
+                int8x16_t E1 = vcombine_s8(vget_high_s8(e00), vget_high_s8(e10));
+                int8x16_t E2 = vcombine_s8(vget_low_s8(e01),  vget_low_s8(e11));
+                int8x16_t E3 = vcombine_s8(vget_high_s8(e01), vget_high_s8(e11));
+                int8x16_t O0 = vcombine_s8(vget_low_s8(o00),  vget_low_s8(o10));
+                int8x16_t O1 = vcombine_s8(vget_high_s8(o00), vget_high_s8(o10));
+                int8x16_t O2 = vcombine_s8(vget_low_s8(o01),  vget_low_s8(o11));
+                int8x16_t O3 = vcombine_s8(vget_high_s8(o01), vget_high_s8(o11));
+                int sub_e = blk * 8 + 2 * p, sub_o = sub_e + 1;
+                for (int j = 0; j < jpair; j += 2) {
+                    const int8_t *x0 = qa + (long)(j0 + j) * k + (long)sub_e * 32;
+                    const int8_t *x1 = x0 + k;
+                    int32x4_t se = vmmlaq_s32(vdupq_n_s32(0), E0,
+                                              vcombine_s8(vld1_s8(x0),      vld1_s8(x1)));
+                    se = vmmlaq_s32(se, E1, vcombine_s8(vld1_s8(x0 + 8),  vld1_s8(x1 + 8)));
+                    se = vmmlaq_s32(se, E2, vcombine_s8(vld1_s8(x0 + 16), vld1_s8(x1 + 16)));
+                    se = vmmlaq_s32(se, E3, vcombine_s8(vld1_s8(x0 + 24), vld1_s8(x1 + 24)));
+                    int32x4_t so = vmmlaq_s32(vdupq_n_s32(0), O0,
+                                              vcombine_s8(vld1_s8(x0 + 32), vld1_s8(x1 + 32)));
+                    so = vmmlaq_s32(so, O1, vcombine_s8(vld1_s8(x0 + 40), vld1_s8(x1 + 40)));
+                    so = vmmlaq_s32(so, O2, vcombine_s8(vld1_s8(x0 + 48), vld1_s8(x1 + 48)));
+                    so = vmmlaq_s32(so, O3, vcombine_s8(vld1_s8(x0 + 56), vld1_s8(x1 + 56)));
+                    const float *daA = da + (long)(j0 + j) * nsub;
+                    const float *daB = da + (long)(j0 + j + 1) * nsub;
+                    const int32_t *asA = asum + (long)(j0 + j) * nsub;
+                    const int32_t *asB = asum + (long)(j0 + j + 1) * nsub;
+                    acc0[j] = nt_q4k_acc(acc0[j], daA[sub_e], d0, (float)ls0[2*p],
+                                               vgetq_lane_s32(se, 0), dmin0, (float)lm0[2*p],   asA[sub_e]);
+                    acc0[j] = nt_q4k_acc(acc0[j], daA[sub_o], d0, (float)ls0[2*p+1],
+                                               vgetq_lane_s32(so, 0), dmin0, (float)lm0[2*p+1], asA[sub_o]);
+                    acc0[j + 1] = nt_q4k_acc(acc0[j + 1], daB[sub_e], d0, (float)ls0[2*p],
+                                               vgetq_lane_s32(se, 1), dmin0, (float)lm0[2*p],   asB[sub_e]);
+                    acc0[j + 1] = nt_q4k_acc(acc0[j + 1], daB[sub_o], d0, (float)ls0[2*p+1],
+                                               vgetq_lane_s32(so, 1), dmin0, (float)lm0[2*p+1], asB[sub_o]);
+                    acc1[j] = nt_q4k_acc(acc1[j], daA[sub_e], d1, (float)ls1[2*p],
+                                               vgetq_lane_s32(se, 2), dmin1, (float)lm1[2*p],   asA[sub_e]);
+                    acc1[j] = nt_q4k_acc(acc1[j], daA[sub_o], d1, (float)ls1[2*p+1],
+                                               vgetq_lane_s32(so, 2), dmin1, (float)lm1[2*p+1], asA[sub_o]);
+                    acc1[j + 1] = nt_q4k_acc(acc1[j + 1], daB[sub_e], d1, (float)ls1[2*p],
+                                               vgetq_lane_s32(se, 3), dmin1, (float)lm1[2*p],   asB[sub_e]);
+                    acc1[j + 1] = nt_q4k_acc(acc1[j + 1], daB[sub_o], d1, (float)ls1[2*p+1],
+                                               vgetq_lane_s32(so, 3), dmin1, (float)lm1[2*p+1], asB[sub_o]);
+                }
+                if (jpair < jn) {
+                    const int8_t *x = qa + (long)(j0 + jpair) * k + (long)sub_e * 32;
+                    const float *daj = da + (long)(j0 + jpair) * nsub;
+                    const int32_t *asj = asum + (long)(j0 + jpair) * nsub;
+                    int8x16_t X0 = vld1q_s8(x),      X1 = vld1q_s8(x + 16);
+                    int8x16_t X2 = vld1q_s8(x + 32), X3 = vld1q_s8(x + 48);
+                    const int32x4_t z = vdupq_n_s32(0);
+                    int32_t e0v = vaddvq_s32(vdotq_s32(vdotq_s32(z, e00, X0), e01, X1));
+                    int32_t o0v = vaddvq_s32(vdotq_s32(vdotq_s32(z, o00, X2), o01, X3));
+                    int32_t e1v = vaddvq_s32(vdotq_s32(vdotq_s32(z, e10, X0), e11, X1));
+                    int32_t o1v = vaddvq_s32(vdotq_s32(vdotq_s32(z, o10, X2), o11, X3));
+                    acc0[jpair] = nt_q4k_acc(acc0[jpair], daj[sub_e], d0, (float)ls0[2*p],
+                                               e0v, dmin0, (float)lm0[2*p],   asj[sub_e]);
+                    acc0[jpair] = nt_q4k_acc(acc0[jpair], daj[sub_o], d0, (float)ls0[2*p+1],
+                                               o0v, dmin0, (float)lm0[2*p+1], asj[sub_o]);
+                    acc1[jpair] = nt_q4k_acc(acc1[jpair], daj[sub_e], d1, (float)ls1[2*p],
+                                               e1v, dmin1, (float)lm1[2*p],   asj[sub_e]);
+                    acc1[jpair] = nt_q4k_acc(acc1[jpair], daj[sub_o], d1, (float)ls1[2*p+1],
+                                               o1v, dmin1, (float)lm1[2*p+1], asj[sub_o]);
+                }
+            }
+        }
+        for (int j = 0; j < jn; j++) {
+            out[(long)(j0 + j) * m + row]     = acc0[j];
+            out[(long)(j0 + j) * m + row + 1] = acc1[j];
+        }
+    }
+    if (rpair < r1)
+        nt_q4_k_rows_i8n_sdot(out, m, W, qa, da, asum, rpair, r1, k, j0, jn);
+}
+#endif
+
 static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
-    int nb = k / 256, nsub = k / 32;
-    const uint8x16_t m4 = vdupq_n_u8(0x0F);
     for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
         int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
-        for (int row = r0; row < r1; row++) {
-            const uint8_t *rb = W + (long)row * nb * 144;
-            float acc[NT_QMM_TILE];
-            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
-            for (int blk = 0; blk < nb; blk++) {
-                const uint8_t *b = rb + (long)blk * 144;
-                float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
-                float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
-                const uint8_t *sc = b + 4, *qs = b + 16;
-                uint8_t ls[8], lm[8];
-                for (int s = 0; s < 8; s++) nt_get_scale_min_k4(s, sc, &ls[s], &lm[s]);
-                for (int p = 0; p < 4; p++) {
-                    uint8x16_t q0 = vld1q_u8(qs + p * 32);
-                    uint8x16_t q1 = vld1q_u8(qs + p * 32 + 16);
-                    int8x16_t e0 = vreinterpretq_s8_u8(vandq_u8(q0, m4));
-                    int8x16_t e1 = vreinterpretq_s8_u8(vandq_u8(q1, m4));
-                    int8x16_t o0 = vreinterpretq_s8_u8(vshrq_n_u8(q0, 4));
-                    int8x16_t o1 = vreinterpretq_s8_u8(vshrq_n_u8(q1, 4));
-                    int sub_e = blk * 8 + 2 * p, sub_o = sub_e + 1;
-                    for (int j = 0; j < jn; j++) {
-                        const int8_t *a0 = qa + (long)(j0 + j) * k + (long)sub_e * 32;
-                        const int8_t *a1 = a0 + 32;
-                        const float *daj = da + (long)(j0 + j) * nsub;
-                        const int32_t *asj = asum + (long)(j0 + j) * nsub;
-                        const int32x4_t z = vdupq_n_s32(0);
-                        int32x4_t e = vdotq_s32(z, e0, vld1q_s8(a0));
-                        e = vdotq_s32(e, e1, vld1q_s8(a0 + 16));
-                        int32x4_t o = vdotq_s32(z, o0, vld1q_s8(a1));
-                        o = vdotq_s32(o, o1, vld1q_s8(a1 + 16));
-                        acc[j] += daj[sub_e] * (d * (float)ls[2*p] * (float)vaddvq_s32(e)
-                                              - dmin * (float)lm[2*p] * (float)asj[sub_e]);
-                        acc[j] += daj[sub_o] * (d * (float)ls[2*p+1] * (float)vaddvq_s32(o)
-                                              - dmin * (float)lm[2*p+1] * (float)asj[sub_o]);
-                    }
-                }
-            }
-            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+#if defined(__ARM_FEATURE_MATMUL_INT8)
+        if (jn >= 2 && (r1 - r0) >= 2) {
+            nt_q4_k_rows_i8mm(out, m, W, qa, da, asum, r0, r1, k, j0, jn);
+            continue;
         }
+#endif
+        nt_q4_k_rows_i8n_sdot(out, m, W, qa, da, asum, r0, r1, k, j0, jn);
     }
 }
 #else
@@ -6572,9 +6815,8 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                         int32_t dot = 0;
                         for (int i = 0; i < 32; i++)
                             dot += (int32_t)((qsb[i] >> shift) & 0x0F) * a[i];
-                        acc[j] += da[(long)(j0 + j) * nsub + sub]
-                                * (d * (float)ls[s] * (float)dot
-                                 - dmin * (float)lm[s] * (float)asum[(long)(j0 + j) * nsub + sub]);
+                        acc[j] = nt_q4k_acc(acc[j], da[(long)(j0 + j) * nsub + sub], d, (float)ls[s], dot,
+                                              dmin, (float)lm[s], asum[(long)(j0 + j) * nsub + sub]);
                     }
                 }
             }
@@ -6590,37 +6832,111 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
 // being done once for a tile of activations instead of once per token. The -16 bias still
 // lifts out as 16*SUM(qa), and SUM(qa) now comes precomputed per activation.
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+/* One block of Q5_0 unpacked: elements 0-15 and 16-31, the -16 bias still lifted out. */
+#define NT_Q5_0_UNPACK(blk, lo, hi)                                                        \
+    uint8x16_t h0_ = vreinterpretq_u8_u64(vcombine_u64(                                    \
+        vcreate_u64(nt_q5_hi[(blk)[2]]), vcreate_u64(nt_q5_hi[(blk)[3]])));                \
+    uint8x16_t h1_ = vreinterpretq_u8_u64(vcombine_u64(                                    \
+        vcreate_u64(nt_q5_hi[(blk)[4]]), vcreate_u64(nt_q5_hi[(blk)[5]])));                \
+    uint8x16_t pk_ = vld1q_u8((blk) + 6);                                                  \
+    int8x16_t lo = vreinterpretq_s8_u8(vorrq_u8(vandq_u8(pk_, m4), h0_));                  \
+    int8x16_t hi = vreinterpretq_s8_u8(vorrq_u8(vshrq_n_u8(pk_, 4), h1_))
+
+static void nt_q5_0_sdot_range(float *out, int m, const uint8_t *W, const int8_t *qa,
+                               const float *da, const int32_t *asum,
+                               int r0, int r1, int k, int j0, int jn) {
+    int nb = k / 32;
+    const uint8x16_t m4 = vdupq_n_u8(0x0F);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 22;
+        float acc[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 22;
+            float d = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            NT_Q5_0_UNPACK(blk, lo, hi);
+            for (int j = 0; j < jn; j++) {
+                const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
+                int32x4_t t = vdotq_s32(vdupq_n_s32(0), lo, vld1q_s8(qab));
+                t = vdotq_s32(t, hi, vld1q_s8(qab + 16));
+                acc[j] += d * da[(long)(j0 + j) * nb + b]
+                        * (float)(vaddvq_s32(t) - 16 * asum[(long)(j0 + j) * nb + b]);
+            }
+        }
+        for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+    }
+}
+
+#if defined(__ARM_FEATURE_MATMUL_INT8)
+static void nt_q5_0_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t *qa,
+                              const float *da, const int32_t *asum,
+                              int r0, int r1, int k, int j0, int jn) {
+    int nb = k / 32;
+    const uint8x16_t m4 = vdupq_n_u8(0x0F);
+    int rpair = r0 + ((r1 - r0) & ~1);
+    int jpair = jn & ~1;
+    for (int row = r0; row < rpair; row += 2) {
+        const uint8_t *rb0 = W + (long)row * nb * 22;
+        const uint8_t *rb1 = rb0 + (long)nb * 22;
+        float acc0[NT_QMM_TILE], acc1[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) { acc0[j] = 0.0f; acc1[j] = 0.0f; }
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk0 = rb0 + (long)b * 22, *blk1 = rb1 + (long)b * 22;
+            float d0 = nt_f16_to_f32((uint16_t)(blk0[0] | (blk0[1] << 8)));
+            float d1 = nt_f16_to_f32((uint16_t)(blk1[0] | (blk1[1] << 8)));
+            int8x16_t lo0, hi0, lo1, hi1;
+            { NT_Q5_0_UNPACK(blk0, l_, h_); lo0 = l_; hi0 = h_; }
+            { NT_Q5_0_UNPACK(blk1, l_, h_); lo1 = l_; hi1 = h_; }
+            int8x16_t A0 = vcombine_s8(vget_low_s8(lo0),  vget_low_s8(lo1));
+            int8x16_t A1 = vcombine_s8(vget_high_s8(lo0), vget_high_s8(lo1));
+            int8x16_t A2 = vcombine_s8(vget_low_s8(hi0),  vget_low_s8(hi1));
+            int8x16_t A3 = vcombine_s8(vget_high_s8(hi0), vget_high_s8(hi1));
+            for (int j = 0; j < jpair; j += 2) {
+                const int8_t *x0 = qa + (long)(j0 + j) * k + (long)b * 32;
+                const int8_t *x1 = x0 + k;
+                int32x4_t s = vmmlaq_s32(vdupq_n_s32(0), A0,
+                                         vcombine_s8(vld1_s8(x0),      vld1_s8(x1)));
+                s = vmmlaq_s32(s, A1, vcombine_s8(vld1_s8(x0 + 8),  vld1_s8(x1 + 8)));
+                s = vmmlaq_s32(s, A2, vcombine_s8(vld1_s8(x0 + 16), vld1_s8(x1 + 16)));
+                s = vmmlaq_s32(s, A3, vcombine_s8(vld1_s8(x0 + 24), vld1_s8(x1 + 24)));
+                long o0 = (long)(j0 + j) * nb + b, o1 = (long)(j0 + j + 1) * nb + b;
+                acc0[j]     += d0 * da[o0] * (float)(vgetq_lane_s32(s, 0) - 16 * asum[o0]);
+                acc0[j + 1] += d0 * da[o1] * (float)(vgetq_lane_s32(s, 1) - 16 * asum[o1]);
+                acc1[j]     += d1 * da[o0] * (float)(vgetq_lane_s32(s, 2) - 16 * asum[o0]);
+                acc1[j + 1] += d1 * da[o1] * (float)(vgetq_lane_s32(s, 3) - 16 * asum[o1]);
+            }
+            if (jpair < jn) {
+                const int8_t *x = qa + (long)(j0 + jpair) * k + (long)b * 32;
+                int8x16_t X0 = vld1q_s8(x), X1 = vld1q_s8(x + 16);
+                int32x4_t t0 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), lo0, X0), hi0, X1);
+                int32x4_t t1 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), lo1, X0), hi1, X1);
+                long oj = (long)(j0 + jpair) * nb + b;
+                acc0[jpair] += d0 * da[oj] * (float)(vaddvq_s32(t0) - 16 * asum[oj]);
+                acc1[jpair] += d1 * da[oj] * (float)(vaddvq_s32(t1) - 16 * asum[oj]);
+            }
+        }
+        for (int j = 0; j < jn; j++) {
+            out[(long)(j0 + j) * m + row]     = acc0[j];
+            out[(long)(j0 + j) * m + row + 1] = acc1[j];
+        }
+    }
+    if (rpair < r1)
+        nt_q5_0_sdot_range(out, m, W, qa, da, asum, rpair, r1, k, j0, jn);
+}
+#endif
+
 static void nt_q5_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
-    int nb = k / 32;
-    const uint8x16_t m4 = vdupq_n_u8(0x0F);
     for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
         int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
-        for (int row = r0; row < r1; row++) {
-            const uint8_t *rb = W + (long)row * nb * 22;
-            float acc[NT_QMM_TILE];
-            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
-            for (int b = 0; b < nb; b++) {
-                const uint8_t *blk = rb + (long)b * 22;
-                float d = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
-                uint8x16_t h0 = vreinterpretq_u8_u64(vcombine_u64(
-                    vcreate_u64(nt_q5_hi[blk[2]]), vcreate_u64(nt_q5_hi[blk[3]])));
-                uint8x16_t h1 = vreinterpretq_u8_u64(vcombine_u64(
-                    vcreate_u64(nt_q5_hi[blk[4]]), vcreate_u64(nt_q5_hi[blk[5]])));
-                uint8x16_t pk = vld1q_u8(blk + 6);
-                int8x16_t lo = vreinterpretq_s8_u8(vorrq_u8(vandq_u8(pk, m4), h0));
-                int8x16_t hi = vreinterpretq_s8_u8(vorrq_u8(vshrq_n_u8(pk, 4), h1));
-                for (int j = 0; j < jn; j++) {
-                    const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
-                    int32x4_t t = vdotq_s32(vdupq_n_s32(0), lo, vld1q_s8(qab));
-                    t = vdotq_s32(t, hi, vld1q_s8(qab + 16));
-                    acc[j] += d * da[(long)(j0 + j) * nb + b]
-                            * (float)(vaddvq_s32(t) - 16 * asum[(long)(j0 + j) * nb + b]);
-                }
-            }
-            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+#if defined(__ARM_FEATURE_MATMUL_INT8)
+        if (jn >= 2 && (r1 - r0) >= 2) {
+            nt_q5_0_rows_i8mm(out, m, W, qa, da, asum, r0, r1, k, j0, jn);
+            continue;
         }
+#endif
+        nt_q5_0_sdot_range(out, m, W, qa, da, asum, r0, r1, k, j0, jn);
     }
 }
 
@@ -6631,6 +6947,109 @@ static void nt_q5_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
 // order afterwards, which is the order the per-token kernel adds them in; accumulating
 // them as they are produced would be the same arithmetic in a different order, and a
 // different order is a different float.
+#define NT_Q6_K_UNPACK(qlh, qhh, is, w1, w2, w3, w4)                                       \
+    uint8x16_t la_ = vld1q_u8((qlh) + (is) * 16);                                          \
+    uint8x16_t lb_ = vld1q_u8((qlh) + 32 + (is) * 16);                                     \
+    uint8x16_t hv_ = vld1q_u8((qhh) + (is) * 16);                                          \
+    int8x16_t w1 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(                                  \
+        vandq_u8(la_, m4), vshlq_n_u8(vandq_u8(hv_, m3), 4))), b32);                       \
+    int8x16_t w2 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(                                  \
+        vandq_u8(lb_, m4), vshlq_n_u8(vandq_u8(vshrq_n_u8(hv_, 2), m3), 4))), b32);        \
+    int8x16_t w3 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(                                  \
+        vshrq_n_u8(la_, 4), vshlq_n_u8(vandq_u8(vshrq_n_u8(hv_, 4), m3), 4))), b32);       \
+    int8x16_t w4 = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(                                  \
+        vshrq_n_u8(lb_, 4), vshlq_n_u8(vshrq_n_u8(hv_, 6), 4))), b32)
+
+#if defined(__ARM_FEATURE_MATMUL_INT8)
+/* Q6_K under SMMLA. Its sub-blocks are sixteen values, so each is two 2x8 tiles once a row
+ * pair is stacked, and the four quarters of a half-block give eight tiles per (half, is).
+ * The sixteen sums stay per row per activation and are drained ascending afterwards, which
+ * is the per-token kernel's order and therefore the same float. */
+static void nt_q6_k_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t *qa,
+                              const float *da, int r0, int r1, int k, int j0, int jn) {
+    int nb = k / 256;
+    const uint8x16_t m4 = vdupq_n_u8(0x0F), m3 = vdupq_n_u8(3);
+    const int8x16_t  b32 = vdupq_n_s8(32);
+    int rpair = r0 + ((r1 - r0) & ~1);
+    int jpair = jn & ~1;
+    for (int row = r0; row < rpair; row += 2) {
+        const uint8_t *rb0 = W + (long)row * nb * 210;
+        const uint8_t *rb1 = rb0 + (long)nb * 210;
+        float acc0[NT_QMM_TILE], acc1[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) { acc0[j] = 0.0f; acc1[j] = 0.0f; }
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b0 = rb0 + (long)blk * 210, *b1 = rb1 + (long)blk * 210;
+            const int8_t *sc0 = (const int8_t *)(b0 + 192), *sc1 = (const int8_t *)(b1 + 192);
+            float d0 = nt_f16_to_f32((uint16_t)(b0[208] | (b0[209] << 8)));
+            float d1 = nt_f16_to_f32((uint16_t)(b1[208] | (b1[209] << 8)));
+            int32_t ss0[NT_QMM_TILE][16], ss1[NT_QMM_TILE][16];
+            for (int nn = 0; nn < 256; nn += 128) {
+                const uint8_t *ql0 = b0 + (nn / 128) * 64, *qh0 = b0 + 128 + (nn / 128) * 32;
+                const uint8_t *ql1 = b1 + (nn / 128) * 64, *qh1 = b1 + 128 + (nn / 128) * 32;
+                int base = (nn / 128) * 8;
+                for (int is = 0; is < 2; is++) {
+                    int8x16_t u1, u2, u3, u4, v1, v2, v3, v4;
+                    { NT_Q6_K_UNPACK(ql0, qh0, is, a1_, a2_, a3_, a4_);
+                      u1 = a1_; u2 = a2_; u3 = a3_; u4 = a4_; }
+                    { NT_Q6_K_UNPACK(ql1, qh1, is, a1_, a2_, a3_, a4_);
+                      v1 = a1_; v2 = a2_; v3 = a3_; v4 = a4_; }
+                    int8x16_t A[8] = {
+                        vcombine_s8(vget_low_s8(u1),  vget_low_s8(v1)),
+                        vcombine_s8(vget_high_s8(u1), vget_high_s8(v1)),
+                        vcombine_s8(vget_low_s8(u2),  vget_low_s8(v2)),
+                        vcombine_s8(vget_high_s8(u2), vget_high_s8(v2)),
+                        vcombine_s8(vget_low_s8(u3),  vget_low_s8(v3)),
+                        vcombine_s8(vget_high_s8(u3), vget_high_s8(v3)),
+                        vcombine_s8(vget_low_s8(u4),  vget_low_s8(v4)),
+                        vcombine_s8(vget_high_s8(u4), vget_high_s8(v4)),
+                    };
+                    for (int j = 0; j < jpair; j += 2) {
+                        const int8_t *x0 = qa + (long)(j0 + j) * k + (long)blk * 256
+                                         + nn + is * 16;
+                        const int8_t *x1 = x0 + k;
+                        for (int q = 0; q < 4; q++) {
+                            const int8_t *y0 = x0 + q * 32, *y1 = x1 + q * 32;
+                            int32x4_t s = vmmlaq_s32(vdupq_n_s32(0), A[2 * q],
+                                                     vcombine_s8(vld1_s8(y0), vld1_s8(y1)));
+                            s = vmmlaq_s32(s, A[2 * q + 1],
+                                           vcombine_s8(vld1_s8(y0 + 8), vld1_s8(y1 + 8)));
+                            int slot = base + is + 2 * q;
+                            ss0[j][slot]     = vgetq_lane_s32(s, 0);
+                            ss0[j + 1][slot] = vgetq_lane_s32(s, 1);
+                            ss1[j][slot]     = vgetq_lane_s32(s, 2);
+                            ss1[j + 1][slot] = vgetq_lane_s32(s, 3);
+                        }
+                    }
+                    if (jpair < jn) {
+                        const int8_t *x = qa + (long)(j0 + jpair) * k + (long)blk * 256
+                                        + nn + is * 16;
+                        const int32x4_t z = vdupq_n_s32(0);
+                        int8x16_t U[4] = { u1, u2, u3, u4 }, V[4] = { v1, v2, v3, v4 };
+                        for (int q = 0; q < 4; q++) {
+                            int8x16_t xv = vld1q_s8(x + q * 32);
+                            ss0[jpair][base + is + 2 * q] = vaddvq_s32(vdotq_s32(z, U[q], xv));
+                            ss1[jpair][base + is + 2 * q] = vaddvq_s32(vdotq_s32(z, V[q], xv));
+                        }
+                    }
+                }
+            }
+            for (int j = 0; j < jn; j++) {
+                const float *dab = da + (long)(j0 + j) * (k / 32) + (long)blk * 8;
+                for (int s = 0; s < 16; s++) {
+                    acc0[j] = nt_q6k_acc(acc0[j], d0, (float)sc0[s], dab[s / 2], ss0[j][s]);
+                    acc1[j] = nt_q6k_acc(acc1[j], d1, (float)sc1[s], dab[s / 2], ss1[j][s]);
+                }
+            }
+        }
+        for (int j = 0; j < jn; j++) {
+            out[(long)(j0 + j) * m + row]     = acc0[j];
+            out[(long)(j0 + j) * m + row + 1] = acc1[j];
+        }
+    }
+    return;
+}
+#endif
+
 static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
@@ -6640,7 +7059,16 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
     const int8x16_t  b32 = vdupq_n_s8(32);
     for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
         int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+#if defined(__ARM_FEATURE_MATMUL_INT8)
+        int rp = r0 + ((r1 - r0) & ~1);
+        if (jn >= 2 && rp > r0) {
+            nt_q6_k_rows_i8mm(out, m, W, qa, da, r0, rp, k, j0, jn);
+            if (rp >= r1) continue;
+        }
+        for (int row = (jn >= 2 ? r0 + ((r1 - r0) & ~1) : r0); row < r1; row++) {
+#else
         for (int row = r0; row < r1; row++) {
+#endif
             const uint8_t *rb = W + (long)row * nb * 210;
             float acc[NT_QMM_TILE];
             for (int j = 0; j < jn; j++) acc[j] = 0.0f;
@@ -6678,7 +7106,7 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                 for (int j = 0; j < jn; j++) {
                     const float *dab = da + (long)(j0 + j) * (k / 32) + (long)blk * 8;
                     for (int s = 0; s < 16; s++)
-                        acc[j] += d * (float)sc[s] * dab[s / 2] * (float)ssum[j][s];
+                        acc[j] = nt_q6k_acc(acc[j], d, (float)sc[s], dab[s / 2], ssum[j][s]);
                 }
             }
             for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
@@ -6689,31 +7117,99 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
 // Q8_0 batched: 34 B / 32 values, the weights already int8. Nothing to unpack, so what is
 // saved here is the weight traffic itself — one pass over the row per tile instead of per
 // token — and that is the whole reason prefill was reading 373 MiB per position.
+static void nt_q8_0_sdot_range(float *out, int m, const uint8_t *W, const int8_t *qa,
+                               const float *da, int r0, int r1, int k, int j0, int jn) {
+    int nb = k / 32;
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 34;
+        float acc[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 34;
+            float d = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            int8x16_t w0 = vld1q_s8((const int8_t *)(blk + 2));
+            int8x16_t w1 = vld1q_s8((const int8_t *)(blk + 18));
+            for (int j = 0; j < jn; j++) {
+                const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
+                int32x4_t t = vdotq_s32(vdupq_n_s32(0), w0, vld1q_s8(qab));
+                t = vdotq_s32(t, w1, vld1q_s8(qab + 16));
+                acc[j] += d * da[(long)(j0 + j) * nb + b] * (float)vaddvq_s32(t);
+            }
+        }
+        for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+    }
+}
+
+#if defined(__ARM_FEATURE_MATMUL_INT8)
+static void nt_q8_0_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t *qa,
+                              const float *da, int r0, int r1, int k, int j0, int jn) {
+    int nb = k / 32;
+    int rpair = r0 + ((r1 - r0) & ~1);
+    int jpair = jn & ~1;
+    for (int row = r0; row < rpair; row += 2) {
+        const uint8_t *rb0 = W + (long)row * nb * 34;
+        const uint8_t *rb1 = rb0 + (long)nb * 34;
+        float acc0[NT_QMM_TILE], acc1[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) { acc0[j] = 0.0f; acc1[j] = 0.0f; }
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk0 = rb0 + (long)b * 34, *blk1 = rb1 + (long)b * 34;
+            float d0 = nt_f16_to_f32((uint16_t)(blk0[0] | (blk0[1] << 8)));
+            float d1 = nt_f16_to_f32((uint16_t)(blk1[0] | (blk1[1] << 8)));
+            int8x16_t w00 = vld1q_s8((const int8_t *)(blk0 + 2));
+            int8x16_t w01 = vld1q_s8((const int8_t *)(blk0 + 18));
+            int8x16_t w10 = vld1q_s8((const int8_t *)(blk1 + 2));
+            int8x16_t w11 = vld1q_s8((const int8_t *)(blk1 + 18));
+            int8x16_t A0 = vcombine_s8(vget_low_s8(w00),  vget_low_s8(w10));
+            int8x16_t A1 = vcombine_s8(vget_high_s8(w00), vget_high_s8(w10));
+            int8x16_t A2 = vcombine_s8(vget_low_s8(w01),  vget_low_s8(w11));
+            int8x16_t A3 = vcombine_s8(vget_high_s8(w01), vget_high_s8(w11));
+            for (int j = 0; j < jpair; j += 2) {
+                const int8_t *x0 = qa + (long)(j0 + j) * k + (long)b * 32;
+                const int8_t *x1 = x0 + k;
+                int32x4_t s = vmmlaq_s32(vdupq_n_s32(0), A0,
+                                         vcombine_s8(vld1_s8(x0),      vld1_s8(x1)));
+                s = vmmlaq_s32(s, A1, vcombine_s8(vld1_s8(x0 + 8),  vld1_s8(x1 + 8)));
+                s = vmmlaq_s32(s, A2, vcombine_s8(vld1_s8(x0 + 16), vld1_s8(x1 + 16)));
+                s = vmmlaq_s32(s, A3, vcombine_s8(vld1_s8(x0 + 24), vld1_s8(x1 + 24)));
+                float da0 = da[(long)(j0 + j) * nb + b], da1 = da[(long)(j0 + j + 1) * nb + b];
+                acc0[j]     += d0 * da0 * (float)vgetq_lane_s32(s, 0);
+                acc0[j + 1] += d0 * da1 * (float)vgetq_lane_s32(s, 1);
+                acc1[j]     += d1 * da0 * (float)vgetq_lane_s32(s, 2);
+                acc1[j + 1] += d1 * da1 * (float)vgetq_lane_s32(s, 3);
+            }
+            if (jpair < jn) {
+                const int8_t *x = qa + (long)(j0 + jpair) * k + (long)b * 32;
+                int8x16_t X0 = vld1q_s8(x), X1 = vld1q_s8(x + 16);
+                int32x4_t t0 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), w00, X0), w01, X1);
+                int32x4_t t1 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), w10, X0), w11, X1);
+                float daj = da[(long)(j0 + jpair) * nb + b];
+                acc0[jpair] += d0 * daj * (float)vaddvq_s32(t0);
+                acc1[jpair] += d1 * daj * (float)vaddvq_s32(t1);
+            }
+        }
+        for (int j = 0; j < jn; j++) {
+            out[(long)(j0 + j) * m + row]     = acc0[j];
+            out[(long)(j0 + j) * m + row + 1] = acc1[j];
+        }
+    }
+    if (rpair < r1)
+        nt_q8_0_sdot_range(out, m, W, qa, da, rpair, r1, k, j0, jn);
+}
+#endif
+
 static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
     (void)asum;
-    int nb = k / 32;
     for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
         int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
-        for (int row = r0; row < r1; row++) {
-            const uint8_t *rb = W + (long)row * nb * 34;
-            float acc[NT_QMM_TILE];
-            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
-            for (int b = 0; b < nb; b++) {
-                const uint8_t *blk = rb + (long)b * 34;
-                float d = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
-                int8x16_t w0 = vld1q_s8((const int8_t *)(blk + 2));
-                int8x16_t w1 = vld1q_s8((const int8_t *)(blk + 18));
-                for (int j = 0; j < jn; j++) {
-                    const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
-                    int32x4_t t = vdotq_s32(vdupq_n_s32(0), w0, vld1q_s8(qab));
-                    t = vdotq_s32(t, w1, vld1q_s8(qab + 16));
-                    acc[j] += d * da[(long)(j0 + j) * nb + b] * (float)vaddvq_s32(t);
-                }
-            }
-            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+#if defined(__ARM_FEATURE_MATMUL_INT8)
+        if (jn >= 2 && (r1 - r0) >= 2) {
+            nt_q8_0_rows_i8mm(out, m, W, qa, da, r0, r1, k, j0, jn);
+            continue;
         }
+#endif
+        nt_q8_0_sdot_range(out, m, W, qa, da, r0, r1, k, j0, jn);
     }
 }
 #else
@@ -6817,7 +7313,7 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                 for (int j = 0; j < jn; j++) {
                     const float *dab = da + (long)(j0 + j) * (k / 32) + (long)blk * 8;
                     for (int s = 0; s < 16; s++)
-                        acc[j] += d * (float)sc[s] * dab[s / 2] * (float)ssum[j][s];
+                        acc[j] = nt_q6k_acc(acc[j], d, (float)sc[s], dab[s / 2], ssum[j][s]);
                 }
             }
             for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
