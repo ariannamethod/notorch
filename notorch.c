@@ -5279,12 +5279,23 @@ static nt_qrows_fn nt_qrows_for(int dtype, int k) {
 
 /* Threading floor, shared by both packed matvecs. The API wins over the environment: a
  * consumer that knows its own shapes should not have to export a variable to be fast. */
+/* 64K elements, not the 4M this used to be. The old number was right for the pool it was
+ * measured against: a dispatch cost tens of microseconds, so anything under a few million
+ * elements lost more to the fan-out than it gained. With the atomic, spin-first pool a
+ * dispatch costs about five microseconds and the arithmetic inverts — an Exynos 1580 decode
+ * of Qwen2.5-0.5B reads 27.3 t/s at the old floor and 35.0 at this one, and everything below
+ * 64K measures the same, so this is where the curve flattens rather than a guess. Callers
+ * that know their shapes still override through the API, and NT_QMV_THREAD_MIN through the
+ * environment. */
+#define NT_QMV_THREAD_MIN_DEFAULT (64L << 10)
 static long g_qmv_thread_min = -1;
-void nt_qmv_set_thread_min(long elems) { g_qmv_thread_min = (elems > 0) ? elems : (4L << 20); }
+void nt_qmv_set_thread_min(long elems) {
+    g_qmv_thread_min = (elems > 0) ? elems : NT_QMV_THREAD_MIN_DEFAULT;
+}
 static long nt_qmv_thread_floor(void) {
     if (g_qmv_thread_min < 0) {
         const char *e = getenv("NT_QMV_THREAD_MIN");
-        g_qmv_thread_min = (e && atol(e) > 0) ? atol(e) : (4L << 20);
+        g_qmv_thread_min = (e && atol(e) > 0) ? atol(e) : NT_QMV_THREAD_MIN_DEFAULT;
     }
     return g_qmv_thread_min;
 }
@@ -6035,50 +6046,68 @@ static void *nt_qworker_i8(void *p) {
 
 // Separate i8 pool keeps the shared per-call activation quant buffers typed and
 // avoids a tagged union in the hot dispatch path.
+//
+// The handshake is atomic and spin-first, and on a phone that is the difference between a
+// fan-out being worth doing and not. Measured on an Exynos 1580 before this: a 128x896
+// matvec took 35 us on one core and 83 us on four — the dispatch cost more than the work —
+// and the 4864x896 FFN shapes returned 1.45x from four cores instead of something near
+// four. Two things were paying for that. Every chunk claim took a mutex, so four workers
+// serialised sixty-four times per dispatch; and every dispatch woke the workers through a
+// condvar, which is a futex wake and a scheduler round-trip each, paid seventy-three times
+// per decoded token. Now a claim is one fetch_add, and workers spin on the generation
+// counter before sleeping — between two matvecs of the same token the gap is microseconds,
+// so the spin almost always catches the next job, and the condvar remains underneath so an
+// idle phone is not held awake. NT_QMV_SPIN overrides the budget for measurement.
 typedef struct {
     pthread_mutex_t mu;
     pthread_cond_t cv_work;
-    pthread_cond_t cv_done;
     pthread_t threads[NT_QMV_MAX_THREADS];
-    int ids[NT_QMV_MAX_THREADS];
     int nthreads;
     int ready;
-    int shutdown;
-    long generation;
-    int active;
-    int done;
-    nt_qjob_i8 jobs[NT_QMV_MAX_THREADS];
+    int shutdown;          /* atomic */
+    int generation;        /* atomic: bumped once per dispatch */
+    int busy;              /* atomic: workers still draining */
+    int next;              /* atomic: next unclaimed row */
     nt_qjob_i8 shared;
-    int lo, hi, chunk, next;
+    int hi, chunk;
 } nt_qpool_i8;
 
 static nt_qpool_i8 g_nt_qpool_i8 = {
     PTHREAD_MUTEX_INITIALIZER,
     PTHREAD_COND_INITIALIZER,
-    PTHREAD_COND_INITIALIZER,
     {0},
-    {0},
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    {{0}},
-    {0},              /* shared           */
-    0, 0, 0, 0,       /* lo hi chunk next */
+    0, 0, 0, 0, 0, 0,
+    {0},              /* shared    */
+    0, 0,             /* hi chunk  */
 };
+
+#if defined(__aarch64__) || defined(__arm__)
+#define NT_QMV_PAUSE() __asm__ __volatile__("yield" ::: "memory")
+#elif defined(__x86_64__) || defined(__i386__)
+#define NT_QMV_PAUSE() __asm__ __volatile__("pause" ::: "memory")
+#else
+#define NT_QMV_PAUSE() ((void)0)
+#endif
+
+static int nt_qmv_spin(void) {
+    static int spin = -1;
+    if (spin < 0) {
+        const char *e = getenv("NT_QMV_SPIN");
+        spin = (e && atoi(e) >= 0) ? atoi(e) : 20000;
+    }
+    return spin;
+}
 static pthread_once_t g_nt_qpool_i8_once = PTHREAD_ONCE_INIT;
 static pthread_mutex_t g_nt_qpool_i8_dispatch_mu = PTHREAD_MUTEX_INITIALIZER;
 
 /* Same on-demand hand-out as the f32 pool above; see the note there for why. */
 static void nt_qpool_i8_drain(void) {
+    /* The job is published before the generation bump that let anyone in here, so it can be
+     * read without a lock; only the row cursor is contended, and that is one atomic. */
+    nt_qjob_i8 j = g_nt_qpool_i8.shared;
+    int hi = g_nt_qpool_i8.hi, ch = g_nt_qpool_i8.chunk;
     for (;;) {
-        pthread_mutex_lock(&g_nt_qpool_i8.mu);
-        int r0 = g_nt_qpool_i8.next, hi = g_nt_qpool_i8.hi, ch = g_nt_qpool_i8.chunk;
-        nt_qjob_i8 j = g_nt_qpool_i8.shared;
-        if (r0 < hi) g_nt_qpool_i8.next = r0 + ch;
-        pthread_mutex_unlock(&g_nt_qpool_i8.mu);
+        int r0 = __atomic_fetch_add(&g_nt_qpool_i8.next, ch, __ATOMIC_RELAXED);
         if (r0 >= hi) return;
         int r1 = r0 + ch; if (r1 > hi) r1 = hi;
         j.fn(j.out, j.Wq, j.qa, j.da, r0, r1, j.k);
@@ -6086,35 +6115,33 @@ static void nt_qpool_i8_drain(void) {
 }
 
 static void *nt_qpool_i8_loop(void *p) {
-    int id = *(int *)p;
-    long seen = 0;
-    pthread_mutex_lock(&g_nt_qpool_i8.mu);
+    (void)p;
+    int seen = 0;
     for (;;) {
-        while (!g_nt_qpool_i8.shutdown && g_nt_qpool_i8.generation == seen)
-            pthread_cond_wait(&g_nt_qpool_i8.cv_work, &g_nt_qpool_i8.mu);
-        if (g_nt_qpool_i8.shutdown) break;
-
-        seen = g_nt_qpool_i8.generation;
-        int has_job = id < g_nt_qpool_i8.active;
-        pthread_mutex_unlock(&g_nt_qpool_i8.mu);
-
-        if (has_job) nt_qpool_i8_drain();
-
-        pthread_mutex_lock(&g_nt_qpool_i8.mu);
-        if (has_job) {
-            g_nt_qpool_i8.done++;
-            if (g_nt_qpool_i8.done >= g_nt_qpool_i8.active)
-                pthread_cond_signal(&g_nt_qpool_i8.cv_done);
+        int spins = 0;
+        for (;;) {
+            if (__atomic_load_n(&g_nt_qpool_i8.shutdown, __ATOMIC_RELAXED)) return NULL;
+            if (__atomic_load_n(&g_nt_qpool_i8.generation, __ATOMIC_ACQUIRE) != seen) break;
+            if (++spins < nt_qmv_spin()) { NT_QMV_PAUSE(); continue; }
+            /* Budget spent: park. The generation is re-read under the lock the dispatcher
+             * broadcasts under, so a job arriving in this window cannot be missed. */
+            pthread_mutex_lock(&g_nt_qpool_i8.mu);
+            if (__atomic_load_n(&g_nt_qpool_i8.generation, __ATOMIC_ACQUIRE) == seen &&
+                !__atomic_load_n(&g_nt_qpool_i8.shutdown, __ATOMIC_RELAXED))
+                pthread_cond_wait(&g_nt_qpool_i8.cv_work, &g_nt_qpool_i8.mu);
+            pthread_mutex_unlock(&g_nt_qpool_i8.mu);
+            spins = 0;
         }
+        seen = __atomic_load_n(&g_nt_qpool_i8.generation, __ATOMIC_ACQUIRE);
+        nt_qpool_i8_drain();
+        __atomic_fetch_sub(&g_nt_qpool_i8.busy, 1, __ATOMIC_RELEASE);
     }
-    pthread_mutex_unlock(&g_nt_qpool_i8.mu);
-    return NULL;
 }
 
 static void nt_qpool_i8_shutdown(void) {
     pthread_mutex_lock(&g_nt_qpool_i8.mu);
-    g_nt_qpool_i8.shutdown = 1;
-    g_nt_qpool_i8.generation++;
+    __atomic_store_n(&g_nt_qpool_i8.shutdown, 1, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&g_nt_qpool_i8.generation, 1, __ATOMIC_RELEASE);
     pthread_cond_broadcast(&g_nt_qpool_i8.cv_work);
     pthread_mutex_unlock(&g_nt_qpool_i8.mu);
     for (int i = 0; i < g_nt_qpool_i8.nthreads; i++)
@@ -6122,10 +6149,12 @@ static void nt_qpool_i8_shutdown(void) {
 }
 
 static void nt_qpool_i8_init_once(void) {
-    int nt = nt_qmv_host_threads(NT_QMV_MAX_THREADS);
+    /* One fewer than the cores we may use: the dispatching thread drains alongside them, so
+     * a pool sized to the core count puts one thread too many on the cluster and every
+     * matvec pays for the context switch. */
+    int nt = nt_qmv_host_threads(NT_QMV_MAX_THREADS) - 1;
     for (int i = 0; i < nt; i++) {
-        g_nt_qpool_i8.ids[i] = i;
-        if (pthread_create(&g_nt_qpool_i8.threads[i], NULL, nt_qpool_i8_loop, &g_nt_qpool_i8.ids[i]) != 0)
+        if (pthread_create(&g_nt_qpool_i8.threads[i], NULL, nt_qpool_i8_loop, NULL) != 0)
             break;
         g_nt_qpool_i8.nthreads++;
     }
@@ -6143,23 +6172,28 @@ static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
     int lo = jobs[0].r0, hi = jobs[worker_nt].r1;
     int chunk = (hi - lo) / (nt * 16); if (chunk < 1) chunk = 1;
 
-    pthread_mutex_lock(&g_nt_qpool_i8_dispatch_mu);
-    pthread_mutex_lock(&g_nt_qpool_i8.mu);
+    pthread_mutex_lock(&g_nt_qpool_i8_dispatch_mu);   /* one dispatch in flight at a time */
     g_nt_qpool_i8.shared = jobs[0];
-    g_nt_qpool_i8.lo = lo; g_nt_qpool_i8.hi = hi; g_nt_qpool_i8.chunk = chunk;
-    g_nt_qpool_i8.next = lo;
-    g_nt_qpool_i8.active = worker_nt;
-    g_nt_qpool_i8.done = 0;
-    g_nt_qpool_i8.generation++;
+    g_nt_qpool_i8.hi = hi; g_nt_qpool_i8.chunk = chunk;
+    __atomic_store_n(&g_nt_qpool_i8.next, lo, __ATOMIC_RELAXED);
+    /* Every pool thread answers a dispatch, so every pool thread decrements — counting only
+     * the ones this call asked for leaves the extras subtracting from the NEXT dispatch's
+     * total, which lets a caller believe the job is done while a worker is still inside the
+     * kernel reading the activation buffer it is about to free. A row range with no chunks
+     * left costs one atomic and returns. */
+    __atomic_store_n(&g_nt_qpool_i8.busy, g_nt_qpool_i8.nthreads, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&g_nt_qpool_i8.generation, 1, __ATOMIC_RELEASE);
+    pthread_mutex_lock(&g_nt_qpool_i8.mu);            /* uncontended; wakes anyone parked */
     pthread_cond_broadcast(&g_nt_qpool_i8.cv_work);
     pthread_mutex_unlock(&g_nt_qpool_i8.mu);
 
-    nt_qpool_i8_drain();                 /* the caller is a worker too */
+    nt_qpool_i8_drain();                              /* the caller is a worker too */
 
-    pthread_mutex_lock(&g_nt_qpool_i8.mu);
-    while (g_nt_qpool_i8.done < g_nt_qpool_i8.active)
-        pthread_cond_wait(&g_nt_qpool_i8.cv_done, &g_nt_qpool_i8.mu);
-    pthread_mutex_unlock(&g_nt_qpool_i8.mu);
+    int spins = 0;
+    while (__atomic_load_n(&g_nt_qpool_i8.busy, __ATOMIC_ACQUIRE) > 0) {
+        if (++spins < nt_qmv_spin()) { NT_QMV_PAUSE(); continue; }
+        sched_yield(); spins = 0;
+    }
     pthread_mutex_unlock(&g_nt_qpool_i8_dispatch_mu);
     return 0;
 }

@@ -541,11 +541,13 @@ int nt_qmatvec_i8_rows(float *out, const uint8_t *Wq, int dtype,
 // Threading floor for the packed matvecs, in weight elements (m*k). Below it a call stays
 // single-threaded, because fan-out costs more than it saves on small shapes. Non-OpenMP
 // builds reuse persistent pthread workers by default (`NT_QMV_POOL=0` restores per-call
-// pthread create/join); OpenMP builds reuse the caller/runtime team. The default 4M was
-// measured on a 360M-class decoder; other shapes differ by an order of magnitude — a 30B
-// MoE expert is 768x2048 = 1.57M and sits UNDER the default, so an engine that does not
-// lower the floor runs every expert on one core. Consumers set it once at startup;
-// NT_QMV_THREAD_MIN still works and is read only if the API was never called.
+// pthread create/join); OpenMP builds reuse the caller/runtime team. The default is 64K
+// elements: with the atomic, spin-first pool a dispatch costs around five microseconds, and
+// an Exynos 1580 decoding Qwen2.5-0.5B reads 35.0 t/s at this floor against 27.3 at the 4M
+// it used to be — everything below 64K measures the same, so the default sits where the
+// curve flattens. A caller that knows its shapes should still say so: a 30B MoE expert is
+// 768x2048 = 1.57M and an engine that fuses experts may want the floor higher rather than
+// lower. NT_QMV_THREAD_MIN still works and is read only if the API was never called.
 void nt_qmv_set_thread_min(long elems);
 
 // int8 dynamic-activation-quant matvec — the llama.cpp / MNN fast path. Quantizes
