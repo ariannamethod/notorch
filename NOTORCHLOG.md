@@ -13,6 +13,97 @@ Newest entries on top.
 
 ---
 
+## 2026-08-23 — SMMLA: the instruction nothing else on this phone uses
+
+The batched kernels were bound by feeding, not by arithmetic. Doubling the SDOTs at constant
+loads measured free on an Exynos 1580 — 7.7 ms against 7.9 for the same shape — which says
+the four 16-byte activation loads per 64 multiply-accumulates were the constraint. SMMLA
+multiplies two 2x8 int8 matrices in a single instruction: two weight rows in one operand,
+two activations in the other, four dot products of eight retired at once. Each activation
+half is then read once and serves two rows, and the bytes per MAC halve (`4ecf6f6`).
+
+All five dtypes take it, with the odd row and the odd activation handed back to the SDOT
+path. Isolated at m=2048 k=4096 n=32, measured against the SDOT batched kernel in the same
+thermal window: Q4_0 5.4 ms against 9.1, 1.66x. End to end on four big cores, 241-token
+prompt: Qwen2.5-1.5B Q4_0 prefill 33.0 / 33.2 t/s against 27.8 / 25.8 / 25.5; Qwen2.5-0.5B
+Q4_K_M 81.9 / 81.9 / 81.9 against 72.1 / 72.4 / 71.9. llama.cpp on those two files does 26.5
+and 88.6.
+
+**A bit-identity trap worth naming.** Q4_K and Q6_K compute a product chain and an
+accumulate that the compiler is free to contract into fused instructions, and it chose
+differently in the SDOT kernel and the SMMLA one — same arithmetic, last bit apart, 2358 of
+4096 outputs flagged. Neither result is wrong and no tolerance would have caught it as a
+problem; the test compares bits, and the fix is to stop leaving the choice to the compiler.
+`nt_q4k_acc` and `nt_q6k_acc` name both fused operations explicitly, so every kernel rounds
+where those lines say it rounds. `tests/test_qmatmul.c` is now 34 shapes across five dtypes,
+including odd row counts, all identical to the per-token path.
+
+Where this leaves the phone, on a 241-token prompt: prefill on the 0.5B went 20.85 → 26.2 →
+48.5 → 59.3 → 69.4 → 81.9 t/s across the last three days, against llama.cpp's 88.6 on the
+same weights, and on the 1.5B Q4_0 it is 33.2 against 26.5 — past it. Decode is untouched at
+21-22 t/s against 45.6 and is the next thing worth a plan, not a patch: it is one activation
+against the whole model, which is the shape SMMLA cannot help.
+
+---
+
+## 2026-08-22 — a section profiler, and the formats the file was actually made of
+
+`NT_PROFILE=1` on `infer_llama` (`e32a6f1`) accumulates wall time around ten sections of
+the forward — embedding, norms, qkv, rope and cache writes, attention, projections, FFN
+matmuls, SiLU, residuals, head — and prints prefill and decode separately. Unset, each
+call is a predicted branch on a static int.
+
+It was asked because batching had removed the weight traffic and left a guess in its
+place, and it answered against the guess. Qwen2.5-0.5B Q4_K_M, 241-token prompt, four big
+cores of an Exynos 1580: of 8446 ms, the FFN matmuls take 5719, qkv 1008, the attention
+projection 781, attention itself 709. Norms, rope, SiLU, residuals and the head together
+are 229 ms — 2.7 percent. Nothing around the kernels is worth touching.
+
+What was worth touching is which kernels run at all (`292be7a`). A file called Q4_K_M is
+mostly not Q4_K: this model's hidden size is 896, no K-quant block divides it, and
+`llama_model_loader` reports 133 tensors q5_0, 13 q8_0, 12 q4_K, 12 q6_K. The batched path
+covered 12 of 170 tensors, which is why the Q4_K work measured 8 percent end to end while
+its isolated kernel measured 3.3x.
+
+Q5_0 and Q8_0 now have batched kernels. Q5_0 gains most — its unpack is two table loads,
+an AND, a shift and two ORs before a single dot, now paid once per tile rather than once
+per token — and its -16 bias lifts out as `16*SUM(qa)`, the same lift Q4_K's affine
+minimum takes, so both read the per-block activation sum the call already builds.
+
+Isolated at m=2048 k=4096 n=32: Q5_0 7.2 ms batched against 34.7 per token (4.79x), Q8_0
+6.8 against 21.6 (3.18x). End to end, same model and prompt, three interleaved repeats:
+prefill 52.0 / 47.2 / 46.4 t/s against 27.1 / 25.4 / 24.6 — 1.9x, and 55 percent of
+llama.cpp's 88.6 on the same file where it was 30. `tests/test_qmatmul.c` covers 21 shapes
+across four dtypes, all bit-identical to the per-token path, including 4864x896 where k is
+not a multiple of 256.
+
+Q6_K followed (`da1802d`), the last format still walking the prompt one token at a time and
+the holder of half the down projections in this file. Its sixteen integer sub-block sums are
+kept per activation and drained afterwards in ascending order — the order the per-token
+kernel adds them in — because folding each into the accumulator as it appears would be the
+same arithmetic in a different order, and a different order is a different float. Isolated:
+11.1 ms batched against 35.2 per token, 3.16x. End to end: prefill 61.7 / 58.7 / 57.4 t/s
+against 51.9 / 50.7 / 48.9.
+
+With the matmuls no longer dominating, attention surfaced as the second line of the profile
+— 725 ms of 3861 — still scalar over head_dim. Four lanes with a scalar tail (`1ceb044`):
+prefill 70.3 / 69.6 / 68.4 t/s against 62.7 / 59.8 / 59.3, the section down to 218 ms.
+Decode is unchanged within noise; its KV is short and attention was never its cost.
+
+**That last one is not bit-identical and must not be read as if it were.** Four partial sums
+are a different summation order from one running sum, and greedy generation is a chain of
+argmaxes over numbers that moved: the 24-token continuation of "The capital of France is"
+now ends "It is also the capital of the" where it read "It is located in the south of".
+The matmul kernels stay bit-exact and their test still asserts equality — this is attention
+alone.
+
+The line as a whole, on this file: prefill 20.85 t/s before any of it, 69.4 after, against
+llama.cpp's 88.6 on the same weights. The profile now reads 3331 ms as 2438 ms of FFN
+matmul, 278 qkv, 218 attention, 164 projection, 136 SiLU. Measured on the phone, one node,
+four cores; other hardware will read differently.
+
+---
+
 ## 2026-08-22 — notorch answers to `from notorch import`
 
 `make shared` builds libnotorch.so (dylib on macOS), and `python/notorch.py` is

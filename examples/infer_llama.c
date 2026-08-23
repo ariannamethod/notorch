@@ -14,6 +14,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 
 #ifdef USE_BLAS
   #ifdef ACCELERATE
@@ -84,11 +88,70 @@ static void mm_t(float *C, const float *A, const float *B, int m, int k, int n) 
 #endif
 }
 
+/* ── Section timing ──────────────────────────────────────────────────────────
+ * Off unless NT_PROFILE is set in the environment, because the answer to "where does
+ * prefill go" stopped being obvious once the weights were read once per chunk instead of
+ * once per token: the matmuls are no longer bandwidth-bound and everything scalar around
+ * them — norms, rope, attention, SiLU over n x FFN — is suddenly worth naming. Two
+ * timestamps per section per chunk, so at 24 layers the clock reads cost nothing next to
+ * the work they bracket, and with the flag unset each call is one predicted branch. */
+enum { PF_EMBED, PF_NORM, PF_QKV, PF_ROPE, PF_ATTN, PF_PROJ, PF_FFN, PF_SILU, PF_RESID,
+       PF_HEAD, PF_N };
+static const char *pf_name[PF_N] = { "embed", "rmsnorm", "qkv+bias", "rope+kv", "attention",
+                                     "attn proj", "ffn matmul", "silu", "residual", "head" };
+static double pf_acc[PF_N];
+static int pf_on = 0;
+
+static double pf_now(void) {
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
+static double pf_mark(void) { return pf_on ? pf_now() : 0.0; }
+static void pf_add(int slot, double t0) { if (pf_on) pf_acc[slot] += pf_now() - t0; }
+static void pf_reset(void) { for (int i = 0; i < PF_N; i++) pf_acc[i] = 0.0; }
+static void pf_report(const char *phase, double wall_ms) {
+    if (!pf_on) return;
+    double sum = 0;
+    for (int i = 0; i < PF_N; i++) sum += pf_acc[i];
+    printf("\n[profile] %s — %.0f ms wall, %.0f ms accounted\n", phase, wall_ms, sum * 1e3);
+    for (int i = 0; i < PF_N; i++)
+        if (pf_acc[i] > 0)
+            printf("  %-11s %8.0f ms  %5.1f%%\n", pf_name[i], pf_acc[i] * 1e3,
+                   wall_ms > 0 ? pf_acc[i] * 1e5 / wall_ms : 0.0);
+}
+
 /* out[rows] = W[rows,cols] @ x[cols] — the only matmul shape decode ever asks for. */
 static void qmv(float *out, const wt *w, const float *x) {
     if (w->use_i8 && nt_qmatvec_i8(out, w->q, w->dtype, x, w->rows, w->cols) == 0) return;
     if (w->q && nt_qmatvec(out, w->q, w->dtype, x, w->rows, w->cols) == 0) return;
     mm_t(out, x, w->f32, 1, w->cols, w->rows);
+}
+
+/* Attention reads the KV cache, not the weights, so batching left it untouched — and once
+ * the matmuls stopped dominating it surfaced as the second line of the profile, 725 ms of
+ * 3861. Both loops are f32 over head_dim, which is 64 or 128 in every model here and
+ * always a multiple of four, so four lanes cover them with a scalar tail for anything odd.
+ * The four partial sums make this a different summation order from the scalar loop, hence
+ * a different last bit; that is a change to attention's arithmetic, not to its meaning. */
+static float dot_f32(const float *a, const float *b, int n) {
+    int i = 0; float s = 0.0f;
+#if defined(__ARM_NEON)
+    float32x4_t acc = vdupq_n_f32(0.0f);
+    for (; i + 4 <= n; i += 4) acc = vfmaq_f32(acc, vld1q_f32(a + i), vld1q_f32(b + i));
+    s = vaddvq_f32(acc);
+#endif
+    for (; i < n; i++) s += a[i] * b[i];
+    return s;
+}
+
+static void axpy_f32(float *y, float alpha, const float *x, int n) {
+    int i = 0;
+#if defined(__ARM_NEON)
+    float32x4_t va = vdupq_n_f32(alpha);
+    for (; i + 4 <= n; i += 4)
+        vst1q_f32(y + i, vfmaq_f32(vld1q_f32(y + i), va, vld1q_f32(x + i)));
+#endif
+    for (; i < n; i++) y[i] += alpha * x[i];
 }
 
 static void rmsnorm(float *out, const float *x, const float *w, int n, float eps) {
@@ -307,6 +370,7 @@ static void llama_forward(llama_model* m, kv_cache* kv, const int *tokens, int n
     /* Rows of the embedding table, decoded where they lie. For a 1.5B Qwen that table is
      * the largest tensor in the file and expanding it would cost 933 MB to read 1536
      * floats per token. */
+    double pft = pf_mark();
     float *x = (float*)calloc((size_t)n * E, sizeof(float));
     for (int j = 0; j < n; j++) {
         float *xj = x + (long)j * E;
@@ -314,6 +378,7 @@ static void llama_forward(llama_model* m, kv_cache* kv, const int *tokens, int n
         else if (gguf_dequant_row(m->gf, m->emb_ti, (uint64_t)tokens[j], xj) != 0)
             memset(xj, 0, E * sizeof(float));
     }
+    pf_add(PF_EMBED, pft);
 
     float *xn = (float*)calloc((size_t)n * E, sizeof(float));
     float *q_all = (float*)calloc((size_t)n * Q_DIM, sizeof(float));
@@ -325,9 +390,12 @@ static void llama_forward(llama_model* m, kv_cache* kv, const int *tokens, int n
     float *ffn_out = (float*)calloc((size_t)n * E, sizeof(float));
 
     for (int l = 0; l < m->n_layers; l++) {
+        pft = pf_mark();
         for (int j = 0; j < n; j++)
             rmsnorm(xn + (long)j * E, x + (long)j * E, m->layers[l].attn_norm, E, eps);
+        pf_add(PF_NORM, pft);
 
+        pft = pf_mark();
         qmm(q_all, &m->layers[l].wq, xn, n);
         qmm(k_new, &m->layers[l].wk, xn, n);
         qmm(v_new, &m->layers[l].wv, xn, n);
@@ -336,7 +404,9 @@ static void llama_forward(llama_model* m, kv_cache* kv, const int *tokens, int n
             add_bias(k_new + (long)j * KVD, m->layers[l].k_bias, KVD);
             add_bias(v_new + (long)j * KVD, m->layers[l].v_bias, KVD);
         }
+        pf_add(PF_QKV, pft);
 
+        pft = pf_mark();
         long base = (long)l * kv->max_seq * KVD;
         for (int j = 0; j < n; j++) {
             int pos = pos0 + j;
@@ -348,8 +418,10 @@ static void llama_forward(llama_model* m, kv_cache* kv, const int *tokens, int n
             memcpy(kv->k + base + (long)pos * KVD, kj, KVD * sizeof(float));
             memcpy(kv->v + base + (long)pos * KVD, v_new + (long)j * KVD, KVD * sizeof(float));
         }
+        pf_add(PF_ROPE, pft);
 
         // GQA attention, causal: row j sees positions 0..pos0+j, all already in the cache
+        pft = pf_mark();
         float scale = 1.0f / sqrtf((float)HD);
         memset(attn_out, 0, (size_t)n * Q_DIM * sizeof(float));
         for (int j = 0; j < n; j++) {
@@ -359,36 +431,49 @@ static void llama_forward(llama_model* m, kv_cache* kv, const int *tokens, int n
                 float *q = q_all + (long)j * Q_DIM + h * HD;
                 float *scores = (float*)calloc(pos + 1, sizeof(float));
                 for (int t = 0; t <= pos; t++) {
-                    float *kt = kv->k + base + (long)t * KVD + kv_h * HD;
-                    float dot = 0;
-                    for (int d = 0; d < HD; d++) dot += q[d] * kt[d];
-                    scores[t] = dot * scale;
+                    const float *kt = kv->k + base + (long)t * KVD + kv_h * HD;
+                    scores[t] = dot_f32(q, kt, HD) * scale;
                 }
                 softmax(scores, pos + 1);
                 float *out_h = attn_out + (long)j * Q_DIM + h * HD;
                 for (int t = 0; t <= pos; t++) {
-                    float *vt = kv->v + base + (long)t * KVD + kv_h * HD;
-                    for (int d = 0; d < HD; d++) out_h[d] += scores[t] * vt[d];
+                    const float *vt = kv->v + base + (long)t * KVD + kv_h * HD;
+                    axpy_f32(out_h, scores[t], vt, HD);
                 }
                 free(scores);
             }
         }
+        pf_add(PF_ATTN, pft);
 
         // Output projection + residual
+        pft = pf_mark();
         qmm(ffn_out, &m->layers[l].wo, attn_out, n);
+        pf_add(PF_PROJ, pft);
+        pft = pf_mark();
         for (long i = 0; i < (long)n * E; i++) x[i] += ffn_out[i];
+        pf_add(PF_RESID, pft);
 
         // FFN: SiLU-gated
+        pft = pf_mark();
         for (int j = 0; j < n; j++)
             rmsnorm(xn + (long)j * E, x + (long)j * E, m->layers[l].ffn_norm, E, eps);
+        pf_add(PF_NORM, pft);
+        pft = pf_mark();
         qmm(ffn_gate, &m->layers[l].wgate, xn, n);
         qmm(ffn_up, &m->layers[l].wup, xn, n);
+        pf_add(PF_FFN, pft);
+        pft = pf_mark();
         for (long i = 0; i < (long)n * FFN; i++) {
             float g = ffn_gate[i];
             ffn_gate[i] = (g / (1.0f + expf(-g))) * ffn_up[i];
         }
+        pf_add(PF_SILU, pft);
+        pft = pf_mark();
         qmm(ffn_out, &m->layers[l].wdown, ffn_gate, n);
+        pf_add(PF_FFN, pft);
+        pft = pf_mark();
         for (long i = 0; i < (long)n * E; i++) x[i] += ffn_out[i];
+        pf_add(PF_RESID, pft);
     }
 
     /* logits == NULL asks for the KV cache alone, and even when asked for they are produced
@@ -396,9 +481,11 @@ static void llama_forward(llama_model* m, kv_cache* kv, const int *tokens, int n
      * rows against 896 for a 0.5B Qwen — so running it at every prompt position spends a
      * tenth of the prefill on distributions nobody reads. */
     if (logits) {
+        pft = pf_mark();
         rmsnorm(xn, x + (long)(n - 1) * E, m->out_norm, E, eps);
         const wt *lm_head = m->has_output_weight ? &m->out_weight : &m->tok_emb;
         qmv(logits, lm_head, xn);
+        pf_add(PF_HEAD, pft);
     }
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
@@ -488,11 +575,14 @@ int main(int argc, char **argv) {
      * floats, and a chunk of 32 is where the weight traffic is already amortized while the
      * working set still fits the caches. The KV cache carries the context across chunks,
      * so a chunk sees every position before it exactly as a single pass would. */
+    pf_on = getenv("NT_PROFILE") != NULL;
     for (int i = 0; i < n_tok; i += NT_PREFILL_CHUNK) {
         int cn = n_tok - i; if (cn > NT_PREFILL_CHUNK) cn = NT_PREFILL_CHUNK;
         llama_forward(model, kv, tokens + i, cn, i, (i + cn == n_tok) ? logits : NULL);
     }
     double prefill_ms = now_ms() - gen0;
+    pf_report("prefill", prefill_ms);
+    pf_reset();
 
     printf("%s", prompt);
     fflush(stdout);
@@ -523,6 +613,7 @@ int main(int argc, char **argv) {
     printf("\n\n── prefill: %d tok %.0fms (%.1f t/s) | decode: %d tok %.0fms (%.1f t/s) ──\n",
            n_tok, prefill_ms, n_tok * 1000.0 / prefill_ms,
            gen, total_ms - prefill_ms, gen > 0 ? gen * 1000.0 / (total_ms - prefill_ms) : 0);
+    pf_report("decode", total_ms - prefill_ms);
 
     if (tok) bpe_free(tok);
     free(logits); kv_free(kv); llama_free(model); gguf_close(gf);
