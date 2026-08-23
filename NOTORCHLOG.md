@@ -13,6 +13,55 @@ Newest entries on top.
 
 ---
 
+## 2026-08-23 — decode: a mutex per row chunk, and a half-float decoded in software
+
+Prefill had been the whole story for three days and decode had not moved: 22.9 t/s on an
+Exynos 1580 against llama.cpp's 45.6 for the same Qwen2.5-0.5B Q4_K_M. Decode is 168
+matvecs per token on a 24-layer model, so it is the shape where every per-call cost is paid
+168 times, and the profile said 94 percent of it was inside the matvecs.
+
+**The fan-out cost more than the work it split** (`8646fdd`). Measured at the shapes decode
+asks for: 896x896 took 197.9 us on one core and 197.8 on four — a speedup of 1.00 — and
+128x896 went from 35.4 us to 83.4, twice as slow threaded as not. Every chunk claim took the
+pool mutex, so four workers serialised sixty-four times per dispatch; the claim is now one
+fetch_add and the job is read without a lock, published before the generation bump that lets
+anyone see it. Workers were woken through a condvar, a futex wake and a scheduler round-trip
+each, seventy-three times per token; they now spin on the generation counter first, with the
+condvar underneath so an idle phone still sleeps (`NT_QMV_SPIN` sets the budget). The pool
+also sized itself to the core count while the dispatching thread drains alongside it, which
+put five threads on four cores — one fewer now. After: 896x896 at 3.59x, per-call overhead
+148 us -> 5.3 us.
+
+**Which inverted the threading floor.** It existed because dispatches were expensive. Swept
+on decode: 27.3 t/s at the old 4M, 33.5 at 512K, 35.0 at 64K, flat below. The default is 64K.
+
+**The half float** (`9d351bf`). Every packed kernel converts one f16 scale per block, so
+`nt_f16_to_f32` sits in the innermost loop of every matvec in the library — about eleven
+million calls per decoded token. It was a branch, a shift chain and a while loop for
+subnormals; aarch64 has done it in one FCVT since armv8. 8.4 percent of decode for two
+lines, on every dtype at once.
+
+Also in that commit: the activation block sums move out of the kernels, where the chunked
+dispatch had them rebuilt once per row chunk, to the quantization that produces the bytes
+they sum. It measures neutral — the sums are two SDOTs against an activation already in L1 —
+and stays because it removes the k <= 65536 ceiling the stack-held version imposed.
+
+**What the experiments said no to**, because a log of only the things that worked teaches
+the wrong lesson: software prefetch of the weight stream, swept 4 / 8 / 16 / 32 blocks
+ahead, changed nothing — the hardware prefetcher already had it. Pinning the activation
+address so every load hit L1 bought 1.7 percent, so activation traffic is not the
+constraint and pairing rows to share it would not pay. Removing the float tail entirely
+measured slower than keeping it. Removing the Q5_0 high-bit expansion entirely: no change.
+
+Decode of Qwen2.5-0.5B Q4_K_M, 96 tokens, four big cores: **38.9 / 38.8 / 39.1 t/s against
+22.9 at the start of the day** — 68 percent, and 85 percent of llama.cpp where it was 50.
+In bandwidth: 14.2 GiB/s of the 17.98 this phone can stream, against 12.9 before. Pinning
+the weights in L1 now buys 23 percent where it bought 8, which is the same statement from
+the other side: the kernels stopped being the constraint and the memory bus started.
+Prefill is unchanged at 82.6 t/s, and the greedy continuation is unchanged.
+
+---
+
 ## 2026-08-23 — SMMLA: the instruction nothing else on this phone uses
 
 The batched kernels were bound by feeding, not by arithmetic. Doubling the SDOTs at constant
