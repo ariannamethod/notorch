@@ -112,6 +112,11 @@ gguf_file* gguf_open(const char* path) {
         }
     }
 
+    /* Where the key-value section ends is where a rewriter has to resume: the metadata can
+     * be copied byte for byte, but every tensor info after it carries a type and an offset
+     * that quantization changes. */
+    gf->kv_end = (uint64_t)ftell(f);
+
     // Extract architecture params
     for (int i = 0; i < gf->n_kv_parsed; i++) {
         gguf_kv* kv = &gf->kv[i];
