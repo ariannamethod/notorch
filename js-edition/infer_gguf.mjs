@@ -74,15 +74,26 @@ class GgufBPE {
 }
 
 // ── model load ──────────────────────────────────────────────────────────────
-function loadModel(path) {
-  const buf = readFileSync(path);
-  let ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-  // NT_WORKERS=N puts the weights in shared memory so a pool can reach them.
-  if (process.env.NT_WORKERS) ab = toShared(ab);
+async function loadModel(path) {
+  let ab, base = 0, wasm = null;
+  // NT_WASM=1 reads the file into the wasm module's own linear memory, because
+  // a wasm kernel can only read the address space it was handed. That memory is
+  // shared, so it is also what a worker pool wants, and nothing is copied twice.
+  if (process.env.NT_WASM === '1') {
+    const { WasmKernels } = await import('./notorch-wasm.mjs');
+    wasm = await WasmKernels.fromModelFile(path);
+    ab = wasm.memory.buffer;
+    base = wasm.modelBase;
+  } else {
+    const buf = readFileSync(path);
+    ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    // NT_WORKERS=N puts the weights in shared memory so a pool can reach them.
+    if (process.env.NT_WORKERS) ab = toShared(ab);
+  }
   // Packed by default: the quantized weights stay in their GGUF blocks instead
   // of being expanded to f32 on load. NT_PACKED=0 forces the old dense path —
   // the generation is identical either way, which is what the gate checks.
-  const { metadata, tensors } = loadGGUF(ab, { packed: process.env.NT_PACKED !== '0' });
+  const { metadata, tensors } = loadGGUF(ab, { packed: process.env.NT_PACKED !== '0', base });
   const arch = metadata.get('general.architecture');
   const g = (k, d) => { const v = metadata.get(`${arch}.${k}`); return v === undefined ? d : v; };
   const m = {
@@ -104,6 +115,7 @@ function loadModel(path) {
   m.tok = new GgufBPE(tokens, merges);
   m.eos = metadata.get('tokenizer.ggml.eos_token_id');
   m.weightsBuffer = ab;
+  m.wasm = wasm;
   return m;
 }
 
@@ -142,41 +154,66 @@ function forwardLastLogits(nt, m, ids, caches, pos) {
   return nt.get(logitsIdx).data;
 }
 
+// The loader and the forward are exported because the gates need a real model
+// run and there is no second copy of this transformer worth keeping.
+export { loadModel, forwardLastLogits };
+
 // ── main ─────────────────────────────────────────────────────────────────────
-const [, , path, prompt = 'The capital of France is', maxTokStr = '6', tempStr = '0'] = process.argv;
-const maxTok = parseInt(maxTokStr), temp = parseFloat(tempStr);
-const m = loadModel(path);
-console.error(`model: arch=${m.arch} E=${m.E} H=${m.H} KV=${m.KV} HD=${m.HD} FFN=${m.FFN} L=${m.L} V=${m.vocab} rope=${m.ropeBase} eos=${m.eos}`);
-const nt = new Notorch();
-if (process.env.NT_WORKERS) {
-  const { WorkerPool } = await import('./notorch-workers.mjs');
-  let maxM = 0, maxK = 0;
-  for (const [, t] of m.tensors) {
-    if (!t.packed || t.shape.length < 2) continue;
-    if (t.shape[0] > maxM) maxM = t.shape[0];
-    if (t.shape[1] > maxK) maxK = t.shape[1];
+if (import.meta.main) {
+  const [, , path, prompt = 'The capital of France is', maxTokStr = '6', tempStr = '0'] = process.argv;
+  const maxTok = parseInt(maxTokStr), temp = parseFloat(tempStr);
+  const m = await loadModel(path);
+  console.error(`model: arch=${m.arch} E=${m.E} H=${m.H} KV=${m.KV} HD=${m.HD} FFN=${m.FFN} L=${m.L} V=${m.vocab} rope=${m.ropeBase} eos=${m.eos}`);
+  const nt = new Notorch();
+  if (m.wasm) {
+    nt.wasm = m.wasm;
+    console.error(`wasm: SIMD kernels attached, model at byte ${m.wasm.modelBase}`);
   }
-  nt.pool = await WorkerPool.create(m.weightsBuffer, maxM, maxK, parseInt(process.env.NT_WORKERS));
-  console.error(`pool: ${nt.pool.n} workers`);
-}
-const ids = m.tok.encode(prompt);
-console.error(`prompt "${prompt}" -> ${ids.length} tokens`);
-let out = '';
-const caches = Array.from({ length: m.L }, () => new KVCache(ids.length + maxTok + 1, m.KV * m.HD));
-let pos = 0;
-let logits = forwardLastLogits(nt, m, ids, caches, pos);   // prefill the prompt
-pos += ids.length;
-for (let step = 0; step < maxTok; step++) {
-  let next = 0; for (let i = 1; i < logits.length; i++) if (logits[i] > logits[next]) next = i;
-  if (next === m.eos) break;
-  ids.push(next);
-  out += m.tok.decode([next]);
-  process.stderr.write('.');
-  if (step + 1 < maxTok) {
-    logits = forwardLastLogits(nt, m, [next], caches, pos);   // one token, cache does the rest
-    pos += 1;
+  // NT_I8=1 is the same int8 arithmetic without the SIMD — the middle rung, so
+  // the wasm speedup can be split into algorithm and instruction.
+  if (process.env.NT_I8 === '1') { nt.i8 = true; console.error('i8: JS integer kernels'); }
+  if (process.env.NT_WORKERS) {
+    const { WorkerPool } = await import('./notorch-workers.mjs');
+    let maxM = 0, maxK = 0;
+    for (const [, t] of m.tensors) {
+      if (!t.packed || t.shape.length < 2) continue;
+      if (t.shape[0] > maxM) maxM = t.shape[0];
+      if (t.shape[1] > maxK) maxK = t.shape[1];
+    }
+    nt.pool = await WorkerPool.create(m.weightsBuffer, maxM, maxK, parseInt(process.env.NT_WORKERS));
+    console.error(`pool: ${nt.pool.n} workers`);
   }
+  const ids = m.tok.encode(prompt);
+  const promptLen = ids.length;
+  console.error(`prompt "${prompt}" -> ${ids.length} tokens`);
+  let out = '';
+  const caches = Array.from({ length: m.L }, () => new KVCache(ids.length + maxTok + 1, m.KV * m.HD));
+  let pos = 0;
+  const t0 = performance.now();
+  let logits = forwardLastLogits(nt, m, ids, caches, pos);   // prefill the prompt
+  const tPrefill = performance.now() - t0;
+  pos += ids.length;
+  let decoded = 0;
+  const t1 = performance.now();
+  for (let step = 0; step < maxTok; step++) {
+    let next = 0; for (let i = 1; i < logits.length; i++) if (logits[i] > logits[next]) next = i;
+    if (next === m.eos) break;
+    ids.push(next);
+    out += m.tok.decode([next]);
+    process.stderr.write('.');
+    if (step + 1 < maxTok) {
+      logits = forwardLastLogits(nt, m, [next], caches, pos);   // one token, cache does the rest
+      pos += 1;
+      decoded++;
+    }
+  }
+  const tDecode = performance.now() - t1;
+  console.error('');
+  console.log(prompt + out);
+  console.error(`prefill: ${promptLen} tok ${tPrefill.toFixed(0)}ms `
+    + `(${(promptLen / tPrefill * 1000).toFixed(1)} t/s) | `
+    + `decode: ${decoded} tok ${tDecode.toFixed(0)}ms `
+    + `(${decoded ? (decoded / tDecode * 1000).toFixed(1) : '0.0'} t/s)`);
+  if (nt.wasm) console.error(`wasm: ${nt.wasm.calls} matvecs taken, ${nt.wasm.misses} refused to the JS path`);
+  if (nt.pool) await nt.pool.terminate();
 }
-console.error('');
-console.log(prompt + out);
-if (nt.pool) await nt.pool.terminate();

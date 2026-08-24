@@ -13,6 +13,67 @@ Newest entries on top.
 
 ---
 
+## 2026-08-24 — the wasm kernel gets callers
+
+The SIMD kernel landed with a green gate and nobody calling it. `git grep
+WasmKernels` found three hits — the module, its test, the README — and
+`infer_gguf.mjs` imported notorch.js and the worker pool and nothing else, so
+every matvec in every run went through plain JS while 6 KB of `i16x8.extmul`
+sat checked in, correct at nothing.
+
+Wiring it is not a line of glue. A wasm kernel can only read the address space
+it was handed, and an existing SharedArrayBuffer cannot be handed to it — so
+either the weights are copied in per call, which costs more than the kernel
+saves, or the model lives there from the start. The load was inverted:
+`WasmKernels.fromModelFile` sizes an imported shared memory for the file and
+reads the bytes straight into it, `loadGGUF` learned a `base` so a file can
+start anywhere in a buffer, and from then on a packed tensor's `byteOffset` is
+the pointer the kernel wants. `build.sh` gained `--import-memory
+--shared-memory`; `qkernels.c` did not change a line. That the memory is shared
+is not incidental — `WorkerPool.create` refuses anything that is not a
+SharedArrayBuffer — so one buffer now serves the JS kernels, the wasm kernels
+and the pool, and `toShared`'s second copy of the whole model goes with it.
+
+Measured on nano_arianna 89M Q8_0, A18 Pro, 20-token prompt and 24 greedy
+tokens, each configuration in its own process, three runs: prefill 29.8 / 31.0
+/ 32.4 t/s exact against 208.0 / 212.5 / 219.9 through wasm; decode 22.8 / 23.1
+/ 24.3 against 175.8 / 177.7 / 179.7.
+
+That is a composite, and it was decomposed before it was claimed. `NT_I8=1`
+runs the same integer arithmetic in plain JS: 26.6 / 26.8 / 27.3 prefill, 19.9
+/ 20.1 / 20.5 decode — slower than the exact f32 path it replaces. The int8
+algorithm is a 13 percent loss in JS, and the whole ~6.9x prefill and ~7.7x
+decode is the instruction. One measurement against the exact path would have
+credited the algorithm with the instruction's work.
+
+Coverage reads better than the file names suggest. On the Q8_0 file wasm takes
+all 93 packed tensors and refuses none; on the Q4_K_M build of the same model
+it takes 80 of 93 — 73 Q5_0 and 7 Q8_0 — and hands back 7 Q4_K and 6 Q6_K. That
+is the C side's finding from two days ago arriving in a different edition: a
+file called Q4_K_M is mostly not Q4_K.
+
+**This path is not bit-identical to the one beside it**, and the gate says so
+rather than asserting a coincidence. The activation is quantized to int8 as
+`nt_qmatvec_i8` does, and greedy decoding is a chain of argmaxes over numbers
+that moved. Across all 93 tensors at the model's own shapes the worst row lands
+1.08e-2 from the exact answer, the prompt's logits within 1.68e-2, and the
+continuation of "The capital of France is" holds for eleven tokens and splits
+at the twelfth. The first draft of the gate asserted token identity: it passed
+at six tokens and failed at twelve. Token identity is a coincidence with a
+shelf life, so it is printed and never gated on, and `nt.wasm` is opt-in for
+the same reason.
+
+`test_wasm_e2e.mjs` multiplies every packed tensor at the shape the model uses,
+then runs a real forward with the kernels on and off. Red hand on both failure
+modes this wiring actually has: a weight pointer shifted by one 34-byte block
+turned 93 tensors red at 1.7e+5 and the forward at 3.7e+1; `useWasm` forced
+false — the shape a buffer-identity miss takes — was caught only by the call
+counter, "attached and never called", with every arithmetic check still green.
+The second is the one worth having. A fast path that silently does not run
+looks exactly like a fast path that is slow.
+
+---
+
 ## 2026-08-24 — notorch quantizes, and the ladder it costs
 
 The library could read every packed format it runs and produce none of them. `nt_quantize_row`
