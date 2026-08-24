@@ -451,11 +451,26 @@ times on other shapes measured 11.95 ms rather than 16.34, which would make the
 head 8.9x instead of 12.2x. Both numbers are real; the honest claim is that the
 head gets roughly an order of magnitude, and the small matrices about 3x.
 
-Q4_0, Q5_0 and Q8_0 have wasm kernels. Anything else returns -1 and falls back
-to notorch.js, correct and only as slow as before. That matters less than the
-names suggest: a file called Q4_K_M is mostly not Q4_K, and on nano_arianna
-Q4_K_M the wasm path takes 80 of 93 packed tensors — 73 Q5_0 and 7 Q8_0 — while
-7 Q4_K and 6 Q6_K fall through.
+All five packed formats have wasm kernels — Q4_0, Q5_0, Q8_0, Q4_K, Q6_K.
+Anything else returns -1 and falls back to notorch.js, correct and only as slow
+as before; so does a K-quant whose k is not a multiple of 256.
+
+The K-quants were worth their own pass, and the reason is not their tensor
+count. On nano_arianna Q4_K_M the three row formats already covered 80 of 93
+packed tensors and left 7 Q4_K and 6 Q6_K behind — 14.2% of the matvec calls in
+a generation. Those thirteen are `ffn_down` and the output head, and moving
+them off the JS path took prefill from 35.7 / 38.8 / 39.2 to 67.2 / 67.4 / 67.9
+t/s and decode from 34.6 / 39.2 / 39.7 to 58.5 / 62.2 / 63.6. One seventh of
+the calls held at least two fifths of the time.
+
+Same model, same prompt, all four configurations in their own processes:
+
+| path | prefill | decode |
+|---|---|---|
+| exact f32 | 17.0 / 17.1 / 17.4 t/s | 12.0 / 12.6 / 13.5 t/s |
+| int8, plain JS | 14.1 / 14.9 / 15.4 t/s | 12.0 / 12.1 / 12.5 t/s |
+| wasm, row formats only | 35.7 / 38.8 / 39.2 t/s | 34.6 / 39.2 / 39.7 t/s |
+| wasm, all five formats | 67.2 / 67.4 / 67.9 t/s | 58.5 / 62.2 / 63.6 t/s |
 
 The kernel is approximate by construction, like C's `nt_qmatvec_i8`, and it
 agrees with notorch.js's own int8 path to ~1e-7 — same quantization, same
@@ -463,7 +478,9 @@ round-half-to-even, differing only in the order sixteen products get summed.
 Against the exact path it is int8 activations, so **generation can change**:
 across all 93 tensors of nano_arianna Q8_0 the worst row is 1.08e-2 off the
 exact answer, the prompt's logits land within 1.68e-2, and the greedy
-continuation holds for eleven tokens and splits at the twelfth. `nt.wasm` is
+continuation holds for eleven tokens and splits at the twelfth. On the Q4_K_M
+build, with the K-quant kernels carrying the fattest tensors, the worst row is
+1.10e-2 and the logits 1.69e-2. `nt.wasm` is
 opt-in for that reason — attaching it changes the arithmetic, not just the
 speed.
 

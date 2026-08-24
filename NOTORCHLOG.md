@@ -13,6 +13,49 @@ Newest entries on top.
 
 ---
 
+## 2026-08-24 — the thirteen tensors that were two fifths of the time
+
+Q4_K and Q6_K now have wasm kernels, and the case for writing them was not the
+tensor count. With only the row formats, nano_arianna Q4_K_M ran 3378 of its
+3937 matvecs through wasm and handed back 559 — 7 Q4_K tensors and 6 Q6_K,
+14.2 percent of the calls. Those thirteen are `ffn_down` and the output head.
+Moving them across took prefill from 35.7 / 38.8 / 39.2 to 67.2 / 67.4 / 67.9
+t/s and decode from 34.6 / 39.2 / 39.7 to 58.5 / 62.2 / 63.6, on an A18 Pro
+with a 20-token prompt and 24 greedy tokens, each configuration in its own
+process. One seventh of the calls held at least two fifths of the prefill, and
+the same file measures 17.0 / 17.1 / 17.4 prefill on the exact f32 path it
+started from.
+
+Both kernels are ports of the JS int8 pair, which is what the gate holds them
+to. Q4_K's affine minimum lifts out of the dot the way Q5_0's -16 does — a
+value is `d*s6*q - dmin*m6`, so a sub-block is `d*s6*SUM(q*a) - dmin*m6*SUM(a)`
+and the integer loop only ever sees raw nibbles in [0,15]. Sub-blocks 2p and
+2p+1 share one 32-byte span, low nibbles feeding the even one and high the odd,
+so the unpack is a mask or a shift and never a table. Q6_K reconstructs
+`(ql | qh<<4) - 32`, which lands in [-32,31] and stays int8-safe, so the whole
+reconstruction is vector work; its sub-scale covers 16 values against the
+activation block's 32, which is why the integer accumulator is per weight
+sub-block and `d*sc[j]*da[j/2]` is applied once at the end. The sixteen
+sub-sums are drained ascending, the order the per-token kernel adds them in,
+because a different order is a different float.
+
+Agreement with the JS i8 kernels holds at 6.69e-7 worst across all 93 tensors
+of the model at their own shapes, and the module is 9086 bytes with one import.
+
+Red hand on each kernel separately, and each stayed in its own lane: selecting
+the wrong nibble half in Q4_K reddened Q4_K at 3.51e+0 / 6.76e-1 / 5.36e-1 with
+Q6_K untouched, and dropping Q6_K's -32 bias reddened Q6_K at 1.02e+0 / 2.13e+0
+/ 1.39e+0 with Q4_K untouched. `test_wasm.mjs` now sweeps five formats over
+three row counts, and its contract case changed meaning: Q4_K and Q6_K are no
+longer refused for having no kernel, they are refused for a k that is not a
+whole number of 256-value blocks.
+
+Still scalar and still costing: Q5_0's high-bit expansion in the wasm kernel
+builds its sixteen bytes in a loop before the vector load. That is a candidate,
+not a claim — nothing here measured it.
+
+---
+
 ## 2026-08-24 — the wasm kernel gets callers
 
 The SIMD kernel landed with a green gate and nobody calling it. `git grep
