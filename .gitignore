@@ -60,3 +60,4 @@ libnotorch.so
 libnotorch.dylib
 __pycache__/
 *.pyc
+test_qmatmul
