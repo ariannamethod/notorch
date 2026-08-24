@@ -18,10 +18,17 @@ const rndUnit = () => (rnd32() / 0xFFFFFFFF) * 2 - 1;
 let fails = 0;
 const w = await WasmKernels.create();
 
+// Random bytes make a fine quantized weight everywhere except the f16 scales,
+// which would land on NaN and infinity; those are written by hand. `vals` is
+// how many weights a block holds — 32 for the row formats, 256 for the
+// K-quants, whose scales are 6-bit fields that random bytes fill legally.
+const F16 = (W, o) => { W[o] = 0x66; W[o + 1] = 0x2A; };
 const FORMATS = [
-  { name: 'Q4_0', dtype: 2, blkBytes: 18, setScale: (W, o) => { W[o] = 0x66; W[o + 1] = 0x2A; } },
-  { name: 'Q5_0', dtype: 6, blkBytes: 22, setScale: (W, o) => { W[o] = 0x66; W[o + 1] = 0x2A; } },
-  { name: 'Q8_0', dtype: 8, blkBytes: 34, setScale: (W, o) => { W[o] = 0x66; W[o + 1] = 0x2A; } },
+  { name: 'Q4_0', dtype: 2,  vals: 32,  blkBytes: 18,  setScale: F16 },
+  { name: 'Q5_0', dtype: 6,  vals: 32,  blkBytes: 22,  setScale: F16 },
+  { name: 'Q8_0', dtype: 8,  vals: 32,  blkBytes: 34,  setScale: F16 },
+  { name: 'Q4_K', dtype: 12, vals: 256, blkBytes: 144, setScale: (W, o) => { F16(W, o); F16(W, o + 2); } },
+  { name: 'Q6_K', dtype: 14, vals: 256, blkBytes: 210, setScale: (W, o) => F16(W, o + 208) },
 ];
 
 function relErr(ref, got, m) {
@@ -39,7 +46,7 @@ function relErr(ref, got, m) {
 // Row counts that no block size divides evenly, and a k of several blocks.
 for (const M of [1, 63, 256]) {
   for (const f of FORMATS) {
-    const K = 512, nb = K / 32, stride = nb * f.blkBytes;
+    const K = 512, nb = K / f.vals, stride = nb * f.blkBytes;
     const W = new Uint8Array(M * stride);
     for (let i = 0; i < W.length; i++) W[i] = rnd32() & 0xFF;
     for (let r = 0; r < M; r++) for (let b = 0; b < nb; b++) f.setScale(W, r * stride + b * f.blkBytes);
@@ -72,8 +79,8 @@ for (const M of [1, 63, 256]) {
 {
   const out = new Float32Array(4), x = new Float32Array(64);
   const ptr = w.put(new Uint8Array(4096));
-  for (const [dtype, k, why] of [[12, 512, 'Q4_K has no wasm kernel yet'],
-                                 [14, 512, 'Q6_K has no wasm kernel yet'],
+  for (const [dtype, k, why] of [[12, 96, 'Q4_K needs k a multiple of 256'],
+                                 [14, 96, 'Q6_K needs k a multiple of 256'],
                                  [1, 512, 'F16 is not an int8 path'],
                                  [8, 48, 'k is not a whole number of blocks']]) {
     const rc = w.qmatvecI8(out, ptr, dtype, x, 4, k);
