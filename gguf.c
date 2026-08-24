@@ -251,6 +251,39 @@ char** gguf_read_str_array(const char* path, const char* key, int* out_n) {
     return result;
 }
 
+float* gguf_read_f32_array(const char* path, const char* key, int* out_n) {
+    if (out_n) *out_n = 0;
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    uint32_t magic;
+    if (!read_u32(f, &magic) || magic != GGUF_MAGIC) { fclose(f); return NULL; }
+    uint32_t version; uint64_t n_tensors, n_kv;
+    read_u32(f, &version); read_u64(f, &n_tensors); read_u64(f, &n_kv);
+    float* result = NULL;
+    for (uint64_t i = 0; i < n_kv; i++) {
+        char k[512] = {0};
+        uint32_t vtype;
+        if (!read_string(f, k, sizeof(k)) || !read_u32(f, &vtype)) break;
+        if (strcmp(k, key) == 0 && vtype == 9) {
+            uint32_t atype; uint64_t alen;
+            if (!read_u32(f, &atype) || !read_u64(f, &alen) || atype != 6) break;  // 6 = FLOAT32
+            if (alen > GGUF_MAX_STR_ARRAY) {
+                fprintf(stderr, "gguf: f32-array '%s' len %llu exceeds GGUF_MAX_STR_ARRAY=%u; refusing\n",
+                        key, (unsigned long long)alen, (unsigned)GGUF_MAX_STR_ARRAY);
+                break;
+            }
+            result = (float*)calloc(alen ? alen : 1, sizeof(float));
+            if (!result) break;
+            uint64_t got = fread(result, sizeof(float), alen, f);
+            if (out_n) *out_n = (int)got;   // actually-read count, not claimed alen
+            break;
+        }
+        if (!skip_value(f, vtype)) break;
+    }
+    fclose(f);
+    return result;
+}
+
 // ── Dequantization ───────────────────────────────────────────────────────────
 
 // F16 → F32 conversion
