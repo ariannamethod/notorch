@@ -168,6 +168,8 @@ install: lib
 	install -m 0644 libnotorch.a $(PREFIX)/lib/libnotorch.a
 	install -m 0644 notorch.h    $(PREFIX)/include/ariannamethod/notorch.h
 	install -m 0644 gguf.h       $(PREFIX)/include/ariannamethod/gguf.h
+	install -m 0644 notorch_vision.h $(PREFIX)/include/ariannamethod/notorch_vision.h
+	install -m 0644 stb_image.h  $(PREFIX)/include/ariannamethod/stb_image.h
 ifeq ($(UNAME),Darwin)
 	$(MAKE) notorch_metal.o
 	$(AR) rcs libnotorch_metal.a notorch_metal.o
