@@ -1,8 +1,17 @@
-/* bpe.h — byte-level BPE (GPT-2 / Tekken style) over a GGUF tokenizer.
- * Reads tokenizer.ggml.tokens + tokenizer.ggml.merges from the GGUF and
- * implements encode (UTF-8 text -> token ids) and per-token decode.
- * Generic: works for any GGUF whose tokenizer is byte-level BPE
- * (LFM2.5 dev target, Qwen3 qyent, Mistral/Tekken oyent).
+/* bpe.h — the GGUF tokenizer, in both schemes GGUF files come in.
+ *
+ * Byte-level BPE (GPT-2 / Tekken): tokenizer.ggml.tokens + .merges, merged by
+ * rank. Qwen3, SmolLM2, Mistral/Tekken.
+ *
+ * SentencePiece: tokenizer.ggml.tokens + .scores and no merges, space written
+ * U+2581, merged by score, with "<0xHH>" tokens to fall back on. LLaMA,
+ * Mistral's older vocabularies, and every nanollama in this tree.
+ *
+ * Which one a file carries is decided by what it provides — a merge list, or
+ * scores without one — not by the name in tokenizer.ggml.model. Running the
+ * wrong one is quiet: byte-level encode over a SentencePiece vocabulary finds
+ * no token for a space and used to drop it, and the model read a sentence with
+ * the spaces missing.
  */
 #ifndef BPE_H
 #define BPE_H

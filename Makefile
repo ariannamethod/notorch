@@ -221,6 +221,12 @@ notorch: $(HARNESS_SRC) $(HARNESS_HDR)
 test_harness: notorch llama
 	./harness/test_parity.sh $(MODEL)
 
+# Tokenizer round-trip. Needs a model, because the thing being tested is what
+# the file says about itself: MODEL=path/to.gguf make test_bpe
+test_bpe: examples/bpe.c gguf.c notorch.c
+	$(CC) $(CFLAGS) -DBPE_TEST -o /tmp/nt_bpe_test examples/bpe.c gguf.c notorch.c -lm
+	/tmp/nt_bpe_test $(MODEL)
+
 # ── Training ──
 
 train_q: examples/train_q.c notorch.c notorch.h

@@ -13,6 +13,57 @@ Newest entries on top.
 
 ---
 
+## 2026-08-24 — the tokenizer speaks SentencePiece
+
+`examples/bpe.c` implemented byte-level BPE and nothing else, and every
+LLaMA-family GGUF in this tree carries SentencePiece. The two schemes share a
+file format and share nothing else: one has a merge list and merges by rank,
+the other has a score per token, writes space as U+2581, and falls back to
+`<0xHH>` tokens for anything its vocabulary does not cover. Run the first over
+the second and a space encodes to `Ġ`, which is not in the vocabulary, and the
+old code dropped it without a word.
+
+Which scheme a file carries is now decided by what it hands over — a merge
+list, or scores without one — and not by the name in `tokenizer.ggml.model`.
+That is deliberate: the name is a label, the arrays are what make an algorithm
+possible.
+
+The SentencePiece path prepends the dummy space these vocabularies were built
+over, splits into UTF-8 characters, and merges the highest-scoring adjacent
+pair until no adjacent pair is a token. Pair scores live beside the symbols and
+only the two around a merge are recomputed, so the vocabulary is consulted O(n)
+times for a whole string instead of once per scan; finding the best pair is a
+walk, which at the length of a chat line is cheaper than a heap. Anything the
+vocabulary does not carry goes out as bytes, and anything that cannot even do
+that now says so on stderr instead of vanishing.
+
+On nano_arianna Q8_0: "The capital of France is Paris." was 26 tokens, five
+short of its 31 bytes, one missing per space, every token a single character
+from the tail of the vocabulary. It is now **7 tokens** and decodes back to
+itself. What the model does with that is the whole point — the same prompt at
+temp 0 used to continue `,anewfield,anewarchitecture.` and now continues `the
+cathedral of the French language, the most important document in the world.`
+
+The gate had existed and had never been aimed here. It now runs six strings
+including a leading-and-trailing-space case and an emoji no vocabulary carries,
+across both schemes, and it asserts one thing a round-trip alone cannot:
+**merges have to be doing something.** Red hand proved why. Removing the U+2581
+substitution left every round-trip green — the byte fallback rebuilds the text
+from `<0x20>` — and only the token count gave it away, 15 against 7. Removing
+the byte fallback turned the emoji case red as `'🔥 fire' -> '  fire'`, which is
+the original bug's exact shape. A round-trip is not enough; a round-trip plus a
+count is.
+
+Byte-level vocabularies were correct before and are untouched: smallcoder-303M
+at 49152 tokens and a Qwen3 at 151936 both pass all seven checks. `make test_bpe
+MODEL=…`. Harness/example parity stays green, because the fix landed in the file
+they share.
+
+Open and named: the JS edition's `GgufBPE` in `js-edition/infer_gguf.mjs` splits
+on spaces the same way and has the same hole for SentencePiece files.
+
+---
+
 ## 2026-08-24 — a harness, and the tokenizer it caught
 
 `harness/` is the simple way to run a model: `notorch model.gguf "prompt"` for
