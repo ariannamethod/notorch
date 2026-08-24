@@ -13,6 +13,59 @@ Newest entries on top.
 
 ---
 
+## 2026-08-24 — a harness, and the tokenizer it caught
+
+`harness/` is the simple way to run a model: `notorch model.gguf "prompt"` for
+one shot, `notorch model.gguf` for a chat in the terminal. The forward, the KV
+cache, the sampler and the scalar pieces moved out of `examples/infer_llama.c`
+into `harness/runtime.c` and `harness/arch_llama.c`, with the arithmetic
+untouched — `harness/test_parity.sh` is what says so, comparing the generated
+continuation against the example at temp 0 and getting six identical answers
+across two models and three prompts. Timing overlaps within run-to-run noise:
+prefill 1352 / 1391 / 1394 t/s against the example's 1321 / 1470 / 1463, decode
+428 / 495 / 597 against 479 / 492 / 592, nano_arianna Q8_0 on an A18 Pro.
+
+The example stays where it is. It is what the phone numbers were measured with
+and what models are tested through, and until the harness has been pointed at
+the same pile of files, replacing the reference with the thing being tested
+would leave nothing to test against. Two copies of one forward is the debt this
+takes on knowingly; it closes when the harness has earned the reference's job.
+
+Two decisions worth naming. **stdout is the model, stderr is everything else** —
+banner, model shape, the prompt you typed, timings, profile — so a redirected
+run is text and not a transcript of the tool. And **architectures are a table**:
+`nt_arch` is names, load, free, forward, and llama registers with `names = NULL`
+as the fallback, which is what the example already did with every architecture
+it had never heard of. Adding a family should be adding a file and one line; if
+it ever needs a branch inside `runtime.c`, the interface is lying and it is the
+interface that gets fixed.
+
+Red hand on both failure modes a move like this has: flipping the RoPE
+convention turned all six parity checks red with fluent text that answers a
+different question, and writing the KV one position early turned them red with
+`,I.AIeiIH:` where the example says `,anewfield,anewarchitecture.`
+
+**And then the harness caught something older than itself.** Its own reason to
+exist is a person typing a sentence and reading one back, which is a harder
+test of the tokenizer than any benchmark, and the text came back without
+spaces. `examples/bpe.c` implements GPT-2 byte-level BPE. nano_arianna carries
+`tokenizer.ggml.model = "llama"` — SentencePiece — where 22965 of 32000 tokens
+begin with U+2581 and none begin with `Ġ`. Encode maps a space to `Ġ`, finds no
+such token, and **drops it silently**: "The capital of France is Paris." is 31
+bytes and comes back as 26 tokens, five short, one per space, every remaining
+token a single character from the tail of the vocabulary rather than a merge.
+Decode cannot map U+2581 back, because the table it reads is 512 entries wide
+and that codepoint is 9601.
+
+The gate for this already existed and had never been pointed here: `bpe.c`
+built with `-DBPE_TEST` prints `BPE_FAIL (roundtrip=0 merges_applied=1)` on
+this file, and the `merges_applied` is only true because five tokens went
+missing. Byte-level vocabularies — Qwen2.5, SmolLM2 — are unaffected and always
+were. This is not from the move; it is what the move made visible, and it is
+the next thing to fix, before another architecture is added.
+
+---
+
 ## 2026-08-24 — the thirteen tensors that were two fifths of the time
 
 Q4_K and Q6_K now have wasm kernels, and the case for writing them was not the

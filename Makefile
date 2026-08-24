@@ -199,6 +199,28 @@ llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorc
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama examples/infer_llama.c examples/bpe.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_llama (LLaMA/Qwen GGUF + GGUF-BPE tokenizer, $(BLAS_NAME))"
 
+# ── Harness — the simple way to run a model ──
+# One binary, one command: ./notorch model.gguf "prompt". Architectures are a
+# table in harness/main.c; adding a family adds a file, not a branch.
+
+HARNESS_SRC = harness/main.c harness/runtime.c harness/arch_llama.c examples/bpe.c gguf.c notorch.c
+HARNESS_HDR = harness/arch.h harness/runtime.h harness/logo.h examples/bpe.h gguf.h notorch.h
+
+# `harness` is phony because a directory of that name sits right there, and
+# make would otherwise call it up to date and build nothing.
+.PHONY: harness test_harness
+
+harness: notorch
+
+notorch: $(HARNESS_SRC) $(HARNESS_HDR)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch $(HARNESS_SRC) -lm $(BLAS_LIBS)
+	@echo "Compiled: notorch (harness — GGUF in, text out, $(BLAS_NAME))"
+
+# Parity against the reference example, which is what says the move changed
+# nothing. MODEL= to point it at one file, otherwise it looks for its defaults.
+test_harness: notorch llama
+	./harness/test_parity.sh $(MODEL)
+
 # ── Training ──
 
 train_q: examples/train_q.c notorch.c notorch.h
