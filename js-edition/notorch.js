@@ -2168,12 +2168,32 @@ export class Notorch {
       // was built on; anything else falls through to the single-threaded path.
       const usePool = this.pool && W.packed.buffer === this.pool.weights
         && outDim <= this.pool.out.length && inDim <= this.pool.x.length;
+      // With wasm kernels attached (notorch-wasm.mjs) the weight is read by SIMD
+      // out of the module's own memory, which is only possible when the model
+      // was loaded into that memory in the first place — hence the buffer test.
+      // This one is NOT bit-identical to the paths beside it: the wasm kernel
+      // quantizes the activation to int8, the way C's nt_qmatvec_i8 does, so
+      // attaching it changes the arithmetic and not only the speed. Dtypes it
+      // has no kernel for return -1 and fall through untouched.
+      const useWasm = this.wasm && W.packed.buffer === this.wasm.memory.buffer;
       const acc = new Float32Array(outDim);
       for (let t = 0; t < T; t++) {
         const xv = Xd.subarray(t * inDim, (t + 1) * inDim);
-        const rc = usePool
-          ? this.pool.qmatvec(acc, W.packed.byteOffset, W.dtype, xv, outDim, inDim)
-          : qmatvec(acc, W.packed, W.dtype, xv, outDim, inDim);
+        let rc = useWasm
+          ? this.wasm.qmatvecI8(acc, W.packed.byteOffset, W.dtype, xv, outDim, inDim)
+          : -1;
+        // `engine.i8` runs the same int8 arithmetic in plain JS. It exists so
+        // the wasm number can be decomposed: part of that speedup is the
+        // integer algorithm and part is the SIMD, and one measurement against
+        // the exact path cannot tell you which.
+        if (rc !== 0 && this.i8) {
+          rc = qmatvecI8(acc, W.packed, W.dtype, xv, outDim, inDim);
+        }
+        if (rc !== 0) {
+          rc = usePool
+            ? this.pool.qmatvec(acc, W.packed.byteOffset, W.dtype, xv, outDim, inDim)
+            : qmatvec(acc, W.packed, W.dtype, xv, outDim, inDim);
+        }
         if (rc !== 0) {
           throw new Error(`seqLinear: no packed kernel for GGUF dtype ${W.dtype} at k=${inDim}`);
         }
@@ -4343,9 +4363,14 @@ export function qmatvecI8(out, Wq, dtype, x, m, k) {
  * (`token_embd.weight`, `blk.{i}.attn_q.weight`, `output.weight`, …); shapes
  * are row-major. F16 tensors are expanded to F32 on load.
  */
-export function loadGGUF(arrayBuffer, { packed = true } = {}) {
-  const dv = new DataView(arrayBuffer);
-  const u8 = new Uint8Array(arrayBuffer);
+export function loadGGUF(arrayBuffer, { packed = true, base = 0 } = {}) {
+  // `base` is where the file starts inside the buffer. It is 0 for a file read
+  // on its own and nonzero when the caller put the model inside somebody else's
+  // address space — wasm linear memory, where the low addresses belong to the
+  // module. Every packed tensor is then a view whose byteOffset is a pointer
+  // that address space understands.
+  const dv = new DataView(arrayBuffer, base);
+  const u8 = new Uint8Array(arrayBuffer, base);
   const dec = new TextDecoder('utf-8');
   let off = 0;
   const u32 = () => { const v = dv.getUint32(off, true); off += 4; return v; };

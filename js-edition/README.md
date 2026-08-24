@@ -403,12 +403,40 @@ module — 6 KB, no libc, no imports — where the same kernel is written agains
 `i8x16` SIMD: `i16x8.extmul` over a pair of vectors, folded by
 `i32x4.extadd_pairwise`.
 
+A wasm kernel can only read the one address space it was handed, so the module
+imports its memory instead of owning it and the model is read straight into
+that memory. From then on a tensor's byte offset inside the buffer *is* the
+pointer the kernel wants, and nothing is copied per call. The memory is shared,
+which is also what the worker pool asks for, so one buffer serves all three
+readers.
+
 ```js
 import { WasmKernels } from './notorch-wasm.mjs';
-const w = await WasmKernels.create();
-const ptr = w.put(tensor.packed);          // weights into the module's memory
-w.qmatvecI8(out, ptr, tensor.dtype, x, m, k);
+import { loadGGUF } from './notorch.js';
+
+const w = await WasmKernels.fromModelFile('model.gguf');
+const { tensors } = loadGGUF(w.memory.buffer, { base: w.modelBase });
+
+const nt = new Notorch();
+nt.wasm = w;                 // seqLinear now goes through SIMD where it can
 ```
+
+`infer_gguf.mjs` does exactly that under `NT_WASM=1`. On nano_arianna 89M Q8_0,
+A18 Pro, a 20-token prompt and 24 greedy tokens, each configuration in its own
+process, three runs each:
+
+| path | prefill | decode |
+|---|---|---|
+| exact f32 | 29.8 / 31.0 / 32.4 t/s | 22.8 / 23.1 / 24.3 t/s |
+| int8, plain JS | 26.6 / 26.8 / 27.3 t/s | 19.9 / 20.1 / 20.5 t/s |
+| int8, wasm SIMD | 208.0 / 212.5 / 219.9 t/s | 175.8 / 177.7 / 179.7 t/s |
+
+The middle row is there because a single comparison against the exact path
+would have credited the instruction with something the algorithm did. It did
+not: the same integer arithmetic in plain JS is a 13% **loss**, and all of the
+~6.9x prefill and ~7.7x decode is the SIMD.
+
+The single-shape numbers behind that:
 
 A18 Pro, each path measured in its own process and warmed to steady state:
 
@@ -423,11 +451,25 @@ times on other shapes measured 11.95 ms rather than 16.34, which would make the
 head 8.9x instead of 12.2x. Both numbers are real; the honest claim is that the
 head gets roughly an order of magnitude, and the small matrices about 3x.
 
-Q4_0, Q5_0 and Q8_0 have wasm kernels. Anything else returns -1 and the caller
-falls back to notorch.js, correct and only as slow as before. The kernel is
-approximate by construction, like C's `nt_qmatvec_i8`, and it agrees with
-notorch.js's own int8 path to ~1e-7 — same quantization, same round-half-to-even,
-differing only in the order sixteen products get summed.
+Q4_0, Q5_0 and Q8_0 have wasm kernels. Anything else returns -1 and falls back
+to notorch.js, correct and only as slow as before. That matters less than the
+names suggest: a file called Q4_K_M is mostly not Q4_K, and on nano_arianna
+Q4_K_M the wasm path takes 80 of 93 packed tensors — 73 Q5_0 and 7 Q8_0 — while
+7 Q4_K and 6 Q6_K fall through.
+
+The kernel is approximate by construction, like C's `nt_qmatvec_i8`, and it
+agrees with notorch.js's own int8 path to ~1e-7 — same quantization, same
+round-half-to-even, differing only in the order sixteen products get summed.
+Against the exact path it is int8 activations, so **generation can change**:
+across all 93 tensors of nano_arianna Q8_0 the worst row is 1.08e-2 off the
+exact answer, the prompt's logits land within 1.68e-2, and the greedy
+continuation holds for eleven tokens and splits at the twelfth. `nt.wasm` is
+opt-in for that reason — attaching it changes the arithmetic, not just the
+speed.
+
+`test_wasm_e2e.mjs` is the gate for all of this: every packed tensor at the
+model's own shape, plus a real forward with the kernels on and off. Run it with
+`make test_js MODEL=…`; without a model it skips.
 
 The `.wasm` is checked in. Nobody needs a toolchain to use notorch.js;
 `wasm/build.sh` is there for whoever changes the kernels.
