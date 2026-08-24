@@ -61,3 +61,6 @@ libnotorch.dylib
 __pycache__/
 *.pyc
 test_qmatmul
+
+gguf_quantize
+test_quantize

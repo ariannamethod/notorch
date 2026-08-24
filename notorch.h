@@ -560,6 +560,18 @@ void nt_qmv_set_thread_min(long elems);
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k);
 
+// Quantize one row of f32 weights into a packed block format, in place of the whole
+// tensor. dtype is the GGUF type code: Q4_0 (2), Q5_0 (6), Q8_0 (8). k must be a multiple
+// of 32. dst needs the packed size for k elements — 18, 22 and 34 bytes per 32 values
+// respectively. Returns 0, or -1 for an unsupported dtype or a k that does not divide.
+//
+// The arithmetic is llama.cpp's reference quantizer, deliberately: absmax with the SIGNED
+// extreme for the 4- and 5-bit formats, the same +8.5 / +16.5 rounding offsets, the same
+// half-float scale. A file this produces is byte-identical to one llama-quantize produces
+// from the same weights, which is the only definition of "compatible" worth having — and
+// tests/test_quantize.c asserts it against a reference file rather than against a tolerance.
+int nt_quantize_row(const float *x, void *dst, int k, int dtype);
+
 // Batched int8 matvec: n activation vectors against ONE packed weight matrix, which is
 // what prefill does and what the per-token entry above pays for n times over. X is
 // [n, k] row-major, out is [n, m] row-major. Same quantization and the same per-row

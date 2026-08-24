@@ -307,15 +307,24 @@ test_qpool: tests/test_qpool.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qpool tests/test_qpool.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qpool (threading determinism, $(BLAS_NAME))"
 
+test_quantize: tests/test_quantize.c notorch.c gguf.c notorch.h gguf.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_quantize tests/test_quantize.c notorch.c gguf.c -lm $(BLAS_LIBS)
+	@echo "Compiled: test_quantize (quantizer against a llama-quantize reference, $(BLAS_NAME))"
+
+gguf_quantize: tools/gguf_quantize.c gguf.c notorch.c gguf.h notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o gguf_quantize tools/gguf_quantize.c gguf.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: gguf_quantize (f32/f16 GGUF -> packed GGUF, $(BLAS_NAME))"
+
 test_qmatmul: tests/test_qmatmul.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qmatmul tests/test_qmatmul.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qmatmul (batched packed matmul vs per-token, $(BLAS_NAME))"
 
-test: notorch_test test_vision test_qpool test_qmatmul
+test: notorch_test test_vision test_qpool test_qmatmul test_quantize
 	./notorch_test
 	./test_vision
 	./test_qpool
 	./test_qmatmul
+	./test_quantize
 
 test_js:
 	node js-edition/test_op_parity.mjs

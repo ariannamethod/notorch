@@ -13,6 +13,49 @@ Newest entries on top.
 
 ---
 
+## 2026-08-24 — notorch quantizes, and the ladder it costs
+
+The library could read every packed format it runs and produce none of them. `nt_quantize_row`
+writes Q4_0, Q5_0 and Q8_0; `tools/gguf_quantize.c` rewrites a whole f16 or f32 GGUF into
+them (`bab4ec4`). The metadata section is copied byte for byte — tokenizer, chat template,
+architecture keys survive untouched — and only the tensor directory is rewritten, because
+types and offsets are what quantization moves. Policy is `llama-quantize --pure`: 2-D tensors
+whose row divides 32 convert, the rest copy through.
+
+The arithmetic is llama.cpp's reference to the bit, which is the requirement rather than a
+concession: a file only earns the name GGUF if everything else can read it. Qwen2.5-0.5B fp16
+through both quantizers and compared tensor by tensor — 291 tensors identical byte for byte
+at Q4_0, Q5_0 and Q8_0. Ours takes 3.4 s on the phone against llama-quantize's 3.0.
+
+**The FMA trap, third appearance.** The reference computes `x*id`, rounds it to a float, then
+adds `+8.5` and truncates. As one expression the compiler fuses multiply and add, the last bit
+moves, and truncation flips for any value near an integer: 143 tensors of 291 differed by one
+level in one nibble. Diagnosed the same way as before — rebuild with `-ffp-contract=off`, watch
+it agree — and fixed by storing the scaled product through a `volatile`, a store and a load per
+weight in code that runs once per model.
+
+**What the ladder costs**, same weights, four big cores, decode of 64 tokens, perplexity over
+32 chunks of 512 from wikitext-2:
+
+| format | tensor data | decode | PPL | vs fp16 |
+|---|---:|---:|---:|---:|
+| fp16 | 1207.8 MiB | — | 13.7214 ± 0.436 | — |
+| Q8_0 | 638.7 MiB | 33.0 t/s | 13.8076 ± 0.440 | +0.6% |
+| Q5_0 | 413.4 MiB | 45.6 t/s | 14.6143 ± 0.474 | +6.5% |
+| Q4_0 | 338.3 MiB | 57.0 t/s | 16.0112 ± 0.527 | +16.7% |
+
+Decode tracks bytes and nothing else, which is what a memory-bound engine looks like from
+outside. Q5_0 buys 38 percent of speed over Q8_0 for six percent of perplexity; Q4_0 buys a
+further 25 for ten more. The 57.0 t/s is the fastest this phone has decoded anything, and it
+is llama.cpp's own file format made by our own tool.
+
+K-quants are not here. Q4_K and Q6_K quantize with a per-super-block search over scale and
+minimum rather than a single absmax, and writing that to the bit is a separate piece of work
+from writing the block formats; the kernels have read them since June, and the quantizer will
+say so plainly when it can produce them.
+
+---
+
 ## 2026-08-23 — decode: a mutex per row chunk, and a half-float decoded in software
 
 Prefill had been the whole story for three days and decode had not moved: 22.9 t/s on an

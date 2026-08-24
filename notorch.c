@@ -5586,6 +5586,120 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
 // the exact reference. Phase 2b: Q4_0, scalar (SDOT/VNNI + more dtypes next).
 
 // x[k] -> per-32-block symmetric int8: qa[k] (int8) + da[k/32] (block scales).
+// ── Weight quantization — f32 rows into packed blocks ───────────────────────────
+// The inverse of the dequantizers above, and the step notorch did not have: a model came
+// out of training as f32 and had to be handed to llama.cpp to become a file this library
+// could run fast. The arithmetic below is llama.cpp's reference quantizer to the bit, so
+// that what comes out is not "our format" but the same GGUF everything else reads.
+//
+// Two details are easy to get subtly wrong and both change every block. The 4- and 5-bit
+// formats scale by the SIGNED extreme — the element with the largest magnitude, keeping its
+// sign — and divide by a negative bound (-8, -16), which is what makes the unsigned nibble
+// land biased rather than centred. And the rounding is a +8.5 / +16.5 offset with a
+// truncating cast, not a round-to-nearest: for the negative half those differ.
+static float nt_f32_to_f16_round(float f, uint16_t *out) {
+#if defined(__aarch64__)
+    __fp16 h = (__fp16)f;                    /* round-to-nearest-even in hardware */
+    memcpy(out, &h, sizeof(h));
+    return (float)h;
+#else
+    /* Round-to-nearest-even in software, matching ggml's fallback. */
+    uint32_t bits; memcpy(&bits, &f, 4);
+    uint32_t sign = (bits >> 16) & 0x8000;
+    int32_t  exp  = (int32_t)((bits >> 23) & 0xFF) - 127 + 15;
+    uint32_t mant = bits & 0x7FFFFF;
+    uint16_t h;
+    if (exp >= 0x1F) h = (uint16_t)(sign | 0x7C00);
+    else if (exp <= 0) h = (uint16_t)sign;
+    else {
+        h = (uint16_t)(sign | (exp << 10) | (mant >> 13));
+        uint32_t rem = mant & 0x1FFF;
+        if (rem > 0x1000 || (rem == 0x1000 && (h & 1))) h++;
+    }
+    *out = h;
+    return nt_f16_to_f32(h);
+#endif
+}
+
+int nt_quantize_row(const float *x, void *dst, int k, int dtype) {
+    if (!x || !dst || k <= 0 || (k % 32)) return -1;
+    int nb = k / 32;
+    uint8_t *out = (uint8_t *)dst;
+
+    for (int b = 0; b < nb; b++) {
+        const float *xb = x + (long)b * 32;
+        if (dtype == 8) {                                    /* Q8_0: 2 + 32 bytes */
+            float amax = 0.0f;
+            for (int i = 0; i < 32; i++) { float a = fabsf(xb[i]); if (a > amax) amax = a; }
+            float d = amax / 127.0f;
+            uint16_t dh; nt_f32_to_f16_round(d, &dh);
+            float id = (d != 0.0f) ? 1.0f / d : 0.0f;
+            uint8_t *blk = out + (long)b * 34;
+            blk[0] = (uint8_t)(dh & 0xFF); blk[1] = (uint8_t)(dh >> 8);
+            for (int i = 0; i < 32; i++) {
+                int q = (int)roundf(xb[i] * id);
+                if (q > 127) q = 127; else if (q < -128) q = -128;
+                blk[2 + i] = (uint8_t)(int8_t)q;
+            }
+        } else if (dtype == 2 || dtype == 6) {               /* Q4_0: 18 B, Q5_0: 22 B */
+            float amax = 0.0f, vmax = 0.0f;
+            for (int i = 0; i < 32; i++) {
+                float v = xb[i], a = fabsf(v);
+                if (a > amax) { amax = a; vmax = v; }
+            }
+            int bound = (dtype == 2) ? 8 : 16;
+            float d = vmax / (float)(-bound);
+            uint16_t dh; nt_f32_to_f16_round(d, &dh);
+            float id = (d != 0.0f) ? 1.0f / d : 0.0f;
+            float half = (float)bound + 0.5f;
+            if (dtype == 2) {
+                uint8_t *blk = out + (long)b * 18;
+                blk[0] = (uint8_t)(dh & 0xFF); blk[1] = (uint8_t)(dh >> 8);
+                for (int j = 0; j < 16; j++) {
+                    /* volatile, and the reason is compatibility rather than paranoia. The
+                     * reference computes the scaled value, rounds it to a float, and only
+                     * then adds the offset and truncates. Left as one expression the
+                     * compiler fuses the multiply and the add, which changes the last bit,
+                     * which flips the truncation for any value sitting near an integer —
+                     * 143 tensors of 291 differed from llama-quantize's output for exactly
+                     * this reason, by one level, in one nibble. Quantization runs once per
+                     * model, so a store and a load per value is not a price worth arguing
+                     * about; agreeing with every other GGUF reader is. */
+                    volatile float p0 = xb[j] * id, p1 = xb[j + 16] * id;
+                    float v0 = p0 + half, v1 = p1 + half;
+                    int q0 = (int)v0, q1 = (int)v1;
+                    if (q0 > 15) q0 = 15;
+                    if (q0 < 0)  q0 = 0;
+                    if (q1 > 15) q1 = 15;
+                    if (q1 < 0)  q1 = 0;
+                    blk[2 + j] = (uint8_t)(q0 | (q1 << 4));
+                }
+            } else {
+                uint8_t *blk = out + (long)b * 22;
+                blk[0] = (uint8_t)(dh & 0xFF); blk[1] = (uint8_t)(dh >> 8);
+                uint32_t qh = 0;
+                for (int j = 0; j < 16; j++) {
+                    volatile float p0 = xb[j] * id, p1 = xb[j + 16] * id;   /* see Q4_0 above */
+                    float v0 = p0 + half, v1 = p1 + half;
+                    int q0 = (int)v0, q1 = (int)v1;
+                    if (q0 > 31) q0 = 31;
+                    if (q0 < 0)  q0 = 0;
+                    if (q1 > 31) q1 = 31;
+                    if (q1 < 0)  q1 = 0;
+                    blk[6 + j] = (uint8_t)((q0 & 0x0F) | ((q1 & 0x0F) << 4));
+                    qh |= ((uint32_t)(q0 & 0x10) >> 4) << j;
+                    qh |= ((uint32_t)(q1 & 0x10) >> 4) << (j + 16);
+                }
+                blk[2] = (uint8_t)(qh & 0xFF);         blk[3] = (uint8_t)((qh >> 8) & 0xFF);
+                blk[4] = (uint8_t)((qh >> 16) & 0xFF); blk[5] = (uint8_t)((qh >> 24) & 0xFF);
+            }
+        } else {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 /* SUM(qa) per 32-value block, which is what Q5_0's -16 bias and Q4_K's affine minimum lift
  * out of the integer dot. NEON where SDOT exists — a dot against a vector of ones is exactly
  * the sum, and the pairwise adds come free — and a plain loop elsewhere. Either way the
