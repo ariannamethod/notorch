@@ -13,6 +13,49 @@ Newest entries on top.
 
 ---
 
+## 2026-08-31 — K-quants, and the harness re-measured against the example it came from
+
+**The harness carries the arithmetic and the speed** — the check the phone owed it after the
+forward moved out of `examples/infer_llama.c`. Parity on Qwen2.5-0.5B Q5_0, three prompts at
+temp 0: identical output, `NOTORCH_PARITY_OK`. Speed on the same 121-token prompt, three
+interleaved repeats each: harness prefill 92.8 / 95.6 / 94.8 t/s against the example's
+96.8 / 95.9 / 96.8, decode 41.6 / 41.8 / 40.5 against 39.2 / 40.4 / 40.3. Within noise both
+ways.
+
+One difference that is not noise and is in the harness's favour: the example clamps its
+context to 256 tokens and silently truncates a longer prompt — a 241-token prompt arrives as
+207. The harness takes `NT_CTX` and encoded all 241. Anyone comparing prefill numbers between
+the two on long prompts was comparing different amounts of work.
+
+**Q4_K and Q6_K now quantize** (`09803e1`). The block formats take an absmax; a K-quant
+searches — Q6_K walks eighteen candidate scales per 16-value sub-block and keeps the lowest
+weighted error, Q4_K solves a weighted least squares for scale and minimum across twenty-one
+candidates — and then quantizes those scales to six bits against a super-block scale. Ported
+from ggml's reference (MIT) rather than reinvented. `gguf_quantize` mirrors llama-quantize's
+fallback for rows 256 does not divide, observed rather than assumed: `--pure Q4_K` writes 24
+tensors of this model as q4_K and 146 as q5_0, `--pure Q6_K` writes 24 as q6_K and 146 as
+q8_0. File sizes match to the byte: 426350432 and 650379104.
+
+**Where byte-identity stops, and why that belongs to the algorithm rather than to us.** A
+K-quant search runs on multiply-adds. Whether the compiler fuses them decides which candidate
+wins a near-tie, so two correct builds disagree by one level in one sub-block. Against ggml's
+reference *source* compiled with contraction off, our output is identical — 64 real rows,
+19 super-blocks each, both formats, byte for byte. Against the shipped llama-quantize
+*binary*, 24 tensors of 291 differ, and nothing in our code can fix that. The block formats
+have no such expression in their critical path, which is why they still match a binary
+exactly, and they still do.
+
+The test therefore gained the gate that survives a compiler: for K-quant tensors that differ,
+dequantize both and compare reconstruction error against the original f16 weights — ours must
+be no worse. Q4_K mean rms 8.503983e-04 against 8.503976e-04, Q6_K 2.169588e-04 against
+2.169600e-04. Perplexity agrees: Q4_K 14.8192 ± 0.480 against 14.8334 ± 0.481, Q6_K
+13.8092 ± 0.440 against 13.8219 ± 0.441, over 32 chunks of 512 from wikitext-2.
+
+The ladder on this phone now reads, decode of 64 tokens on four big cores: Q8_0 33.0,
+Q6_K 32.0, Q5_0 45.6, Q4_K 45.8, Q4_0 57.0 t/s.
+
+---
+
 ## 2026-08-24 — the tokenizer speaks SentencePiece
 
 `examples/bpe.c` implemented byte-level BPE and nothing else, and every
