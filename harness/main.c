@@ -173,7 +173,27 @@ static void usage(const char *self) {
         "  NT_PROFILE=1     per-section timings\n", self);
 }
 
+/* BLAS gets one thread, and the reason is that it has its own pool.
+ *
+ * Everything heavy here runs through notorch's matvec pool, whose workers spin on a
+ * generation counter before they sleep. OpenBLAS ships a second pool that spins the same
+ * way, and on four cores the two of them take turns evicting each other: a Gemma-4 decode
+ * that reaches 9.5 t/s with OPENBLAS_NUM_THREADS=1 does 7.5 with the default. The library is
+ * used here for one f32 projection per token; it does not need four cores for that, and it
+ * certainly does not need them while the other pool is trying to stream weights.
+ *
+ * Weak symbol so a build against Accelerate or a BLAS without this call links unchanged. */
+#if defined(USE_BLAS) && !defined(ACCELERATE)
+extern void openblas_set_num_threads(int) __attribute__((weak));
+#endif
+static void blas_single_thread(void) {
+#if defined(USE_BLAS) && !defined(ACCELERATE)
+    if (openblas_set_num_threads) openblas_set_num_threads(1);
+#endif
+}
+
 int main(int argc, char **argv) {
+    blas_single_thread();
     int quiet = 0, ai = 1;
     int flag_n = -1; float flag_t = -1.0f;
     /* The positional form is what examples/infer_llama.c takes and what the
