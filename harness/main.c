@@ -19,6 +19,7 @@
 #include <string.h>
 
 static const nt_arch *const ARCHS[] = {
+    &nt_arch_gemma4,
     &nt_arch_llama,
 };
 
@@ -49,6 +50,21 @@ typedef struct {
 /* GGUF-embedded BPE where the file has one; bytes where it does not, which is
  * how the char-level models in this tree are read. */
 static int encode_prompt(const session *s, const char *text, int *tokens, int cap) {
+    /* NT_TOKENS bypasses the tokenizer with a comma-separated list of ids. Bringing a new
+     * family up has two independent failure modes — the tokenizer disagrees, or the forward
+     * disagrees — and debugging them together is debugging neither. With the reference's own
+     * ids in hand the forward can be compared on its own terms. */
+    const char *raw = getenv("NT_TOKENS");
+    if (raw && *raw) {
+        int n = 0;
+        for (const char *p = raw; *p && n < cap; ) {
+            while (*p == ' ' || *p == ',') p++;
+            if (!*p) break;
+            tokens[n++] = (int)strtol(p, (char **)&p, 10);
+        }
+        fprintf(stderr, "tokens: %d supplied through NT_TOKENS\n", n);
+        return n;
+    }
     if (s->tok) return bpe_encode(s->tok, text, tokens, cap);
     int n = 0;
     if (cap > 0) tokens[n++] = 1;                  /* BOS */
