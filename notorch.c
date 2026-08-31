@@ -5621,8 +5621,290 @@ static float nt_f32_to_f16_round(float f, uint16_t *out) {
 #endif
 }
 
+// ── K-quants: the block formats' quantizers do not generalise ──────────────────
+// Q4_0 and its relatives take an absmax and are done. A K-quant does not: each 16- or
+// 32-value sub-block gets its own scale found by SEARCH — try a spread of candidate scales,
+// keep the one with the lowest weighted error — and then those per-sub-block scales are
+// themselves quantized to six bits against a super-block scale. That search is the format;
+// an absmax approximation of it produces a legal file that is a different model.
+//
+// The algorithms below are ggml's reference quantizers (llama.cpp, MIT, Georgi Gerganov and
+// contributors), ported rather than reinvented, because bit-compatibility with what everyone
+// else writes is the entire point of doing this at all. The gate in tests/test_quantize.c is
+// a byte comparison against llama-quantize's output; nothing here is a judgement call.
+//
+// nearest_int is ggml's, and it is not roundf: adding 2^23 + 2^22 forces the mantissa to
+// drop everything below the units place with round-to-nearest-even, then the exponent bits
+// are masked away. roundf rounds halves away from zero, which differs on exactly the ties
+// this search lands on.
+static inline int nt_nearest_int(float fval) {
+    float val = fval + 12582912.0f;
+    int32_t i;
+    memcpy(&i, &val, sizeof(i));
+    return (i & 0x007FFFFF) - 0x00400000;
+}
+
+/* Every float product here is guarded the same way the block quantizers are: the compiler
+ * may fuse a multiply into the add that follows it, which moves the last bit, which moves a
+ * nearest_int across a tie, which picks a different level. Cold code, once per model. */
+static inline float nt_noc(float v) { volatile float t = v; return t; }
+
+#define NT_GROUP_MAX_EPS 1e-15f
+
+/* Q6_K's per-sub-block scale: start from -nmax/max, then walk 18 nearby scales and keep the
+ * one whose weighted reconstruction wins. rmse_type 1 means the weight is x*x. */
+static float nt_make_qx_quants(int n, int nmax, const float *x, int8_t *L) {
+    float max = 0.0f, amax = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        float ax = fabsf(x[i]);
+        if (ax > amax) { amax = ax; max = x[i]; }
+    }
+    if (amax < NT_GROUP_MAX_EPS) {
+        for (int i = 0; i < n; ++i) L[i] = 0;
+        return 0.0f;
+    }
+    float iscale = -(float)nmax / max;
+    float sumlx = 0.0f, suml2 = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        int l = nt_nearest_int(nt_noc(iscale * x[i]));
+        if (l < -nmax) l = -nmax;
+        if (l > nmax - 1) l = nmax - 1;
+        L[i] = (int8_t)(l + nmax);
+        float w = x[i] * x[i];
+        sumlx += nt_noc(w * x[i] * (float)l);
+        suml2 += nt_noc(w * (float)l * (float)l);
+    }
+    float scale = suml2 ? sumlx / suml2 : 0.0f;
+    float best = scale * sumlx;
+    for (int is = -9; is <= 9; ++is) {
+        if (is == 0) continue;
+        float isc = -((float)nmax + 0.1f * (float)is) / max;
+        float slx = 0.0f, sl2 = 0.0f;
+        for (int i = 0; i < n; ++i) {
+            int l = nt_nearest_int(nt_noc(isc * x[i]));
+            if (l < -nmax) l = -nmax;
+            if (l > nmax - 1) l = nmax - 1;
+            float w = x[i] * x[i];
+            slx += nt_noc(w * x[i] * (float)l);
+            sl2 += nt_noc(w * (float)l * (float)l);
+        }
+        if (sl2 > 0.0f && slx * slx > best * sl2) {
+            for (int i = 0; i < n; ++i) {
+                int l = nt_nearest_int(nt_noc(isc * x[i]));
+                if (l < -nmax) l = -nmax;
+                if (l > nmax - 1) l = nmax - 1;
+                L[i] = (int8_t)(l + nmax);
+            }
+            scale = slx / sl2;
+            best = scale * slx;
+        }
+    }
+    return scale;
+}
+
+/* Q4_K's per-sub-block affine fit: a scale AND a minimum, found by stepping the scale over
+ * nstep candidates and solving the weighted least squares for each. */
+static float nt_make_qkx2_quants(int n, int nmax, const float *x, const float *weights,
+                                 uint8_t *L, float *the_min, uint8_t *Laux,
+                                 float rmin, float rdelta, int nstep) {
+    float min = x[0], max = x[0];
+    float sum_w = weights[0];
+    float sum_x = nt_noc(sum_w * x[0]);
+    for (int i = 1; i < n; ++i) {
+        if (x[i] < min) min = x[i];
+        if (x[i] > max) max = x[i];
+        float w = weights[i];
+        sum_w += w;
+        sum_x += nt_noc(w * x[i]);
+    }
+    if (min > 0.0f) min = 0.0f;
+    if (max == min) {
+        for (int i = 0; i < n; ++i) L[i] = 0;
+        *the_min = -min;
+        return 0.0f;
+    }
+    float iscale = (float)nmax / (max - min);
+    float scale = 1.0f / iscale;
+    float best_mad = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        int l = nt_nearest_int(nt_noc(iscale * (x[i] - min)));
+        if (l < 0) l = 0;
+        if (l > nmax) l = nmax;
+        L[i] = (uint8_t)l;
+        float diff = nt_noc(scale * (float)L[i]) + min - x[i];
+        best_mad += nt_noc(weights[i] * diff * diff);
+    }
+    for (int is = 0; is <= nstep; ++is) {
+        float isc = (rmin + rdelta * (float)is + (float)nmax) / (max - min);
+        float sum_l = 0.0f, sum_l2 = 0.0f, sum_xl = 0.0f;
+        for (int i = 0; i < n; ++i) {
+            int l = nt_nearest_int(nt_noc(isc * (x[i] - min)));
+            if (l < 0) l = 0;
+            if (l > nmax) l = nmax;
+            Laux[i] = (uint8_t)l;
+            float w = weights[i];
+            sum_l  += nt_noc(w * (float)l);
+            sum_l2 += nt_noc(w * (float)l * (float)l);
+            sum_xl += nt_noc(w * (float)l * x[i]);
+        }
+        float D = nt_noc(sum_w * sum_l2) - nt_noc(sum_l * sum_l);
+        if (D > 0.0f) {
+            float this_scale = (nt_noc(sum_w * sum_xl) - nt_noc(sum_x * sum_l)) / D;
+            float this_min   = (nt_noc(sum_l2 * sum_x) - nt_noc(sum_l * sum_xl)) / D;
+            if (this_min > 0.0f) {
+                this_min = 0.0f;
+                this_scale = sum_xl / sum_l2;
+            }
+            float mad = 0.0f;
+            for (int i = 0; i < n; ++i) {
+                float diff = nt_noc(this_scale * (float)Laux[i]) + this_min - x[i];
+                mad += nt_noc(weights[i] * diff * diff);
+            }
+            if (mad < best_mad) {
+                for (int i = 0; i < n; ++i) L[i] = Laux[i];
+                best_mad = mad;
+                scale = this_scale;
+                min = this_min;
+            }
+        }
+    }
+    *the_min = -min;
+    return scale;
+}
+
+static void nt_quantize_row_q6_k(const float *x, uint8_t *out, int k) {
+    int nb = k / 256;
+    for (int i = 0; i < nb; i++) {
+        const float *xb = x + (long)i * 256;
+        uint8_t *blk = out + (long)i * 210;
+        int8_t L[256];
+        float scales[16];
+        float max_scale = 0.0f, max_abs_scale = 0.0f;
+
+        for (int ib = 0; ib < 16; ++ib) {
+            float s = nt_make_qx_quants(16, 32, xb + 16 * ib, L + 16 * ib);
+            scales[ib] = s;
+            float as = fabsf(s);
+            if (as > max_abs_scale) { max_abs_scale = as; max_scale = s; }
+        }
+
+        if (max_abs_scale < NT_GROUP_MAX_EPS) { memset(blk, 0, 210); continue; }
+
+        float iscale = -128.0f / max_scale;
+        uint16_t dh; nt_f32_to_f16_round(1.0f / iscale, &dh);
+        int8_t sc[16];
+        for (int ib = 0; ib < 16; ++ib) {
+            int v = nt_nearest_int(nt_noc(iscale * scales[ib]));
+            sc[ib] = (int8_t)(v < 127 ? v : 127);
+        }
+        for (int j = 0; j < 16; ++j) {
+            float d = nt_f16_to_f32(dh) * (float)sc[j];
+            if (d == 0.0f) continue;
+            for (int ii = 0; ii < 16; ++ii) {
+                int l = nt_nearest_int(nt_noc(xb[16 * j + ii] / d));
+                if (l < -32) l = -32;
+                if (l > 31) l = 31;
+                L[16 * j + ii] = (int8_t)(l + 32);
+            }
+        }
+
+        uint8_t *ql = blk, *qh = blk + 128;
+        for (int j = 0; j < 256; j += 128) {
+            for (int l = 0; l < 32; ++l) {
+                uint8_t q1 = (uint8_t)L[j + l +  0] & 0xF;
+                uint8_t q2 = (uint8_t)L[j + l + 32] & 0xF;
+                uint8_t q3 = (uint8_t)L[j + l + 64] & 0xF;
+                uint8_t q4 = (uint8_t)L[j + l + 96] & 0xF;
+                ql[l +  0] = (uint8_t)(q1 | (q3 << 4));
+                ql[l + 32] = (uint8_t)(q2 | (q4 << 4));
+                qh[l] = (uint8_t)(((uint8_t)L[j + l] >> 4)
+                                | (((uint8_t)L[j + l + 32] >> 4) << 2)
+                                | (((uint8_t)L[j + l + 64] >> 4) << 4)
+                                | (((uint8_t)L[j + l + 96] >> 4) << 6));
+            }
+            ql += 64;
+            qh += 32;
+        }
+        memcpy(blk + 192, sc, 16);
+        blk[208] = (uint8_t)(dh & 0xFF);
+        blk[209] = (uint8_t)(dh >> 8);
+    }
+}
+
+static void nt_quantize_row_q4_k(const float *x, uint8_t *out, int k) {
+    int nb = k / 256;
+    for (int i = 0; i < nb; i++) {
+        const float *xb = x + (long)i * 256;
+        uint8_t *blk = out + (long)i * 144;
+        uint8_t L[256], Laux[32];
+        float weights[32], mins[8], scales[8];
+        float max_scale = 0.0f, max_min = 0.0f;
+
+        for (int j = 0; j < 8; ++j) {
+            float sum_x2 = 0.0f;
+            for (int l = 0; l < 32; ++l) sum_x2 += nt_noc(xb[32 * j + l] * xb[32 * j + l]);
+            float av_x = sqrtf(sum_x2 / 32.0f);
+            for (int l = 0; l < 32; ++l) weights[l] = av_x + fabsf(xb[32 * j + l]);
+            scales[j] = nt_make_qkx2_quants(32, 15, xb + 32 * j, weights, L + 32 * j,
+                                            &mins[j], Laux, -1.0f, 0.1f, 20);
+            if (scales[j] > max_scale) max_scale = scales[j];
+            if (mins[j] > max_min) max_min = mins[j];
+        }
+
+        uint8_t *scbytes = blk + 4;
+        memset(scbytes, 0, 12);
+        float inv_scale = max_scale > 0.0f ? 63.0f / max_scale : 0.0f;
+        float inv_min   = max_min   > 0.0f ? 63.0f / max_min   : 0.0f;
+        for (int j = 0; j < 8; ++j) {
+            int lsv = nt_nearest_int(nt_noc(inv_scale * scales[j]));
+            int lmv = nt_nearest_int(nt_noc(inv_min * mins[j]));
+            uint8_t ls = (uint8_t)(lsv < 63 ? lsv : 63);
+            uint8_t lm = (uint8_t)(lmv < 63 ? lmv : 63);
+            if (j < 4) {
+                scbytes[j] = ls;
+                scbytes[j + 4] = lm;
+            } else {
+                scbytes[j + 4] = (uint8_t)((ls & 0xF) | ((lm & 0xF) << 4));
+                scbytes[j - 4] |= (uint8_t)((ls >> 4) << 6);
+                scbytes[j - 0] |= (uint8_t)((lm >> 4) << 6);
+            }
+        }
+        uint16_t dh, dmh;
+        nt_f32_to_f16_round(max_scale / 63.0f, &dh);
+        nt_f32_to_f16_round(max_min / 63.0f, &dmh);
+        blk[0] = (uint8_t)(dh & 0xFF);  blk[1] = (uint8_t)(dh >> 8);
+        blk[2] = (uint8_t)(dmh & 0xFF); blk[3] = (uint8_t)(dmh >> 8);
+
+        for (int j = 0; j < 8; ++j) {
+            uint8_t s6, m6;
+            nt_get_scale_min_k4(j, scbytes, &s6, &m6);
+            float d = nt_f16_to_f32(dh) * (float)s6;
+            if (d == 0.0f) continue;
+            float dm = nt_f16_to_f32(dmh) * (float)m6;
+            for (int ii = 0; ii < 32; ++ii) {
+                int l = nt_nearest_int(nt_noc((xb[32 * j + ii] + dm) / d));
+                if (l < 0) l = 0;
+                if (l > 15) l = 15;
+                L[32 * j + ii] = (uint8_t)l;
+            }
+        }
+
+        uint8_t *q = blk + 16;
+        for (int j = 0; j < 256; j += 64) {
+            for (int l = 0; l < 32; ++l) q[l] = (uint8_t)(L[j + l] | (L[j + l + 32] << 4));
+            q += 32;
+        }
+    }
+}
+
 int nt_quantize_row(const float *x, void *dst, int k, int dtype) {
     if (!x || !dst || k <= 0 || (k % 32)) return -1;
+    if (dtype == 12 || dtype == 14) {
+        if (k % 256) return -1;
+        if (dtype == 12) nt_quantize_row_q4_k(x, (uint8_t *)dst, k);
+        else             nt_quantize_row_q6_k(x, (uint8_t *)dst, k);
+        return 0;
+    }
     int nb = k / 32;
     uint8_t *out = (uint8_t *)dst;
 

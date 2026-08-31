@@ -34,6 +34,8 @@ static int type_from_name(const char *s) {
     if (!strcmp(s, "q4_0") || !strcmp(s, "Q4_0")) return GGUF_TYPE_Q4_0;
     if (!strcmp(s, "q5_0") || !strcmp(s, "Q5_0")) return GGUF_TYPE_Q5_0;
     if (!strcmp(s, "q8_0") || !strcmp(s, "Q8_0")) return GGUF_TYPE_Q8_0;
+    if (!strcmp(s, "q4_k") || !strcmp(s, "Q4_K")) return GGUF_TYPE_Q4_K;
+    if (!strcmp(s, "q6_k") || !strcmp(s, "Q6_K")) return GGUF_TYPE_Q6_K;
     return -1;
 }
 
@@ -120,9 +122,18 @@ int main(int argc, char **argv) {
     uint64_t cursor = 0, n_quantized = 0;
     for (uint64_t i = 0; i < gf->n_tensors; i++) {
         const gguf_tensor_info *t = &gf->tensors[i];
-        int quantizable = (t->ndim == 2) && (t->shape[0] % 32 == 0) &&
-                          (t->dtype == GGUF_TYPE_F32 || t->dtype == GGUF_TYPE_F16);
-        out_type[i] = quantizable ? (uint32_t)target : t->dtype;
+        /* A K-quant needs 256 to divide the row. llama-quantize does not give up on those
+         * tensors, it drops them to a block format — observed on this model, not assumed:
+         * --pure Q4_K writes 24 tensors as q4_K and the other 146 as q5_0, --pure Q6_K writes
+         * 24 as q6_K and 146 as q8_0. Same rule here, so the two tools produce files of the
+         * same shape rather than merely comparable ones. */
+        int is_k = (target == GGUF_TYPE_Q4_K || target == GGUF_TYPE_Q6_K);
+        int floatsrc = (t->dtype == GGUF_TYPE_F32 || t->dtype == GGUF_TYPE_F16);
+        int quantizable = (t->ndim == 2) && (t->shape[0] % 32 == 0) && floatsrc;
+        uint32_t chosen = (uint32_t)target;
+        if (quantizable && is_k && (t->shape[0] % 256))
+            chosen = (target == GGUF_TYPE_Q4_K) ? GGUF_TYPE_Q5_0 : GGUF_TYPE_Q8_0;
+        out_type[i] = quantizable ? chosen : t->dtype;
         if (quantizable) n_quantized++;
         out_off[i] = cursor;
         uint64_t sz = type_size(out_type[i], t->n_elements);
