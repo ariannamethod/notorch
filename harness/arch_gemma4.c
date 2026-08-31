@@ -44,7 +44,14 @@ typedef struct {
 
     wt tok_emb;           /* [vocab, embed] — also the head, tied */
     float *out_norm;
-    float *ple_proj_w;    /* per_layer_model_proj, bf16 in the file, expanded here */
+    /* per_layer_model_proj is the one weight this family ships in bf16 rather than packed,
+     * and it is read in full once per token: 13.76M values, 55 MB expanded to f32, against
+     * 15 MB for everything else the per-layer path touches. Quantized to Q8_0 at load it is
+     * 14.6 MB and goes through the same integer matvec as the rest, which also takes the
+     * last BLAS call out of the token loop. Q8_0 keeps a scale per 32 values; the result is
+     * normalized immediately afterwards, so what survives is the direction. */
+    uint8_t *ple_proj_q;
+    int ple_proj_rows, ple_proj_cols;
     float *ple_proj_norm;
     float *rope_freqs;    /* proportional rope, full-attention layers only */
 
@@ -108,7 +115,28 @@ static void *gemma4_load(gguf_file *gf, nt_dims *dims) {
     m->ple_ti = gguf_find_tensor(gf, "per_layer_token_embd.weight");
     wt_load(&m->tok_emb, gf, "token_embd.weight");
     m->out_norm      = dequant_named(gf, "output_norm.weight");
-    m->ple_proj_w    = dequant_named(gf, "per_layer_model_proj.weight");
+    {   /* bf16 in, Q8_0 out, row by row so the f32 copy never exists in full. */
+        int pti = gguf_find_tensor(gf, "per_layer_model_proj.weight");
+        if (pti >= 0) {
+            int cols = (int)gf->tensors[pti].shape[0];
+            int rows = (int)(gf->tensors[pti].n_elements / (uint64_t)cols);
+            if (cols % 32 == 0) {
+                size_t rsz = (size_t)(cols / 32) * 34;
+                m->ple_proj_q = (uint8_t *)malloc(rsz * (size_t)rows);
+                float *row = (float *)malloc((size_t)cols * sizeof(float));
+                if (m->ple_proj_q && row) {
+                    for (int r = 0; r < rows; r++) {
+                        if (gguf_dequant_row(gf, pti, (uint64_t)r, row) != 0 ||
+                            nt_quantize_row(row, m->ple_proj_q + rsz * (size_t)r, cols, 8) != 0) {
+                            free(m->ple_proj_q); m->ple_proj_q = NULL; break;
+                        }
+                    }
+                    m->ple_proj_rows = rows; m->ple_proj_cols = cols;
+                }
+                free(row);
+            }
+        }
+    }
     m->ple_proj_norm = dequant_named(gf, "per_layer_proj_norm.weight");
     m->rope_freqs    = dequant_named(gf, "rope_freqs.weight");
 
@@ -174,7 +202,7 @@ static void *gemma4_load(gguf_file *gf, nt_dims *dims) {
             max_kv_dim / m->n_kv_heads,
             m->layers[0].head_dim, (double)m->rope_base, (double)m->rope_base_swa);
 
-    if (!(m->tok_emb.q || m->tok_emb.f32) || !m->out_norm || !m->ple_proj_w ||
+    if (!(m->tok_emb.q || m->tok_emb.f32) || !m->out_norm || !m->ple_proj_q ||
         !m->ple_proj_norm || m->ple_ti < 0) {
         fprintf(stderr, "gemma4: missing critical weights\n");
         free(m);
@@ -191,7 +219,7 @@ static void gemma4_free(void *model) {
     gemma4_model *m = (gemma4_model*)model;
     if (!m) return;
     free(m->tok_emb.f32); free(m->out_norm);
-    free(m->ple_proj_w); free(m->ple_proj_norm); free(m->rope_freqs);
+    free(m->ple_proj_q); free(m->ple_proj_norm); free(m->rope_freqs);
     for (int l = 0; l < m->n_layers; l++) {
         free(m->layers[l].attn_norm); free(m->layers[l].q_norm); free(m->layers[l].k_norm);
         free(m->layers[l].post_attn_norm); free(m->layers[l].ffn_norm);
@@ -264,7 +292,7 @@ static void gemma4_forward(void *model, kv_cache *kv, const int *tokens, int n,
         /* per-layer input = ( norm(model_proj @ x / sqrt(E)) + table_row * sqrt(P) ) / sqrt(2) */
         if (gguf_dequant_row(m->gf, m->ple_ti, (uint64_t)tokens[j], ple_row) != 0)
             memset(ple_row, 0, (size_t)P * NL * sizeof(float));
-        mm_t(proj, xj, m->ple_proj_w, 1, E, P * NL);
+        nt_qmatvec_i8(proj, m->ple_proj_q, 8, xj, m->ple_proj_rows, m->ple_proj_cols);
         float inv_e = 1.0f / sqrtf((float)E), inv_sqrt2 = 1.0f / sqrtf(2.0f);
         for (int l = 0; l < NL; l++) {
             float *pl = proj + (long)l * P;
