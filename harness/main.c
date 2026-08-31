@@ -106,7 +106,7 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
     int pos = pos0 + n_tok, gen = 0;
     for (int step = 0; step < max_tokens; step++) {
         int next = sample(s->logits, s->vocab, temp);
-        if (s->tok ? (next == s->eos) : (next <= 2)) break;
+        if (s->tok ? (next == s->eos || bpe_is_eog(s->tok, next)) : (next <= 2)) break;
         emit(s, next);
         gen++;
         if (pos >= s->max_seq - 1) break;
@@ -179,9 +179,14 @@ int main(int argc, char **argv) {
     /* The positional form is what examples/infer_llama.c takes and what the
      * parity gate drives; the flags are for chat, which has no prompt to hang
      * positional arguments behind. */
+    int tokenize_only = 0;
     while (ai < argc && argv[ai][0] == '-' && argv[ai][1] && !argv[ai][2]) {
         char f = argv[ai][1];
         if (f == 'q') { quiet = 1; ai++; continue; }
+        /* -T prints the ids and stops. A family arrives with two ways to be wrong and this
+         * separates them: the tokenizer can be diffed against another implementation without
+         * loading a single weight, and the forward can be fed ids through NT_TOKENS. */
+        if (f == 'T') { tokenize_only = 1; quiet = 1; ai++; continue; }
         if ((f == 'n' || f == 't') && ai + 1 < argc) {
             if (f == 'n') flag_n = atoi(argv[ai + 1]);
             else flag_t = (float)atof(argv[ai + 1]);
@@ -193,6 +198,18 @@ int main(int argc, char **argv) {
 
     nt_logo(quiet);
     const char *path = argv[ai];
+
+    if (tokenize_only) {
+        bpe_tokenizer *tok = bpe_load(path);
+        if (!tok) { fprintf(stderr, "notorch: no tokenizer in %s\n", path); return 1; }
+        const char *text = (ai + 1 < argc) ? argv[ai + 1] : "";
+        int ids[8192];
+        int n = bpe_encode(tok, text, ids, (int)(sizeof(ids) / sizeof(ids[0])));
+        for (int i = 0; i < n; i++) printf("%d%s", ids[i], i + 1 < n ? "," : "\n");
+        if (n == 0) printf("\n");
+        bpe_free(tok);
+        return 0;
+    }
 
     double t0 = now_ms();
     gguf_file *gf = gguf_open(path);

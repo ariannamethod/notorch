@@ -88,7 +88,7 @@ SIMD_LIBS  = -lpthread
 
 # ── Targets ──
 
-.PHONY: all test test_qpool test_js test_python clean cpu gpu simd help lib shared install metal test_metal infer_gguf_metal
+.PHONY: all test test_qpool test_js test_python test_tokenizer clean cpu gpu simd help lib shared install metal test_metal infer_gguf_metal
 
 all: notorch_test
 	@echo "Built with $(BLAS_NAME). Run: ./notorch_test"
@@ -220,6 +220,11 @@ notorch: $(HARNESS_SRC) $(HARNESS_HDR)
 # nothing. MODEL= to point it at one file, otherwise it looks for its defaults.
 test_harness: notorch llama
 	./harness/test_parity.sh $(MODEL)
+
+# Tokenizer ids against llama.cpp's, which is the only definition of a tokenizer being
+# right. Skips itself where llama-tokenize is not installed. MODEL= to aim it.
+test_tokenizer: notorch
+	./harness/test_tokenizer.sh $(MODEL)
 
 # Tokenizer round-trip. Needs a model, because the thing being tested is what
 # the file says about itself: MODEL=path/to.gguf make test_bpe

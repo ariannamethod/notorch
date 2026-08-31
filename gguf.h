@@ -106,6 +106,12 @@ const gguf_kv* gguf_get_kv(const gguf_file* gf, const char* key);
 // of *out_n strdup'd strings, or NULL if absent. Caller frees each string + the array.
 char** gguf_read_str_array(const char* path, const char* key, int* out_n);
 
+// One string metadata value by key, read without loading tensor data. Returns 0 on success.
+int gguf_read_str_kv(const char* path, const char* key, char* out, int cap);
+
+// One integer metadata value by key (u32, i32, bool or u64). Returns 0 on success.
+int gguf_read_uint_kv(const char* path, const char* key, uint64_t* out);
+
 // Same for a type-9 FLOAT32 array (e.g. "tokenizer.ggml.scores"). Returns a
 // malloc'd float* of *out_n values, or NULL if the key is absent or not f32.
 float* gguf_read_f32_array(const char* path, const char* key, int* out_n);

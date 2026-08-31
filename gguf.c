@@ -212,6 +212,66 @@ const gguf_kv* gguf_get_kv(const gguf_file* gf, const char* key) {
 // Arrays are skipped during gguf_open, so this re-scans the file. Returns a malloc'd
 // char** of *out_n strdup'd strings, or NULL if the key/array is absent. Caller frees
 // each string and the array.
+/* One string value by key, without opening the tensor data. gguf_open reads the whole data
+ * section, which for a 2.6 GB model is a strange price for one word, and the tokenizer needs
+ * exactly one: which scheme the file was written in. Scans the metadata and stops. */
+int gguf_read_str_kv(const char* path, const char* key, char* out, int cap) {
+    if (!out || cap <= 0) return -1;
+    out[0] = 0;
+    FILE* f = fopen(path, "rb");
+    if (!f) return -1;
+    uint32_t magic;
+    if (!read_u32(f, &magic) || magic != GGUF_MAGIC) { fclose(f); return -1; }
+    uint32_t version; uint64_t n_tensors, n_kv;
+    read_u32(f, &version); read_u64(f, &n_tensors); read_u64(f, &n_kv);
+    int found = -1;
+    for (uint64_t i = 0; i < n_kv; i++) {
+        char k[512] = {0};
+        uint32_t vtype;
+        if (!read_string(f, k, sizeof(k)) || !read_u32(f, &vtype)) break;
+        if (strcmp(k, key) == 0 && vtype == 8) {
+            char buf[512] = {0};
+            if (read_string(f, buf, sizeof(buf))) {
+                snprintf(out, (size_t)cap, "%s", buf);
+                found = 0;
+            }
+            break;
+        }
+        if (!skip_value(f, vtype)) break;
+    }
+    fclose(f);
+    return found;
+}
+
+/* One integer-ish value by key — u32, i32, bool or u64 — on the same terms as the string
+ * reader above: metadata only, no tensor bytes. The tokenizer needs its BOS id and whether
+ * to add one, and both are scalars sitting next to a 262144-entry vocabulary. */
+int gguf_read_uint_kv(const char* path, const char* key, uint64_t* out) {
+    if (!out) return -1;
+    FILE* f = fopen(path, "rb");
+    if (!f) return -1;
+    uint32_t magic;
+    if (!read_u32(f, &magic) || magic != GGUF_MAGIC) { fclose(f); return -1; }
+    uint32_t version; uint64_t n_tensors, n_kv;
+    read_u32(f, &version); read_u64(f, &n_tensors); read_u64(f, &n_kv);
+    int found = -1;
+    for (uint64_t i = 0; i < n_kv; i++) {
+        char k[512] = {0};
+        uint32_t vtype;
+        if (!read_string(f, k, sizeof(k)) || !read_u32(f, &vtype)) break;
+        if (strcmp(k, key) == 0) {
+            if (vtype == 4)      { uint32_t v; if (read_u32(f, &v)) { *out = v; found = 0; } }
+            else if (vtype == 5) { int32_t v; if (fread(&v, 4, 1, f) == 1) { *out = (uint64_t)v; found = 0; } }
+            else if (vtype == 7) { uint8_t v; if (fread(&v, 1, 1, f) == 1) { *out = v; found = 0; } }
+            else if (vtype == 10 || vtype == 12) { uint64_t v; if (read_u64(f, &v)) { *out = v; found = 0; } }
+            break;
+        }
+        if (!skip_value(f, vtype)) break;
+    }
+    fclose(f);
+    return found;
+}
+
 char** gguf_read_str_array(const char* path, const char* key, int* out_n) {
     if (out_n) *out_n = 0;
     FILE* f = fopen(path, "rb");

@@ -57,11 +57,20 @@ static int utf8_enc(int cp, char *out) {
     if (cp < 0x800) { out[0] = (char)(0xC0 | (cp >> 6)); out[1] = (char)(0x80 | (cp & 0x3F)); return 2; }
     out[0] = (char)(0xE0 | (cp >> 12)); out[1] = (char)(0x80 | ((cp >> 6) & 0x3F)); out[2] = (char)(0x80 | (cp & 0x3F)); return 3;
 }
+/* Four-byte sequences are not an edge case, they are every emoji. Without this arm a lead
+ * byte of 0xF0 was taken as one character and the three continuation bytes as three more,
+ * none of which is a legal token, so a vocabulary that has 🍦 whole fell back to four byte
+ * tokens for it — correct text out, wrong ids, and the ids are the model's input. */
 static int utf8_dec(const char *s, int *cp) {
     unsigned char c = (unsigned char)s[0];
     if (c < 0x80) { *cp = c; return 1; }
     if ((c >> 5) == 0x6) { *cp = ((c & 0x1F) << 6) | ((unsigned char)s[1] & 0x3F); return 2; }
     if ((c >> 4) == 0xE) { *cp = ((c & 0xF) << 12) | (((unsigned char)s[1] & 0x3F) << 6) | ((unsigned char)s[2] & 0x3F); return 3; }
+    if ((c >> 3) == 0x1E) {
+        *cp = ((c & 0x07) << 18) | (((unsigned char)s[1] & 0x3F) << 12)
+            | (((unsigned char)s[2] & 0x3F) << 6) | ((unsigned char)s[3] & 0x3F);
+        return 4;
+    }
     *cp = c; return 1;
 }
 
@@ -77,6 +86,14 @@ struct bpe_tokenizer {
     int spm;
     float *scores;
     int byte_id[256];              /* byte -> id of "<0xHH>", or -1 */
+    /* Gemma 4 is the third shape and it is not deducible from the file's contents: it
+     * carries BOTH a merge list and a score per token, so the "merges means byte-level,
+     * scores means SentencePiece" rule sends it to the wrong one. It is SPM-style BPE —
+     * spaces written U+2581 and byte fallback like SentencePiece, merges by rank on raw
+     * UTF-8 like BPE, and no word-level pre-split at all, only a break at newlines. The
+     * only signal is the name in tokenizer.ggml.model, which is what llama.cpp reads too. */
+    int spm_bpe;
+    int add_bos, bos_id;
 };
 
 /* U+2581 LOWER ONE EIGHTH BLOCK — SentencePiece's space. */
@@ -133,6 +150,26 @@ bpe_tokenizer *bpe_load(const char *path) {
     } else {
         free(scores);
         for (int b = 0; b < 256; b++) t->byte_id[b] = -1;
+    }
+
+    /* The name settles what the contents cannot. Gemma 4 hands us merges and scores both,
+     * and it wants neither of the two paths above. */
+    char model_name[64] = {0};
+    if (gguf_read_str_kv(path, "tokenizer.ggml.model", model_name, sizeof(model_name)) == 0 &&
+        strcmp(model_name, "gemma4") == 0 && nm > 0) {
+        t->spm = 0;
+        t->spm_bpe = 1;
+        for (int b = 0; b < 256; b++) {
+            char name[8];
+            snprintf(name, sizeof(name), "<0x%02X>", b);
+            t->byte_id[b] = smap_get(&t->vocab, name);
+        }
+        /* This family always opens with <bos>, and the file says so rather than the code
+         * assuming it. Getting it wrong costs more than a token: Gemma without its opening
+         * marker answers a different question. */
+        uint64_t v = 0;
+        t->bos_id = (gguf_read_uint_kv(path, "tokenizer.ggml.bos_token_id", &v) == 0) ? (int)v : 2;
+        t->add_bos = (gguf_read_uint_kv(path, "tokenizer.ggml.add_bos_token", &v) == 0) ? (int)v : 1;
     }
     return t;
 }
@@ -247,13 +284,116 @@ static int spm_encode(const bpe_tokenizer *t, const char *text, int *out, int ca
     return no;
 }
 
+/* Gemma 4: spaces become U+2581, the text is broken only where newlines are, and each piece
+ * is merged by rank over its UTF-8 characters. No word-level pre-split, which is the part
+ * that separates this from byte-level BPE — a merge is allowed to cross what other families
+ * treat as a word boundary, and forbidding that is what produced nine tokens where the
+ * reference produces five. */
+static int spm_bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
+    int no = 0;
+    if (t->add_bos && no < cap) out[no++] = t->bos_id;
+
+    /* Escape first: one pass, ' ' -> three bytes. */
+    int L = (int)strlen(text);
+    char *esc = (char*)malloc((size_t)L * 3 + 1);
+    if (!esc) return no;
+    int el = 0;
+    for (int i = 0; i < L; i++) {
+        if (text[i] == ' ') { memcpy(esc + el, SPM_SPACE, 3); el += 3; }
+        else esc[el++] = text[i];
+    }
+    esc[el] = 0;
+
+    int i = 0;
+    while (i < el) {
+        /* One chunk is a run of newlines or a run of everything else. */
+        int nl = (esc[i] == '\n');
+        int j = i;
+        while (j < el && ((esc[j] == '\n') == nl)) j++;
+
+        /* A pure run of newlines that the vocabulary already has stays whole — the merge
+         * table cannot be consulted for it, and llama.cpp special-cases it the same way. */
+        char whole[64];
+        if (nl && j - i < (int)sizeof(whole)) {
+            memcpy(whole, esc + i, (size_t)(j - i));
+            whole[j - i] = 0;
+            int id = smap_get(&t->vocab, whole);
+            if (id >= 0) {
+                if (no < cap) out[no++] = id;
+                i = j;
+                continue;
+            }
+        }
+
+        /* Symbols start as UTF-8 characters, then merge by lowest rank. */
+        int nsym = 0;
+        for (int p = i; p < j; ) { int cp; p += utf8_dec(esc + p, &cp); nsym++; }
+        char **sym = (char**)malloc((size_t)nsym * sizeof(char*));
+        int s = 0;
+        for (int p = i; p < j; ) {
+            int cp; int n = utf8_dec(esc + p, &cp);
+            sym[s] = (char*)malloc((size_t)n + 1);
+            memcpy(sym[s], esc + p, (size_t)n); sym[s][n] = 0;
+            p += n; s++;
+        }
+        int ns = nsym;
+        while (ns > 1) {
+            int best_rank = INT_MAX, bi = -1;
+            char key[512];
+            for (int b = 0; b < ns - 1; b++) {
+                if (strlen(sym[b]) + strlen(sym[b + 1]) + 2 > sizeof(key)) continue;
+                snprintf(key, sizeof(key), "%s %s", sym[b], sym[b + 1]);
+                int r = smap_get(&t->merges, key);
+                if (r >= 0 && r < best_rank) { best_rank = r; bi = b; }
+            }
+            if (bi < 0) break;
+            char *merged = (char*)malloc(strlen(sym[bi]) + strlen(sym[bi + 1]) + 1);
+            strcpy(merged, sym[bi]); strcat(merged, sym[bi + 1]);
+            free(sym[bi]); free(sym[bi + 1]); sym[bi] = merged;
+            for (int b = bi + 1; b < ns - 1; b++) sym[b] = sym[b + 1];
+            ns--;
+        }
+        for (int b = 0; b < ns; b++) {
+            int id = smap_get(&t->vocab, sym[b]);
+            if (id >= 0) { if (no < cap) out[no++] = id; }
+            else {
+                /* Byte fallback, one <0xHH> per byte of whatever did not resolve. */
+                for (const unsigned char *p = (const unsigned char*)sym[b]; *p; p++) {
+                    int bid = t->byte_id[*p];
+                    if (bid >= 0) { if (no < cap) out[no++] = bid; }
+                    else warn_dropped(sym[b]);
+                }
+            }
+            free(sym[b]);
+        }
+        free(sym);
+        i = j;
+    }
+    free(esc);
+    return no;
+}
+
 int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
+    if (t && t->spm_bpe) return spm_bpe_encode(t, text, out, cap);
     if (t && t->spm) return spm_encode(t, text, out, cap);
     int no = 0, L = (int)strlen(text), i = 0;
     while (i < L) {
-        /* pre-tok piece: [i, j) — a leading space (if any) stays with the run that follows */
-        int j = i + 1;
-        while (j < L && text[j] != ' ') j++;
+        /* pre-tok piece: [i, j). One space belongs to the run that follows it, but a RUN of
+         * spaces does not — GPT-2 splits `\s+(?!\S)` off first, so four spaces before a word
+         * are three spaces and then " word". Taking each space as its own piece instead is
+         * quiet on prose and loud on code: an indented line came out as three separate
+         * space tokens where the reference emits one, and every position after it shifted. */
+        int j;
+        int run = 0;
+        while (i + run < L && text[i + run] == ' ') run++;
+        if (run > 1) {
+            /* A run of spaces: all but the last are one piece, and the last one goes with
+             * the word after it. At end of text there is no word, so the run stays whole. */
+            j = (i + run < L) ? i + run - 1 : L;
+        } else {
+            j = i + 1;
+            while (j < L && text[j] != ' ') j++;
+        }
         int nsym = j - i;
         char **sym = (char**)malloc(nsym * sizeof(char*));
         for (int b = 0; b < nsym; b++) {
@@ -293,7 +433,7 @@ int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
 int bpe_decode_token(const bpe_tokenizer *t, int id, char *buf, int cap) {
     if (!t || id < 0 || id >= t->n_tokens || !t->tokens[id]) return 0;
     const char *s = t->tokens[id];
-    if (t->spm) {
+    if (t->spm || t->spm_bpe) {
         /* A byte token carries one byte. Everything else is text in which
          * U+2581 stands for a space — three bytes wide, so the table the
          * byte-level path reads (512 entries) could never have mapped it. */
@@ -383,3 +523,16 @@ int main(int argc, char **argv) {
     return fails ? 1 : 0;
 }
 #endif
+
+/* End of generation is not always one id. Gemma 4 closes a turn with <turn|> and answers a
+ * tool call with <|tool_response>, and a run that only watches <eos> prints those markers as
+ * text and keeps going — which is what this harness did on its first gemma run. llama.cpp
+ * carries the same list for this family; nothing is assumed for the others, where the eos id
+ * from the file is the whole answer. */
+int bpe_is_eog(const bpe_tokenizer *t, int id) {
+    if (!t || id < 0 || id >= t->n_tokens || !t->tokens[id]) return 0;
+    if (!t->spm_bpe) return 0;
+    const char *s = t->tokens[id];
+    return strcmp(s, "<eos>") == 0 || strcmp(s, "<turn|>") == 0 ||
+           strcmp(s, "<|tool_response>") == 0;
+}

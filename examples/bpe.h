@@ -35,4 +35,8 @@ int bpe_decode_token(const bpe_tokenizer *t, int id, char *buf, int cap);
 /* id of an exact token string (e.g. "<|im_start|>"), or -1 if absent. */
 int bpe_token_id(const bpe_tokenizer *t, const char *token);
 
+/* Whether an id ends the generation for this file, beyond the eos id in the metadata.
+ * Some families close a turn with a marker of their own. */
+int bpe_is_eog(const bpe_tokenizer *t, int id);
+
 #endif /* BPE_H */
