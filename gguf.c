@@ -420,6 +420,7 @@ static uint64_t gguf_dtype_nbytes(uint32_t dtype, uint64_t n) {
     switch (dtype) {
     case GGUF_TYPE_F32:  return (n > UINT64_MAX / 4) ? 0 : n * 4;
     case GGUF_TYPE_F16:  return (n > UINT64_MAX / 2) ? 0 : n * 2;
+    case GGUF_TYPE_BF16: return (n > UINT64_MAX / 2) ? 0 : n * 2;
     case GGUF_TYPE_Q4_0: blocks = n / 32;  per = 18;  break;
     case GGUF_TYPE_Q5_0: blocks = n / 32;  per = 22;  break;
     case GGUF_TYPE_Q8_0: blocks = n / 32;  per = 34;  break;
@@ -460,6 +461,17 @@ float* gguf_dequant(const gguf_file* gf, int tensor_idx) {
         const uint16_t* f16 = (const uint16_t*)src;
         for (uint64_t i = 0; i < ti->n_elements; i++)
             dst[i] = f16_to_f32(f16[i]);
+        break;
+    }
+    /* bfloat16 is f32 with the low mantissa cut off, so widening it is a shift and
+     * nothing else — no exponent rebias, no subnormal case. Gemma-4 stores its
+     * per-layer projection this way. */
+    case GGUF_TYPE_BF16: {
+        const uint16_t* bf = (const uint16_t*)src;
+        for (uint64_t i = 0; i < ti->n_elements; i++) {
+            uint32_t bits = (uint32_t)bf[i] << 16;
+            memcpy(&dst[i], &bits, 4);
+        }
         break;
     }
     case GGUF_TYPE_Q4_0:
@@ -525,6 +537,14 @@ int gguf_dequant_row(const gguf_file* gf, int tensor_idx, uint64_t row, float* d
     case GGUF_TYPE_F16: {
         const uint16_t* f16 = (const uint16_t*)src;
         for (uint64_t i = 0; i < cols; i++) dst[i] = f16_to_f32(f16[i]);
+        break;
+    }
+    case GGUF_TYPE_BF16: {
+        const uint16_t* bf = (const uint16_t*)src;
+        for (uint64_t i = 0; i < cols; i++) {
+            uint32_t bits = (uint32_t)bf[i] << 16;
+            memcpy(&dst[i], &bits, 4);
+        }
         break;
     }
     case GGUF_TYPE_Q4_0: dequant_q4_0(src, dst, cols); break;

@@ -32,5 +32,6 @@ typedef struct {
 } nt_arch;
 
 extern const nt_arch nt_arch_llama;
+extern const nt_arch nt_arch_gemma4;
 
 #endif

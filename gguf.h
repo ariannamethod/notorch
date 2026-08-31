@@ -18,6 +18,7 @@
 #define GGUF_TYPE_Q8_0  8
 #define GGUF_TYPE_Q4_K 12
 #define GGUF_TYPE_Q6_K 14
+#define GGUF_TYPE_BF16 30
 
 #define GGUF_MAX_TENSORS 2048   // covers Llama-70B-class (~723 tensors); loader fails loud beyond this
 #define GGUF_MAX_NAME    128
