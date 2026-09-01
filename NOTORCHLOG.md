@@ -13,6 +13,51 @@ Newest entries on top.
 
 ---
 
+## 2026-09-01 — the model is mapped, not read
+
+`gguf_open` allocated the whole tensor block and read the file into it. On a workstation that
+is merely wasteful; on a phone it is the reason a benchmark does not repeat. The copy is
+anonymous memory, so under pressure the kernel compresses 2.6 GB of weights into swap and
+decompresses them again on the next token, and during load the file exists twice — page cache
+and our copy both. Decode on one Gemma file measured 10.2 t/s one day and 8.9 the next from an
+unchanged commit, checked by building the same revision in a clean tree and running it against
+the branch; the reference, which maps its files, repeated itself across the same two days.
+
+The tensor block is now a read-only `MAP_PRIVATE` view. The data section is 32-byte aligned
+and a mapping must start on a page, so it maps from the page below and hands out the offset
+view; `data_size` on this path is the exact byte count rather than the page-rounded one, which
+makes the bounds checks in `gguf_dequant_row` stricter, not looser. `map_base` and `map_len`
+carry what `munmap` needs. Any refusal from the kernel falls back to the read path, which is
+kept whole.
+
+Populating is the default, and that took a measurement to settle. Faulted lazily the model
+arrives one page at a time inside the first forward pass, which is prefill: 7.5 t/s against
+12.3 on an 11-token prompt. `MADV_WILLNEED` did not move it — 7.4 / 7.5 / 8.2 with the call
+against 7.0 / 7.1 / 8.3 without — so the call is not in the tree. `MAP_POPULATE` pays the same
+cost at load as one sequential stream and removes it from prefill entirely, 12.5 / 12.3, while
+still reaching first output faster than reading did because nothing is copied: **1.90 s
+against 4.13**. The cost is fixed rather than per token, which is why all three variants are
+indistinguishable on a 577-token prompt — 10.0, 10.0, 10.1 — and why the short prompt is the
+only place the choice shows. `NT_GGUF_MMAP=lazy` skips populating for a model larger than RAM:
+peak RSS **1 557 448 kB against 2 851 072**, at the price named above.
+
+Decode moved nowhere, which is the expected result and worth stating: 8.6 to 8.9 t/s across
+all eight runs of a cold-start A/B, mapped and read alike. Prefill with the file already in
+cache favours the mapping, 12.5 / 12.9 against 12.2 / 8.5, because mapping is free there and
+`fread` still copies 2.6 GB. Whether the day-to-day variance is gone is a claim for another
+day's measurement; what can be said now is that the mechanism behind it was removed.
+
+Metal keeps the read path unchanged. `nt_metal_register_base` wraps `data` as a NoCopy
+MTLBuffer and needs a page-aligned pointer with a page-rounded length, which an offset view
+into a file does not provide, so the mapping does not compile under `USE_METAL` at all.
+`NT_GGUF_MMAP=0` forces the read path anywhere else.
+
+The gate was checked by breaking it: shifting the mapped view four bytes makes the same model
+answer `!!!!!!!!` where it answered ` Paris.`, and parity catches it. Suites 49, 73, 34 and 3
+pass, parity is identical on three prompts, tokenizer on 16.
+
+---
+
 ## 2026-09-01 — the quantizer learns to take quantized input, and Gemma's head halves
 
 Gemma 4's output projection is its embedding table, so the whole of `token_embd.weight` is

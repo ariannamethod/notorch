@@ -8,6 +8,29 @@
 #include <math.h>
 #include <unistd.h>
 
+/* Mapping the tensor block instead of reading it. A model is the largest thing
+ * this library ever holds, and holding it as anonymous memory costs three ways:
+ * during load the file exists twice, once in the page cache and once in our
+ * copy; afterwards the copy is the kernel's first candidate for swap, which on
+ * a phone means compressing weights and decompressing them again on the next
+ * token; and two processes running the same model pay for it twice. File-backed
+ * pages have none of those properties — they are dropped clean and re-read, and
+ * they are shared. The measurable symptom of not doing this was decode speed
+ * that did not reproduce between days on an unchanged commit.
+ *
+ * Metal keeps the read path. `nt_metal_register_base` wraps `data` as a NoCopy
+ * MTLBuffer, which requires a page-aligned pointer and a page-rounded length,
+ * and a mapped view starts wherever the file's 32-byte-aligned data section
+ * starts. `NT_GGUF_MMAP=0` forces the read path anywhere else, and
+ * `NT_GGUF_MMAP=lazy` maps without populating — half the resident memory, at
+ * the cost of faulting the model in during the first forward pass. */
+#if !defined(USE_METAL) && !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+#define NOTORCH_GGUF_MMAP 1
+#include <sys/mman.h>
+#else
+#define NOTORCH_GGUF_MMAP 0
+#endif
+
 // ── Reading primitives ───────────────────────────────────────────────────────
 
 static int read_u32(FILE* f, uint32_t* v) { return fread(v, 4, 1, f) == 1; }
@@ -171,11 +194,50 @@ gguf_file* gguf_open(const char* path) {
         fclose(f); free(gf); return NULL;
     }
     long data_size = fsize - (long)gf->data_offset;
-    // Page-align the tensor block so the Metal backend can wrap it as one
-    // zero-copy NoCopy MTLBuffer (resident weights). free() stays valid.
     size_t pg = (size_t)getpagesize();
-    size_t alloc = ((size_t)data_size + pg - 1) & ~(pg - 1);
     gf->data = NULL;
+    gf->map_base = NULL;
+    gf->map_len = 0;
+
+#if NOTORCH_GGUF_MMAP
+    {
+        const char* mode = getenv("NT_GGUF_MMAP");
+        if (!(mode && mode[0] == '0')) {
+            // The mapping has to start on a page boundary; the data section is
+            // only 32-byte aligned, so map from the page below it and hand out
+            // the offset view. Everything readable through `data` stays inside
+            // the mapping because the kernel rounds `map_len` up, never down.
+            size_t delta = (size_t)(gf->data_offset & (uint64_t)(pg - 1));
+            size_t len   = delta + (size_t)data_size;
+            int    flags = MAP_PRIVATE;
+#ifdef MAP_POPULATE
+            // Faulted lazily, the whole model arrives a page at a time inside the
+            // first forward pass, and on a 2.6 GB file that costs half a second of
+            // prefill — measured, 7.5 t/s against 12.3 on an 11-token prompt, and
+            // invisible on a 577-token one because the cost is fixed rather than
+            // per token. Populating pays it at load as one sequential stream, which
+            // is what the read path did, and beats the read path on wall clock
+            // anyway (2.09 s against 3.62) because nothing is copied. NT_GGUF_MMAP=lazy
+            // skips it and halves resident memory, for a model larger than RAM.
+            if (!(mode && strcmp(mode, "lazy") == 0)) flags |= MAP_POPULATE;
+#endif
+            void*  base  = mmap(NULL, len, PROT_READ, flags, fileno(f), (off_t)(gf->data_offset - delta));
+            if (base != MAP_FAILED) {
+                gf->map_base  = base;
+                gf->map_len   = (uint64_t)len;
+                gf->data      = (uint8_t*)base + delta;
+                gf->data_size = (uint64_t)data_size;
+                fclose(f);
+                return gf;
+            }
+        }
+    }
+#endif
+
+    // Read path: mapping is off, or the kernel refused. Page-align the tensor
+    // block so the Metal backend can wrap it as one zero-copy NoCopy MTLBuffer
+    // (resident weights). free() stays valid.
+    size_t alloc = ((size_t)data_size + pg - 1) & ~(pg - 1);
     if (posix_memalign((void**)&gf->data, pg, alloc) != 0 || !gf->data) { fclose(f); free(gf); return NULL; }
     gf->data_size = (uint64_t)alloc;
     fseek(f, gf->data_offset, SEEK_SET);
@@ -190,6 +252,10 @@ gguf_file* gguf_open(const char* path) {
 
 void gguf_close(gguf_file* gf) {
     if (!gf) return;
+#if NOTORCH_GGUF_MMAP
+    if (gf->map_base) munmap(gf->map_base, (size_t)gf->map_len);
+    else
+#endif
     free(gf->data);
     free(gf);
 }

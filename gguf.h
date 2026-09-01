@@ -61,9 +61,13 @@ typedef struct {
 
     // Data section
     uint64_t       kv_end;        // file offset just past the metadata section
-    uint8_t*       data;          // page-aligned (posix_memalign) raw tensor bytes
+    uint8_t*       data;          // raw tensor bytes: a read-only mapped view of the
+                                  // file, or a posix_memalign copy when mapping is off
     uint64_t       data_offset;   // file offset where tensor data starts
-    uint64_t       data_size;     // page-rounded byte size of `data` (for Metal NoCopy)
+    uint64_t       data_size;     // bytes readable through `data`; page-rounded on the
+                                  // copy path, where Metal NoCopy needs the rounding
+    void*          map_base;      // mmap base, NULL when `data` is a heap copy
+    uint64_t       map_len;       // length to hand back to munmap
 
     // Architecture params (extracted from metadata)
     int  n_layers;
