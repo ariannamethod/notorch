@@ -15,13 +15,18 @@ Newest entries on top.
 
 ## 2026-09-01 — the model is mapped, not read
 
-`gguf_open` allocated the whole tensor block and read the file into it. On a workstation that
-is merely wasteful; on a phone it is the reason a benchmark does not repeat. The copy is
-anonymous memory, so under pressure the kernel compresses 2.6 GB of weights into swap and
-decompresses them again on the next token, and during load the file exists twice — page cache
-and our copy both. Decode on one Gemma file measured 10.2 t/s one day and 8.9 the next from an
-unchanged commit, checked by building the same revision in a clean tree and running it against
-the branch; the reference, which maps its files, repeated itself across the same two days.
+`gguf_open` allocated the whole tensor block and read the file into it. The file passes through
+the page cache on its way into that buffer, so a 2.6 GB model occupies 5.2 GB at the moment of
+load, and two processes running the same model repeat every byte of it. A mapping *is* the page
+cache: neither cost exists.
+
+The first version of this entry, and of the commit that carried it, named a different reason —
+that the copy is anonymous memory and therefore swapped and decompressed under pressure — and
+tied the day-to-day variance to it. **That was checked afterwards and is wrong.** Under 3 GiB
+of deliberate pressure, with 2.3 GB genuinely moved into swap system-wide, the inference
+process reported no swapped pages of its own on either path: weights touched every token stay
+hot, so the kernel takes something colder. The correction stands in the record rather than
+being quietly dropped, because the number that motivated the work is still unexplained (below).
 
 The tensor block is now a read-only `MAP_PRIVATE` view. The data section is 32-byte aligned
 and a mapping must start on a page, so it maps from the page below and hands out the offset
@@ -44,8 +49,19 @@ peak RSS **1 557 448 kB against 2 851 072**, at the price named above.
 Decode moved nowhere, which is the expected result and worth stating: 8.6 to 8.9 t/s across
 all eight runs of a cold-start A/B, mapped and read alike. Prefill with the file already in
 cache favours the mapping, 12.5 / 12.9 against 12.2 / 8.5, because mapping is free there and
-`fread` still copies 2.6 GB. Whether the day-to-day variance is gone is a claim for another
-day's measurement; what can be said now is that the mechanism behind it was removed.
+`fread` still copies 2.6 GB.
+
+**The open number.** Decode on this Gemma file was 10.2 t/s on 2026-08-31 and 8.6–9.0 on
+2026-09-01, and nothing found so far accounts for it. Eliminated, each by measurement rather
+than by argument: a code regression (the same revision built clean from `53eef56` gives
+8.9 / 8.8 / 9.0 against the branch's 8.8 / 9.1 / 8.9); generation length (`-n` 8, 16, 24, 32 →
+9.0, 8.7, 8.7, 9.0); the prompt (six of them, 7.9 to 8.3 warm); temperature (a 33 °C start
+gives the same 8.6–9.0); memory pressure (2 GiB and 3 GiB change nothing); the weak
+`openblas_set_num_threads` hook (no effect — BLAS left the token loop when the per-layer
+projection was quantized); transparent huge pages (`[never]` in this kernel, so never a factor
+on either day). The reference reproduces itself across the same two days, 10.92 and 10.83.
+Either something in the environment is still unidentified, or the earlier figure was measured
+wrong. It is recorded as open rather than explained.
 
 Metal keeps the read path unchanged. `nt_metal_register_base` wraps `data` as a NoCopy
 MTLBuffer and needs a page-aligned pointer with a page-rounded length, which an offset view

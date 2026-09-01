@@ -9,14 +9,20 @@
 #include <unistd.h>
 
 /* Mapping the tensor block instead of reading it. A model is the largest thing
- * this library ever holds, and holding it as anonymous memory costs three ways:
- * during load the file exists twice, once in the page cache and once in our
- * copy; afterwards the copy is the kernel's first candidate for swap, which on
- * a phone means compressing weights and decompressing them again on the next
- * token; and two processes running the same model pay for it twice. File-backed
- * pages have none of those properties — they are dropped clean and re-read, and
- * they are shared. The measurable symptom of not doing this was decode speed
- * that did not reproduce between days on an unchanged commit.
+ * this library ever holds, and reading it into a buffer costs twice: the file
+ * passes through the page cache on its way into our copy, so a 2.6 GB model
+ * occupies 5.2 GB at the moment of load, and two processes running the same
+ * model repeat all of it. A mapping is the page cache, so neither happens —
+ * measured on this phone as 1.90 s to first output against 4.13.
+ *
+ * What this does NOT fix, stated because the first version of this comment
+ * claimed it did: decode speed on one Gemma file measured 10.2 t/s on one day
+ * and 8.6-9.0 the next from an unchanged commit, and mapping does not move it.
+ * The swap explanation was checked and refused — under 3 GiB of deliberate
+ * pressure the process reported no swapped pages on either path, because
+ * weights touched every token stay hot enough that the kernel evicts something
+ * else. Generation length, prompt, temperature, BLAS threads and huge pages
+ * were eliminated too. That number is still unexplained.
  *
  * Metal keeps the read path. `nt_metal_register_base` wraps `data` as a NoCopy
  * MTLBuffer, which requires a page-aligned pointer and a page-rounded length,
