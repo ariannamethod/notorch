@@ -121,17 +121,33 @@ static void *gemma4_load(gguf_file *gf, nt_dims *dims) {
             int cols = (int)gf->tensors[pti].shape[0];
             int rows = (int)(gf->tensors[pti].n_elements / (uint64_t)cols);
             if (cols % 32 == 0) {
+                /* Either the whole thing quantizes or the pointer stays NULL. A buffer that
+                 * exists with rows and cols still zero would pass the "critical weights"
+                 * check below and then run the model against nothing — the loud failure is
+                 * the cheap one here. */
                 size_t rsz = (size_t)(cols / 32) * 34;
-                m->ple_proj_q = (uint8_t *)malloc(rsz * (size_t)rows);
+                uint8_t *packed = (uint8_t *)malloc(rsz * (size_t)rows);
                 float *row = (float *)malloc((size_t)cols * sizeof(float));
-                if (m->ple_proj_q && row) {
-                    for (int r = 0; r < rows; r++) {
-                        if (gguf_dequant_row(gf, pti, (uint64_t)r, row) != 0 ||
-                            nt_quantize_row(row, m->ple_proj_q + rsz * (size_t)r, cols, 8) != 0) {
-                            free(m->ple_proj_q); m->ple_proj_q = NULL; break;
-                        }
-                    }
-                    m->ple_proj_rows = rows; m->ple_proj_cols = cols;
+                int ok = (packed && row);
+                for (int r = 0; ok && r < rows; r++) {
+                    if (gguf_dequant_row(gf, pti, (uint64_t)r, row) != 0 ||
+                        nt_quantize_row(row, packed + rsz * (size_t)r, cols, 8) != 0)
+                        ok = 0;
+                }
+                /* The matvec has its own opinion about shapes and dtypes; ask it once here
+                 * rather than discovering the answer inside the token loop. */
+                if (ok) {
+                    float probe = 0.0f;
+                    float *zero = (float *)calloc((size_t)cols, sizeof(float));
+                    ok = zero && nt_qmatvec_i8(&probe, packed, 8, zero, 1, cols) == 0;
+                    free(zero);
+                }
+                if (ok) {
+                    m->ple_proj_q = packed;
+                    m->ple_proj_rows = rows;
+                    m->ple_proj_cols = cols;
+                } else {
+                    free(packed);
                 }
                 free(row);
             }
@@ -292,7 +308,15 @@ static void gemma4_forward(void *model, kv_cache *kv, const int *tokens, int n,
         /* per-layer input = ( norm(model_proj @ x / sqrt(E)) + table_row * sqrt(P) ) / sqrt(2) */
         if (gguf_dequant_row(m->gf, m->ple_ti, (uint64_t)tokens[j], ple_row) != 0)
             memset(ple_row, 0, (size_t)P * NL * sizeof(float));
-        nt_qmatvec_i8(proj, m->ple_proj_q, 8, xj, m->ple_proj_rows, m->ple_proj_cols);
+        /* The shape was probed at load, so a refusal here means the call failed rather than
+         * the shape being wrong — an allocation, most likely. Say so once and leave the
+         * buffer zeroed: a per-layer input of zeros degrades the answer, reading whatever
+         * the last token left there corrupts it silently. */
+        if (nt_qmatvec_i8(proj, m->ple_proj_q, 8, xj, m->ple_proj_rows, m->ple_proj_cols) != 0) {
+            static int warned = 0;
+            if (!warned) { fprintf(stderr, "gemma4: per-layer projection failed\n"); warned = 1; }
+            memset(proj, 0, (size_t)P * NL * sizeof(float));
+        }
         float inv_e = 1.0f / sqrtf((float)E), inv_sqrt2 = 1.0f / sqrtf(2.0f);
         for (int l = 0; l < NL; l++) {
             float *pl = proj + (long)l * P;

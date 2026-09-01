@@ -13,6 +13,54 @@ Newest entries on top.
 
 ---
 
+## 2026-09-01 — the quantizer learns to take quantized input, and Gemma's head halves
+
+Gemma 4's output projection is its embedding table, so the whole of `token_embd.weight` is
+read once per decoded token. `llama-quantize` deliberately keeps that tensor at a higher
+precision than the rest — in the file on this node everything is q4_0 and the head is q8_0,
+408 MiB against the 876 MiB the FFN reads. Dropping it to q4_0 was arithmetic worth testing
+and the tool could not do it: it accepted f32 and f16 sources only, and Gemma's float original
+is a 9.3 GB bf16 checkpoint that does not fit in this phone's 8 GB, since `gguf_open` reads
+the data section into memory whole.
+
+Two flags on `tools/gguf_quantize.c`. `--requantize` accepts an already-quantized source,
+which loses what the first quantization lost and then some, and is the only path left when the
+floats are gone. `--only SUBSTR` converts just the tensors whose name contains the substring
+and copies every other one byte for byte, so a single tensor can be priced on its own. Also
+bf16 (type 30) in the sizer and the type namer — without it the tool aborted on
+`per_layer_model_proj.weight`, the file's one bf16 tensor, which is copied through untouched
+rather than converted.
+
+    ./gguf_quantize gemma-4-E2B-it-Q4_0.gguf out.gguf q4_0 --requantize --only token_embd
+
+Head 408 → 216 MiB, file 2710 → 2518 MiB. Decode on the harness, three runs each, interleaved,
+from a cold phone: **8.8 / 8.5 / 8.6 t/s against 9.5 / 9.2 / 9.0, plus 7.0 percent**, prefill
+unchanged at 12.0 against 12.1. The prediction was 13 percent and it did not arrive: a q4_0
+matvec spends more on unpacking than a q8_0 one, so the head went 25.4 ms to about 16, not to
+12.7. Quality, `llama-perplexity` over 16 chunks of 512 on the same corpus: 64.8869 ± 4.234
+against 65.2808 ± 4.251 — six tenths of a percent, inside the interval. `llama.cpp` on the same
+two files moves the same way on decode, 10.83 ± 0.38 to 11.48 ± 0.02, and pays 5.5 percent of
+prefill for it, 16.61 to 15.70; we pay nothing there.
+
+Two review findings from the Gemma bring-up, both real, both in `harness/arch_gemma4.c`. The
+per-layer projection ignored the return of `nt_qmatvec_i8`, so a failure would have fed the
+residual whatever was in the scratch buffer; it now zeroes the section and says so once.
+And the loader published `ple_proj_q` before checking that its rows and columns were set,
+leaving a non-NULL pointer describing a zero-sized matrix on the allocation-failure path;
+the pointer is now published only after a probe matvec returns 0.
+
+One measurement note worth more than the patch. Decode on this file does not reproduce across
+days: 10.2 t/s on 2026-08-31, 8.9 today, from the same commit — built from `53eef56` in a
+clean tree and A/B'd against the branch, 8.9 / 8.8 / 9.0 against 8.8 / 9.1 / 8.9, no
+difference. `llama.cpp` reproduces its own number (10.92 then, 10.83 now). The asymmetry is
+`gguf.c:179` — `posix_memalign` plus `fread` of the whole data section into anonymous memory,
+which under memory pressure goes to swap and comes back decompressed, and during load holds
+the file twice: once in the page cache, once in our copy. With `Cached` at 1.9 GB against a
+2.64 GB model and 2.55 GB already swapped, part of every token streams. The reference mmaps.
+So should we — separately, with the Metal NoCopy alignment guarantee kept intact.
+
+---
+
 ## 2026-08-31 — Gemma 4 gets faster, and neither reason was in the kernels
 
 The profile refused the obvious guess. Attention was 0.9 percent of a decode, not the
