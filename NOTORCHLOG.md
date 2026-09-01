@@ -13,6 +13,40 @@ Newest entries on top.
 
 ---
 
+## 2026-08-31 — Gemma 4 gets faster, and neither reason was in the kernels
+
+The profile refused the obvious guess. Attention was 0.9 percent of a decode, not the
+bottleneck it looked like from the code; the FFN matmuls were 48.9, the head 18.6, and the
+per-layer embedding block 10.0 with its projection another 5.7.
+
+**Two thread pools on four cores** (`46fd424`). The per-layer matvecs took 237 us inside the
+model where the same shape measures 41 us on its own. Not cold weights — pointing every layer
+at one matrix changed nothing. Not an f32 fallback — every weight reported the packed path.
+OpenBLAS was the answer: it starts a pool of its own, woken by the single sgemm this family
+runs per token for its f32 projection, and its workers spin exactly like notorch's do. Four
+of theirs and four of ours, taking turns evicting each other. One thread for BLAS, set at
+startup through a weak symbol: decode 9.5 / 8.6 / 9.2 t/s against 7.5 / 6.7 / 6.5, thirty
+percent, with prefill unchanged and Qwen — which touches BLAS nowhere — the same within noise.
+
+**One weight read in floats** (`c7fa6a6`). `per_layer_model_proj` is the file's only bf16
+tensor and was expanded to f32 at load: 55 MB read in full per token against 15 MB for the
+rest of that path. Quantized to Q8_0 at load with this tree's own quantizer, row by row, and
+read afterwards by the same integer matvec as everything else. The section holding it goes
+227 / 160 / 215 ms to 24 / 20 / 15 over sixteen tokens, and the last BLAS call leaves the
+token loop. Q8_0 is not bf16 and the commit says so: scale per 32 values, normalized right
+after, and every other matrix in this file is Q4_0.
+
+Where Gemma 4 stands on four big cores: decode 10.2 / 10.1 / 8.7 t/s against 7.0 this morning,
+prefill 23.5 / 19.9 / 22.3 against 14.9. llama.cpp on the same file does 10.92 and 17.84 —
+decode within seven percent, prefill past it.
+
+The profile is flat in the way that means finished: 51.6 percent FFN and 26.5 percent head,
+both at the memory ceiling — 876 MB of FFN weights per token in 49.6 ms is 16.4 GiB/s of the
+17.98 this phone streams, the head 428 MB in 25.4 ms is 15.7. The next lever is fewer bytes,
+not faster code, and that is a decision about the file rather than the loop.
+
+---
+
 ## 2026-08-31 — K-quants, and the harness re-measured against the example it came from
 
 **The harness carries the arithmetic and the speed** — the check the phone owed it after the
