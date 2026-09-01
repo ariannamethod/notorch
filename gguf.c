@@ -13,12 +13,12 @@
  * passes through the page cache on its way into our copy, so a 2.6 GB model
  * occupies 5.2 GB at the moment of load, and two processes running the same
  * model repeat all of it. A mapping is the page cache, so neither happens —
- * measured on this phone as 1.90 s to first output against 4.13.
+ * measured on this phone as 1.9-2.1 s to first output against 3.6-4.1, two runs of each.
  *
  * What this does NOT fix, stated because the first version of this comment
  * claimed it did: decode speed on one Gemma file measured 10.2 t/s on one day
  * and 8.6-9.0 the next from an unchanged commit, and mapping does not move it.
- * The swap explanation was checked and refused — under 3 GiB of deliberate
+ * The swap explanation was checked and refuted — under 3 GiB of deliberate
  * pressure the process reported no swapped pages on either path, because
  * weights touched every token stay hot enough that the kernel evicts something
  * else. Generation length, prompt, temperature, BLAS threads and huge pages
@@ -222,9 +222,11 @@ gguf_file* gguf_open(const char* path) {
             // prefill — measured, 7.5 t/s against 12.3 on an 11-token prompt, and
             // invisible on a 577-token one because the cost is fixed rather than
             // per token. Populating pays it at load as one sequential stream, which
-            // is what the read path did, and beats the read path on wall clock
-            // anyway (2.09 s against 3.62) because nothing is copied. NT_GGUF_MMAP=lazy
-            // skips it and halves resident memory, for a model larger than RAM.
+            // is what the read path did, and beats the read path on wall clock anyway
+            // because nothing is copied — see the header comment for the timings. Where
+            // MAP_POPULATE does not exist the mapping is lazy and prefill pays the faults.
+            // NT_GGUF_MMAP=lazy asks for that deliberately, to halve resident memory when
+            // the model is larger than RAM.
             if (!(mode && strcmp(mode, "lazy") == 0)) flags |= MAP_POPULATE;
 #endif
             void*  base  = mmap(NULL, len, PROT_READ, flags, fileno(f), (off_t)(gf->data_offset - delta));

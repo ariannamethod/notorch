@@ -58,9 +58,16 @@ class _GGUFFile(Structure):
                 ("kv", _KV * GGUF_MAX_KV),
                 ("n_kv_parsed", c_int),
                 ("tensors", _TensorInfo * GGUF_MAX_TENSORS),
+                # kv_end, map_base and map_len were added to gguf_file on the C side and
+                # not here, which does not fail loudly: every field after the gap simply
+                # reads its neighbour. The C compiler puts data at 443432 and n_layers at
+                # 443472 on this platform, and only this field list reproduces both.
+                ("kv_end", c_uint64),
                 ("data", POINTER(c_uint8)),
                 ("data_offset", c_uint64),
                 ("data_size", c_uint64),
+                ("map_base", c_void_p),
+                ("map_len", c_uint64),
                 ("n_layers", c_int), ("n_heads", c_int), ("n_kv_heads", c_int),
                 ("embed_dim", c_int), ("ffn_dim", c_int), ("vocab_size", c_int),
                 ("ctx_len", c_int),

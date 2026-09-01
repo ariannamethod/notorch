@@ -13,6 +13,49 @@ Newest entries on top.
 
 ---
 
+## 2026-09-01 — the packed matvec was keeping its scratch
+
+Review on the three merges of the day raised eight points. Six were fair and are fixed below.
+Reading the code to answer one of them turned up something nobody had flagged: `nt_qmatvec_i8`
+takes three buffers per call — the quantized activation, its scales, and the per-block sums —
+and frees two of them on every exit path. `asum` is freed on the allocation-failure path and
+nowhere else: not on the unsupported-kernel return, not on the single-threaded shortcut, not
+on the pool return, not at the end. That is the hottest function in the library, and it leaked
+`k/32 × 4` bytes every time it ran. Watched on a 0.5B model, resident memory climbed
+380228 → 387180 → 394976 kB across ten seconds of decode; with the frees in place the same
+window gives 380560 → 384068 → 387412, and what is left is the KV cache becoming resident as
+the context fills — 24 layers × 2 KV heads × 64 × 2 × 4 bytes is 24 kB per token of context,
+which is the slope that remains.
+
+`tests/test_qmatvec_leak.c` is the gate, and it is `mallinfo2` rather than RSS: RSS moves for
+reasons that have nothing to do with the caller, `uordblks` is exactly the sum of live
+allocations. Two thousand calls now retain **0 bytes**; with the frees removed again the same
+test reports **416000**, which is 208 per call against the 192 the arithmetic predicts plus
+the allocator's header. Where `mallinfo2` is absent the test says so and skips, because a gate
+that cannot measure must not claim to.
+
+The same review was right that `nt_qmatvec_i8` validated dtype and shape but never the
+pointers, so a caller whose weight failed to load reached the kernel and died there instead of
+receiving the `-1` it was testing for — `harness/arch_gemma4.c` tests for exactly that. Guard
+added; removing it again turns the new test into a segfault rather than a failed assertion,
+which is its own kind of proof.
+
+Also from the review, all confirmed before changing anything: the Python ctypes binding had
+drifted from `gguf_file` by two additions, `kv_end` from the quantizer work and `map_base` /
+`map_len` from the mapping, and a `Structure` with a gap does not fail loudly — every field
+past the gap reads its neighbour. `tests/gguf_layout.c` puts `data` at 443432 and `n_layers`
+at 443472 on this platform, and only the corrected field list reproduces both. (The Python
+gate itself was not executed here; this node does not run Python. It needs a run where it is
+allowed.) `tools/gguf_quantize.c` ignored unknown flags and accepted `--only` with no value,
+which made a typo look like a successful conversion — both are errors now; and `--requantize`
+read as "any dtype that is not float", which let types `gguf_dequant_row` has no reader for
+past the shape test, so it names the five it can decode. Wording in the previous entry was
+loose in three places and now says: populating is the default *where the platform has*
+`MAP_POPULATE`, `USE_METAL` compiles the mapping out rather than failing to build, and the
+two load timings come from two different runs rather than being one disputed number.
+
+---
+
 ## 2026-09-01 — the model is mapped, not read
 
 `gguf_open` allocated the whole tensor block and read the file into it. The file passes through
@@ -35,13 +78,15 @@ makes the bounds checks in `gguf_dequant_row` stricter, not looser. `map_base` a
 carry what `munmap` needs. Any refusal from the kernel falls back to the read path, which is
 kept whole.
 
-Populating is the default, and that took a measurement to settle. Faulted lazily the model
+Populating is the default where the platform has `MAP_POPULATE`; where it does not, the
+mapping is lazy and the paragraph below describes what that costs. Which to prefer took a
+measurement to settle. Faulted lazily the model
 arrives one page at a time inside the first forward pass, which is prefill: 7.5 t/s against
 12.3 on an 11-token prompt. `MADV_WILLNEED` did not move it — 7.4 / 7.5 / 8.2 with the call
 against 7.0 / 7.1 / 8.3 without — so the call is not in the tree. `MAP_POPULATE` pays the same
 cost at load as one sequential stream and removes it from prefill entirely, 12.5 / 12.3, while
 still reaching first output faster than reading did because nothing is copied: **1.90 s
-against 4.13**. The cost is fixed rather than per token, which is why all three variants are
+against 4.13** in one run and 2.09 against 3.62 in another. The cost is fixed rather than per token, which is why all three variants are
 indistinguishable on a 577-token prompt — 10.0, 10.0, 10.1 — and why the short prompt is the
 only place the choice shows. `NT_GGUF_MMAP=lazy` skips populating for a model larger than RAM:
 peak RSS **1 557 448 kB against 2 851 072**, at the price named above.
@@ -65,7 +110,8 @@ wrong. It is recorded as open rather than explained.
 
 Metal keeps the read path unchanged. `nt_metal_register_base` wraps `data` as a NoCopy
 MTLBuffer and needs a page-aligned pointer with a page-rounded length, which an offset view
-into a file does not provide, so the mapping does not compile under `USE_METAL` at all.
+into a file does not provide, so `USE_METAL` compiles the mapping out — `gguf.c` itself builds
+as it always did, with `NOTORCH_GGUF_MMAP` set to 0.
 `NT_GGUF_MMAP=0` forces the read path anywhere else.
 
 The gate was checked by breaking it: shifting the mapped view four bytes makes the same model

@@ -6831,6 +6831,11 @@ int nt_qmatvec_i8_rows(float *out, const uint8_t *Wq, int dtype,
 
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k) {
+    /* The dtype and shape were checked here from the start and the pointers were not, so a
+     * caller whose weight failed to load reached the kernel and crashed there instead of
+     * getting the -1 it was testing for. Callers do test for it: harness/arch_gemma4.c
+     * zeroes its per-layer section on a non-zero return. */
+    if (!out || !Wq || !x || m <= 0 || k <= 0) return -1;
     if (dtype != 2 && dtype != 6 && dtype != 8 && dtype != 12 && dtype != 14)
         return -1;                                       /* Q4_0/Q5_0/Q8_0/Q4_K/Q6_K */
     if (k % 32) return -1;
@@ -6853,11 +6858,11 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
      * is why widening the guard above without touching this line sent Q5_0 into the Q6_K
      * kernel and read 210-byte blocks out of a 22-byte-block buffer. */
     nt_qrows_i8_fn fn = nt_qrows_i8_for(dtype, k);
-    if (!fn) { free(qa); free(da); return -1; }
+    if (!fn) { free(qa); free(da); free(asum); return -1; }
     int nt = nt_qmv_host_threads(m);
     if (nt <= 1 || (long)m * k < nt_qmv_thread_floor()) {
         fn(out, Wq, qa, da, asum, 0, m, k);
-        free(qa); free(da);
+        free(qa); free(da); free(asum);
         return 0;
     }
 #ifdef _OPENMP
@@ -6883,6 +6888,7 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
     if (nt_qpool_i8_run(jobs, launched) == 0) {
         free(qa);
         free(da);
+        free(asum);
         return 0;
     }
 
@@ -6898,7 +6904,7 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
     }
     for (int t = 0; t < launched; t++) pthread_join(th[t], NULL);
 #endif
-    free(qa); free(da);
+    free(qa); free(da); free(asum);
     return 0;
 }
 

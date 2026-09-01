@@ -116,9 +116,18 @@ int main(int argc, char **argv) {
     if (target < 0) { fprintf(stderr, "unknown type %s\n", argv[3]); return 1; }
     int requantize = 0;
     const char *only = NULL;
+    /* A typo in a flag used to be silence, and silence here reads as success: the tool would
+     * copy the file through and report a conversion that never happened. */
     for (int i = 3; i < argc; i++) {
+        if (argv[i][0] != '-') {
+            if (i == 3) continue;                       /* the type name, already parsed */
+            fprintf(stderr, "unexpected argument %s\n", argv[i]); return 1;
+        }
         if (!strcmp(argv[i], "--requantize")) requantize = 1;
-        else if (!strcmp(argv[i], "--only") && i + 1 < argc) only = argv[++i];
+        else if (!strcmp(argv[i], "--only")) {
+            if (i + 1 >= argc) { fprintf(stderr, "--only needs a substring\n"); return 1; }
+            only = argv[++i];
+        } else { fprintf(stderr, "unknown option %s\n", argv[i]); return 1; }
     }
 
     gguf_file *gf = gguf_open(argv[1]);
@@ -142,9 +151,14 @@ int main(int argc, char **argv) {
          * 24 as q6_K and 146 as q8_0. Same rule here, so the two tools produce files of the
          * same shape rather than merely comparable ones. */
         int is_k = (target == GGUF_TYPE_Q4_K || target == GGUF_TYPE_Q6_K);
+        /* Only the dtypes this file can both decode and size. Letting --requantize mean
+         * "anything not float" put dtypes gguf_dequant_row has no reader for through the
+         * shape test, and the failure landed mid-write rather than at the decision. */
         int floatsrc = (t->dtype == GGUF_TYPE_F32 || t->dtype == GGUF_TYPE_F16 ||
                         t->dtype == GGUF_TYPE_BF16 ||
-                        (requantize && t->dtype != GGUF_TYPE_F32 && t->dtype != GGUF_TYPE_F16));
+                        (requantize && (t->dtype == GGUF_TYPE_Q4_0 || t->dtype == GGUF_TYPE_Q5_0 ||
+                                        t->dtype == GGUF_TYPE_Q8_0 || t->dtype == GGUF_TYPE_Q4_K ||
+                                        t->dtype == GGUF_TYPE_Q6_K)));
         int named = (!only || strstr(t->name, only) != NULL);
         int quantizable = (t->ndim == 2) && (t->shape[0] % 32 == 0) && floatsrc && named;
         uint32_t chosen = (uint32_t)target;
