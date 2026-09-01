@@ -43,6 +43,7 @@ static const char *type_name(uint32_t t) {
     switch (t) {
     case GGUF_TYPE_F32:  return "f32";
     case GGUF_TYPE_F16:  return "f16";
+    case GGUF_TYPE_BF16: return "bf16";
     case GGUF_TYPE_Q4_0: return "q4_0";
     case GGUF_TYPE_Q5_0: return "q5_0";
     case GGUF_TYPE_Q8_0: return "q8_0";
@@ -57,6 +58,7 @@ static uint64_t type_size(uint32_t t, uint64_t n) {
     switch (t) {
     case GGUF_TYPE_F32:  return n * 4;
     case GGUF_TYPE_F16:  return n * 2;
+    case GGUF_TYPE_BF16: return n * 2;
     case GGUF_TYPE_Q4_0: return n / 32 * 18;
     case GGUF_TYPE_Q5_0: return n / 32 * 22;
     case GGUF_TYPE_Q8_0: return n / 32 * 34;
@@ -101,11 +103,23 @@ static int pad_to(FILE *f, uint64_t target) {
 
 int main(int argc, char **argv) {
     if (argc < 3) {
-        printf("usage: %s <in.gguf> <out.gguf> [q4_0|q5_0|q8_0]\n", argv[0]);
+        printf("usage: %s <in.gguf> <out.gguf> [q4_0|q5_0|q8_0|q4_k|q6_k] [--requantize] [--only SUBSTR]\n"
+               "  --requantize   accept already-quantized tensors as input, losing what the\n"
+               "                 first quantization lost and then some. Use when the floats\n"
+               "                 are gone and the question is what a smaller format costs.\n"
+               "  --only SUBSTR  convert only tensors whose name contains SUBSTR; the rest are\n"
+               "                 copied byte for byte, so one tensor can be studied alone.\n",
+               argv[0]);
         return 1;
     }
-    int target = argc > 3 ? type_from_name(argv[3]) : GGUF_TYPE_Q4_0;
+    int target = argc > 3 && argv[3][0] != '-' ? type_from_name(argv[3]) : GGUF_TYPE_Q4_0;
     if (target < 0) { fprintf(stderr, "unknown type %s\n", argv[3]); return 1; }
+    int requantize = 0;
+    const char *only = NULL;
+    for (int i = 3; i < argc; i++) {
+        if (!strcmp(argv[i], "--requantize")) requantize = 1;
+        else if (!strcmp(argv[i], "--only") && i + 1 < argc) only = argv[++i];
+    }
 
     gguf_file *gf = gguf_open(argv[1]);
     if (!gf) return 1;
@@ -128,13 +142,22 @@ int main(int argc, char **argv) {
          * 24 as q6_K and 146 as q8_0. Same rule here, so the two tools produce files of the
          * same shape rather than merely comparable ones. */
         int is_k = (target == GGUF_TYPE_Q4_K || target == GGUF_TYPE_Q6_K);
-        int floatsrc = (t->dtype == GGUF_TYPE_F32 || t->dtype == GGUF_TYPE_F16);
-        int quantizable = (t->ndim == 2) && (t->shape[0] % 32 == 0) && floatsrc;
+        int floatsrc = (t->dtype == GGUF_TYPE_F32 || t->dtype == GGUF_TYPE_F16 ||
+                        t->dtype == GGUF_TYPE_BF16 ||
+                        (requantize && t->dtype != GGUF_TYPE_F32 && t->dtype != GGUF_TYPE_F16));
+        int named = (!only || strstr(t->name, only) != NULL);
+        int quantizable = (t->ndim == 2) && (t->shape[0] % 32 == 0) && floatsrc && named;
         uint32_t chosen = (uint32_t)target;
         if (quantizable && is_k && (t->shape[0] % 256))
             chosen = (target == GGUF_TYPE_Q4_K) ? GGUF_TYPE_Q5_0 : GGUF_TYPE_Q8_0;
         out_type[i] = quantizable ? chosen : t->dtype;
-        if (quantizable) n_quantized++;
+        if (quantizable) {
+            n_quantized++;
+            printf("  %-40s %s -> %s  %.1f MiB -> %.1f MiB\n", t->name,
+                   type_name(t->dtype), type_name(out_type[i]),
+                   (double)type_size(t->dtype, t->n_elements) / (1024.0 * 1024.0),
+                   (double)type_size(out_type[i], t->n_elements) / (1024.0 * 1024.0));
+        }
         out_off[i] = cursor;
         uint64_t sz = type_size(out_type[i], t->n_elements);
         if (!sz) {
