@@ -6732,6 +6732,29 @@ static void nt_qpool_i8_init_once(void) {
     if (g_nt_qpool_i8.ready) atexit(nt_qpool_i8_shutdown);
 }
 
+/* Chunks handed to each worker. Granularity trades load balance against per-chunk cost, and
+ * the balance point moves whenever either side does, so it is re-measured rather than
+ * inherited. It moved when the pool started pinning one thread per core: with placement
+ * settled, the cost that matters is the tail, because the cores are not equally fast even
+ * within the big cluster. A thread pinned to this SoC's prime core runs at 1.6-2.0 GHz while
+ * its neighbours hold 2.6 — the governor's energy model, not a thermal cap, and nothing in
+ * cpuinfo_max_freq says so. Coarse chunks leave that core holding the last one while everyone
+ * waits. Gemma 4 E2B decode on four cores, chunks per worker against t/s: 1 -> 9.9, 2 -> 10.3,
+ * 4 -> 10.5, 8 -> 10.6, 16 -> 10.7, 32 -> 10.7. Qwen 2.5 0.5B: 55.9, 52.9, 54.4, 55.1, 55.9,
+ * 55.3. Sixteen is the best or tied-best on both, and at sixteen four cores finally match the
+ * three that exclude the prime core — 10.7 either way — so the fix is granularity rather than
+ * throwing a core away. The float pool above reached the same sixteen independently.
+ * NT_QMV_CHUNKS overrides it, which is how the numbers above were taken. */
+static int nt_qmv_chunks(void) {
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("NT_QMV_CHUNKS");
+        long v = e ? atol(e) : 0;
+        n = (v >= 1 && v <= 64) ? (int)v : 16;
+    }
+    return n;
+}
+
 static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
     if (!nt_qmv_pool_enabled()) return -1;
     pthread_once(&g_nt_qpool_i8_once, nt_qpool_i8_init_once);
@@ -6740,13 +6763,8 @@ static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
     if (worker_nt <= 0 || worker_nt > g_nt_qpool_i8.nthreads) return -1;
 
     int lo = jobs[0].r0, hi = jobs[worker_nt].r1;
-    /* Four chunks per worker. Granularity trades load balance against per-chunk cost, and
-     * the balance point moved once the kernels got faster — re-measured rather than
-     * inherited. Exynos 1580, Qwen2.5-0.5B decode, chunks per worker against t/s pinned to
-     * the four big cores and then across all eight: 1 -> 38.8, 2 -> 40.0 / 24.7,
-     * 4 -> 39.6 / 26.3, 8 -> 38.6 / 25.1. Four is one percent off the pinned best and the
-     * best of the three unpinned, so it is the one number that is not wrong either way. */
-    int chunk = (hi - lo) / (nt * 4); if (chunk < 1) chunk = 1;
+    /* Granularity: see nt_qmv_chunks above for what it costs and how it was measured. */
+    int chunk = (hi - lo) / (nt * nt_qmv_chunks()); if (chunk < 1) chunk = 1;
 
     pthread_mutex_lock(&g_nt_qpool_i8_dispatch_mu);   /* one dispatch in flight at a time */
     g_nt_qpool_i8.shared = jobs[0];
