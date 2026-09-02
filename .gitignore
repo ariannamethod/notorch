@@ -63,6 +63,7 @@ __pycache__/
 *.pyc
 test_qmatmul
 test_qmatvec_leak
+test_affinity
 
 gguf_quantize
 test_quantize

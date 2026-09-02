@@ -557,6 +557,13 @@ void nt_qmv_set_thread_min(long elems);
 // code: Q4_0 (2), Q5_0 (6), Q8_0 (8), Q4_K (12), Q6_K (14). The K-quants need k
 // divisible by 256, the others by 32.
 // Returns 0 on success, -1 if no int8 kernel for the dtype yet.
+/* How many threads the packed matvec will fan out to, and on which cores. On a machine whose
+ * cores are not all the same speed notorch narrows itself to the fastest class, because the
+ * matvec splits into equal chunks and waits for the slowest one; an explicit NT_QMV_THREADS,
+ * an affinity mask already narrower than the machine, or NT_QMV_BIG_ONLY=0 all leave that
+ * decision to the caller. Exposed so a test can check the plan rather than infer it. */
+int nt_qmv_planned_threads(void);
+
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k);
 

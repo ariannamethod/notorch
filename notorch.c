@@ -5322,6 +5322,89 @@ static long nt_qmv_thread_floor(void) {
  * the pool oversubscribed 2:1 and each matvec ended up waiting on a context switch instead
  * of on memory. The affinity mask is the honest number. NT_QMV_THREADS overrides both, which
  * is what an A/B run needs and what a caller that already owns a thread budget wants. */
+#if defined(__linux__)
+/* Reported peak kHz of one core, or 0 where cpufreq is not exported. */
+static long nt_cpu_peak_khz(int cpu) {
+    char path[128];
+    snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+    long v = 0;
+    if (fscanf(f, "%ld", &v) != 1) v = 0;
+    fclose(f);
+    return v;
+}
+
+/* Everything in `in` except its slowest class, and how many that is. Returns 0 when the
+ * machine is uniform, when cpufreq says nothing, or when fewer than two cores would survive
+ * — all three mean there is no useful choice to make here.
+ *
+ * sched_getaffinity answers "how many cores may I use", which on a phone is the wrong
+ * question. Gemma 4 E2B on this SoC, decode, by core set: cpu7 alone 6.0 t/s, cpu6-7 5.2,
+ * cpu5-7 8.3, cpu4-7 10.2, all eight 7.9, the four small ones 3.4. Adding a single small
+ * core to the big four costs a fifth of the throughput (10.2 -> 8.3), because decode runs at
+ * the memory ceiling already and the extra core brings contention and a long tail rather
+ * than arithmetic.
+ *
+ * Note it is the slowest class that goes, not everything below the fastest. Peak clocks here
+ * are 1.95, 2.6 and 2.91 GHz across three classes; keeping only the fastest leaves the one
+ * prime core and measures 6.0, while dropping only the slowest leaves cpu4-7 and measures
+ * 10.2. Written after that mistake was built and benchmarked, not before. */
+static int nt_cpu_perf_set(const cpu_set_t *in, cpu_set_t *out) {
+    long slowest = 0, fastest = 0;
+    int seen = 0, n = 0;
+    for (int c = 0; c < CPU_SETSIZE; c++) {
+        if (!CPU_ISSET(c, in)) continue;
+        long f = nt_cpu_peak_khz(c);
+        if (f <= 0) return 0;
+        if (!seen || f < slowest) slowest = f;
+        if (f > fastest) fastest = f;
+        seen++;
+    }
+    if (!seen || slowest == fastest) return 0;
+    CPU_ZERO(out);
+    for (int c = 0; c < CPU_SETSIZE; c++)
+        if (CPU_ISSET(c, in) && nt_cpu_peak_khz(c) > slowest) { CPU_SET(c, out); n++; }
+    /* One core is not a fan-out, and on this hardware it measures worse than the whole
+     * machine. A shape that lopsided is more likely an unfamiliar topology than an
+     * opportunity, so leave it to the scheduler. */
+    return n >= 2 ? n : 0;
+}
+
+/* Computed once. Non-zero only when narrowing is both possible and nobody else's call to
+ * make: an explicit NT_QMV_THREADS, a mask already narrower than the machine (taskset, a
+ * cgroup, a container) and NT_QMV_BIG_ONLY=0 each leave it alone. */
+static int nt_qmv_fast_cpus(cpu_set_t *out) {
+    static int n = -1;
+    static cpu_set_t fast;
+    if (n < 0) {
+        n = 0;
+        const char *off = getenv("NT_QMV_BIG_ONLY");
+        const char *thr = getenv("NT_QMV_THREADS");
+        cpu_set_t mine;
+        CPU_ZERO(&mine);
+        if (!(off && off[0] == '0') && !(thr && atol(thr) > 0) &&
+            sched_getaffinity(0, sizeof(mine), &mine) == 0) {
+            long online = sysconf(_SC_NPROCESSORS_ONLN);
+            if (online > 0 && CPU_COUNT(&mine) == (int)online)
+                n = nt_cpu_perf_set(&mine, &fast);
+        }
+    }
+    if (n > 0 && out) *out = fast;
+    return n;
+}
+
+/* Hold a thread to the fast class. Called on each pool worker as it is created and once on
+ * the thread that drives them, because that thread drains a chunk alongside the pool and a
+ * straggler is a straggler wherever it sits. */
+static void nt_qmv_pin(pthread_t t) {
+    cpu_set_t fast;
+    if (nt_qmv_fast_cpus(&fast) > 0) pthread_setaffinity_np(t, sizeof(fast), &fast);
+}
+#else
+static void nt_qmv_pin(pthread_t t) { (void)t; }
+#endif
+
 static int nt_qmv_host_threads(int m) {
     static int host = -1;
     if (host < 0) {
@@ -5334,6 +5417,8 @@ static int nt_qmv_host_threads(int m) {
             cpu_set_t set;
             CPU_ZERO(&set);
             host = (sched_getaffinity(0, sizeof(set), &set) == 0) ? CPU_COUNT(&set) : 0;
+            int fast = nt_qmv_fast_cpus(NULL);
+            if (fast > 0) host = fast;
 #else
             host = 0;
 #endif
@@ -5474,10 +5559,12 @@ static void nt_qpool_shutdown(void) {
 
 static void nt_qpool_init_once(void) {
     int nt = nt_qmv_host_threads(NT_QMV_MAX_THREADS);
+    nt_qmv_pin(pthread_self());
     for (int i = 0; i < nt; i++) {
         g_nt_qpool.ids[i] = i;
         if (pthread_create(&g_nt_qpool.threads[i], NULL, nt_qpool_loop, &g_nt_qpool.ids[i]) != 0)
             break;
+        nt_qmv_pin(g_nt_qpool.threads[i]);
         g_nt_qpool.nthreads++;
     }
     g_nt_qpool.ready = g_nt_qpool.nthreads > 0;
@@ -6591,9 +6678,11 @@ static void nt_qpool_i8_init_once(void) {
      * a pool sized to the core count puts one thread too many on the cluster and every
      * matvec pays for the context switch. */
     int nt = nt_qmv_host_threads(NT_QMV_MAX_THREADS) - 1;
+    nt_qmv_pin(pthread_self());          /* the dispatcher takes a chunk too */
     for (int i = 0; i < nt; i++) {
         if (pthread_create(&g_nt_qpool_i8.threads[i], NULL, nt_qpool_i8_loop, NULL) != 0)
             break;
+        nt_qmv_pin(g_nt_qpool_i8.threads[i]);
         g_nt_qpool_i8.nthreads++;
     }
     g_nt_qpool_i8.ready = g_nt_qpool_i8.nthreads > 0;
@@ -6828,6 +6917,8 @@ int nt_qmatvec_i8_rows(float *out, const uint8_t *Wq, int dtype,
     if (r1 > r0) fn(out, Wq, qa, da, asum, r0, r1, k);
     return 0;
 }
+
+int nt_qmv_planned_threads(void) { return nt_qmv_host_threads(NT_QMV_MAX_THREADS); }
 
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k) {
