@@ -5394,15 +5394,58 @@ static int nt_qmv_fast_cpus(cpu_set_t *out) {
     return n;
 }
 
-/* Hold a thread to the fast class. Called on each pool worker as it is created and once on
- * the thread that drives them, because that thread drains a chunk alongside the pool and a
- * straggler is a straggler wherever it sits. */
-static void nt_qmv_pin(pthread_t t) {
-    cpu_set_t fast;
-    if (nt_qmv_fast_cpus(&fast) > 0) pthread_setaffinity_np(t, sizeof(fast), &fast);
+/* The cores this fan-out may use: the fast class where narrowing applies, otherwise the mask
+ * we inherited. Cached, because the first pin replaces the caller's mask and asking again
+ * afterwards would answer with that one core. */
+static int nt_qmv_target_cpus(cpu_set_t *out) {
+    static int n = -1;
+    static cpu_set_t set;
+    if (n < 0) {
+        n = nt_qmv_fast_cpus(&set);
+        if (n <= 0) {
+            CPU_ZERO(&set);
+            n = (sched_getaffinity(0, sizeof(set), &set) == 0) ? CPU_COUNT(&set) : 0;
+        }
+    }
+    if (n > 0 && out) *out = set;
+    return n;
+}
+
+/* One thread per core, in order, rather than one mask shared by all of them.
+ *
+ * Leaving placement inside the mask to the scheduler is not the neutral choice it looks like.
+ * A thread that alternates spinning with parking on a condvar reads as half idle, so two of
+ * them fit on one core by the scheduler's arithmetic, and the decision is taken once and kept
+ * for the whole run. Measured on taskset -c 5,6, six runs of Gemma 4 decode: 8.7, 5.1, 5.8,
+ * 4.6, 6.9, 8.8 t/s — two plateaus, not a spread. Sampling /proc/<pid>/task through each run
+ * showed the fast ones with the two threads accumulating time on cpu5 and cpu6, and the slow
+ * ones with both on cpu5, the second thread getting a quarter of the first one's cycles. The
+ * ratio between the plateaus is 1.9, which is what one core doing the work of two looks like.
+ *
+ * Honouring somebody else's mask means honouring which cores they gave us. It does not mean
+ * declining to use all of them. NT_QMV_PIN=0 turns this off. */
+static int nt_qmv_pin_enabled(void) {
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("NT_QMV_PIN");
+        on = !(e && e[0] == '0');
+    }
+    return on;
+}
+
+static void nt_qmv_pin_nth(pthread_t t, int idx) {
+    if (!nt_qmv_pin_enabled()) return;
+    cpu_set_t all, one;
+    int n = nt_qmv_target_cpus(&all);
+    if (n <= 0) return;
+    int want = idx % n, seen = 0;
+    CPU_ZERO(&one);
+    for (int c = 0; c < CPU_SETSIZE; c++)
+        if (CPU_ISSET(c, &all) && seen++ == want) { CPU_SET(c, &one); break; }
+    if (CPU_COUNT(&one)) pthread_setaffinity_np(t, sizeof(one), &one);
 }
 #else
-static void nt_qmv_pin(pthread_t t) { (void)t; }
+static void nt_qmv_pin_nth(pthread_t t, int idx) { (void)t; (void)idx; }
 #endif
 
 static int nt_qmv_host_threads(int m) {
@@ -5559,12 +5602,12 @@ static void nt_qpool_shutdown(void) {
 
 static void nt_qpool_init_once(void) {
     int nt = nt_qmv_host_threads(NT_QMV_MAX_THREADS);
-    nt_qmv_pin(pthread_self());
+    nt_qmv_pin_nth(pthread_self(), 0);
     for (int i = 0; i < nt; i++) {
         g_nt_qpool.ids[i] = i;
         if (pthread_create(&g_nt_qpool.threads[i], NULL, nt_qpool_loop, &g_nt_qpool.ids[i]) != 0)
             break;
-        nt_qmv_pin(g_nt_qpool.threads[i]);
+        nt_qmv_pin_nth(g_nt_qpool.threads[i], i + 1);
         g_nt_qpool.nthreads++;
     }
     g_nt_qpool.ready = g_nt_qpool.nthreads > 0;
@@ -6678,11 +6721,11 @@ static void nt_qpool_i8_init_once(void) {
      * a pool sized to the core count puts one thread too many on the cluster and every
      * matvec pays for the context switch. */
     int nt = nt_qmv_host_threads(NT_QMV_MAX_THREADS) - 1;
-    nt_qmv_pin(pthread_self());          /* the dispatcher takes a chunk too */
+    nt_qmv_pin_nth(pthread_self(), 0);   /* the dispatcher takes a chunk too */
     for (int i = 0; i < nt; i++) {
         if (pthread_create(&g_nt_qpool_i8.threads[i], NULL, nt_qpool_i8_loop, NULL) != 0)
             break;
-        nt_qmv_pin(g_nt_qpool_i8.threads[i]);
+        nt_qmv_pin_nth(g_nt_qpool_i8.threads[i], i + 1);
         g_nt_qpool_i8.nthreads++;
     }
     g_nt_qpool_i8.ready = g_nt_qpool_i8.nthreads > 0;
