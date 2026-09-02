@@ -13,6 +13,49 @@ Newest entries on top.
 
 ---
 
+## 2026-09-02 — the library picks its cores, because counting them was the wrong question
+
+`nt_qmv_host_threads` asked `sched_getaffinity` how many CPUs it was allowed and used all of
+them. On a phone that is the wrong question. This SoC runs four cores at 1.95 GHz, three at
+2.6 and one at 2.91; the matvec splits into equal chunks, decode is already at the memory
+ceiling, and a chunk that lands on a small core holds up the whole operation. Which chunk that
+is changes from run to run, which is what made a benchmark disagree with itself between days —
+the earlier figures were taken under `taskset -c 4-7` and the later ones were not, and nothing
+had regressed at all.
+
+Measured by core set, Gemma 4 E2B decode: `cpu7` alone **6.0** t/s, `cpu6-7` 5.2, `cpu5-7`
+8.3, `cpu4-7` **10.2**, all eight 7.9, the four small ones 3.4. A single small core added to
+the big four costs a fifth of the throughput. More cores are not more arithmetic when the
+weights arrive at 91 percent of what the memory can deliver.
+
+The rule that survives measurement is **drop the slowest class**, not keep the fastest. The
+first version of this patch kept the fastest, which on three classes leaves the one prime core,
+and it benchmarked at 6.0 against the 8.0 it was meant to improve. Dropping only the slowest
+leaves `cpu4-7`, which is the measured optimum, and needs no threshold constant to say so.
+
+Engaged only when nobody else has decided: an explicit `NT_QMV_THREADS`, an affinity mask
+already narrower than the machine (`taskset`, a cgroup, a container), a uniform machine, no
+cpufreq, or `NT_QMV_BIG_ONLY=0` all leave the choice alone. Fewer than two surviving cores is
+treated as an unfamiliar topology rather than an opportunity. Worker threads and the thread
+that drives them are held there with `pthread_setaffinity_np` — the dispatcher drains a chunk
+alongside the pool, and a straggler is a straggler wherever it sits.
+
+Cold, three runs each, interleaved. Gemma decode **8.7 / 8.8 / 8.6 to 10.5 / 10.5 / 10.5**,
+prefill 9.4 / 9.6 / 10.1 to 13.4 / 20.9 / 20.4. Qwen 2.5 0.5B decode **33.0 / 33.1 / 34.0 to
+55.8 / 55.0 / 57.0**. Against the reference at `-t 4` on the same two files: 11.31 and 59.91,
+so decode is at 93 percent of it on both, where it had been 76 and 55. Prefill is not compared
+here — ours is an 11-token prompt and theirs is a 32-token batch, which are different
+quantities until they are measured the same way.
+
+`tests/test_affinity.c` holds it, in three processes because the decision is cached on first
+use: the default, `NT_QMV_BIG_ONLY=0`, and a mask the test narrows itself before the first
+call. It derives the expected core set from sysfs rather than asking the library, since a test
+that calls the function it is checking agrees with itself whatever that function does. Both
+ways of breaking it were tried: restoring the keep-the-fastest rule fails both assertions
+(planned 1 against 4), and removing the pinning fails exactly the one written for it.
+
+---
+
 ## 2026-09-01 — the packed matvec was keeping its scratch
 
 Review on the three merges of the day raised eight points. Six were fair and are fixed below.

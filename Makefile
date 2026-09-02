@@ -88,7 +88,7 @@ SIMD_LIBS  = -lpthread
 
 # ── Targets ──
 
-.PHONY: all test test_qpool test_qmatvec_leak test_js test_python test_tokenizer clean cpu gpu simd help lib shared install metal test_metal infer_gguf_metal
+.PHONY: all test test_qpool test_qmatvec_leak test_affinity test_js test_python test_tokenizer clean cpu gpu simd help lib shared install metal test_metal infer_gguf_metal
 
 all: notorch_test
 	@echo "Built with $(BLAS_NAME). Run: ./notorch_test"
@@ -356,13 +356,20 @@ test_qmatvec_leak: tests/test_qmatvec_leak.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qmatvec_leak tests/test_qmatvec_leak.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qmatvec_leak (packed matvec returns what it takes, $(BLAS_NAME))"
 
-test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_qmatvec_leak
+test_affinity: tests/test_affinity.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
+
+test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_qmatvec_leak test_affinity
 	./notorch_test
 	./test_vision
 	./test_qpool
 	./test_qmatmul
 	./test_quantize
 	./test_qmatvec_leak
+	./test_affinity
+	NT_QMV_BIG_ONLY=0 ./test_affinity off
+	./test_affinity narrowed
 
 test_js:
 	node js-edition/test_op_parity.mjs
