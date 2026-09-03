@@ -380,6 +380,7 @@ test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_qmatve
 	./test_qpool
 	NT_QMV_CHUNKS=1 ./test_qpool
 	NT_QMV_CHUNKS=64 ./test_qpool
+	NT_QMV_SPIN=0 ./test_qpool
 	./test_qmatmul
 	./test_quantize
 	./test_qmatvec_leak

@@ -13,6 +13,50 @@ Newest entries on top.
 
 ---
 
+## 2026-09-03 — the workers were going to sleep between matvecs
+
+A worker looks for its next job for a while before parking on a condvar, and the budget for
+that looking was 20000 iterations. Between two matvecs of one token the gap is the scalar work
+— norms, rope, softmax, quantizing the activation — and some of those gaps are longer than
+20000 iterations covers. Every one of them parked three workers and woke them again through a
+futex.
+
+Raising the budget, four cores, decode t/s on Gemma 4 E2B and Qwen 2.5 0.5B: 20000 -> 10.5 /
+52.7, 200000 -> 10.9 / 56.1, **500000 -> 11.1 / 56.5**, 1000000 -> 11.1 / 56.1, 4000000 ->
+11.1 / 57.6. Flat past the knee at half a million, which is the new default.
+
+Spinning does not cost what it looks like it costs, and the CPU seconds beside the wall clock
+say so: 11.6 cpu-s at 20000 against 11.3 at 500000 for the same 24 tokens, wall 5.53 s against
+4.98. Parking and waking spends more cycles than looking does. What it does cost is a core held
+for about ten milliseconds after the last dispatch before the worker gives up — free for
+continuous decoding, a small drain for a process that runs one matvec and waits.
+
+Cold, three runs each, against the previous default and the reference at `-t 4` on the same
+files: Gemma **10.6 / 10.0 / 10.6 -> 11.0 / 11.0 / 11.1** against llama.cpp's 11.33, Qwen
+**52.3 / 52.1 / 52.5 -> 56.4 / 56.0 / 55.7** against 57.98. Decode is at 97 percent of the
+reference on both, from 93 after the core work and 76 and 55 before it.
+
+An old note in this log said the opposite — that a long spin halved throughput on two cores,
+2.8 t/s against 5.1. That measurement was taken before the pool pinned one thread per core,
+and it was measuring two threads sharing one core, where a spinner starves the thread doing the
+arithmetic. With placement settled the sign reverses: on two cores now, 8.1 at zero budget
+against 8.95 at 200000. The old number was about placement, not about spinning.
+
+One guess died on the way. The three counters the pool coordinates through — `generation`,
+`busy`, `next` — are consecutive ints in one cache line, so every chunk claim invalidates the
+line the others spin on, and false sharing predicts that more spinning hurts. It helps, all the
+way to four million. Worth separating those fields anyway, but that is a different change with
+its own measurement, not the explanation for this one.
+
+`test_qpool` now also runs at `NT_QMV_SPIN=0`, which is the only way the park-and-wake path
+executes at all — at the default budget a worker essentially never reaches the condvar. Said
+exactly, because it was tried: that run caught nothing the default run missed. A lost wakeup is
+a race and no bit comparison finds it; corrupting the busy count, the hazard the dispatch
+comment warns about, fails both runs. It is coverage before the next refactor touches that
+path, not a second detector.
+
+---
+
 ## 2026-09-03 — one plan behind one guard, and the five races a review only half saw
 
 Review on the pinning merge pointed at `nt_qmv_target_cpus`: a `cpu_set_t` cached in a

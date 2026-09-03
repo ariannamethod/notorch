@@ -5453,8 +5453,24 @@ static void nt_qmv_plan_init(void) {
     p->pool = !(e && (!strcmp(e, "0") || !strcmp(e, "false") ||
                       !strcmp(e, "off") || !strcmp(e, "no")));
 
+    /* How long a worker keeps looking before it parks on the condvar. Between two matvecs of
+     * one token the gap is the scalar work — norms, rope, softmax, quantizing the activation
+     * — and some of those gaps are longer than a short budget covers, so the worker parks and
+     * has to be woken through a futex, once per worker per gap. Raising the budget past the
+     * long gaps removes those wakes. Gemma 4 E2B and Qwen 2.5 0.5B decode, four cores:
+     * 20000 -> 10.5 / 52.7 t/s, 200000 -> 10.9 / 56.1, 500000 -> 11.1 / 56.5,
+     * 1000000 -> 11.1 / 56.1, 4000000 -> 11.1 / 57.6. Five to seven percent, flat past the
+     * knee at half a million.
+     *
+     * Spinning does not cost what it looks like it costs. Measured with the CPU seconds beside
+     * the wall clock: 11.6 cpu-s at 20000 against 11.3 at 500000 for the same work, because
+     * parking and waking spends more of them than looking does. What it does cost is a core
+     * held for roughly ten milliseconds after the last dispatch before the worker gives up —
+     * free for continuous decoding, a small drain for a process that runs one matvec and
+     * waits. NT_QMV_SPIN=0 parks immediately, which is also the only way the condvar path
+     * gets exercised. */
     e = getenv("NT_QMV_SPIN");
-    p->spin = (e && atoi(e) >= 0) ? atoi(e) : 20000;
+    p->spin = (e && atoi(e) >= 0) ? atoi(e) : 500000;
 
     e = getenv("NT_QMV_THREAD_MIN");
     p->thread_min = (e && atol(e) > 0) ? atol(e) : NT_QMV_THREAD_MIN_DEFAULT;
