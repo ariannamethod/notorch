@@ -11,7 +11,13 @@
  * m is deliberately not a multiple of any plausible core count, to exercise the tail.
  * How finely the rows are divided is read once per process, so the Makefile runs this
  * under several NT_QMV_CHUNKS values: coarse and fine must agree to the bit with each
- * other and with the single-threaded reference.
+ * other and with the single-threaded reference. It also runs once at NT_QMV_SPIN=0, which
+ * is the only way the park-and-wake path is exercised at all: at the default budget a worker
+ * almost never reaches the condvar, so that code would otherwise go years without executing.
+ * Stated exactly, because it was tried: that run caught nothing the default run missed. A
+ * lost wakeup is a race and no bit comparison finds it, and corrupting the busy count — the
+ * hazard the dispatch comment warns about — fails both runs. It is coverage before the next
+ * refactor touches that path, not a second detector.
  *
  * Two failure modes were injected while writing this to confirm it can fail: a cursor
  * that skips a row per chunk, and a range one row short. Both were caught. An overlapping
