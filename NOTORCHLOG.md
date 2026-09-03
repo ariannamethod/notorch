@@ -13,6 +13,57 @@ Newest entries on top.
 
 ---
 
+## 2026-09-03 — one plan behind one guard, and the five races a review only half saw
+
+Review on the pinning merge pointed at `nt_qmv_target_cpus`: a `cpu_set_t` cached in a
+function-scope static behind a lazy `if (n < 0)`, with nothing synchronising it. The concern
+is right and it is not narrow. This library has two worker pools behind two separate
+`pthread_once` guards, so a program calling the float matvec from one thread and the integer
+matvec from another runs both initialisers at the same instant, and four separate functions
+each cached their answer that way. Patching them one at a time would have left the shape
+intact, so everything the fan-out decides once — thread count, core set, pinning, granularity,
+the threading floor — is now one struct built under one `pthread_once`.
+
+The claim that the races are gone is a tool's answer, not an argument. ThreadSanitizer runs
+here under `setarch -R`, because Android's ASLR is wider than its shadow mapping expects, and
+`tests/test_plan_race.c` releases two threads through a barrier so the two initialisers
+overlap on purpose. On the version before this change it reports **five**:
+
+    host.7             nt_qmv_host_threads
+    n.6                nt_qmv_fast_cpus
+    set.2 (128 bytes)  the cpu_set_t the review predicted
+    g_qmv_thread_min   not in the review
+    enabled.1          not in the review
+
+The last two were found by the sanitizer alone — neither the review nor I had them. After the
+change: none. `make test_tsan` fails on any warning, and the test also runs in the ordinary
+suite, where it checks that both pools agree on the plan and that each path matches its own
+serial result. `g_qmv_thread_min` keeps a public setter, so it stays a global and is read and
+written atomically, with a compare-and-exchange for the default so an explicit
+`nt_qmv_set_thread_min` wins whichever happens first.
+
+The refactor cost speed twice, and both cost was found by measuring rather than by reading.
+`nt_qmv_spin()` is called from inside the innermost wait loop; routing it through the plan put
+a libpthread call on every spin iteration, and hoisting it into a local per thread took decode
+from 9.6-9.8 back toward 10.5. Then the accessor itself, holding a `pthread_once` call, could
+not be inlined into `nt_qmatvec_i8` beside the shape checks: 10.4-10.6 with an occasional 9.3
+against a flat 10.7 before, twelve runs each. Splitting it — an inlinable acquire load of a
+pointer the initialiser publishes with release ordering, and an out-of-line slow path for the
+first caller — removed the dips and left a steady 10.6.
+
+**What remains, stated rather than buried: 10.6 against 10.7, about one percent, twelve runs
+each and not noise.** Four atomic loads per matvec account for microseconds per token, so the
+rest is most likely code layout, and chasing it further costs more than it returns. The trade
+is one percent of decode for five removed data races, one of them a partially built CPU set
+under concurrent start. Worth it, and the number is here so anyone can disagree.
+
+Also from the review, both fair: the affinity test still said "three modes" after gaining a
+fourth, and its `NT_QMV_PIN=0` mode reported a failure as "expected the plan's first core"
+when what it expects there is the mask untouched — a message that would send whoever reads a
+failure looking in the wrong place.
+
+---
+
 ## 2026-09-02 — the prime core is the slow one, and the fix was in the chunking
 
 Three big cores beat four: `cpu4-6` decoded Gemma 4 at 10.7 t/s against 10.5 on `cpu4-7`, so

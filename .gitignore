@@ -64,6 +64,8 @@ __pycache__/
 test_qmatmul
 test_qmatvec_leak
 test_affinity
+test_plan_race
+test_plan_race_tsan
 
 gguf_quantize
 test_quantize
