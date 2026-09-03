@@ -9,7 +9,7 @@
  * A test that calls the same function it is checking agrees with itself no matter what the
  * function does.
  *
- * Three modes, three processes, because the decision is cached on first use:
+ * Four modes, four processes, because the decision is taken once per process:
  *   test_affinity            — the default: narrow on a mixed machine, no-op on a uniform one
  *   NT_QMV_BIG_ONLY=0 ... off — the class opt-out must be honoured
  *   test_affinity narrowed    — a mask somebody already narrowed picks the cores, and we
@@ -154,8 +154,16 @@ int main(int argc, char **argv) {
             if (CPU_ISSET(c, &want)) { CPU_SET(c, &first); break; }
     char fbuf[64];
     describe(&first, fbuf, sizeof(fbuf));
-    snprintf(detail, sizeof(detail), "on cpus %s, expected the plan's first core %s", b, fbuf);
-    check("the driving thread holds one core of its own", CPU_EQUAL(&now, &first), detail);
+    /* The message has to name what this mode actually expects. With NT_QMV_PIN=0 the mask
+     * must come back untouched, and calling that "the plan's first core" would send whoever
+     * reads a failure here looking in the wrong place. */
+    if (!strcmp(mode, "nopin")) {
+        snprintf(detail, sizeof(detail), "on cpus %s, expected the mask untouched: %s", b, fbuf);
+        check("nothing touched the affinity mask", CPU_EQUAL(&now, &first), detail);
+    } else {
+        snprintf(detail, sizeof(detail), "on cpus %s, expected the plan's first core %s", b, fbuf);
+        check("the driving thread holds one core of its own", CPU_EQUAL(&now, &first), detail);
+    }
 
     printf("\nResults: %s\n", fails ? "FAILED" : "all passed");
     return fails ? 1 : 0;

@@ -5306,14 +5306,26 @@ static nt_qrows_fn nt_qrows_for(int dtype, int k) {
 #define NT_QMV_THREAD_MIN_DEFAULT (64L << 10)
 static long g_qmv_thread_min = -1;
 void nt_qmv_set_thread_min(long elems) {
-    g_qmv_thread_min = (elems > 0) ? elems : NT_QMV_THREAD_MIN_DEFAULT;
+    __atomic_store_n(&g_qmv_thread_min, (elems > 0) ? elems : NT_QMV_THREAD_MIN_DEFAULT,
+                     __ATOMIC_RELAXED);
 }
+/* The plan is built further down, after the cpufreq helpers it needs; this is the one field
+ * of it a function up here has to read. */
+static long nt_qmv_plan_thread_min(void);
+
+/* Atomic rather than a plain lazy store: this one has a public setter, so a caller can write
+ * it while another thread is reading it, and the default has to arrive without a race either.
+ * Compare-and-exchange so an explicit nt_qmv_set_thread_min still wins over the environment
+ * regardless of which happens first. */
 static long nt_qmv_thread_floor(void) {
-    if (g_qmv_thread_min < 0) {
-        const char *e = getenv("NT_QMV_THREAD_MIN");
-        g_qmv_thread_min = (e && atol(e) > 0) ? atol(e) : NT_QMV_THREAD_MIN_DEFAULT;
+    long v = __atomic_load_n(&g_qmv_thread_min, __ATOMIC_RELAXED);
+    if (v < 0) {
+        long expect = -1, from_env = nt_qmv_plan_thread_min();
+        __atomic_compare_exchange_n(&g_qmv_thread_min, &expect, from_env, 0,
+                                    __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+        v = __atomic_load_n(&g_qmv_thread_min, __ATOMIC_RELAXED);
     }
-    return g_qmv_thread_min;
+    return v;
 }
 
 /* _SC_NPROCESSORS_ONLN counts the cores the KERNEL has online, not the cores THIS process
@@ -5371,46 +5383,6 @@ static int nt_cpu_perf_set(const cpu_set_t *in, cpu_set_t *out) {
     return n >= 2 ? n : 0;
 }
 
-/* Computed once. Non-zero only when narrowing is both possible and nobody else's call to
- * make: an explicit NT_QMV_THREADS, a mask already narrower than the machine (taskset, a
- * cgroup, a container) and NT_QMV_BIG_ONLY=0 each leave it alone. */
-static int nt_qmv_fast_cpus(cpu_set_t *out) {
-    static int n = -1;
-    static cpu_set_t fast;
-    if (n < 0) {
-        n = 0;
-        const char *off = getenv("NT_QMV_BIG_ONLY");
-        const char *thr = getenv("NT_QMV_THREADS");
-        cpu_set_t mine;
-        CPU_ZERO(&mine);
-        if (!(off && off[0] == '0') && !(thr && atol(thr) > 0) &&
-            sched_getaffinity(0, sizeof(mine), &mine) == 0) {
-            long online = sysconf(_SC_NPROCESSORS_ONLN);
-            if (online > 0 && CPU_COUNT(&mine) == (int)online)
-                n = nt_cpu_perf_set(&mine, &fast);
-        }
-    }
-    if (n > 0 && out) *out = fast;
-    return n;
-}
-
-/* The cores this fan-out may use: the fast class where narrowing applies, otherwise the mask
- * we inherited. Cached, because the first pin replaces the caller's mask and asking again
- * afterwards would answer with that one core. */
-static int nt_qmv_target_cpus(cpu_set_t *out) {
-    static int n = -1;
-    static cpu_set_t set;
-    if (n < 0) {
-        n = nt_qmv_fast_cpus(&set);
-        if (n <= 0) {
-            CPU_ZERO(&set);
-            n = (sched_getaffinity(0, sizeof(set), &set) == 0) ? CPU_COUNT(&set) : 0;
-        }
-    }
-    if (n > 0 && out) *out = set;
-    return n;
-}
-
 /* One thread per core, in order, rather than one mask shared by all of them.
  *
  * Leaving placement inside the mask to the scheduler is not the neutral choice it looks like.
@@ -5424,52 +5396,130 @@ static int nt_qmv_target_cpus(cpu_set_t *out) {
  *
  * Honouring somebody else's mask means honouring which cores they gave us. It does not mean
  * declining to use all of them. NT_QMV_PIN=0 turns this off. */
-static int nt_qmv_pin_enabled(void) {
-    static int on = -1;
-    if (on < 0) {
-        const char *e = getenv("NT_QMV_PIN");
-        on = !(e && e[0] == '0');
+#endif  /* __linux__ — the cpufreq helpers above */
+
+/* Everything the fan-out decides once: how many threads, which cores, whether to pin, how
+ * finely to divide the rows. It used to be four functions each caching into its own
+ * function-scope static with a lazy `if (x < 0)` — which is a data race, not a shortcut. This
+ * library has two pools behind two separate pthread_once guards, so a program calling the
+ * float matvec and the integer one from different threads runs both initialisers at the same
+ * time and both of them touch those statics. One pthread_once over one struct removes the
+ * whole class rather than the four instances of it. */
+typedef struct {
+    int  threads;           /* fan-out width before the per-call clamp */
+    int  chunks;            /* chunks handed to each worker */
+    int  pin;               /* place threads on cores ourselves */
+    int  pool;              /* reuse persistent workers instead of spawning per call */
+    int  spin;              /* how long a worker spins before parking */
+    long thread_min;        /* elements below which the fan-out is not worth it */
+#if defined(__linux__)
+    int  ncpu;              /* cores in `cpus`, 0 when there is nothing to place on */
+    cpu_set_t cpus;
+#endif
+} nt_qmv_plan;
+
+static nt_qmv_plan g_nt_qmv_plan;
+static pthread_once_t g_nt_qmv_plan_once = PTHREAD_ONCE_INIT;
+/* Published with release ordering when the plan is built, read with acquire on every access.
+ * pthread_once is correct but it is a call into libpthread, and the plan is read four times
+ * per matvec — of which there are a couple of hundred per token. Measured with the once on
+ * the hot path: 10.5-10.6 t/s against 10.7 without, plus an occasional 9.3. One pointer load
+ * costs nothing and the ordering is what makes it safe rather than merely fast. */
+static const nt_qmv_plan *g_nt_qmv_plan_ready = NULL;
+
+static void nt_qmv_plan_init(void) {
+    nt_qmv_plan *p = &g_nt_qmv_plan;
+    const char *e;
+
+    e = getenv("NT_QMV_PIN");
+    p->pin = !(e && e[0] == '0');
+
+    /* Granularity trades load balance against per-chunk cost, and the balance point moves
+     * whenever either side does. It moved when the pool started pinning one thread per core:
+     * with placement settled, what remains is the tail, because the big cores are not equally
+     * fast either — a thread on this SoC's prime core runs at 1.6-2.0 GHz while its
+     * neighbours hold 2.6, the governor's energy model rather than a thermal cap, and nothing
+     * in cpuinfo_max_freq says so. Coarse chunks leave that core holding the last one while
+     * everybody waits. Gemma 4 E2B decode on four cores, chunks per worker against t/s:
+     * 1 -> 9.9, 2 -> 10.3, 4 -> 10.5, 8 -> 10.6, 16 -> 10.7, 32 -> 10.7. Qwen 2.5 0.5B: 55.9,
+     * 52.9, 54.4, 55.1, 55.9, 55.3. Sixteen is best or tied on both, and at sixteen four cores
+     * match the three that exclude the prime core, so the fix is granularity rather than
+     * discarding a core. The float pool reached sixteen independently. */
+    e = getenv("NT_QMV_CHUNKS");
+    long v = e ? atol(e) : 0;
+    p->chunks = (v >= 1 && v <= 64) ? (int)v : 16;
+
+    e = getenv("NT_QMV_POOL");
+    p->pool = !(e && (!strcmp(e, "0") || !strcmp(e, "false") ||
+                      !strcmp(e, "off") || !strcmp(e, "no")));
+
+    e = getenv("NT_QMV_SPIN");
+    p->spin = (e && atoi(e) >= 0) ? atoi(e) : 20000;
+
+    e = getenv("NT_QMV_THREAD_MIN");
+    p->thread_min = (e && atol(e) > 0) ? atol(e) : NT_QMV_THREAD_MIN_DEFAULT;
+
+    e = getenv("NT_QMV_THREADS");
+    long want = e ? atol(e) : 0;
+    p->threads = want > 0 ? (int)want : 0;
+
+#if defined(__linux__)
+    p->ncpu = 0;
+    CPU_ZERO(&p->cpus);
+    cpu_set_t mine;
+    CPU_ZERO(&mine);
+    if (sched_getaffinity(0, sizeof(mine), &mine) == 0) {
+        int n = 0;
+        /* Narrowing to a core class is off when somebody already decided: an explicit thread
+         * count, a mask narrower than the machine, or NT_QMV_BIG_ONLY=0. */
+        const char *off = getenv("NT_QMV_BIG_ONLY");
+        long online = sysconf(_SC_NPROCESSORS_ONLN);
+        if (!(off && off[0] == '0') && !p->threads &&
+            online > 0 && CPU_COUNT(&mine) == (int)online)
+            n = nt_cpu_perf_set(&mine, &p->cpus);
+        if (n <= 0) { p->cpus = mine; n = CPU_COUNT(&mine); }
+        p->ncpu = n;
+        if (!p->threads) p->threads = n;
     }
-    return on;
+#endif
+    if (p->threads < 1) p->threads = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (p->threads < 1) p->threads = 1;
+    __atomic_store_n(&g_nt_qmv_plan_ready, p, __ATOMIC_RELEASE);
 }
+
+/* Split so the fast path is a load and a branch the compiler will inline. Leaving the
+ * pthread_once call inside the accessor makes the whole thing uninlinable, and the accessor
+ * sits in nt_qmatvec_i8 next to the shape checks: keeping it out of line cost 10.5-10.6 t/s
+ * against 10.7 on Gemma, twelve runs each, which is small and was not noise. */
+static const nt_qmv_plan *nt_qmv_plan_slow(void) {
+    pthread_once(&g_nt_qmv_plan_once, nt_qmv_plan_init);
+    return __atomic_load_n(&g_nt_qmv_plan_ready, __ATOMIC_ACQUIRE);
+}
+
+static inline const nt_qmv_plan *nt_qmv_get_plan(void) {
+    const nt_qmv_plan *p = __atomic_load_n(&g_nt_qmv_plan_ready, __ATOMIC_ACQUIRE);
+    return p ? p : nt_qmv_plan_slow();
+}
+
+static long nt_qmv_plan_thread_min(void) { return nt_qmv_get_plan()->thread_min; }
 
 static void nt_qmv_pin_nth(pthread_t t, int idx) {
-    if (!nt_qmv_pin_enabled()) return;
-    cpu_set_t all, one;
-    int n = nt_qmv_target_cpus(&all);
-    if (n <= 0) return;
-    int want = idx % n, seen = 0;
+#if defined(__linux__)
+    const nt_qmv_plan *p = nt_qmv_get_plan();
+    if (!p->pin || p->ncpu <= 0) return;
+    int want = idx % p->ncpu, seen = 0;
+    cpu_set_t one;
     CPU_ZERO(&one);
     for (int c = 0; c < CPU_SETSIZE; c++)
-        if (CPU_ISSET(c, &all) && seen++ == want) { CPU_SET(c, &one); break; }
+        if (CPU_ISSET(c, &p->cpus) && seen++ == want) { CPU_SET(c, &one); break; }
     if (CPU_COUNT(&one)) pthread_setaffinity_np(t, sizeof(one), &one);
-}
 #else
-static void nt_qmv_pin_nth(pthread_t t, int idx) { (void)t; (void)idx; }
+    (void)t; (void)idx;
 #endif
+}
 
 static int nt_qmv_host_threads(int m) {
-    static int host = -1;
-    if (host < 0) {
-        const char *e = getenv("NT_QMV_THREADS");
-        long want = e ? atol(e) : 0;
-        if (want > 0) {
-            host = (int)want;
-        } else {
-#if defined(__linux__)
-            cpu_set_t set;
-            CPU_ZERO(&set);
-            host = (sched_getaffinity(0, sizeof(set), &set) == 0) ? CPU_COUNT(&set) : 0;
-            int fast = nt_qmv_fast_cpus(NULL);
-            if (fast > 0) host = fast;
-#else
-            host = 0;
-#endif
-            if (host < 1) host = (int)sysconf(_SC_NPROCESSORS_ONLN);
-        }
-        if (host < 1) host = 1;
-    }
-    int nt = host;
+    int nt = nt_qmv_get_plan()->threads;
     if (nt > NT_QMV_MAX_THREADS) nt = NT_QMV_MAX_THREADS;
     if (nt > m) nt = m;
     return nt;
@@ -5481,15 +5531,7 @@ typedef struct {
 } nt_qjob;
 
 #ifndef _OPENMP   /* only the pthread fan-out uses a worker entry point */
-static int nt_qmv_pool_enabled(void) {
-    static int enabled = -1;
-    if (enabled < 0) {
-        const char *e = getenv("NT_QMV_POOL");
-        enabled = !(e && (!strcmp(e, "0") || !strcmp(e, "false") ||
-                          !strcmp(e, "off") || !strcmp(e, "no")));
-    }
-    return enabled;
-}
+static int nt_qmv_pool_enabled(void) { return nt_qmv_get_plan()->pool; }
 
 static void *nt_qworker(void *p) {
     nt_qjob *j = (nt_qjob *)p;
@@ -6657,14 +6699,7 @@ static nt_qpool_i8 g_nt_qpool_i8 = {
 #define NT_QMV_PAUSE() ((void)0)
 #endif
 
-static int nt_qmv_spin(void) {
-    static int spin = -1;
-    if (spin < 0) {
-        const char *e = getenv("NT_QMV_SPIN");
-        spin = (e && atoi(e) >= 0) ? atoi(e) : 20000;
-    }
-    return spin;
-}
+static int nt_qmv_spin(void) { return nt_qmv_get_plan()->spin; }
 static pthread_once_t g_nt_qpool_i8_once = PTHREAD_ONCE_INIT;
 static pthread_mutex_t g_nt_qpool_i8_dispatch_mu = PTHREAD_MUTEX_INITIALIZER;
 
@@ -6685,12 +6720,16 @@ static void nt_qpool_i8_drain(void) {
 static void *nt_qpool_i8_loop(void *p) {
     (void)p;
     int seen = 0;
+    /* Read once per thread, not once per spin. The plan lives behind a pthread_once, and a
+     * call into that from inside the innermost wait loop is a libc round trip per iteration
+     * — measured as roughly a tenth of decode before it was hoisted out. */
+    const int spin_budget = nt_qmv_spin();
     for (;;) {
         int spins = 0;
         for (;;) {
             if (__atomic_load_n(&g_nt_qpool_i8.shutdown, __ATOMIC_RELAXED)) return NULL;
             if (__atomic_load_n(&g_nt_qpool_i8.generation, __ATOMIC_ACQUIRE) != seen) break;
-            if (++spins < nt_qmv_spin()) { NT_QMV_PAUSE(); continue; }
+            if (++spins < spin_budget) { NT_QMV_PAUSE(); continue; }
             /* Budget spent: park. The generation is re-read under the lock the dispatcher
              * broadcasts under, so a job arriving in this window cannot be missed. */
             pthread_mutex_lock(&g_nt_qpool_i8.mu);
@@ -6740,13 +6779,8 @@ static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
     if (worker_nt <= 0 || worker_nt > g_nt_qpool_i8.nthreads) return -1;
 
     int lo = jobs[0].r0, hi = jobs[worker_nt].r1;
-    /* Four chunks per worker. Granularity trades load balance against per-chunk cost, and
-     * the balance point moved once the kernels got faster — re-measured rather than
-     * inherited. Exynos 1580, Qwen2.5-0.5B decode, chunks per worker against t/s pinned to
-     * the four big cores and then across all eight: 1 -> 38.8, 2 -> 40.0 / 24.7,
-     * 4 -> 39.6 / 26.3, 8 -> 38.6 / 25.1. Four is one percent off the pinned best and the
-     * best of the three unpinned, so it is the one number that is not wrong either way. */
-    int chunk = (hi - lo) / (nt * 4); if (chunk < 1) chunk = 1;
+    /* Granularity: see nt_qmv_plan_init for what it costs and how it was measured. */
+    int chunk = (hi - lo) / (nt * nt_qmv_get_plan()->chunks); if (chunk < 1) chunk = 1;
 
     pthread_mutex_lock(&g_nt_qpool_i8_dispatch_mu);   /* one dispatch in flight at a time */
     g_nt_qpool_i8.shared = jobs[0];
@@ -6765,9 +6799,9 @@ static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
 
     nt_qpool_i8_drain();                              /* the caller is a worker too */
 
-    int spins = 0;
+    int spins = 0, spin_budget = nt_qmv_spin();      /* hoisted: see nt_qpool_i8_loop */
     while (__atomic_load_n(&g_nt_qpool_i8.busy, __ATOMIC_ACQUIRE) > 0) {
-        if (++spins < nt_qmv_spin()) { NT_QMV_PAUSE(); continue; }
+        if (++spins < spin_budget) { NT_QMV_PAUSE(); continue; }
         sched_yield(); spins = 0;
     }
     pthread_mutex_unlock(&g_nt_qpool_i8_dispatch_mu);

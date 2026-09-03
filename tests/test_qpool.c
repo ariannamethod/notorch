@@ -9,6 +9,9 @@
  * The single-threaded run is the reference. nt_qmv_set_thread_min lifts the floor above
  * the shape to force it, then drops it to force fan-out, so one process covers both.
  * m is deliberately not a multiple of any plausible core count, to exercise the tail.
+ * How finely the rows are divided is read once per process, so the Makefile runs this
+ * under several NT_QMV_CHUNKS values: coarse and fine must agree to the bit with each
+ * other and with the single-threaded reference.
  *
  * Two failure modes were injected while writing this to confirm it can fail: a cursor
  * that skips a row per chunk, and a range one row short. Both were caught. An overlapping
