@@ -13,6 +13,52 @@ Newest entries on top.
 
 ---
 
+## 2026-09-02 — one thread per core, because the scheduler stacks them two to a core
+
+The core-class work left an oddity in its sweep: two cores measured slower than one. Gemma 4
+decode on `taskset -c 6,7` gave 5.1 t/s against 6.1 on `cpu7` alone, and `cpu5,6` — two cores
+of the same 2.6 GHz class — gave 4.6, 8.8, 4.6 across three runs where every other
+configuration repeated itself to the decimal.
+
+Not a spread, two plateaus, and the ratio between them is 1.9. Sampling `/proc/<pid>/task`
+through six runs said what that means: in the fast ones the two threads accumulate time on
+cpu5 and cpu6, in the slow ones both sit on cpu5 and the second collects a quarter of the
+first's cycles. One core doing the work of two. The scheduler is not being careless — a thread
+that alternates spinning with parking on a condvar reads as half idle, two halves fit on one
+core by that arithmetic, and the placement is decided once and kept for the run.
+
+So the pool pins one thread per core, in order, instead of handing every thread the same mask.
+Honouring an affinity mask somebody else set means honouring **which** cores they gave us; it
+does not mean declining to use all of them, and a mask from `taskset` or a cgroup is usually
+somebody reserving cores for exactly this. `NT_QMV_PIN=0` turns all of it off.
+
+Six runs each, cold, with an unpinned control in the same sweep on the same hardware:
+
+| | runs |
+|---|---|
+| `cpu5,6` pinned | 8.3 8.3 8.3 8.3 8.3 8.3 |
+| `cpu5,6` unpinned | 4.5 8.8 4.6 4.6 5.8 8.8 |
+| `cpu4,6` pinned | 8.3 8.3 8.3 8.3 8.3 8.3 |
+| `cpu6,7` pinned | 7.7 7.7 7.7 7.8 7.7 7.7 (was 5.1) |
+| all cores, default | 10.5 10.4 10.4 (unchanged) |
+
+The control still swings, which is what makes this a difference rather than a story. `cpu6,7`
+gains half again. Stated plainly: pinned 8.3 is about six percent below the *lucky* unpinned
+8.8, because a pinned thread cannot step aside when Android wants that core for a moment — the
+trade is six percent off the best case against eighty percent off the worst, and a number that
+repeats. The default four-core path does not move; this is for masks somebody narrowed.
+
+`tests/test_affinity.c` gains a fourth mode, `NT_QMV_PIN=0`, and its placement assertion now
+reads "one core of its own" rather than "somewhere in the plan" — the old wording passed
+whether or not the threads were stacked, which is exactly the failure this entry is about.
+
+Left open and measured, not explained: three big cores beat four. `cpu4-6` gives 10.8 / 10.8 /
+10.7 against `cpu4-7` at 10.5 / 10.5 / 10.6, so adding the *faster* prime core costs three
+percent. Either bandwidth is already saturated at three, or cpu7 is where Android puts its own
+foreground work and we are sharing it. Next.
+
+---
+
 ## 2026-09-02 — the library picks its cores, because counting them was the wrong question
 
 `nt_qmv_host_threads` asked `sched_getaffinity` how many CPUs it was allowed and used all of

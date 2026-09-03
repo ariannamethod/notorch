@@ -11,8 +11,10 @@
  *
  * Three modes, three processes, because the decision is cached on first use:
  *   test_affinity            — the default: narrow on a mixed machine, no-op on a uniform one
- *   NT_QMV_BIG_ONLY=0 ... off — the opt-out must be honoured
- *   test_affinity narrowed    — a mask somebody already narrowed is nobody else's business
+ *   NT_QMV_BIG_ONLY=0 ... off — the class opt-out must be honoured
+ *   test_affinity narrowed    — a mask somebody already narrowed picks the cores, and we
+ *                               still spread across every core they gave us
+ *   NT_QMV_PIN=0 ... nopin    — the affinity opt-out must be honoured completely
  */
 #if defined(__linux__) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE
@@ -121,6 +123,8 @@ int main(int argc, char **argv) {
         want = start;                       /* opted out, or already somebody's decision */
         want_n = CPU_COUNT(&start);
     }
+    /* NT_QMV_PIN=0 is about affinity alone. How many threads to run is a separate question
+     * and still follows the core classes, so only the placement assertion changes below. */
 
     char a[256], b[256];
     describe(&want, a, sizeof(a));
@@ -139,8 +143,19 @@ int main(int argc, char **argv) {
         return 1;
     }
     describe(&now, b, sizeof(b));
-    snprintf(detail, sizeof(detail), "on cpus %s, expected %s", b, a);
-    check("the driving thread sits where the plan says", CPU_EQUAL(&now, &want), detail);
+    /* One thread per core, in order, so the thread that drove the matvec holds the first CPU
+     * of the plan and nothing else. A shared mask is not enough: the scheduler will put two
+     * spin-then-park threads on one core and keep them there. */
+    cpu_set_t first;
+    CPU_ZERO(&first);
+    if (!strcmp(mode, "nopin")) first = start;        /* nothing may have touched it */
+    else
+        for (int c = 0; c < CPU_SETSIZE; c++)
+            if (CPU_ISSET(c, &want)) { CPU_SET(c, &first); break; }
+    char fbuf[64];
+    describe(&first, fbuf, sizeof(fbuf));
+    snprintf(detail, sizeof(detail), "on cpus %s, expected the plan's first core %s", b, fbuf);
+    check("the driving thread holds one core of its own", CPU_EQUAL(&now, &first), detail);
 
     printf("\nResults: %s\n", fails ? "FAILED" : "all passed");
     return fails ? 1 : 0;

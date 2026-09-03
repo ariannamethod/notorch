@@ -370,6 +370,7 @@ test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_qmatve
 	./test_affinity
 	NT_QMV_BIG_ONLY=0 ./test_affinity off
 	./test_affinity narrowed
+	NT_QMV_PIN=0 ./test_affinity nopin
 
 test_js:
 	node js-edition/test_op_parity.mjs
