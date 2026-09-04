@@ -93,6 +93,11 @@ int gguf_find_tensor(const gguf_file* gf, const char* name);
 
 // Dequantize tensor to float32 array. Caller must free returned pointer.
 // Handles: F32 (copy), F16 (convert), Q8_0 (dequant), Q4_0 (dequant).
+/* Packed bytes for n elements of a dtype, or 0 for a dtype this reader cannot size.
+ * A 3-D expert tensor is stored as one matrix, so slicing an expert out of it needs to
+ * know how far a row is — the only reason this is public. */
+uint64_t gguf_type_size(uint32_t dtype, uint64_t n_elements);
+
 float* gguf_dequant(const gguf_file* gf, int tensor_idx);
 
 // One row of a packed tensor, decoded in place of the whole thing. dst needs shape[0]
@@ -115,6 +120,9 @@ int gguf_read_str_kv(const char* path, const char* key, char* out, int cap);
 
 // One integer metadata value by key (u32, i32, bool or u64). Returns 0 on success.
 int gguf_read_uint_kv(const char* path, const char* key, uint64_t* out);
+
+// Same for a type-9 INT32/UINT32 array (e.g. "tokenizer.ggml.token_type").
+int32_t* gguf_read_i32_array(const char* path, const char* key, int* out_n);
 
 // Same for a type-9 FLOAT32 array (e.g. "tokenizer.ggml.scores"). Returns a
 // malloc'd float* of *out_n values, or NULL if the key is absent or not f32.

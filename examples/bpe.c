@@ -93,6 +93,13 @@ struct bpe_tokenizer {
      * UTF-8 like BPE, and no word-level pre-split at all, only a break at newlines. The
      * only signal is the name in tokenizer.ggml.model, which is what llama.cpp reads too. */
     int spm_bpe;
+    /* Tokens the file marks USER_DEFINED. They are stored as literal text rather than in the
+     * byte-level encoding — a run of four real spaces, not four 'Ġ' — so the merge path can
+     * never produce them, and the reference matches them against the raw text before it runs.
+     * Skipping this step is quiet on prose and wrong on indented code: OLMoE's vocabulary
+     * carries twenty-five of these and they are all whitespace runs. */
+    int *added_id;      /* ids, longest string first */
+    int n_added;
     int add_bos, bos_id;
 };
 
@@ -137,6 +144,35 @@ bpe_tokenizer *bpe_load(const char *path) {
      * where the same two operations do not exist. Getting this wrong is quiet
      * — byte-level encode over a SentencePiece vocabulary finds no token for a
      * space and used to drop it, which reads as text with the spaces missing. */
+    /* USER_DEFINED is type 4 in tokenizer.ggml.token_type. CONTROL (3) is deliberately left
+     * out: the reference only splits on those when asked to parse specials, and a prompt that
+     * happens to spell one should not become that token by accident. */
+    int ntt = 0;
+    int32_t *ttypes = gguf_read_i32_array(path, "tokenizer.ggml.token_type", &ntt);
+    if (ttypes && ntt == nt) {
+        for (int i = 0; i < nt; i++)
+            if (ttypes[i] == 4 && toks[i] && toks[i][0]) t->n_added++;
+        if (t->n_added) {
+            t->added_id = (int*)calloc((size_t)t->n_added, sizeof(int));
+            int k = 0;
+            for (int i = 0; i < nt; i++)
+                if (ttypes[i] == 4 && toks[i] && toks[i][0]) t->added_id[k++] = i;
+            /* Longest first, so the scan takes the longest match at each position the way a
+             * longest-match scan must; insertion sort over a couple of dozen entries. */
+            for (int a = 1; a < t->n_added; a++) {
+                int v = t->added_id[a];
+                size_t vl = strlen(toks[v]);
+                int b = a - 1;
+                while (b >= 0 && strlen(toks[t->added_id[b]]) < vl) {
+                    t->added_id[b + 1] = t->added_id[b];
+                    b--;
+                }
+                t->added_id[b + 1] = v;
+            }
+        }
+    }
+    free(ttypes);
+
     int ns = 0;
     float *scores = gguf_read_f32_array(path, "tokenizer.ggml.scores", &ns);
     if (nm <= 0 && scores && ns == nt) {
@@ -180,6 +216,7 @@ void bpe_free(bpe_tokenizer *t) {
     free(t->tokens);
     smap_free(&t->vocab); smap_free(&t->merges);
     free(t->scores);
+    free(t->added_id);
     free(t);
 }
 
@@ -373,10 +410,44 @@ static int spm_bpe_encode(const bpe_tokenizer *t, const char *text, int *out, in
     return no;
 }
 
+/* Byte-level BPE over one stretch of text with no added token in it. */
+static int bpe_encode_span(const bpe_tokenizer *t, const char *text, int len, int *out, int cap);
+
 int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
     if (t && t->spm_bpe) return spm_bpe_encode(t, text, out, cap);
     if (t && t->spm) return spm_encode(t, text, out, cap);
-    int no = 0, L = (int)strlen(text), i = 0;
+    if (!t || t->n_added <= 0) return bpe_encode_span(t, text, (int)strlen(text), out, cap);
+
+    /* Added tokens are matched against the raw text first, longest at each position, and the
+     * merge path only ever sees what lies between them. Doing it the other way round cannot
+     * work: these tokens are stored as literal bytes, so no sequence of merges over the
+     * byte-level alphabet will ever spell one. */
+    int no = 0, L = (int)strlen(text), i = 0, gap = 0;
+    while (i < L) {
+        int hit = -1, hlen = 0;
+        for (int a = 0; a < t->n_added; a++) {
+            const char *s = t->tokens[t->added_id[a]];
+            int sl = (int)strlen(s);
+            if (sl && sl <= L - i && memcmp(text + i, s, (size_t)sl) == 0) {
+                hit = t->added_id[a]; hlen = sl; break;   /* the list is longest-first */
+            }
+        }
+        if (hit < 0) { i++; continue; }
+        if (i > gap) no += bpe_encode_span(t, text + gap, i - gap, out + no, cap - no);
+        if (no < cap) out[no++] = hit;
+        i += hlen;
+        gap = i;
+    }
+    if (L > gap) no += bpe_encode_span(t, text + gap, L - gap, out + no, cap - no);
+    return no;
+}
+
+static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int *out, int cap) {
+    char *text = (char*)malloc((size_t)L + 1);
+    if (!text) return 0;
+    memcpy(text, span, (size_t)L);
+    text[L] = 0;
+    int no = 0, i = 0;
     while (i < L) {
         /* pre-tok piece: [i, j). One space belongs to the run that follows it, but a RUN of
          * spaces does not — GPT-2 splits `\s+(?!\S)` off first, so four spaces before a word
@@ -427,6 +498,7 @@ int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
         free(sym);
         i = j;
     }
+    free(text);            /* the span copy this function made, not the caller's */
     return no;
 }
 
@@ -452,6 +524,20 @@ int bpe_decode_token(const bpe_tokenizer *t, int id, char *buf, int cap) {
         buf[n] = 0;
         return n;
     }
+    /* An added token is literal text and was never in the byte-level alphabet, so running it
+     * through that table drops every byte it does not recognise — a run of real spaces comes
+     * out empty, which is how indentation disappeared from generated code while the ids were
+     * right all along. Copy it as it stands. */
+    for (int a = 0; a < t->n_added; a++) {
+        if (t->added_id[a] != id) continue;
+        int len = (int)strlen(s);
+        if (len > cap - 1) len = cap - 1;
+        if (len < 0) len = 0;
+        memcpy(buf, s, (size_t)len);
+        buf[len] = 0;
+        return len;
+    }
+
     int L = (int)strlen(s), i = 0, n = 0;
     while (i < L && n < cap - 1) {
         int cp; int adv = utf8_dec(s + i, &cp); i += adv;

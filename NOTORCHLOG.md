@@ -13,6 +13,53 @@ Newest entries on top.
 
 ---
 
+## 2026-09-04 — the first mixture, and the tokens that were never in the alphabet
+
+`harness/arch_olmoe.c` runs OLMoE-1B-7B: sixteen layers, sixty-four experts each, eight used
+per token. It is the first architecture here whose weights are not read in one sweep. A dense
+model streams every byte of every layer; this one reads an eighth of its feed-forward, but
+reads it gathered — eight slices chosen per token out of a 75 MB region per tensor per layer.
+Everything this library has been tuned on assumed the sweep.
+
+Adding it needed no change to the family interface, which is what `arch.h` claims of itself.
+It needed one helper: `wt_expert`, which is arithmetic rather than a new idea. A stacked
+expert tensor is 3-D, `[n_embd, n_ff, n_expert]`, and `wt_load` already reads that as one
+matrix of `n_ff * n_expert` rows — so expert *e* is that matrix with a shorter row count and a
+shifted base, and nothing is copied. `gguf_type_size` became public to make the shift
+computable, and `tools/gguf_quantize.c` lost its private copy of it.
+
+The routing is the reference's and not the usual shape of these things: softmax over all
+sixty-four, top eight by that probability, and the weights are those probabilities as they
+stand — no renormalisation over the chosen eight (`norm_w = false` at the call site) and no
+scale (the file carries no `expert_weights_scale`). Both are common elsewhere and wrong here.
+Q and K are RMS-normalised over the whole projection before the heads are split out, with a
+weight vector of `n_embd` — gemma4 normalises per head, and the two are one reshape apart.
+
+**The tokenizer was the real find, and it was ours.** OLMoE's vocabulary carries twenty-five
+tokens the file marks USER_DEFINED, and they are runs of *real spaces* — token 50274 is four
+bytes of 0x20, not four 'Ġ'. No sequence of merges over the byte-level alphabet can ever spell
+one, so the reference matches them against the raw text before BPE runs and encodes only what
+lies between. We had no such pass, on either side: indentation was lost when encoding and lost
+again when printing, because a literal space is not in the byte-level table and got dropped.
+`gguf_read_i32_array` reads `tokenizer.ggml.token_type` to find them; CONTROL tokens are left
+out on purpose, since the reference only splits those when asked to parse specials.
+
+Why it went unseen is the part worth keeping. `harness/test_tokenizer.sh` **already** had a
+repeated-spaces text and an indented-code text, and they had passed for as long as they
+existed — on Qwen and Gemma, whose vocabularies have no such tokens, where both
+implementations happen to split the same way. The gate was not weak in its texts; it was weak
+in its corpus. OLMoE is in its default list now, 24 checks instead of 16, and removing the
+added-token pass fails exactly those two texts and only on that model.
+
+Against the reference, cold: parity is identical on all three prompts, tokenizer identical on
+24. Decode **16.1 / 16.8 t/s against llama.cpp's 21.41 ± 1.15 — 77 percent**, where the dense
+models sit at 97. The gap is not a mystery and is not a defect: the reference gathers the
+eight chosen experts into one `mul_mat_id`, while this does eight separate matvecs, twenty-four
+per layer against three, 384 dispatches per token. That is the next piece of work and it now
+has a number.
+
+---
+
 ## 2026-09-04 — six review points, and one of them was a comment that lied
 
 The worst of the six is the smallest. `NT_CACHELINE` carried a note saying the line size was

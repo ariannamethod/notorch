@@ -258,6 +258,20 @@ gguf_file* gguf_open(const char* path) {
     return gf;
 }
 
+uint64_t gguf_type_size(uint32_t dtype, uint64_t n) {
+    switch (dtype) {
+    case GGUF_TYPE_F32:  return n * 4;
+    case GGUF_TYPE_F16:  return n * 2;
+    case GGUF_TYPE_BF16: return n * 2;
+    case GGUF_TYPE_Q4_0: return n / 32 * 18;
+    case GGUF_TYPE_Q5_0: return n / 32 * 22;
+    case GGUF_TYPE_Q8_0: return n / 32 * 34;
+    case GGUF_TYPE_Q4_K: return n / 256 * 144;
+    case GGUF_TYPE_Q6_K: return n / 256 * 210;
+    default:             return 0;
+    }
+}
+
 void gguf_close(gguf_file* gf) {
     if (!gf) return;
 #if NOTORCH_GGUF_MMAP
@@ -377,6 +391,42 @@ char** gguf_read_str_array(const char* path, const char* key, int* out_n) {
                 if (!result[j]) break;
             }
             if (out_n) *out_n = (int)j;   // actually-read count, not claimed alen
+            break;
+        }
+        if (!skip_value(f, vtype)) break;
+    }
+    fclose(f);
+    return result;
+}
+
+/* Same walk for an INT32 array. tokenizer.ggml.token_type is one, and without it there is
+ * no way to tell an added token — a literal run of spaces, say — from an ordinary merge. */
+int32_t* gguf_read_i32_array(const char* path, const char* key, int* out_n) {
+    if (out_n) *out_n = 0;
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    uint32_t magic;
+    if (!read_u32(f, &magic) || magic != GGUF_MAGIC) { fclose(f); return NULL; }
+    uint32_t version; uint64_t n_tensors, n_kv;
+    read_u32(f, &version); read_u64(f, &n_tensors); read_u64(f, &n_kv);
+    int32_t* result = NULL;
+    for (uint64_t i = 0; i < n_kv; i++) {
+        char k[512] = {0};
+        uint32_t vtype;
+        if (!read_string(f, k, sizeof(k)) || !read_u32(f, &vtype)) break;
+        if (strcmp(k, key) == 0 && vtype == 9) {
+            uint32_t atype; uint64_t alen;
+            if (!read_u32(f, &atype) || !read_u64(f, &alen)) break;
+            if (atype != 5 && atype != 4) break;          /* INT32 or UINT32 */
+            if (alen > GGUF_MAX_STR_ARRAY) {
+                fprintf(stderr, "gguf: i32-array '%s' len %llu exceeds GGUF_MAX_STR_ARRAY=%u; refusing\n",
+                        key, (unsigned long long)alen, (unsigned)GGUF_MAX_STR_ARRAY);
+                break;
+            }
+            result = (int32_t*)calloc(alen ? alen : 1, sizeof(int32_t));
+            if (!result) break;
+            uint64_t got = fread(result, sizeof(int32_t), alen, f);
+            if (out_n) *out_n = (int)got;
             break;
         }
         if (!skip_value(f, vtype)) break;

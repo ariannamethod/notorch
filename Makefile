@@ -203,7 +203,7 @@ llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorc
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
-HARNESS_SRC = harness/main.c harness/runtime.c harness/arch_llama.c harness/arch_gemma4.c examples/bpe.c gguf.c notorch.c
+HARNESS_SRC = harness/main.c harness/runtime.c harness/arch_llama.c harness/arch_gemma4.c harness/arch_olmoe.c examples/bpe.c gguf.c notorch.c
 HARNESS_HDR = harness/arch.h harness/runtime.h harness/logo.h examples/bpe.h gguf.h notorch.h
 
 # `harness` is phony because a directory of that name sits right there, and
