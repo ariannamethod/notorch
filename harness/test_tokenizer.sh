@@ -31,9 +31,16 @@ MODELS="$*"
 if [ -z "$MODELS" ]; then
   # $HOME is not always where the models are — this tree is often run from a chroot whose
   # home is elsewhere than the one holding the files, so look beside the repo as well.
+  # olmoe earns its place here rather than for variety: its vocabulary carries USER_DEFINED
+  # tokens — runs of real spaces, stored as literal text — and no other model in this list
+  # does. The indented-code and repeated-space texts below were already here and passed for
+  # years, because on a vocabulary without such tokens both implementations split the same way.
   for m in "$HOME/models/gemma-4-E2B-it-Q4_0.gguf" "$HOME/models/qwen05b_q5_0_ours.gguf" \
+           "$HOME/models/olmoe-1b-7b-q4_0.gguf" \
            "../models/gemma-4-E2B-it-Q4_0.gguf" "../models/qwen05b_q5_0_ours.gguf" \
-           "../../models/gemma-4-E2B-it-Q4_0.gguf" "../../models/qwen05b_q5_0_ours.gguf"; do
+           "../models/olmoe-1b-7b-q4_0.gguf" \
+           "../../models/gemma-4-E2B-it-Q4_0.gguf" "../../models/qwen05b_q5_0_ours.gguf" \
+           "../../models/olmoe-1b-7b-q4_0.gguf"; do
     [ -f "$m" ] && MODELS="$MODELS $m"
   done
 fi

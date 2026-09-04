@@ -53,20 +53,9 @@ static const char *type_name(uint32_t t) {
     }
 }
 
-/* Packed size of n elements. Only the formats this tool emits plus the ones it may copy. */
-static uint64_t type_size(uint32_t t, uint64_t n) {
-    switch (t) {
-    case GGUF_TYPE_F32:  return n * 4;
-    case GGUF_TYPE_F16:  return n * 2;
-    case GGUF_TYPE_BF16: return n * 2;
-    case GGUF_TYPE_Q4_0: return n / 32 * 18;
-    case GGUF_TYPE_Q5_0: return n / 32 * 22;
-    case GGUF_TYPE_Q8_0: return n / 32 * 34;
-    case GGUF_TYPE_Q4_K: return n / 256 * 144;
-    case GGUF_TYPE_Q6_K: return n / 256 * 210;
-    default:             return 0;
-    }
-}
+/* Packed size of n elements — gguf_type_size, kept under the old name so the code below
+ * reads the same. It used to be a copy of that function living here. */
+#define type_size gguf_type_size
 
 static int copy_range(FILE *in, FILE *out, uint64_t off, uint64_t len) {
     if (fseek(in, (long)off, SEEK_SET) != 0) return -1;
