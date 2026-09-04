@@ -26,6 +26,10 @@
 #include <math.h>
 
 #define OLMOE_MAX_USED 32
+/* top_k marks the experts it has taken in a buffer this wide. The count comes out of the file,
+ * so it is checked against this rather than trusted: a header claiming more experts than the
+ * buffer holds would write past it. */
+#define OLMOE_MAX_EXPERTS 1024
 
 typedef struct {
     int n_layers, n_heads, n_kv_heads, embed, ffn, vocab, head_dim, kv_dim, q_dim;
@@ -75,7 +79,8 @@ static void *olmoe_load(gguf_file *gf, nt_dims *dims) {
     m->n_expert = kv ? (int)kv->val.u32 : 0;
     kv = gguf_get_kv(gf, "olmoe.expert_used_count");
     m->n_expert_used = kv ? (int)kv->val.u32 : 0;
-    if (m->n_expert <= 0 || m->n_expert_used <= 0 || m->n_expert_used > OLMOE_MAX_USED ||
+    if (m->n_expert <= 0 || m->n_expert > OLMOE_MAX_EXPERTS ||
+        m->n_expert_used <= 0 || m->n_expert_used > OLMOE_MAX_USED ||
         m->n_expert_used > m->n_expert) {
         fprintf(stderr, "olmoe: expert counts missing or unusable (%d of %d)\n",
                 m->n_expert_used, m->n_expert);
@@ -175,7 +180,7 @@ static void olmoe_free(void *model) {
  * being clever. Returns the indices; the caller reads the weights out of the untouched
  * probability vector. */
 static void top_k(const float *p, int n, int k, int *idx) {
-    char taken[1024];
+    char taken[OLMOE_MAX_EXPERTS];
     memset(taken, 0, (size_t)n);
     for (int i = 0; i < k; i++) {
         int best = -1;
@@ -308,12 +313,22 @@ static void olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
             for (int e = 0; e < NU; e++) {
                 wt ge, ue, de;
+                /* Load has already checked that every stack divides into n_expert slices of
+                 * the right height, so this cannot fire on a file that loaded. If it ever
+                 * does, the token gets no feed-forward at all rather than seven eighths of
+                 * one: a missing contribution is visible in the output, a quietly missing
+                 * expert is not. */
                 if (!wt_expert(&ge, &m->layers[l].gate_exps, idx[e], FFN) ||
                     !wt_expert(&ue, &m->layers[l].up_exps,   idx[e], FFN) ||
                     !wt_expert(&de, &m->layers[l].down_exps, idx[e], E)) {
                     static int warned = 0;
-                    if (!warned) { fprintf(stderr, "olmoe: expert slice failed\n"); warned = 1; }
-                    continue;
+                    if (!warned) {
+                        fprintf(stderr, "olmoe: expert %d of layer %d would not slice; "
+                                        "this token's feed-forward is dropped\n", idx[e], l);
+                        warned = 1;
+                    }
+                    memset(dst, 0, (size_t)E * sizeof(float));
+                    break;
                 }
                 pft = pf_mark();
                 qmv(eg, &ge, xj);

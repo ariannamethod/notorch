@@ -50,14 +50,27 @@ int wt_load(wt *w, gguf_file *gf, const char *name) {
 }
 
 int wt_expert(wt *dst, const wt *src, int index, int rows_each) {
-    if (!src->q || index < 0 || rows_each <= 0) return 0;      /* the f32 fallback cannot slice */
+    if (!src || index < 0 || rows_each <= 0) return 0;
     if ((long)(index + 1) * rows_each > src->rows) return 0;
-    uint64_t row_bytes = gguf_type_size((uint32_t)src->dtype, (uint64_t)src->cols);
-    if (!row_bytes) return 0;
-    *dst = *src;
-    dst->rows = rows_each;
-    dst->q    = src->q + row_bytes * (uint64_t)index * (uint64_t)rows_each;
-    return 1;
+    if (src->q) {
+        uint64_t row_bytes = gguf_type_size((uint32_t)src->dtype, (uint64_t)src->cols);
+        if (!row_bytes) return 0;
+        *dst = *src;
+        dst->rows = rows_each;
+        dst->q    = src->q + row_bytes * (uint64_t)index * (uint64_t)rows_each;
+        return 1;
+    }
+    /* The expanded copy is a contiguous [rows, cols] of floats and slices the same way. It
+     * used to be refused here, which did not fail — the caller skipped that expert and
+     * answered with seven of its eight, quietly. A dtype with no packed kernel is exactly
+     * when this path is taken, so refusing it is refusing the case it exists for. */
+    if (src->f32) {
+        *dst = *src;
+        dst->rows = rows_each;
+        dst->f32  = src->f32 + (long)index * rows_each * src->cols;
+        return 1;
+    }
+    return 0;
 }
 
 kv_cache *kv_new(int nl, int max_seq, int kv_dim) {
