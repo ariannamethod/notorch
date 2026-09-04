@@ -13,6 +13,34 @@ Newest entries on top.
 
 ---
 
+## 2026-09-04 — six review points, and one of them was a comment that lied
+
+The worst of the six is the smallest. `NT_CACHELINE` carried a note saying the line size was
+"read from sysfs … rather than assumed", beside a `#define` of 64. Sysfs is where **I** read it,
+by hand, while writing the change; the code reads nothing, and alignment is a compile-time
+decision so it could not. A comment that describes behaviour the code does not have is the same
+failure as a commit message that does, and this log has spent a week saying so. It now states
+what it is: a constant, chosen because every core this has run on reports 64, wasteful rather
+than wrong if some machine reports more.
+
+The rest, all real:
+
+- `tests/bench_claim.c` took its thread count straight from `atoi` while sizing its arrays at
+  64, so `./bench_claim 128` wrote past `pthread_t th[]`, and a zero divided by zero in
+  `id % nthreads`. Both arguments now go through a parser that takes the whole string in range
+  or says why it did not, and `sched_getaffinity`'s return is checked rather than assumed.
+- The same file uses Linux affinity APIs and would not compile on macOS, which this repo
+  builds on. Guarded, with a `SKIP` main elsewhere — verified by compiling the other branch
+  with the condition forced false under `-Wall -Wextra`, not by reading it.
+- `1L << 40` as the upper bound for `NT_QMV_THREAD_MIN` is undefined where `long` is 32 bits.
+  `LONG_MAX` and `INT_MAX` say the same thing without the shift.
+- `(void)e;` left over from the plan refactor, where `e` is used three lines above.
+- Integer-to-pointer casts through `long` in the benchmark's thread argument, now `intptr_t`.
+
+Nothing here moves a number; the gates are unchanged and decode is where it was.
+
+---
+
 ## 2026-09-04 — the false sharing was real and it was not the point
 
 The pool coordinates through three counters. `offsetof` said where they sat: `shutdown` at

@@ -5490,10 +5490,10 @@ static void nt_qmv_plan_init(void) {
      * waits. NT_QMV_SPIN=0 parks immediately, which is also the only way the condvar path
      * gets exercised. */
     p->spin = 500000;
-    if (nt_env_long("NT_QMV_SPIN", 0, 1L << 30, &v)) p->spin = (int)v;
+    if (nt_env_long("NT_QMV_SPIN", 0, INT_MAX, &v)) p->spin = (int)v;
 
     p->thread_min = NT_QMV_THREAD_MIN_DEFAULT;
-    if (nt_env_long("NT_QMV_THREAD_MIN", 1, 1L << 40, &v)) p->thread_min = v;
+    if (nt_env_long("NT_QMV_THREAD_MIN", 1, LONG_MAX, &v)) p->thread_min = v;
 
     p->threads = 0;
     if (nt_env_long("NT_QMV_THREADS", 1, NT_QMV_MAX_THREADS, &v)) p->threads = (int)v;
@@ -5509,7 +5509,6 @@ static void nt_qmv_plan_init(void) {
          * count, a mask narrower than the machine, or NT_QMV_BIG_ONLY=0. */
         const char *off = getenv("NT_QMV_BIG_ONLY");
         long online = sysconf(_SC_NPROCESSORS_ONLN);
-        (void)e;
         if (!(off && off[0] == '0') && !p->threads &&
             online > 0 && CPU_COUNT(&mine) == (int)online)
             n = nt_cpu_perf_set(&mine, &p->cpus);
@@ -5561,8 +5560,11 @@ static int nt_qmv_host_threads(int m) {
     return nt;
 }
 
-/* The coherence line, 64 bytes on every core this runs on, read from sysfs
- * (cache/index0/coherency_line_size under the cpu directory) rather than assumed. */
+/* Alignment is a compile-time decision, so this is a constant and not a reading. Sixty-four
+ * is what every core this library has run on reports in sysfs under
+ * cache/index0/coherency_line_size — checked by hand on the Exynos 1580, not detected here.
+ * Too small and the separation does not separate; too large only wastes bytes in one global,
+ * so err upward on a machine that says otherwise. */
 #define NT_CACHELINE 64
 
 typedef struct {
