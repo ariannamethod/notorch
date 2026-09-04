@@ -88,7 +88,7 @@ SIMD_LIBS  = -lpthread
 
 # ── Targets ──
 
-.PHONY: all test test_qpool test_qmatvec_leak test_affinity test_plan_race test_tsan test_js test_python test_tokenizer clean cpu gpu simd help lib shared install metal test_metal infer_gguf_metal
+.PHONY: all test test_qpool test_qmatvec_leak test_affinity test_plan_race test_tsan bench_claim test_js test_python test_tokenizer clean cpu gpu simd help lib shared install metal test_metal infer_gguf_metal
 
 all: notorch_test
 	@echo "Built with $(BLAS_NAME). Run: ./notorch_test"
@@ -352,6 +352,10 @@ test_qmatmul: tests/test_qmatmul.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qmatmul tests/test_qmatmul.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qmatmul (batched packed matmul vs per-token, $(BLAS_NAME))"
 
+bench_claim: tests/bench_claim.c
+	$(CC) $(CFLAGS) -o bench_claim tests/bench_claim.c
+	@echo "Compiled: bench_claim (row-claim cost, shared line against separated)"
+
 test_plan_race: tests/test_plan_race.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_plan_race tests/test_plan_race.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_plan_race (both pools settling the plan at once, $(BLAS_NAME))"
@@ -360,8 +364,8 @@ test_plan_race: tests/test_plan_race.c notorch.c notorch.h
 # five races on the version before it was one pthread_once, none after. Android's ASLR is
 # wider than ThreadSanitizer's shadow mapping expects, hence setarch.
 test_tsan: tests/test_plan_race.c notorch.c notorch.h
-	$(CC) -fsanitize=thread -O1 -pthread -I. -o test_plan_race_tsan \
-	  tests/test_plan_race.c notorch.c -lm
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fsanitize=thread -O1 -o test_plan_race_tsan \
+	  tests/test_plan_race.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Running under ThreadSanitizer — expect no warnings"
 	setarch -R ./test_plan_race_tsan 2>&1 | tee /dev/stderr | grep -q 'WARNING: ThreadSanitizer' \
 	  && { echo "RACE REPORTED"; exit 1; } || echo "clean"
