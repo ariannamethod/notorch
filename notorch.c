@@ -12,6 +12,7 @@
 #include "notorch.h"
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include <float.h>
 #include <limits.h>
 #include <sys/time.h>
@@ -5427,9 +5428,29 @@ static pthread_once_t g_nt_qmv_plan_once = PTHREAD_ONCE_INIT;
  * costs nothing and the ordering is what makes it safe rather than merely fast. */
 static const nt_qmv_plan *g_nt_qmv_plan_ready = NULL;
 
+/* Whole string or nothing. atoi maps junk to zero, and for a spin budget zero is both valid
+ * and the worst setting there is — park on every wait — so NT_QMV_SPIN=off, written by
+ * analogy with NT_QMV_POOL where "off" is accepted, would quietly choose it. A typo should
+ * cost a line on stderr, not six percent of decode. */
+static int nt_env_long(const char *name, long lo, long hi, long *out) {
+    const char *e = getenv(name);
+    if (!e || !*e) return 0;
+    char *end = NULL;
+    errno = 0;
+    long v = strtol(e, &end, 10);
+    if (errno != 0 || end == e || *end != '\0' || v < lo || v > hi) {
+        fprintf(stderr, "notorch: %s=\"%s\" is not a whole number in [%ld, %ld]; "
+                        "keeping the default\n", name, e, lo, hi);
+        return 0;
+    }
+    *out = v;
+    return 1;
+}
+
 static void nt_qmv_plan_init(void) {
     nt_qmv_plan *p = &g_nt_qmv_plan;
     const char *e;
+    long v;
 
     e = getenv("NT_QMV_PIN");
     p->pin = !(e && e[0] == '0');
@@ -5445,9 +5466,8 @@ static void nt_qmv_plan_init(void) {
      * 52.9, 54.4, 55.1, 55.9, 55.3. Sixteen is best or tied on both, and at sixteen four cores
      * match the three that exclude the prime core, so the fix is granularity rather than
      * discarding a core. The float pool reached sixteen independently. */
-    e = getenv("NT_QMV_CHUNKS");
-    long v = e ? atol(e) : 0;
-    p->chunks = (v >= 1 && v <= 64) ? (int)v : 16;
+    p->chunks = 16;
+    if (nt_env_long("NT_QMV_CHUNKS", 1, 64, &v)) p->chunks = (int)v;
 
     e = getenv("NT_QMV_POOL");
     p->pool = !(e && (!strcmp(e, "0") || !strcmp(e, "false") ||
@@ -5469,15 +5489,14 @@ static void nt_qmv_plan_init(void) {
      * free for continuous decoding, a small drain for a process that runs one matvec and
      * waits. NT_QMV_SPIN=0 parks immediately, which is also the only way the condvar path
      * gets exercised. */
-    e = getenv("NT_QMV_SPIN");
-    p->spin = (e && atoi(e) >= 0) ? atoi(e) : 500000;
+    p->spin = 500000;
+    if (nt_env_long("NT_QMV_SPIN", 0, 1L << 30, &v)) p->spin = (int)v;
 
-    e = getenv("NT_QMV_THREAD_MIN");
-    p->thread_min = (e && atol(e) > 0) ? atol(e) : NT_QMV_THREAD_MIN_DEFAULT;
+    p->thread_min = NT_QMV_THREAD_MIN_DEFAULT;
+    if (nt_env_long("NT_QMV_THREAD_MIN", 1, 1L << 40, &v)) p->thread_min = v;
 
-    e = getenv("NT_QMV_THREADS");
-    long want = e ? atol(e) : 0;
-    p->threads = want > 0 ? (int)want : 0;
+    p->threads = 0;
+    if (nt_env_long("NT_QMV_THREADS", 1, NT_QMV_MAX_THREADS, &v)) p->threads = (int)v;
 
 #if defined(__linux__)
     p->ncpu = 0;
@@ -5490,6 +5509,7 @@ static void nt_qmv_plan_init(void) {
          * count, a mask narrower than the machine, or NT_QMV_BIG_ONLY=0. */
         const char *off = getenv("NT_QMV_BIG_ONLY");
         long online = sysconf(_SC_NPROCESSORS_ONLN);
+        (void)e;
         if (!(off && off[0] == '0') && !p->threads &&
             online > 0 && CPU_COUNT(&mine) == (int)online)
             n = nt_cpu_perf_set(&mine, &p->cpus);
@@ -5541,6 +5561,10 @@ static int nt_qmv_host_threads(int m) {
     return nt;
 }
 
+/* The coherence line, 64 bytes on every core this runs on, read from sysfs
+ * (cache/index0/coherency_line_size under the cpu directory) rather than assumed. */
+#define NT_CACHELINE 64
+
 typedef struct {
     nt_qrows_fn fn; float *out; const uint8_t *Wq; const float *x;
     int r0, r1, k;
@@ -5557,6 +5581,9 @@ static void *nt_qworker(void *p) {
 
 // Persistent qmatvec workers remove pthread_create/join from every decode matvec.
 // The caller computes the last shard inline; workers handle the earlier shards.
+/* Same separation as the integer pool below, for the same measured reason: the claim counter
+ * shares its line with the fields every worker reads, and an atomic add on a shared line runs
+ * 2.3 times slower than on one of its own. */
 typedef struct {
     pthread_mutex_t mu;
     pthread_cond_t cv_work;
@@ -5566,29 +5593,19 @@ typedef struct {
     int nthreads;
     int ready;
     int shutdown;
-    long generation;
     int active;
     int done;
     nt_qjob jobs[NT_QMV_MAX_THREADS];
     nt_qjob shared;              /* fn/out/Wq/x/k common to every chunk */
-    int lo, hi, chunk, next;     /* the range the workers drain */
+    int lo, hi, chunk;           /* the range the workers drain, fixed for the dispatch */
+    _Alignas(NT_CACHELINE) long generation;   /* bumped per dispatch, read by every worker */
+    _Alignas(NT_CACHELINE) int next;          /* one atomic add per row claim */
 } nt_qpool;
 
 static nt_qpool g_nt_qpool = {
-    PTHREAD_MUTEX_INITIALIZER,
-    PTHREAD_COND_INITIALIZER,
-    PTHREAD_COND_INITIALIZER,
-    {0},
-    {0},
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    {{0}},
-    {0},              /* shared           */
-    0, 0, 0, 0,       /* lo hi chunk next */
+    .mu = PTHREAD_MUTEX_INITIALIZER,
+    .cv_work = PTHREAD_COND_INITIALIZER,
+    .cv_done = PTHREAD_COND_INITIALIZER,
 };
 static pthread_once_t g_nt_qpool_once = PTHREAD_ONCE_INIT;
 static pthread_mutex_t g_nt_qpool_dispatch_mu = PTHREAD_MUTEX_INITIALIZER;
@@ -6684,27 +6701,29 @@ static void *nt_qworker_i8(void *p) {
 // counter before sleeping — between two matvecs of the same token the gap is microseconds,
 // so the spin almost always catches the next job, and the condvar remains underneath so an
 // idle phone is not held awake. NT_QMV_SPIN overrides the budget for measurement.
+/* Three counters written at three different rates by different threads. Left adjacent they
+ * sat in one line — measured with offsetof, shutdown at 232, generation 236, busy 240, next
+ * 244, all of line 3 — so each of the sixty-four row claims per matvec invalidated the line
+ * the other workers were spinning on and reading the job description from. Separated here,
+ * with the job itself kept beside the fields that are published before the generation bump
+ * and read-only afterwards. */
 typedef struct {
     pthread_mutex_t mu;
     pthread_cond_t cv_work;
     pthread_t threads[NT_QMV_MAX_THREADS];
     int nthreads;
     int ready;
-    int shutdown;          /* atomic */
-    int generation;        /* atomic: bumped once per dispatch */
-    int busy;              /* atomic: workers still draining */
-    int next;              /* atomic: next unclaimed row */
-    nt_qjob_i8 shared;
+    nt_qjob_i8 shared;     /* published before the bump; read-only for the dispatch */
     int hi, chunk;
+    _Alignas(NT_CACHELINE) int generation;  /* bumped once per dispatch, spun on by everyone */
+    int shutdown;                           /* written once ever, read beside generation */
+    _Alignas(NT_CACHELINE) int busy;        /* one decrement per worker per dispatch */
+    _Alignas(NT_CACHELINE) int next;        /* one atomic add per row claim, the hot one */
 } nt_qpool_i8;
 
 static nt_qpool_i8 g_nt_qpool_i8 = {
-    PTHREAD_MUTEX_INITIALIZER,
-    PTHREAD_COND_INITIALIZER,
-    {0},
-    0, 0, 0, 0, 0, 0,
-    {0},              /* shared    */
-    0, 0,             /* hi chunk  */
+    .mu = PTHREAD_MUTEX_INITIALIZER,
+    .cv_work = PTHREAD_COND_INITIALIZER,
 };
 
 #if defined(__aarch64__) || defined(__arm__)

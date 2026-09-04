@@ -13,6 +13,50 @@ Newest entries on top.
 
 ---
 
+## 2026-09-04 — the false sharing was real and it was not the point
+
+The pool coordinates through three counters. `offsetof` said where they sat: `shutdown` at
+232, `generation` 236, `busy` 240, `next` 244 — one 64-byte line, with the job description
+starting at 248 in the same line. Every one of the sixty-four row claims a matvec makes wrote
+that line while the other workers were reading it.
+
+Separating them changes nothing measurable in decode. Four runs each, cold: Gemma
+11.2 / 11.1 / 11.1 / 11.1 against 11.1 four times, Qwen 56.4 / 56.5 / 56.9 against
+56.2 / 57.2 / 56.3 / 56.3, and at `NT_QMV_CHUNKS=64`, where claims are four times as frequent,
+53.0 against 53.3. That is a null result and it is reported as one.
+
+But "no effect in decode" and "no effect" are different claims, and four workers cannot settle
+the second. `tests/bench_claim.c` measures the claim alone — a worker reads `generation` the
+way the spin loop does, then claims a row — and the sharing costs plenty: **51.9 Mclaims/s in
+one line against 121.3 separated at four threads, 2.34x**; 1.25x at one thread, 2.31x at three,
+1.95x at eight.
+
+Both facts fit together in arithmetic. A matvec makes 68 claims: 1.3 us shared, 0.6 separated.
+A token runs a few hundred matvecs and takes about ninety milliseconds. The saving is a
+fraction of a millisecond, which is exactly the nothing the decode measurement found.
+
+The layout is separated anyway, and the reason is the ratio rather than the milliseconds: it
+costs 192 bytes in one global, the operation genuinely runs twice as fast, and anything that
+claims more often — more cores, finer chunks, smaller matrices — moves the arithmetic. Both
+pools get the same treatment. What this entry does not claim is a speedup, because there
+isn't one here.
+
+Three review points on the merges, all fair. `NT_QMV_SPIN` was parsed with `atoi`, which maps
+junk to zero — and zero is a valid setting meaning park on every wait, the worst one there is.
+`NT_QMV_SPIN=off`, written by analogy with `NT_QMV_POOL` where "off" is accepted, would have
+silently chosen it. Every knob now goes through one parser that takes the whole string or
+prints why it did not. `tests/test_plan_race.c` used `pthread_barrier_t`, which POSIX makes
+optional and macOS does not have, and that test is in the default `make test` — replaced with a
+mutex and a condition variable. The `test_tsan` target compiled without `$(CFLAGS)` and
+`$(BLAS_FLAGS)`, so it sanitized a different configuration than the one that ships.
+
+One part of that review did not hold up: the concern that `A && { …; exit 1; } || C` lets a
+detected race exit zero. Checked against a genuinely racy build — 3215ed0, before the plan was
+made once — and the recipe prints RACE REPORTED and exits 1. `exit` inside the group ends the
+shell before `||` is reached.
+
+---
+
 ## 2026-09-03 — the workers were going to sleep between matvecs
 
 A worker looks for its next job for a while before parking on a condvar, and the budget for

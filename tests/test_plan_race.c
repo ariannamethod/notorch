@@ -7,8 +7,10 @@
  * from one thread and the integer matvec from another runs both initialisers at the same
  * moment and both of them reach into those statics.
  *
- * Nothing here is a timing trick. The two calls are released together by a barrier so the
- * initialisers overlap, and the run is meant to be read by ThreadSanitizer:
+ * Nothing here is a timing trick. The two calls are released together so the initialisers
+ * overlap, through a mutex and a condition variable rather than pthread_barrier — the barrier
+ * API is optional in POSIX and absent on macOS, which this repo builds on. The run is meant to
+ * be read by ThreadSanitizer:
  *
  *     cc -fsanitize=thread -O1 -pthread -I. -o test_plan_race tests/test_plan_race.c notorch.c -lm
  *     setarch -R ./test_plan_race          # Android's ASLR is wider than TSan expects
@@ -28,12 +30,22 @@
 static uint8_t *W;            /* Q4_0 rows, shared by both callers */
 static float *x;
 static float *out_f, *out_i;
-static pthread_barrier_t start;
+/* The starting gate: both callers wait until the second one arrives, then go together. */
+static pthread_mutex_t gate_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t gate_cv = PTHREAD_COND_INITIALIZER;
+static int gate_arrived = 0;
 static int seen_threads_f, seen_threads_i;
+
+static void gate_wait(void) {
+    pthread_mutex_lock(&gate_mu);
+    if (++gate_arrived == 2) pthread_cond_broadcast(&gate_cv);
+    else while (gate_arrived < 2) pthread_cond_wait(&gate_cv, &gate_mu);
+    pthread_mutex_unlock(&gate_mu);
+}
 
 static void *call_float(void *p) {
     (void)p;
-    pthread_barrier_wait(&start);
+    gate_wait();
     nt_qmatvec(out_f, W, 2, x, M_ROWS, K_COLS);
     seen_threads_f = nt_qmv_planned_threads();
     return NULL;
@@ -41,7 +53,7 @@ static void *call_float(void *p) {
 
 static void *call_int(void *p) {
     (void)p;
-    pthread_barrier_wait(&start);
+    gate_wait();
     nt_qmatvec_i8(out_i, W, 2, x, M_ROWS, K_COLS);
     seen_threads_i = nt_qmv_planned_threads();
     return NULL;
@@ -59,13 +71,11 @@ int main(void) {
     for (size_t i = 0; i < rowsz * (size_t)M_ROWS; i++) W[i] = (uint8_t)(i * 37u + 11u);
     for (int i = 0; i < K_COLS; i++) x[i] = (float)((i % 23) - 11) * 0.0625f;
 
-    pthread_barrier_init(&start, NULL, 2);
     pthread_t a, b;
     pthread_create(&a, NULL, call_float, NULL);
     pthread_create(&b, NULL, call_int, NULL);
     pthread_join(a, NULL);
     pthread_join(b, NULL);
-    pthread_barrier_destroy(&start);
 
     int fails = 0;
     if (seen_threads_f != seen_threads_i) {
