@@ -416,7 +416,8 @@ static int bpe_encode_span(const bpe_tokenizer *t, const char *text, int len, in
 int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
     if (t && t->spm_bpe) return spm_bpe_encode(t, text, out, cap);
     if (t && t->spm) return spm_encode(t, text, out, cap);
-    if (!t || t->n_added <= 0) return bpe_encode_span(t, text, (int)strlen(text), out, cap);
+    if (!t) return 0;               /* the span path reads t->byte_cp on its first line */
+    if (t->n_added <= 0) return bpe_encode_span(t, text, (int)strlen(text), out, cap);
 
     /* Added tokens are matched against the raw text first, longest at each position, and the
      * merge path only ever sees what lies between them. Doing it the other way round cannot

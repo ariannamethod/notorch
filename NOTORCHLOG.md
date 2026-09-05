@@ -13,6 +13,35 @@ Newest entries on top.
 
 ---
 
+## 2026-09-04 — four on the mixture, and the one that would have answered with seven eighths
+
+Review on the OLMoE merge, all four fair, and one of them a wrong answer rather than a crash.
+
+`wt_expert` refused to slice a weight held as expanded f32, taking only the packed form. That
+did not fail loudly: the caller logged once and skipped that expert, so a model whose expert
+tensors fell back to f32 — which is exactly what happens to a dtype with no packed kernel —
+would have run with seven of its eight and said nothing. The expanded form is a contiguous
+`[rows, cols]` and slices by the same arithmetic; refusing it was refusing the case the
+fallback exists for. The docstring said so too and now does not.
+
+`tests/test_wt_expert.c` gates both forms without a model: rows are filled with their own
+index, so a slice that lands wrong reads a number naming where it landed. Thirteen checks,
+including the three refusals that must stay refusals — past the end, negative, and a weight
+with no data at all. Restoring the old `!src->q` condition fails the five f32 cases and
+nothing else, which is how the gate was shown to bite.
+
+The rest: `olmoe.expert_count` came out of the file and went unbounded into a `taken[1024]` on
+the stack, so a header claiming more experts than that would have written past it — the count
+is now checked against the buffer it indexes. `bpe_encode` handed a NULL tokenizer to the span
+path, which reads `t->byte_cp` on its first line. And the expert loop's failure branch dropped
+one expert of eight; it now drops the whole feed-forward for that token, because a missing
+contribution shows in the output and a quietly missing expert does not.
+
+Gates: 15 green including the new one, tokenizer identical on 24, llama parity identical on
+three prompts, olmoe parity identical on three.
+
+---
+
 ## 2026-09-04 — the first mixture, and the tokens that were never in the alphabet
 
 `harness/arch_olmoe.c` runs OLMoE-1B-7B: sixteen layers, sixty-four experts each, eight used

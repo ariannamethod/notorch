@@ -41,8 +41,10 @@ int  wt_load(wt *w, gguf_file *gf, const char *name);
 
 /* One expert out of a stacked expert tensor. A mixture stores its experts as one 3-D tensor,
  * which wt_load already reads as a single matrix of n_expert * rows_each rows — so an expert
- * is that matrix with a shorter row count and a shifted base, and nothing is copied. Returns
- * 0 if the slice does not fit or the dtype has no packed row size. */
+ * is that matrix with a shorter row count and a shifted base, and nothing is copied. Works on
+ * both forms a weight can take here: the packed bytes, and the expanded f32 a dtype without a
+ * kernel falls back to. Returns 0 only when the slice does not fit, the weight is absent, or
+ * the packed dtype has no known row size. */
 int  wt_expert(wt *dst, const wt *src, int index, int rows_each);
 
 typedef struct {
