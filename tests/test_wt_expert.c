@@ -11,6 +11,7 @@
  * is a wrong number rather than a wrong sentence.
  */
 #include "harness/runtime.h"
+#include "gguf.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,14 +30,19 @@ int main(void) {
     const int rows = rows_each * n_expert;
     char detail[160];
 
-    /* Packed: Q4_0 is 18 bytes per 32 values, so a row is cols/32*18. Fill each row with its
-     * own index so a slice that lands wrong reads a number that names where it landed. */
+    /* Packed: Q4_0 is 18 bytes per 32 values, so a row is cols/32*18. Written out rather than
+     * taken from gguf_type_size, which is the function wt_expert uses to do the same sum: a
+     * test that borrows the arithmetic it is checking agrees with it however wrong it is. If
+     * the two ever disagree this test fails, and that is the point of it.
+     *
+     * Rows are filled with their own index, so a slice that lands wrong reads a number that
+     * names where it landed. */
     size_t rb = (size_t)(cols / 32) * 18;
     uint8_t *packed = (uint8_t *)malloc(rb * (size_t)rows);
     if (!packed) { printf("  FAIL out of memory\n"); return 1; }
     for (int r = 0; r < rows; r++) memset(packed + rb * (size_t)r, r, rb);
 
-    wt stacked = { .q = packed, .f32 = NULL, .dtype = 2 /* Q4_0 */,
+    wt stacked = { .q = packed, .f32 = NULL, .dtype = GGUF_TYPE_Q4_0,
                    .rows = rows, .cols = cols, .use_i8 = 0 };
 
     for (int e = 0; e < n_expert; e++) {
@@ -48,9 +54,11 @@ int main(void) {
         }
         int want = e * rows_each;
         int got = slice.q[0];
-        snprintf(detail, sizeof(detail), "expert %d starts at row %d, expected %d", e, got, want);
-        check("packed slice starts at the right row", got == want && slice.rows == rows_each,
-              got == want ? NULL : detail);
+        int ok = (got == want && slice.rows == rows_each);
+        snprintf(detail, sizeof(detail),
+                 "expert %d starts at row %d and holds %d rows, expected %d and %d",
+                 e, got, slice.rows, want, rows_each);
+        check("packed slice starts at the right row", ok, ok ? NULL : detail);
     }
 
     /* Expanded: the same shape as floats, each row holding its own index. */
@@ -59,7 +67,7 @@ int main(void) {
     for (int r = 0; r < rows; r++)
         for (int c = 0; c < cols; c++) flat[(size_t)r * cols + c] = (float)r;
 
-    wt expanded = { .q = NULL, .f32 = flat, .dtype = 0 /* F32 */,
+    wt expanded = { .q = NULL, .f32 = flat, .dtype = GGUF_TYPE_F32,
                     .rows = rows, .cols = cols, .use_i8 = 0 };
 
     for (int e = 0; e < n_expert; e++) {
@@ -71,9 +79,11 @@ int main(void) {
         }
         int want = e * rows_each;
         int got = (int)slice.f32[0];
-        snprintf(detail, sizeof(detail), "expert %d starts at row %d, expected %d", e, got, want);
-        check("f32 slice starts at the right row", got == want && slice.rows == rows_each,
-              got == want ? NULL : detail);
+        int ok = (got == want && slice.rows == rows_each);
+        snprintf(detail, sizeof(detail),
+                 "expert %d starts at row %d and holds %d rows, expected %d and %d",
+                 e, got, slice.rows, want, rows_each);
+        check("f32 slice starts at the right row", ok, ok ? NULL : detail);
     }
 
     /* What must be refused. A slice past the end would read somebody else's memory, and a
@@ -82,7 +92,8 @@ int main(void) {
     check("a slice past the end is refused",
           !wt_expert(&slice, &stacked, n_expert, rows_each), NULL);
     check("a negative index is refused", !wt_expert(&slice, &stacked, -1, rows_each), NULL);
-    wt empty = { .q = NULL, .f32 = NULL, .dtype = 2, .rows = rows, .cols = cols, .use_i8 = 0 };
+    wt empty = { .q = NULL, .f32 = NULL, .dtype = GGUF_TYPE_Q4_0,
+                 .rows = rows, .cols = cols, .use_i8 = 0 };
     check("a weight with no data is refused", !wt_expert(&slice, &empty, 0, rows_each), NULL);
 
     free(packed); free(flat);
