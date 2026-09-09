@@ -13,6 +13,45 @@ Newest entries on top.
 
 ---
 
+## 2026-09-09 — where the K-quant kernel loses its quarter, and two ways of not getting it back
+
+`bench_dtype` put Q4_K at 13.0 GiB/s against Q4_0's 17.3 on identical byte counts — 144 bytes
+per 256 values in both formats, so the difference is arithmetic and not memory. This entry is
+what that quarter is made of and two attempts at it that made things worse, which is the useful
+half.
+
+**Where it goes.** Replacing `nt_get_scale_min_k4` with a wrong-but-cheap substitute takes
+Q4_K from 13.1 GiB/s to **15.4**. That is not a fix — the arithmetic is nonsense — but it is an
+honest clock: unpacking eight (scale, min) pairs out of twelve packed 6-bit fields is roughly
+eighteen percent of this kernel. Everything else it does, Q4_0 does too.
+
+**First attempt: fold the eight sub-block totals with a pairwise tree.** The AVX2 body has done
+this since it was written; the NEON one still drained each of the eight with its own `vaddvq`,
+which leaves the vector unit for a scalar register with the next drain waiting behind it. Six
+`vpaddq` instead of eight `vaddvq` measured **11.7 to 13.1 GiB/s against a 12.6 to 13.8
+baseline** — no better, probably worse. Collecting the partials into an array to fold them
+appears to cost more than the drains it removes.
+
+**Second attempt: hoist the unpack above the dot products,** so the scalar work overlaps the
+vector work rather than sitting between each dot and the multiply that consumes it. The AVX2
+body does this too. Measured **10.9 to 11.6** — clearly worse. Two small arrays of eight bytes
+are enough to spill.
+
+Both attempts were structural changes that the compiler was already handling better on its own,
+and both are reverted. The tree is unchanged by this entry; only the knowledge is new.
+
+**What would capture it, and why it is not done here.** The unpack has to become vector work
+feeding a vector accumulate, with nothing round-tripping through memory in between. That means
+reordering the float sum inside a super-block — and `nt_q4k_acc` exists precisely to stop that:
+it spells out both fused operations so that the per-token, batched and SMMLA kernels round in
+the same place, and `tests/test_qmatmul.c` compares them by bit pattern rather than tolerance.
+The three would have to move together, and the results would differ in the last bit from every
+number this tree has recorded. That is a decision about what the library guarantees, not an
+optimization, and it belongs to whoever makes such decisions rather than to whoever noticed the
+eighteen percent.
+
+---
+
 ## 2026-09-09 — eight experts, one fan-out, and a smaller number than the one predicted
 
 `nt_qmatvec_i8_gather` takes one activation and a list of weight bases and dispatches them as
