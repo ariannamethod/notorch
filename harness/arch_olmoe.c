@@ -169,7 +169,7 @@ static void olmoe_free(void *model) {
         free(m->layers[l].ffn_norm);
         free(m->layers[l].wq.f32); free(m->layers[l].wk.f32);
         free(m->layers[l].wv.f32); free(m->layers[l].wo.f32);
-        free(m->layers[l].gate_inp.f32);   /* router_f32 borrows, it does not own */
+        free(m->layers[l].gate_inp.f32);
         free(m->layers[l].gate_exps.f32); free(m->layers[l].up_exps.f32);
         free(m->layers[l].down_exps.f32);
     }
