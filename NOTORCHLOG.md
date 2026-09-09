@@ -16,9 +16,10 @@ Newest entries on top.
 ## 2026-09-09 — the harness can be asked twice, and says how much of the model is in memory
 
 `-r N` runs the same prompt N times in one process. The load happens once, so what is timed is
-the model running rather than the model arriving. Before each run the harness prints how much
-of itself is resident and how much the machine has free, because on a phone those two numbers
-decide the result more than anything in the arithmetic does.
+the model running rather than the model arriving. Before every run — including a lone one — the
+harness prints how much of itself is resident and how much the machine could still give it,
+because on a phone those two numbers decide the result more than anything in the arithmetic
+does.
 
 The reason for both is a measurement that was worthless and had already been written down.
 OLMoE is 3.66 GB on a machine with 7.6, and the same binary on the same file gave 6.7 t/s and

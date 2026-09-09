@@ -92,24 +92,33 @@ static void emit(const session *s, int id) {
  * does not say which of those it caught is not reporting a speed. Both numbers come from the
  * kernel; where it does not offer them, the line is omitted rather than guessed. */
 static void residency(const char *when) {
-    long rss = -1, memfree = -1;
-    FILE *f = fopen("/proc/self/smaps_rollup", "r");
+    long rss = -1, avail = -1, memfree = -1;
     char line[256];
+    FILE *f = fopen("/proc/self/smaps_rollup", "r");
     if (f) {
         while (fgets(line, sizeof(line), f))
             if (sscanf(line, "Rss: %ld kB", &rss) == 1) break;
         fclose(f);
     }
+    /* MemAvailable rather than MemFree: most of what a phone can hand a process is page cache
+     * it would drop on request, and MemFree counts none of that. Reading MemFree here would
+     * report a machine with nothing left at the exact moment it has room — which is the
+     * question this line exists to answer. MemFree is the fallback for a kernel too old to
+     * publish the better number. */
     f = fopen("/proc/meminfo", "r");
     if (f) {
-        while (fgets(line, sizeof(line), f))
-            if (sscanf(line, "MemFree: %ld kB", &memfree) == 1) break;
+        while (fgets(line, sizeof(line), f)) {
+            if (avail < 0) sscanf(line, "MemAvailable: %ld kB", &avail);
+            if (memfree < 0) sscanf(line, "MemFree: %ld kB", &memfree);
+            if (avail >= 0 && memfree >= 0) break;
+        }
         fclose(f);
     }
-    if (rss < 0 && memfree < 0) return;
+    long room = avail >= 0 ? avail : memfree;
+    if (rss < 0 && room < 0) return;
     fprintf(stderr, "  [%s]", when);
     if (rss >= 0) fprintf(stderr, " resident %.2f GiB", rss / 1048576.0);
-    if (memfree >= 0) fprintf(stderr, " | machine free %.2f GiB", memfree / 1048576.0);
+    if (room >= 0) fprintf(stderr, " | machine can give %.2f GiB", room / 1048576.0);
     fputc('\n', stderr);
 }
 
@@ -238,16 +247,24 @@ int main(int argc, char **argv) {
          * faulting in gigabytes of weights, and the reference benchmark this is compared
          * against does not, which made every such comparison a comparison of two different
          * things. Later iterations are the ones to read. */
-        if (f == 'r' && ai + 1 < argc) { repeats = atoi(argv[ai + 1]); ai += 2; continue; }
+        /* A flag that wants a value and has none used to fall out of this loop and become the
+         * model path, so `notorch -r` tried to open "-r" as a GGUF and complained about that
+         * instead of about the missing count. The same held for -n and -t before it. */
+        if (f == 'r' || f == 'n' || f == 't') {
+            if (ai + 1 >= argc) {
+                fprintf(stderr, "notorch: -%c needs a value\n", f);
+                usage(argv[0]);
+                return 1;
+            }
+            if (f == 'r') repeats = atoi(argv[ai + 1]);
+            else if (f == 'n') flag_n = atoi(argv[ai + 1]);
+            else flag_t = (float)atof(argv[ai + 1]);
+            ai += 2; continue;
+        }
         /* -T prints the ids and stops. A family arrives with two ways to be wrong and this
          * separates them: the tokenizer can be diffed against another implementation without
          * loading a single weight, and the forward can be fed ids through NT_TOKENS. */
         if (f == 'T') { tokenize_only = 1; quiet = 1; ai++; continue; }
-        if ((f == 'n' || f == 't') && ai + 1 < argc) {
-            if (f == 'n') flag_n = atoi(argv[ai + 1]);
-            else flag_t = (float)atof(argv[ai + 1]);
-            ai += 2; continue;
-        }
         break;
     }
     if (ai >= argc) { nt_logo(quiet); usage(argv[0]); return 1; }
@@ -318,10 +335,11 @@ int main(int argc, char **argv) {
             fprintf(stderr, "\nprompt: \"%s\" (%d tokens, temp=%.2f)\n", prompt, n_tok, temp);
             if (repeats < 1) repeats = 1;
             for (int rep = 0; rep < repeats; rep++) {
-                if (repeats > 1) {
+                if (repeats > 1)
                     fprintf(stderr, "\n── run %d of %d ──\n", rep + 1, repeats);
-                    residency(rep == 0 ? "before the first run" : "before this run");
-                }
+                /* Printed for a single run too. One timing without it says as little as the
+                 * first of six does, and this is the line that tells them apart. */
+                residency(rep == 0 ? "before the first run" : "before this run");
                 /* The cache is written from position zero every time and attention reads only
                  * up to the current position, so what an earlier run left behind is never
                  * looked at. Reallocating it would only add a page-fault storm to the thing
