@@ -13,6 +13,51 @@ Newest entries on top.
 
 ---
 
+## 2026-09-09 — the harness can be asked twice, and says how much of the model is in memory
+
+`-r N` runs the same prompt N times in one process. The load happens once, so what is timed is
+the model running rather than the model arriving. Before each run the harness prints how much
+of itself is resident and how much the machine has free, because on a phone those two numbers
+decide the result more than anything in the arithmetic does.
+
+The reason for both is a measurement that was worthless and had already been written down.
+OLMoE is 3.66 GB on a machine with 7.6, and the same binary on the same file gave 6.7 t/s and
+18.8 t/s within one afternoon — the difference being whether 1.2 GB happened to be free. On
+that basis this log carried "16.5 t/s, 77 percent of the reference" and a decode profile
+putting 62 percent in the expert matmuls. Both are withdrawn. Three explanations were built on
+them and all three are withdrawn with them: that the gap was in 384 dispatches per token, that
+gathering the chosen experts into one call was worth 21 percent, and that scattered expert
+reads cost twice contiguous ones. The first was contradicted by a bench on the same shapes; the
+second measured adjacent experts, which routing never produces; the third was two runs, and six
+repeats of the same command gave 13.2 to 15.2 GiB/s with nothing near the 7.5 it rested on.
+
+What the mode gives instead, on a warm process with residency printed beside each line: run 1
+at 2.86 GiB resident decodes 7.9 t/s, runs 3 through 6 at 3.17 GiB decode 18.4, 18.1, 18.4,
+18.2. Two percent apart, and the line above each says why. Against `llama-bench` at `-t 4`,
+24.30 ± 0.19 on the same file, that is **75 percent** — and now both sides are warm, which the
+earlier comparison was not: `llama-bench` loads once and iterates, while a fresh harness
+process faults in 3.66 GB first.
+
+The warm profile is a different picture from the cold one: FFN 61.2 percent, `qkv+bias` 16.1,
+head 11.8. The FFN reads 453 MB per token in 29.9 ms, which is 14.8 GiB/s and matches a
+standalone bench of the same shapes — so the expert matmuls are running at the rate this
+machine gives, and there is no mystery left in them.
+
+One finding is left deliberately unused. The block holding the router took 26.7 percent of
+decode for seven percent of the bytes: `ffn_gate_inp` is the family's one f32 weight, and f32
+goes through a matvec without the integer kernel's dot instruction. Packing it to Q8_0 at load
+is worth about nine percent of decode, 18.6 to 20.5 t/s — and it breaks parity on one prompt in
+three, because routing is a discrete decision. A small numeric change reorders neighbouring
+scores, a different eight of sixty-four run, and the text stops matching the reference, which
+routes in f32. The measurement is in the source beside the code that does not use it. Trading
+correctness for nine percent is a decision to be made out loud, not a side effect.
+
+Also from review, and the same class as two before it: a check labelled "starts at the right
+row" whose predicate also tested the row count, so a slice with the right base and the wrong
+height failed under a label that did not mention height.
+
+---
+
 ## 2026-09-04 — four on the mixture, and the one that would have answered with seven eighths
 
 Review on the OLMoE merge, all four fair, and one of them a wrong answer rather than a crash.
