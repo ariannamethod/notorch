@@ -564,6 +564,15 @@ void nt_qmv_set_thread_min(long elems);
  * decision to the caller. Exposed so a test can check the plan rather than infer it. */
 int nt_qmv_planned_threads(void);
 
+/* One activation through several weight matrices in a single fan-out. `slices` holds n_slices
+ * bases, each the start of `rows_each` packed rows of `k` values in `dtype`; `out` receives
+ * n_slices * rows_each results, slice s at s * rows_each. Written for a mixture, where the
+ * experts a token needs are scattered through a much larger stack and copying them together
+ * would cost the bandwidth the gathering is trying to save. Same arithmetic per row as calling
+ * nt_qmatvec_i8 once per slice, and the same result bit for bit. */
+int nt_qmatvec_i8_gather(float *out, const uint8_t *const *slices, int n_slices,
+                         int dtype, const float *x, int rows_each, int k);
+
 int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *x, int m, int k);
 

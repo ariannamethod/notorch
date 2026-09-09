@@ -13,6 +13,46 @@ Newest entries on top.
 
 ---
 
+## 2026-09-09 — eight experts, one fan-out, and a smaller number than the one predicted
+
+`nt_qmatvec_i8_gather` takes one activation and a list of weight bases and dispatches them as
+one matrix: the activation is quantized once instead of once per slice, the pool is woken once
+instead of once per slice, and a worker's run of rows is as long as the whole gather rather
+than one expert. The experts stay where they are — a mixture's chosen eight are scattered
+through sixty-four and copying them adjacent would cost exactly the bandwidth this is meant to
+save. The pool's row cursor walks the slices as if they were one matrix and maps each claimed
+chunk back, splitting it where it straddles a boundary.
+
+What it is worth, warm, six runs: decode **18.2 / 19.0 / 18.8 / 18.8 t/s against 18.4 / 18.1 /
+18.4 / 18.2**, and in the profile the expert matmuls go **717 ms to 662** for the same 24
+tokens — 432 MiB a token at 13.25 GiB/s before, 15.3 after.
+
+That is two or three percent of decode, and the estimate that justified building it said
+fifteen. The estimate was wrong in a way worth writing down: it priced all 432 MiB of expert
+weight at the 17.3 GiB/s the attention weights already reach, but only gate and up share a
+token's activation and can be gathered — 288 of the 432. `down` takes a different vector from
+each expert and is not the same operation. Two thirds of the bytes, moved most of the way, is
+the whole of it.
+
+Kept regardless, for two reasons that are not the speed. Parity is bit-identical — the output
+is the same floats, which `tests/test_qgather.c` checks against the loop it replaces rather
+than trusting, at five dtypes and at shapes where the chunk size does not divide the slice, so
+chunks land across boundaries. And the entry is not OLMoE's: any mixture this tree meets reads
+its experts this way.
+
+The gate was built by breaking it twice. Writing a slice's rows into the gather's base rather
+than its own stretch of the output fails six checks; ignoring the slice boundary when a chunk
+straddles one fails five. The first version of the test failed for a reason of its own making
+— weights filled with counted bytes give a NaN f16 scale, and NaN compares unequal to itself,
+so it reported a broken kernel where the kernel was fine. The weights are quantized from
+floats now, and the note is in the file for whoever writes the next one of these.
+
+Still open, with numbers: the head reads 80.6 MiB a token at 12.5 GiB/s where attention manages
+17.3, and it is the one Q6_K tensor in the file. Whether that is the format or our kernel for it
+is a measurement nobody has taken.
+
+---
+
 ## 2026-09-09 — the harness can be asked twice, and says how much of the model is in memory
 
 `-r N` runs the same prompt N times in one process. The load happens once, so what is timed is

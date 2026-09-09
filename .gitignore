@@ -67,6 +67,7 @@ test_affinity
 test_plan_race
 bench_claim
 test_wt_expert
+test_qgather
 test_plan_race_tsan
 
 gguf_quantize
