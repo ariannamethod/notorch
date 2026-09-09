@@ -218,8 +218,11 @@ static void olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
     float *attn_out = (float*)calloc((size_t)n * Q_DIM, sizeof(float));
     float *ffn_out = (float*)calloc((size_t)n * E, sizeof(float));
     float *router = (float*)calloc((size_t)n * NE, sizeof(float));
-    float *eg = (float*)calloc((size_t)FFN, sizeof(float));
-    float *eu = (float*)calloc((size_t)FFN, sizeof(float));
+    /* Room for every chosen expert's gate and up at once: the two matrices that share a
+     * token's activation and can therefore be read in one fan-out. `down` cannot join them —
+     * each expert feeds it a different vector. */
+    float *eg = (float*)calloc((size_t)NU * FFN, sizeof(float));
+    float *eu = (float*)calloc((size_t)NU * FFN, sizeof(float));
     float *eo = (float*)calloc((size_t)E, sizeof(float));
 
     for (int l = 0; l < m->n_layers; l++) {
@@ -320,37 +323,63 @@ static void olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
             top_k(probs, NE, NU, idx);
             pf_add(PF_SILU, pft);
 
+            /* Slice first, all of them, before any arithmetic. Load has already checked that
+             * every stack divides into n_expert slices of the right height, so this cannot
+             * fire on a file that loaded. If it ever does, the token gets no feed-forward at
+             * all rather than seven eighths of one: a missing contribution is visible in the
+             * output, a quietly missing expert is not. */
+            wt ge[OLMOE_MAX_USED], ue[OLMOE_MAX_USED], de[OLMOE_MAX_USED];
+            int sliced = 1;
+            for (int e = 0; e < NU && sliced; e++)
+                sliced = wt_expert(&ge[e], &m->layers[l].gate_exps, idx[e], FFN)
+                      && wt_expert(&ue[e], &m->layers[l].up_exps,   idx[e], FFN)
+                      && wt_expert(&de[e], &m->layers[l].down_exps, idx[e], E);
+            if (!sliced) {
+                static int warned = 0;
+                if (!warned) {
+                    fprintf(stderr, "olmoe: an expert of layer %d would not slice; "
+                                    "this token's feed-forward is dropped\n", l);
+                    warned = 1;
+                }
+                memset(dst, 0, (size_t)E * sizeof(float));
+                continue;
+            }
+
+            /* Gate and up read a different eighth of the layer for the same activation, so
+             * they go out as one fan-out each rather than eight: the activation is quantized
+             * once instead of eight times, the pool is woken once, and a worker's run of rows
+             * is eight times longer. The experts stay where they are — copying them adjacent
+             * would cost the bandwidth this is trying to save. */
+            const uint8_t *gs[OLMOE_MAX_USED], *us[OLMOE_MAX_USED];
+            int gatherable = ge[0].use_i8 && ue[0].use_i8;
+            for (int e = 0; e < NU && gatherable; e++) {
+                gs[e] = ge[e].q; us[e] = ue[e].q;
+                gatherable = gs[e] && us[e];
+            }
+
+            pft = pf_mark();
+            if (gatherable &&
+                nt_qmatvec_i8_gather(eg, gs, NU, ge[0].dtype, xj, FFN, E) == 0 &&
+                nt_qmatvec_i8_gather(eu, us, NU, ue[0].dtype, xj, FFN, E) == 0) {
+                /* done */
+            } else {
+                for (int e = 0; e < NU; e++) {
+                    qmv(eg + (long)e * FFN, &ge[e], xj);
+                    qmv(eu + (long)e * FFN, &ue[e], xj);
+                }
+            }
+            pf_add(PF_FFN, pft);
+
+            pft = pf_mark();
+            for (long i = 0; i < (long)NU * FFN; i++) {
+                float g = eg[i];
+                eg[i] = (g / (1.0f + expf(-g))) * eu[i];
+            }
+            pf_add(PF_SILU, pft);
+
             for (int e = 0; e < NU; e++) {
-                wt ge, ue, de;
-                /* Load has already checked that every stack divides into n_expert slices of
-                 * the right height, so this cannot fire on a file that loaded. If it ever
-                 * does, the token gets no feed-forward at all rather than seven eighths of
-                 * one: a missing contribution is visible in the output, a quietly missing
-                 * expert is not. */
-                if (!wt_expert(&ge, &m->layers[l].gate_exps, idx[e], FFN) ||
-                    !wt_expert(&ue, &m->layers[l].up_exps,   idx[e], FFN) ||
-                    !wt_expert(&de, &m->layers[l].down_exps, idx[e], E)) {
-                    static int warned = 0;
-                    if (!warned) {
-                        fprintf(stderr, "olmoe: expert %d of layer %d would not slice; "
-                                        "this token's feed-forward is dropped\n", idx[e], l);
-                        warned = 1;
-                    }
-                    memset(dst, 0, (size_t)E * sizeof(float));
-                    break;
-                }
                 pft = pf_mark();
-                qmv(eg, &ge, xj);
-                qmv(eu, &ue, xj);
-                pf_add(PF_FFN, pft);
-                pft = pf_mark();
-                for (int i = 0; i < FFN; i++) {
-                    float g = eg[i];
-                    eg[i] = (g / (1.0f + expf(-g))) * eu[i];
-                }
-                pf_add(PF_SILU, pft);
-                pft = pf_mark();
-                qmv(eo, &de, eg);
+                qmv(eo, &de[e], eg + (long)e * FFN);
                 pf_add(PF_FFN, pft);
                 /* The weight is the softmax probability as it stands: this family neither
                  * renormalises over the chosen eight nor scales them. */

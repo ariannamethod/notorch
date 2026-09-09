@@ -6680,6 +6680,11 @@ typedef void (*nt_qrows_i8_fn)(float *, const uint8_t *, const int8_t *, const f
 typedef struct {
     nt_qrows_i8_fn fn; float *out; const uint8_t *Wq;
     const int8_t *qa; const float *da; const int32_t *asum; int r0, r1, k;
+    /* A gathered dispatch: `slices` holds one weight base per group of `rows_each` rows, and
+     * the row cursor walks all of them as if they were one matrix. A mixture picks eight
+     * experts out of sixty-four and cannot make them adjacent without copying them, so this
+     * is how eight separate matrices become one fan-out. NULL for an ordinary dispatch. */
+    const uint8_t *const *slices; int rows_each;
 } nt_qjob_i8;
 
 #ifndef _OPENMP   /* only the pthread fan-out uses a worker entry point */
@@ -6750,7 +6755,18 @@ static void nt_qpool_i8_drain(void) {
         int r0 = __atomic_fetch_add(&g_nt_qpool_i8.next, ch, __ATOMIC_RELAXED);
         if (r0 >= hi) return;
         int r1 = r0 + ch; if (r1 > hi) r1 = hi;
-        j.fn(j.out, j.Wq, j.qa, j.da, j.asum, r0, r1, j.k);
+        if (!j.slices) { j.fn(j.out, j.Wq, j.qa, j.da, j.asum, r0, r1, j.k); continue; }
+        /* Rows are global across the whole gather; the kernel wants them local to one slice,
+         * and a chunk may straddle a boundary. Each piece writes into its own stretch of out,
+         * so the pieces stay disjoint however the chunk fell. */
+        while (r0 < r1) {
+            int sl = r0 / j.rows_each;
+            int slice_end = (sl + 1) * j.rows_each;
+            int end = r1 < slice_end ? r1 : slice_end;
+            j.fn(j.out + (long)sl * j.rows_each, j.slices[sl], j.qa, j.da, j.asum,
+                 r0 - sl * j.rows_each, end - sl * j.rows_each, j.k);
+            r0 = end;
+        }
     }
 }
 
@@ -7112,6 +7128,74 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
     free(qa); free(da); free(asum);
     return 0;
 }
+
+/* One activation, several weight matrices, one fan-out.
+ *
+ * A mixture reads a different eighth of its feed-forward for every token: eight expert
+ * matrices out of sixty-four, chosen by a router, and they cannot be made adjacent without
+ * copying the very bytes the reading is trying to save. Calling the matvec eight times works
+ * and is what this library did first, but it quantizes the same activation eight times, opens
+ * eight dispatches, and gives each worker a run of rows a eighth as long as it could have —
+ * which is why the expert matmuls measured 13.25 GiB/s where the attention weights beside them
+ * reached 17.3.
+ *
+ * Here the slices are dispatched as one matrix: the activation is quantized once, the pool is
+ * woken once, and a worker's chunk walks from one expert into the next without noticing. Rows
+ * stay disjoint, so the arithmetic per row is the same as the loop it replaces — bit for bit,
+ * which tests/test_qgather.c checks rather than assumes.
+ *
+ * `out` holds n_slices * rows_each results, slice s writing at s * rows_each. */
+int nt_qmatvec_i8_gather(float *out, const uint8_t *const *slices, int n_slices,
+                         int dtype, const float *x, int rows_each, int k) {
+    if (!out || !slices || !x || n_slices <= 0 || rows_each <= 0 || k <= 0) return -1;
+    for (int i = 0; i < n_slices; i++) if (!slices[i]) return -1;
+    if (dtype != 2 && dtype != 6 && dtype != 8 && dtype != 12 && dtype != 14) return -1;
+    if (k % 32) return -1;
+    if ((dtype == 12 || dtype == 14) && (k % 256)) return -1;
+
+    nt_qrows_i8_fn fn = nt_qrows_i8_for(dtype, k);
+    if (!fn) return -1;
+
+    int nb = k / 32;
+    int8_t *qa = (int8_t *)malloc((size_t)k);
+    float  *da = (float *)malloc((size_t)nb * sizeof(float));
+    int32_t *asum = (int32_t *)malloc((size_t)nb * sizeof(int32_t));
+    if (!qa || !da || !asum) { free(qa); free(da); free(asum); return -1; }
+    nt_quant_act_q8(x, k, qa, da);
+    nt_act_block_sums(qa, k, asum);
+
+    long total = (long)n_slices * rows_each;
+    int nt = nt_qmv_host_threads(total > NT_QMV_MAX_THREADS ? NT_QMV_MAX_THREADS : (int)total);
+    if (nt <= 1 || total * k < nt_qmv_thread_floor()) {
+        for (int s2 = 0; s2 < n_slices; s2++)
+            fn(out + (long)s2 * rows_each, slices[s2], qa, da, asum, 0, rows_each, k);
+        free(qa); free(da); free(asum);
+        return 0;
+    }
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+    for (int s2 = 0; s2 < n_slices; s2++)
+        fn(out + (long)s2 * rows_each, slices[s2], qa, da, asum, 0, rows_each, k);
+#else
+    nt_qjob_i8 jobs[NT_QMV_MAX_THREADS];
+    int per = (int)((total + nt - 1) / nt), launched = 0;
+    for (int t = 0; t < nt; t++) {
+        int r0 = t * per, r1 = (long)(r0 + per) > total ? (int)total : r0 + per;
+        if (r0 >= total) break;
+        jobs[t] = (nt_qjob_i8){ fn, out, NULL, qa, da, asum, r0, r1, k, slices, rows_each };
+        launched++;
+    }
+    if (nt_qpool_i8_run(jobs, launched) != 0) {
+        /* No pool: the loop this was meant to replace, which is still correct. */
+        for (int s2 = 0; s2 < n_slices; s2++)
+            fn(out + (long)s2 * rows_each, slices[s2], qa, da, asum, 0, rows_each, k);
+    }
+#endif
+    free(qa); free(da); free(asum);
+    return 0;
+}
+
 
 // ── batched int8 matmul — one pass over the weights, many activations ───────────
 // Prefill pushes n token vectors through the same weight matrix, and the per-token
