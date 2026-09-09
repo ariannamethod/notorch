@@ -361,6 +361,10 @@ test_wt_expert: tests/test_wt_expert.c harness/runtime.c gguf.c notorch.c harnes
 	  harness/runtime.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_wt_expert (one expert out of a stacked tensor, $(BLAS_NAME))"
 
+bench_dtype: tests/bench_dtype.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o bench_dtype tests/bench_dtype.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: bench_dtype (one matvec shape across every packed format)"
+
 bench_claim: tests/bench_claim.c
 	$(CC) $(CFLAGS) -o bench_claim tests/bench_claim.c
 	@echo "Compiled: bench_claim (row-claim cost, shared line against separated)"
