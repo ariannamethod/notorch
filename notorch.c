@@ -5134,6 +5134,51 @@ static inline float nt_q4k_acc(float acc, float da, float d, float ls, int32_t d
                                              -(dmin * lm * (float)asum)), acc);
 }
 
+#if defined(__ARM_NEON)
+/* Four sub-blocks of Q4_K at once, rounding where nt_q4k_acc rounds for each lane taken on
+ * its own — same two fused operations, same order within a lane. What differs from the scalar
+ * helper is the shape of the sum it feeds: four running totals reduced at the end of a row
+ * instead of one running total. Floating-point addition is not associative, so that is a
+ * different last bit, and it is a change to where the library rounds rather than to what it
+ * computes. Deliberate, measured, and only worth it if the clock says so. */
+/* The eight (scale, min) pairs of one super-block, all of them, without leaving the vector
+ * file. Sub-blocks 0..3 take a six-bit scale from sc[0..3] and a six-bit minimum from
+ * sc[4..7]; sub-blocks 4..7 take the low nibble of sc[8..11] for the scale and the high
+ * nibble for the minimum, borrowing the top two bits of the first eight bytes for the bits
+ * that do not fit. nt_get_scale_min_k4 says the same in about six operations per pair; this
+ * is fifteen for all eight, and nothing round-trips through memory. Shared by every Q4_K
+ * kernel so there is one place where this packing is understood. */
+static inline void nt_q4k_scales4(const uint8_t *sc, float32x4_t *slo, float32x4_t *mlo,
+                                  float32x4_t *shi, float32x4_t *mhi) {
+    uint8x8_t g0 = vld1_u8(sc);       /* sc[0..7] */
+    uint8x8_t g2 = vld1_u8(sc + 8);   /* sc[8..15]; only 0..3 used, inside the 144-byte block */
+    uint8x8_t low6 = vand_u8(g0, vdup_n_u8(63));
+    uint8x8_t top2 = vshr_n_u8(g0, 6);
+    uint8x8_t s_lo = low6;                              /* lanes 0..3 */
+    uint8x8_t m_lo = vext_u8(low6, low6, 4);            /* lanes 0..3 */
+    uint8x8_t s_hi = vorr_u8(vand_u8(g2, vdup_n_u8(0x0F)), vshl_n_u8(top2, 4));
+    uint8x8_t m_hi = vorr_u8(vshr_n_u8(g2, 4), vshl_n_u8(vext_u8(top2, top2, 4), 4));
+    #define NT_U8X4_TO_F32(v) vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(v))))
+    *slo = NT_U8X4_TO_F32(s_lo); *mlo = NT_U8X4_TO_F32(m_lo);
+    *shi = NT_U8X4_TO_F32(s_hi); *mhi = NT_U8X4_TO_F32(m_hi);
+    #undef NT_U8X4_TO_F32
+}
+
+static inline float32x4_t nt_q4k_acc4(float32x4_t acc, float32x4_t da, float d,
+                                      float32x4_t ls, int32x4_t dot,
+                                      float dmin, float32x4_t lm, int32x4_t asum) {
+    float32x4_t dotf  = vcvtq_f32_s32(dot);
+    float32x4_t asumf = vcvtq_f32_s32(asum);
+    float32x4_t bias  = vmulq_f32(vmulq_n_f32(lm, dmin), asumf);
+    /* The term is d*ls*dot - dmin*lm*asum, built as (-bias) + (d*ls)*dot so that the multiply
+     * and the add are one fused operation, exactly as the scalar helper spells it. Written
+     * first with vfmsq, which computes a - b*c and therefore negated the wrong half; caught
+     * by reading it rather than by running it, but it would have shown as nonsense output. */
+    float32x4_t term  = vfmaq_f32(vnegq_f32(bias), vmulq_n_f32(ls, d), dotf);
+    return vfmaq_f32(acc, da, term);
+}
+#endif
+
 // Q4_K: 144 B/block, 256 vals — d, dmin (f16) + 12 B packed scales/mins + 128 nibbles.
 static void nt_q4_k_rows(float *out, const uint8_t *W, const float *x,
                          int r0, int r1, int k) {
@@ -6955,15 +7000,30 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
     const uint8x16_t m4 = vdupq_n_u8(0x0F);
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 144;
-        float acc = 0.0f;
+        /* Four running sums instead of one. Lane i carries every sub-block whose index is i
+         * mod 4, and they are added together once at the end of the row. That is a different
+         * order of additions from a single scalar accumulator and therefore a different last
+         * bit; see the note on nt_q4k_acc4. */
+        float32x4_t accv = vdupq_n_f32(0.0f);
         for (int blk = 0; blk < nb; blk++) {
             const uint8_t *b = rb + (long)blk * 144;
             float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
             float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
             const uint8_t *sc = b + 4, *qs = b + 16;
+
+            /* The eight (scale, min) pairs, all of them, without leaving the vector file.
+             * Sub-blocks 0..3 take their scale from sc[0..3] and their minimum from sc[4..7],
+             * six bits each. Sub-blocks 4..7 take the low nibble of sc[8..11] for the scale
+             * and the high nibble for the minimum, and borrow the top two bits of the first
+             * eight bytes for the missing high bits. Eight scalar calls to
+             * nt_get_scale_min_k4 do the same in about six operations each; this is fifteen
+             * for all of them, and nothing round-trips through memory. */
+            float32x4_t slo, mlo, shi, mhi;
+            nt_q4k_scales4(sc, &slo, &mlo, &shi, &mhi);
+
             /* One 32-byte weight load feeds two sub-blocks: low nibbles the even one, high
              * nibbles the odd one — the same pairing the fallback expresses as (j >> 1). */
-            int32_t dots[8];
+            int32x4_t part[8];
             for (int p = 0; p < 4; p++) {
                 uint8x16_t q0 = vld1q_u8(qs + p * 32);
                 uint8x16_t q1 = vld1q_u8(qs + p * 32 + 16);
@@ -6974,16 +7034,23 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                 e = vdotq_s32(e, vreinterpretq_s8_u8(vandq_u8(q1, m4)), vld1q_s8(a0 + 16));
                 int32x4_t o = vdotq_s32(z, vreinterpretq_s8_u8(vshrq_n_u8(q0, 4)), vld1q_s8(a1));
                 o = vdotq_s32(o, vreinterpretq_s8_u8(vshrq_n_u8(q1, 4)), vld1q_s8(a1 + 16));
-                dots[2 * p]     = vaddvq_s32(e);
-                dots[2 * p + 1] = vaddvq_s32(o);
+                part[2 * p]     = e;
+                part[2 * p + 1] = o;
             }
-            for (int j = 0; j < 8; j++) {
-                uint8_t s6, m6; nt_get_scale_min_k4(j, sc, &s6, &m6);
-                int sub = blk * 8 + j;
-                acc = nt_q4k_acc(acc, da[sub], d, (float)s6, dots[j], dmin, (float)m6, asum[sub]);
-            }
+            /* Eight sub-block totals into two vectors by pairwise adds, which stay in the
+             * vector file, rather than eight vaddvq that each leave it for a scalar. */
+            int32x4_t d_lo = vpaddq_s32(vpaddq_s32(part[0], part[1]),
+                                        vpaddq_s32(part[2], part[3]));
+            int32x4_t d_hi = vpaddq_s32(vpaddq_s32(part[4], part[5]),
+                                        vpaddq_s32(part[6], part[7]));
+
+            const long sub = (long)blk * 8;
+            accv = nt_q4k_acc4(accv, vld1q_f32(da + sub), d, slo, d_lo, dmin, mlo,
+                               vld1q_s32(asum + sub));
+            accv = nt_q4k_acc4(accv, vld1q_f32(da + sub + 4), d, shi, d_hi, dmin, mhi,
+                               vld1q_s32(asum + sub + 4));
         }
-        out[row] = acc;
+        out[row] = vaddvq_f32(accv);
     }
 }
 #else
@@ -7382,15 +7449,23 @@ static void nt_q4_k_rows_i8n_sdot(float *out, int m, const uint8_t *W, const int
     const uint8x16_t m4 = vdupq_n_u8(0x0F);
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 144;
-        float acc[NT_QMM_TILE];
-        for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+        /* Four running sums per activation, the shape the per-token kernel keeps, because the
+         * two must agree to the bit and floating-point addition is not associative. Lane i
+         * carries the sub-blocks whose index is i mod 4, ascending by block, in both. */
+        float32x4_t acc[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) acc[j] = vdupq_n_f32(0.0f);
         for (int blk = 0; blk < nb; blk++) {
             const uint8_t *b = rb + (long)blk * 144;
             float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
             float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
             const uint8_t *sc = b + 4, *qs = b + 16;
-            uint8_t ls[8], lm[8];
-            for (int s = 0; s < 8; s++) nt_get_scale_min_k4(s, sc, &ls[s], &lm[s]);
+            float32x4_t slo, mlo, shi, mhi;
+            nt_q4k_scales4(sc, &slo, &mlo, &shi, &mhi);
+            /* The weights stay unpacked in registers across the activation loop — that is
+             * what a batched kernel is for, and why p stays outside. The eight totals per
+             * activation cannot reach a vector accumulate one at a time, so they wait here
+             * and are spent once the block is complete. */
+            int32_t dotbuf[NT_QMM_TILE][8];
             for (int p = 0; p < 4; p++) {
                 uint8x16_t q0 = vld1q_u8(qs + p * 32);
                 uint8x16_t q1 = vld1q_u8(qs + p * 32 + 16);
@@ -7402,19 +7477,27 @@ static void nt_q4_k_rows_i8n_sdot(float *out, int m, const uint8_t *W, const int
                 for (int j = 0; j < jn; j++) {
                     const int8_t *a0 = qa + (long)(j0 + j) * k + (long)sub_e * 32;
                     const int8_t *a1 = a0 + 32;
-                    const float *daj = da + (long)(j0 + j) * nsub;
-                    const int32_t *asj = asum + (long)(j0 + j) * nsub;
                     const int32x4_t z = vdupq_n_s32(0);
                     int32x4_t e = vdotq_s32(z, e0, vld1q_s8(a0));
                     e = vdotq_s32(e, e1, vld1q_s8(a0 + 16));
                     int32x4_t o = vdotq_s32(z, o0, vld1q_s8(a1));
                     o = vdotq_s32(o, o1, vld1q_s8(a1 + 16));
-                    acc[j] = nt_q4k_acc(acc[j], daj[sub_e], d, (float)ls[2*p],   vaddvq_s32(e), dmin, (float)lm[2*p],   asj[sub_e]);
-                    acc[j] = nt_q4k_acc(acc[j], daj[sub_o], d, (float)ls[2*p+1], vaddvq_s32(o), dmin, (float)lm[2*p+1], asj[sub_o]);
+                    dotbuf[j][2 * p]     = vaddvq_s32(e);
+                    dotbuf[j][2 * p + 1] = vaddvq_s32(o);
                 }
             }
+            const long sub = (long)blk * 8;
+            for (int j = 0; j < jn; j++) {
+                const float *daj = da + (long)(j0 + j) * nsub;
+                const int32_t *asj = asum + (long)(j0 + j) * nsub;
+                acc[j] = nt_q4k_acc4(acc[j], vld1q_f32(daj + sub), d, slo,
+                                     vld1q_s32(dotbuf[j]), dmin, mlo, vld1q_s32(asj + sub));
+                acc[j] = nt_q4k_acc4(acc[j], vld1q_f32(daj + sub + 4), d, shi,
+                                     vld1q_s32(dotbuf[j] + 4), dmin, mhi,
+                                     vld1q_s32(asj + sub + 4));
+            }
         }
-        for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+        for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = vaddvq_f32(acc[j]);
     }
 }
 
@@ -7434,8 +7517,13 @@ static void nt_q4_k_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t 
     for (int row = r0; row < rpair; row += 2) {
         const uint8_t *rb0 = W + (long)row * nb * 144;
         const uint8_t *rb1 = rb0 + (long)nb * 144;
-        float acc0[NT_QMM_TILE], acc1[NT_QMM_TILE];
-        for (int j = 0; j < jn; j++) { acc0[j] = 0.0f; acc1[j] = 0.0f; }
+        /* Four running sums per activation per weight row — the shape the per-token and sdot
+         * kernels keep, because all three have to agree to the bit. */
+        float32x4_t acc0[NT_QMM_TILE], acc1[NT_QMM_TILE];
+        for (int j = 0; j < jn; j++) {
+            acc0[j] = vdupq_n_f32(0.0f);
+            acc1[j] = vdupq_n_f32(0.0f);
+        }
         for (int blk = 0; blk < nb; blk++) {
             const uint8_t *b0 = rb0 + (long)blk * 144, *b1 = rb1 + (long)blk * 144;
             float d0    = nt_f16_to_f32((uint16_t)(b0[0] | (b0[1] << 8)));
@@ -7444,11 +7532,13 @@ static void nt_q4_k_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t 
             float dmin1 = nt_f16_to_f32((uint16_t)(b1[2] | (b1[3] << 8)));
             const uint8_t *sc0 = b0 + 4, *qs0 = b0 + 16;
             const uint8_t *sc1 = b1 + 4, *qs1 = b1 + 16;
-            uint8_t ls0[8], lm0[8], ls1[8], lm1[8];
-            for (int s = 0; s < 8; s++) {
-                nt_get_scale_min_k4(s, sc0, &ls0[s], &lm0[s]);
-                nt_get_scale_min_k4(s, sc1, &ls1[s], &lm1[s]);
-            }
+            float32x4_t slo0, mlo0, shi0, mhi0, slo1, mlo1, shi1, mhi1;
+            nt_q4k_scales4(sc0, &slo0, &mlo0, &shi0, &mhi0);
+            nt_q4k_scales4(sc1, &slo1, &mlo1, &shi1, &mhi1);
+            /* Totals wait here while the weights are still unpacked in registers, and are
+             * spent once the block's four passes are done: a vector accumulate cannot take
+             * them one at a time. */
+            int32_t dotbuf0[NT_QMM_TILE][8], dotbuf1[NT_QMM_TILE][8];
             for (int p = 0; p < 4; p++) {
                 uint8x16_t w00 = vld1q_u8(qs0 + p * 32), w01 = vld1q_u8(qs0 + p * 32 + 16);
                 uint8x16_t w10 = vld1q_u8(qs1 + p * 32), w11 = vld1q_u8(qs1 + p * 32 + 16);
@@ -7482,31 +7572,17 @@ static void nt_q4_k_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t 
                     so = vmmlaq_s32(so, O1, vcombine_s8(vld1_s8(x0 + 40), vld1_s8(x1 + 40)));
                     so = vmmlaq_s32(so, O2, vcombine_s8(vld1_s8(x0 + 48), vld1_s8(x1 + 48)));
                     so = vmmlaq_s32(so, O3, vcombine_s8(vld1_s8(x0 + 56), vld1_s8(x1 + 56)));
-                    const float *daA = da + (long)(j0 + j) * nsub;
-                    const float *daB = da + (long)(j0 + j + 1) * nsub;
-                    const int32_t *asA = asum + (long)(j0 + j) * nsub;
-                    const int32_t *asB = asum + (long)(j0 + j + 1) * nsub;
-                    acc0[j] = nt_q4k_acc(acc0[j], daA[sub_e], d0, (float)ls0[2*p],
-                                               vgetq_lane_s32(se, 0), dmin0, (float)lm0[2*p],   asA[sub_e]);
-                    acc0[j] = nt_q4k_acc(acc0[j], daA[sub_o], d0, (float)ls0[2*p+1],
-                                               vgetq_lane_s32(so, 0), dmin0, (float)lm0[2*p+1], asA[sub_o]);
-                    acc0[j + 1] = nt_q4k_acc(acc0[j + 1], daB[sub_e], d0, (float)ls0[2*p],
-                                               vgetq_lane_s32(se, 1), dmin0, (float)lm0[2*p],   asB[sub_e]);
-                    acc0[j + 1] = nt_q4k_acc(acc0[j + 1], daB[sub_o], d0, (float)ls0[2*p+1],
-                                               vgetq_lane_s32(so, 1), dmin0, (float)lm0[2*p+1], asB[sub_o]);
-                    acc1[j] = nt_q4k_acc(acc1[j], daA[sub_e], d1, (float)ls1[2*p],
-                                               vgetq_lane_s32(se, 2), dmin1, (float)lm1[2*p],   asA[sub_e]);
-                    acc1[j] = nt_q4k_acc(acc1[j], daA[sub_o], d1, (float)ls1[2*p+1],
-                                               vgetq_lane_s32(so, 2), dmin1, (float)lm1[2*p+1], asA[sub_o]);
-                    acc1[j + 1] = nt_q4k_acc(acc1[j + 1], daB[sub_e], d1, (float)ls1[2*p],
-                                               vgetq_lane_s32(se, 3), dmin1, (float)lm1[2*p],   asB[sub_e]);
-                    acc1[j + 1] = nt_q4k_acc(acc1[j + 1], daB[sub_o], d1, (float)ls1[2*p+1],
-                                               vgetq_lane_s32(so, 3), dmin1, (float)lm1[2*p+1], asB[sub_o]);
+                    dotbuf0[j][2*p]         = vgetq_lane_s32(se, 0);
+                    dotbuf0[j][2*p + 1]     = vgetq_lane_s32(so, 0);
+                    dotbuf0[j + 1][2*p]     = vgetq_lane_s32(se, 1);
+                    dotbuf0[j + 1][2*p + 1] = vgetq_lane_s32(so, 1);
+                    dotbuf1[j][2*p]         = vgetq_lane_s32(se, 2);
+                    dotbuf1[j][2*p + 1]     = vgetq_lane_s32(so, 2);
+                    dotbuf1[j + 1][2*p]     = vgetq_lane_s32(se, 3);
+                    dotbuf1[j + 1][2*p + 1] = vgetq_lane_s32(so, 3);
                 }
                 if (jpair < jn) {
                     const int8_t *x = qa + (long)(j0 + jpair) * k + (long)sub_e * 32;
-                    const float *daj = da + (long)(j0 + jpair) * nsub;
-                    const int32_t *asj = asum + (long)(j0 + jpair) * nsub;
                     int8x16_t X0 = vld1q_s8(x),      X1 = vld1q_s8(x + 16);
                     int8x16_t X2 = vld1q_s8(x + 32), X3 = vld1q_s8(x + 48);
                     const int32x4_t z = vdupq_n_s32(0);
@@ -7514,20 +7590,31 @@ static void nt_q4_k_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t 
                     int32_t o0v = vaddvq_s32(vdotq_s32(vdotq_s32(z, o00, X2), o01, X3));
                     int32_t e1v = vaddvq_s32(vdotq_s32(vdotq_s32(z, e10, X0), e11, X1));
                     int32_t o1v = vaddvq_s32(vdotq_s32(vdotq_s32(z, o10, X2), o11, X3));
-                    acc0[jpair] = nt_q4k_acc(acc0[jpair], daj[sub_e], d0, (float)ls0[2*p],
-                                               e0v, dmin0, (float)lm0[2*p],   asj[sub_e]);
-                    acc0[jpair] = nt_q4k_acc(acc0[jpair], daj[sub_o], d0, (float)ls0[2*p+1],
-                                               o0v, dmin0, (float)lm0[2*p+1], asj[sub_o]);
-                    acc1[jpair] = nt_q4k_acc(acc1[jpair], daj[sub_e], d1, (float)ls1[2*p],
-                                               e1v, dmin1, (float)lm1[2*p],   asj[sub_e]);
-                    acc1[jpair] = nt_q4k_acc(acc1[jpair], daj[sub_o], d1, (float)ls1[2*p+1],
-                                               o1v, dmin1, (float)lm1[2*p+1], asj[sub_o]);
+                    dotbuf0[jpair][2*p]     = e0v;
+                    dotbuf0[jpair][2*p + 1] = o0v;
+                    dotbuf1[jpair][2*p]     = e1v;
+                    dotbuf1[jpair][2*p + 1] = o1v;
                 }
+            }
+            const long sub = (long)blk * 8;
+            for (int j = 0; j < jn; j++) {
+                const float *daj = da + (long)(j0 + j) * nsub;
+                const int32_t *asj = asum + (long)(j0 + j) * nsub;
+                float32x4_t dlo = vld1q_f32(daj + sub), dhi = vld1q_f32(daj + sub + 4);
+                int32x4_t alo = vld1q_s32(asj + sub), ahi = vld1q_s32(asj + sub + 4);
+                acc0[j] = nt_q4k_acc4(acc0[j], dlo, d0, slo0, vld1q_s32(dotbuf0[j]),
+                                      dmin0, mlo0, alo);
+                acc0[j] = nt_q4k_acc4(acc0[j], dhi, d0, shi0, vld1q_s32(dotbuf0[j] + 4),
+                                      dmin0, mhi0, ahi);
+                acc1[j] = nt_q4k_acc4(acc1[j], dlo, d1, slo1, vld1q_s32(dotbuf1[j]),
+                                      dmin1, mlo1, alo);
+                acc1[j] = nt_q4k_acc4(acc1[j], dhi, d1, shi1, vld1q_s32(dotbuf1[j] + 4),
+                                      dmin1, mhi1, ahi);
             }
         }
         for (int j = 0; j < jn; j++) {
-            out[(long)(j0 + j) * m + row]     = acc0[j];
-            out[(long)(j0 + j) * m + row + 1] = acc1[j];
+            out[(long)(j0 + j) * m + row]     = vaddvq_f32(acc0[j]);
+            out[(long)(j0 + j) * m + row + 1] = vaddvq_f32(acc1[j]);
         }
     }
     if (rpair < r1)

@@ -13,6 +13,52 @@ Newest entries on top.
 
 ---
 
+## 2026-09-09 — Q4_K keeps four running sums, and stops being the slow format
+
+Q4_K read 13.0 GiB/s where Q4_0 read 17.3 on identical byte counts — 144 bytes per 256 values
+in both. The difference was never memory; it was eight scalar unpackings of a six-bit (scale,
+min) pair and eight scalar float accumulates per super-block, where the block format has one
+cheap accumulate per 32 values and nothing to unpack.
+
+Both are now vector work. `nt_q4k_scales4` produces all eight pairs from the twelve packed
+bytes without leaving the vector file — fifteen operations for what `nt_get_scale_min_k4` does
+in about six per pair — and `nt_q4k_acc4` spends them four sub-blocks at a time into four
+running sums, added together once at the end of a row.
+
+Measured, warm, three runs each:
+
+| | before | after |
+|---|---|---|
+| kernel alone, [50304, 2048] | 13.1 / 13.3 / 11.7 GiB/s | **17.5 / 17.8 / 15.6** |
+| decode, a 100% Q4_K model | 9.4 / 8.7 / 8.9 t/s | **11.3 / 10.8 / 10.7** |
+| prefill, same model | 6.0 / 5.4 / 5.4 t/s | **9.8 / 9.0 / 8.9** |
+
+Q4_K now reads at the rate Q4_0 does. Prefill gains most because the batched and SMMLA kernels
+got the same treatment, which they had to: **four running sums is a different order of
+additions from one, and `tests/test_qmatmul.c` compares the per-token and batched kernels by
+bit pattern rather than by tolerance.** Changing one kernel alone turned that gate red, and the
+only honest way forward was to move all three together — per-token, batched sdot, and the
+SMMLA pair — so lane *i* carries the sub-blocks whose index is *i* mod 4, ascending by block,
+in every one of them. The gate is green again and it means what it always meant.
+
+What is genuinely different from before this change: every Q4_K result now rounds in a new
+place, and numbers recorded in this log before today will differ in their last bit. The oracle
+in `tests/test_qmatvec.c` — an independent dequantise-then-BLAS path — puts the packed kernel
+at relative error 1.5e-06 and the integer one at 0.0049 against a tolerance of 2e-2, which is
+where they were. Greedy text on a Q4_K model is identical to the reference.
+
+Two things found on the way. `gguf_quantize` skips 3-D tensors entirely, so requantising a
+mixture leaves its experts untouched — OLMoE came back 6.9 percent Q4_K with 93 percent still
+Q4_0, and the tool is unusable for mixtures until that is fixed. And `qwen05b_q4km.gguf`, which
+this repo has treated as its Q4_K model, is 6.1 percent Q4_K: at n_embd 896 almost nothing
+divides by 256, so the quantizer's documented fallback sent it to Q5_0. Measurements of "a
+K-quant model" taken on that file measured Q5_0.
+
+Also: `test_qgather`, a 146 KB binary, was committed by accident and is untracked now —
+`.gitignore` does not reach a file that is already in the index.
+
+---
+
 ## 2026-09-09 — where the K-quant kernel loses its quarter, and two ways of not getting it back
 
 `bench_dtype` put Q4_K at 13.0 GiB/s against Q4_0's 17.3 on identical byte counts — 144 bytes
