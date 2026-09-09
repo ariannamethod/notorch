@@ -48,7 +48,7 @@ typedef struct {
         wt wq, wk, wv, wo;
         float *q_norm, *k_norm;       /* over the whole projection, not per head */
         float *ffn_norm;
-        wt gate_inp;                  /* [n_expert, embed] — the router */
+        wt gate_inp;                  /* [n_expert, embed] — the router, as the file has it */
         wt gate_exps, up_exps, down_exps;   /* stacked: n_expert slices each */
     } layers[];
 } olmoe_model;
@@ -169,7 +169,7 @@ static void olmoe_free(void *model) {
         free(m->layers[l].ffn_norm);
         free(m->layers[l].wq.f32); free(m->layers[l].wk.f32);
         free(m->layers[l].wv.f32); free(m->layers[l].wo.f32);
-        free(m->layers[l].gate_inp.f32);
+        free(m->layers[l].gate_inp.f32);   /* router_f32 borrows, it does not own */
         free(m->layers[l].gate_exps.f32); free(m->layers[l].up_exps.f32);
         free(m->layers[l].down_exps.f32);
     }
@@ -293,8 +293,17 @@ static void olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
             rmsnorm(xn + (long)j * E, x + (long)j * E, m->layers[l].ffn_norm, E, eps);
         pf_add(PF_NORM, pft);
 
-        /* Router first, for every row at once: it is a thin matrix and the batched path
-         * costs nothing here. The experts cannot follow, because each row picks its own. */
+        /* Router: sixty-four scores over the layer's normalised input, for every row at once.
+         *
+         * This is the one f32 weight the family ships, and it is measurably expensive for its
+         * size — the block holding it took 26.7 percent of decode against seven percent of the
+         * bytes read, because f32 goes through a matvec without the integer kernel's dot
+         * instruction rather than because of its width. Packing it to Q8_0 at load was tried
+         * and is worth about nine percent of decode (18.6 -> 20.5 t/s), but routing is a
+         * discrete decision: a small numeric change reorders neighbouring scores, a different
+         * eight of sixty-four run, and the text diverges from the reference where every other
+         * prompt matches it. The reference routes in f32. Until that trade is somebody's
+         * decision rather than a side effect, so does this. */
         pft = pf_mark();
         qmm(router, &m->layers[l].gate_inp, xn, n);
         pf_add(PF_QKV, pft);

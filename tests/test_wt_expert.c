@@ -58,7 +58,7 @@ int main(void) {
         snprintf(detail, sizeof(detail),
                  "expert %d starts at row %d and holds %d rows, expected %d and %d",
                  e, got, slice.rows, want, rows_each);
-        check("packed slice starts at the right row", ok, ok ? NULL : detail);
+        check("packed slice has the right base and height", ok, ok ? NULL : detail);
     }
 
     /* Expanded: the same shape as floats, each row holding its own index. */
@@ -83,7 +83,7 @@ int main(void) {
         snprintf(detail, sizeof(detail),
                  "expert %d starts at row %d and holds %d rows, expected %d and %d",
                  e, got, slice.rows, want, rows_each);
-        check("f32 slice starts at the right row", ok, ok ? NULL : detail);
+        check("f32 slice has the right base and height", ok, ok ? NULL : detail);
     }
 
     /* What must be refused. A slice past the end would read somebody else's memory, and a

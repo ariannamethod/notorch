@@ -84,6 +84,35 @@ static void emit(const session *s, int id) {
     fflush(stdout);
 }
 
+/* How much of this process is actually in memory, and how much the machine has left.
+ *
+ * A model larger than comfort on a phone makes every timing a statement about page residency
+ * rather than about arithmetic: the same binary on the same file measured 6.7 t/s and 18.8 on
+ * one afternoon, the difference being whether 1.2 GB happened to be free. A benchmark that
+ * does not say which of those it caught is not reporting a speed. Both numbers come from the
+ * kernel; where it does not offer them, the line is omitted rather than guessed. */
+static void residency(const char *when) {
+    long rss = -1, memfree = -1;
+    FILE *f = fopen("/proc/self/smaps_rollup", "r");
+    char line[256];
+    if (f) {
+        while (fgets(line, sizeof(line), f))
+            if (sscanf(line, "Rss: %ld kB", &rss) == 1) break;
+        fclose(f);
+    }
+    f = fopen("/proc/meminfo", "r");
+    if (f) {
+        while (fgets(line, sizeof(line), f))
+            if (sscanf(line, "MemFree: %ld kB", &memfree) == 1) break;
+        fclose(f);
+    }
+    if (rss < 0 && memfree < 0) return;
+    fprintf(stderr, "  [%s]", when);
+    if (rss >= 0) fprintf(stderr, " resident %.2f GiB", rss / 1048576.0);
+    if (memfree >= 0) fprintf(stderr, " | machine free %.2f GiB", memfree / 1048576.0);
+    fputc('\n', stderr);
+}
+
 /* Prompt in, text out, cache advanced. Returns the position after the last
  * token written, so a chat turn can hand it to the next one.
  *
@@ -166,7 +195,7 @@ static void chat(session *s, int max_tokens, float temp) {
 
 static void usage(const char *self) {
     fprintf(stderr,
-        "usage: %s [-q] [-n tokens] [-t temp] <model.gguf> [prompt] [max_tokens] [temp]\n"
+        "usage: %s [-q] [-n tokens] [-t temp] [-r runs] <model.gguf> [prompt] [max_tokens] [temp]\n"
         "  no prompt        chat in the terminal\n"
         "  -q               no banner\n"
         "  -n, -t           tokens and temperature, for chat as well as one shot\n"
@@ -200,10 +229,16 @@ int main(int argc, char **argv) {
     /* The positional form is what examples/infer_llama.c takes and what the
      * parity gate drives; the flags are for chat, which has no prompt to hang
      * positional arguments behind. */
-    int tokenize_only = 0;
+    int tokenize_only = 0, repeats = 1;
     while (ai < argc && argv[ai][0] == '-' && argv[ai][1] && !argv[ai][2]) {
         char f = argv[ai][1];
         if (f == 'q') { quiet = 1; ai++; continue; }
+        /* -r runs the same prompt N times in one process. The load happens once, so what is
+         * timed is the model running rather than the model arriving: a fresh process pays for
+         * faulting in gigabytes of weights, and the reference benchmark this is compared
+         * against does not, which made every such comparison a comparison of two different
+         * things. Later iterations are the ones to read. */
+        if (f == 'r' && ai + 1 < argc) { repeats = atoi(argv[ai + 1]); ai += 2; continue; }
         /* -T prints the ids and stops. A family arrives with two ways to be wrong and this
          * separates them: the tokenizer can be diffed against another implementation without
          * loading a single weight, and the forward can be fed ids through NT_TOKENS. */
@@ -281,9 +316,20 @@ int main(int argc, char **argv) {
             s.max_seq = n_tok + max_tokens + 1;
             s.kv = kv_new(dims.n_layers, s.max_seq, dims.kv_dim);
             fprintf(stderr, "\nprompt: \"%s\" (%d tokens, temp=%.2f)\n", prompt, n_tok, temp);
-            fputs(prompt, stdout);
-            fflush(stdout);
-            run_turn(&s, tokens, n_tok, 0, max_tokens, temp, 1);
+            if (repeats < 1) repeats = 1;
+            for (int rep = 0; rep < repeats; rep++) {
+                if (repeats > 1) {
+                    fprintf(stderr, "\n── run %d of %d ──\n", rep + 1, repeats);
+                    residency(rep == 0 ? "before the first run" : "before this run");
+                }
+                /* The cache is written from position zero every time and attention reads only
+                 * up to the current position, so what an earlier run left behind is never
+                 * looked at. Reallocating it would only add a page-fault storm to the thing
+                 * being measured. */
+                fputs(prompt, stdout);
+                fflush(stdout);
+                run_turn(&s, tokens, n_tok, 0, max_tokens, temp, 1);
+            }
         }
         free(tokens);
     } else {
