@@ -149,7 +149,27 @@ int main(int argc, char **argv) {
                                         t->dtype == GGUF_TYPE_Q8_0 || t->dtype == GGUF_TYPE_Q4_K ||
                                         t->dtype == GGUF_TYPE_Q6_K)));
         int named = (!only || strstr(t->name, only) != NULL);
-        int quantizable = (t->ndim == 2) && (t->shape[0] % 32 == 0) && floatsrc && named;
+        /* Two dimensions or more. A mixture keeps its experts stacked in one 3-D tensor, and
+         * refusing those left the largest weights in a file untouched — requantising OLMoE
+         * produced 6.9 percent of what was asked for, with 93 percent still in the source
+         * format and no complaint. Nothing in the row-at-a-time path cares about the shape:
+         * GGUF stores shape[0] fastest, so a row is contiguous whatever the rank, and
+         * gguf_dequant_row has always indexed rows flatly as n_elements / shape[0].
+         *
+         * One dimension stays out. Those are norms and biases, and llama-quantize leaves them
+         * in floats for the same reason: they are small enough that the saving is nothing and
+         * precise enough to matter. */
+        int shaped = (t->ndim >= 2 && t->ndim <= 4);
+        /* The router of a mixture stays in floats. Read off a file rather than assumed: the
+         * OLMoE checkpoint llama-quantize produced at Q4_0 has exactly sixteen tensors left
+         * unquantized, one per layer, and every one of them is ffn_gate_inp. The reason is
+         * that routing is a discrete decision — the scores of the eighth and ninth expert can
+         * sit closer together than a quantization step, and moving one past the other runs a
+         * different expert and writes a different word. Quantizing it here produced a model
+         * that diverged from the reference after eight tokens where the same file with an f32
+         * router matches it exactly. Half a megabyte a layer buys that back. */
+        int router = strstr(t->name, "ffn_gate_inp") != NULL;
+        int quantizable = shaped && !router && (t->shape[0] % 32 == 0) && floatsrc && named;
         uint32_t chosen = (uint32_t)target;
         if (quantizable && is_k && (t->shape[0] % 256))
             chosen = (target == GGUF_TYPE_Q4_K) ? GGUF_TYPE_Q5_0 : GGUF_TYPE_Q8_0;

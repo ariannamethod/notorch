@@ -67,6 +67,7 @@ test_affinity
 test_plan_race
 bench_claim
 bench_dtype
+check_requant
 test_wt_expert
 test_qgather
 test_plan_race_tsan

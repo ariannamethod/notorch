@@ -366,6 +366,11 @@ test_wt_expert: tests/test_wt_expert.c harness/runtime.c gguf.c notorch.c harnes
 	  harness/runtime.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_wt_expert (one expert out of a stacked tensor, $(BLAS_NAME))"
 
+check_requant: tests/check_requant.c gguf.c notorch.c gguf.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o check_requant tests/check_requant.c gguf.c notorch.c \
+	  -lm $(BLAS_LIBS)
+	@echo "Compiled: check_requant (row mapping across a requantisation)"
+
 bench_dtype: tests/bench_dtype.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o bench_dtype tests/bench_dtype.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: bench_dtype (one matvec shape across every packed format)"
