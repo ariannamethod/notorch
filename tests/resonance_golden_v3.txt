@@ -1,0 +1,25 @@
+# Resonance 200M — the reference forward's answer, frozen.
+#
+# Source: ~/arianna-shared/arianna.c/tools/resonance_forward.h, built standalone
+# against this tree's gguf.c and notorch.c, run on arianna_resonance_v3_f16.gguf
+# with token ids 487 1955 306 ("The field is" under the model's own BPE), one
+# position per call. These are the eight largest logits of the last position.
+#
+# Why a golden and not a live comparison: the reference lives in another
+# repository and does not belong in this one, so the number travels instead of
+# the code. Why logits and not the argmax: transposing wr_a leaves the argmax
+# at 432 and moves the logits by 5.6, which an argmax check would call a pass.
+#
+# Tolerance is 1e-3. Observed on this machine: 1.8e-05, which is the four-lane
+# accumulation in dot_f32/axpy_f32 against the reference's scalar loops —
+# building the port with -U__ARM_NEON reproduces the reference bit for bit.
+#
+# id  logit
+257 6.47917223
+262 5.55650806
+432 7.45756912
+495 5.420959
+1939 5.64419127
+4162 5.49557209
+8740 6.25333786
+9938 5.9127779
