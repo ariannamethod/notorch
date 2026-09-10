@@ -7170,7 +7170,14 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
     for (int t = 0; t < nt; t++) {
         int r0 = t * per, r1 = (r0 + per > m) ? m : r0 + per;
         if (r0 >= m) break;
-        jobs[t] = (nt_qjob_i8){ fn, out, Wq, qa, da, asum, r0, r1, k };
+        /* Named rather than positional, and the gather fields spelled out. A positional
+         * initializer zero-fills what it omits, which is the right value here — but it does
+         * so silently, and this struct has already grown once under an initializer that did
+         * not mention the new field. The compiler warns about the omission; saying it out
+         * loud is cheaper than reading that warning again. */
+        jobs[t] = (nt_qjob_i8){ .fn = fn, .out = out, .Wq = Wq, .qa = qa, .da = da,
+                                .asum = asum, .r0 = r0, .r1 = r1, .k = k,
+                                .slices = NULL, .rows_each = 0 };
         launched++;
     }
     if (nt_qpool_i8_run(jobs, launched) == 0) {
@@ -7473,7 +7480,7 @@ static void nt_q4_k_rows_i8n_sdot(float *out, int m, const uint8_t *W, const int
                 int8x16_t e1 = vreinterpretq_s8_u8(vandq_u8(q1, m4));
                 int8x16_t o0 = vreinterpretq_s8_u8(vshrq_n_u8(q0, 4));
                 int8x16_t o1 = vreinterpretq_s8_u8(vshrq_n_u8(q1, 4));
-                int sub_e = blk * 8 + 2 * p, sub_o = sub_e + 1;
+                int sub_e = blk * 8 + 2 * p;   /* the odd sub-block follows it */
                 for (int j = 0; j < jn; j++) {
                     const int8_t *a0 = qa + (long)(j0 + j) * k + (long)sub_e * 32;
                     const int8_t *a1 = a0 + 32;
@@ -7558,7 +7565,7 @@ static void nt_q4_k_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t 
                 int8x16_t O1 = vcombine_s8(vget_high_s8(o00), vget_high_s8(o10));
                 int8x16_t O2 = vcombine_s8(vget_low_s8(o01),  vget_low_s8(o11));
                 int8x16_t O3 = vcombine_s8(vget_high_s8(o01), vget_high_s8(o11));
-                int sub_e = blk * 8 + 2 * p, sub_o = sub_e + 1;
+                int sub_e = blk * 8 + 2 * p;   /* the odd sub-block follows it */
                 for (int j = 0; j < jpair; j += 2) {
                     const int8_t *x0 = qa + (long)(j0 + j) * k + (long)sub_e * 32;
                     const int8_t *x1 = x0 + k;
