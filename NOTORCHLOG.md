@@ -13,6 +13,55 @@ Newest entries on top.
 
 ---
 
+## 2026-09-10 — one pre-tokenizer where the reference keeps several
+
+The byte-level splitter treated `' '` as the only whitespace. Everything else — tab, newline,
+carriage return — fell through to the branch that scans for the next space, so `x\n\t\tdeep`
+became `x` and `\n\t\tdeep` where the reference reads `x`, `\n\t`, `\t`, `deep`. Space-indented
+code agreed by luck, which is why it went unseen through twenty-four gate checks.
+
+The rule GPT-2 actually uses: `\s+(?!\S)` takes a whitespace run whole when nothing follows and
+otherwise gives up its last character, and what happens to that character is decided by the
+alternatives after it — ` ?\p{L}+` and its siblings begin with an optional *space*, not with
+optional whitespace. A trailing space joins the word; a trailing tab or newline stands alone.
+
+Correcting that alone was a regression, and the measurement said so before it was committed:
+Qwen went from passing every whitespace shape in the battery to failing four of them. The
+reference does not have one pre-tokenizer. It has a regex per family and picks by
+`tokenizer.ggml.pre`, a key every file here carries — `olmo` for OLMoE, `qwen2` for the Qwen
+checkpoints, absent for Gemma 4, which takes a different path anyway. qwen2's word may absorb
+one preceding character of any kind rather than a space, and a run of newlines is a single
+piece; those are different rules, not a better or worse version of the same one.
+
+So both are kept and the key chooses. The qwen2 branch is what this tree has always done, now
+named rather than assumed; the other is GPT-2's rule, and a file with no key or an unrecognised
+one gets it, which is where llama.cpp falls back too.
+
+Twelve whitespace shapes against `llama-tokenize`, before and after:
+
+| | before | after |
+|---|---|---|
+| OLMoE (`pre=olmo`) | 3 differ | **none** |
+| Qwen 0.5B (`pre=qwen2`) | 2 differ | 2 differ, the same two |
+
+Not a claim that the tokenizer is right — a claim that it is right in one more family and no
+worse in the other. The two Qwen cases are qwen2's own rules, still unimplemented, and they are
+written down rather than left to be rediscovered:
+
+    x\n\t\tdeep      ours 87,198,298,32880        reference 87,198,197,197,32880
+    one\n   \n  two   ours 603,198,256,715,220,1378 reference 603,58958,220,1378
+
+The first is a word taking a tab; the second is `\s*[\r\n]+` swallowing a whole mixed run.
+Both need the qwen2 pattern rather than an approximation of it.
+
+Also in this entry, from the same pass: three warnings this tree gained with the Q4_K work are
+gone. Two were an `sub_o` left unused when the accumulate moved, and one was a positional
+initializer that stopped mentioning `nt_qjob_i8`'s new fields — which is the shape of a bug
+this file has had before, so it is spelled out with designators now. `notorch.c` compiles
+without a warning again.
+
+---
+
 ## 2026-09-10 — the opening token, and the default that was costing a model its voice
 
 The harness prepended a beginning-of-text token for Gemma 4 and for nothing else. The

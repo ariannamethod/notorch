@@ -74,3 +74,4 @@ test_plan_race_tsan
 gguf_quantize
 gguf_add_tokenizer
 test_quantize
+check_requant

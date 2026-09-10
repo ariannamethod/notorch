@@ -93,6 +93,11 @@ struct bpe_tokenizer {
      * UTF-8 like BPE, and no word-level pre-split at all, only a break at newlines. The
      * only signal is the name in tokenizer.ggml.model, which is what llama.cpp reads too. */
     int spm_bpe;
+    /* Which pre-tokenizer the file asks for, from tokenizer.ggml.pre. llama.cpp keeps a
+     * regex per family here and picks by this key; the two that differ for the models this
+     * tree runs are kept below, chosen the same way. Getting it wrong is silent: the ids
+     * shift from the first whitespace onward and the text still reads like text. */
+    int pre_qwen2;
     /* Tokens the file marks USER_DEFINED. They are stored as literal text rather than in the
      * byte-level encoding — a run of four real spaces, not four 'Ġ' — so the merge path can
      * never produce them, and the reference matches them against the raw text before it runs.
@@ -105,6 +110,12 @@ struct bpe_tokenizer {
 
 /* U+2581 LOWER ONE EIGHTH BLOCK — SentencePiece's space. */
 #define SPM_SPACE "\xE2\x96\x81"
+
+/* What GPT-2's \s matches: the six characters C calls whitespace, spelled out because
+ * isspace() answers by locale and a tokenizer must not. */
+static int nt_is_ws(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
 
 /* The value of a "<0xHH>" token, or -1 for anything else. */
 static int byte_token_value(const char *s) {
@@ -147,6 +158,15 @@ bpe_tokenizer *bpe_load(const char *path) {
     /* USER_DEFINED is type 4 in tokenizer.ggml.token_type. CONTROL (3) is deliberately left
      * out: the reference only splits on those when asked to parse specials, and a prompt that
      * happens to spell one should not become that token by accident. */
+    /* qwen2 lets a word absorb one preceding character that is neither letter, digit nor
+     * newline — a tab or a space alike — and takes a run of newlines whole. GPT-2, and the
+     * olmo variant OLMoE declares, hand a whitespace run's last character to the word only
+     * when it is a space. Anything else, including a file with no key at all, gets the GPT-2
+     * rule, which is what llama.cpp falls back to. */
+    char pre[64] = {0};
+    if (gguf_read_str_kv(path, "tokenizer.ggml.pre", pre, sizeof(pre)) == 0)
+        t->pre_qwen2 = (strcmp(pre, "qwen2") == 0);
+
     int ntt = 0;
     int32_t *ttypes = gguf_read_i32_array(path, "tokenizer.ggml.token_type", &ntt);
     if (ttypes && ntt == nt) {
@@ -493,21 +513,48 @@ static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int 
     text[L] = 0;
     int no = 0, i = 0;
     while (i < L) {
-        /* pre-tok piece: [i, j). One space belongs to the run that follows it, but a RUN of
-         * spaces does not — GPT-2 splits `\s+(?!\S)` off first, so four spaces before a word
-         * are three spaces and then " word". Taking each space as its own piece instead is
-         * quiet on prose and loud on code: an indented line came out as three separate
-         * space tokens where the reference emits one, and every position after it shifted. */
+        /* pre-tok piece: [i, j), following GPT-2's pattern rather than approximating it.
+         *
+         * Whitespace is split by `\s+(?!\S)` before anything else: a run of it goes out whole
+         * when nothing follows, and otherwise gives up its LAST character. What happens to
+         * that last character is decided by the alternatives that come next — ` ?\p{L}+` and
+         * its siblings begin with an optional *space*, not with optional whitespace. So a
+         * trailing space joins the word after it and a trailing tab or newline does not; it
+         * stands alone, matched by the bare `\s+` at the end of the pattern.
+         *
+         * This treated only ' ' as whitespace until now, which is right for prose and wrong
+         * for anything indented with tabs: `x\n\t\tdeep` came out as "x" + "\n\t\tdeep"
+         * where the reference reads "x" + "\n\t" + "\t" + "deep", and every id after it
+         * differed. Space-indented code happened to agree, which is why it went unseen. */
         int j;
-        int run = 0;
-        while (i + run < L && text[i + run] == ' ') run++;
-        if (run > 1) {
-            /* A run of spaces: all but the last are one piece, and the last one goes with
-             * the word after it. At end of text there is no word, so the run stays whole. */
-            j = (i + run < L) ? i + run - 1 : L;
+        if (t->pre_qwen2) {
+            /* What this tree has always done, kept unchanged and now named: a run of spaces
+             * gives up its last one to the word, and everything else runs together until the
+             * next space. That is not GPT-2's rule, but it is what qwen2's pattern amounts to
+             * on the text these models see — a word may take one preceding character of any
+             * kind, and a run of newlines is one piece. Measured against llama-tokenize on
+             * every whitespace shape this repo tests, it agrees. */
+            int run = 0;
+            while (i + run < L && text[i + run] == ' ') run++;
+            if (run > 1) j = (i + run < L) ? i + run - 1 : L;
+            else {
+                j = i + 1;
+                while (j < L && text[j] != ' ') j++;
+            }
         } else {
-            j = i + 1;
-            while (j < L && text[j] != ' ') j++;
+            int run = 0;
+            while (i + run < L && nt_is_ws(text[i + run])) run++;
+            if (run > 0) {
+                if (i + run >= L)      j = L;           /* nothing follows: the run goes whole */
+                else if (run > 1)      j = i + run - 1; /* the last character goes to the word */
+                else if (text[i] == ' ') {              /* a lone space joins the word after it */
+                    j = i + 1;
+                    while (j < L && !nt_is_ws(text[j])) j++;
+                } else                 j = i + 1;       /* a lone tab or newline stands alone */
+            } else {
+                j = i + 1;
+                while (j < L && !nt_is_ws(text[j])) j++;
+            }
         }
         int nsym = j - i;
         char **sym = (char**)malloc(nsym * sizeof(char*));
