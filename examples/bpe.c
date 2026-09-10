@@ -100,7 +100,7 @@ struct bpe_tokenizer {
      * carries twenty-five of these and they are all whitespace runs. */
     int *added_id;      /* ids, longest string first */
     int n_added;
-    int add_bos, bos_id;
+    int add_bos, bos_id, bos_declared;
 };
 
 /* U+2581 LOWER ONE EIGHTH BLOCK — SentencePiece's space. */
@@ -200,15 +200,52 @@ bpe_tokenizer *bpe_load(const char *path) {
             snprintf(name, sizeof(name), "<0x%02X>", b);
             t->byte_id[b] = smap_get(&t->vocab, name);
         }
-        /* This family always opens with <bos>, and the file says so rather than the code
-         * assuming it. Getting it wrong costs more than a token: Gemma without its opening
-         * marker answers a different question. */
+    }
+
+    /* Whether a sequence opens with a beginning-of-text token, for every scheme and not
+     * just for the one that noticed first.
+     *
+     * The rule is: the file decides, and when the file declines to say, nothing is
+     * prepended. That is deliberately not what the reference does — it falls back to a
+     * default per tokenizer kind, true for SentencePiece — and the reason is measured
+     * rather than preferred. Every foreign model on this machine states the key outright:
+     * Ministral-3-3B says true, Qwen3.5-0.8B, Qwen3-4B, smallcoder-303M, wtforacle and
+     * doe-coder all say false. Ministral is the one that matters twice, because it is a
+     * byte-level file that wants an opening marker — so "byte-level means no BOS" is not
+     * a safe default either. The key is the answer; the scheme is not.
+     *
+     * The only file here that omits the key is one of ours, and it demonstrably was not
+     * trained with one: nano_arianna Q8_0 at temp 0 answers "the cathedral of the French
+     * language, the most important document in the world" without a prepended <s>, and
+     * "the pain, there there there there" with one. "Resonance is" degenerates to
+     * whitespace. Guessing on this file's behalf costs the model its voice, and the
+     * reference's guess is the one that costs it.
+     *
+     * So a file that says nothing gets nothing, and the disagreement with llama-tokenize
+     * that follows is a disagreement about a question the file did not answer. */
+    {
         uint64_t v = 0;
-        t->bos_id = (gguf_read_uint_kv(path, "tokenizer.ggml.bos_token_id", &v) == 0) ? (int)v : 2;
-        t->add_bos = (gguf_read_uint_kv(path, "tokenizer.ggml.add_bos_token", &v) == 0) ? (int)v : 1;
+        t->bos_declared = (gguf_read_uint_kv(path, "tokenizer.ggml.add_bos_token", &v) == 0);
+        /* One family keeps a default, and it keeps it because somebody measured it rather
+         * than assumed it: Gemma 4 without its opening marker answers a different question.
+         * That is a statement about that family, not about SentencePiece at large, so it
+         * does not spread to the file above it. */
+        t->add_bos = t->bos_declared ? (int)v : (t->spm_bpe ? 1 : 0);
+        uint64_t b = 0;
+        t->bos_id = (gguf_read_uint_kv(path, "tokenizer.ggml.bos_token_id", &b) == 0)
+                  ? (int)b : (t->spm_bpe ? 2 : 1);
+        if (t->add_bos && (t->bos_id < 0 || t->bos_id >= t->n_tokens)) {
+            fprintf(stderr, "bpe: bos id %d is outside a %d-token vocabulary — not prepending\n",
+                    t->bos_id, t->n_tokens);
+            t->add_bos = 0;
+        }
     }
     return t;
 }
+
+int bpe_add_bos(const bpe_tokenizer *t)      { return t ? t->add_bos : 0; }
+int bpe_bos_id(const bpe_tokenizer *t)       { return t ? t->bos_id : -1; }
+int bpe_bos_declared(const bpe_tokenizer *t) { return t ? t->bos_declared : 0; }
 
 void bpe_free(bpe_tokenizer *t) {
     if (!t) return;
@@ -304,6 +341,7 @@ static int spm_encode(const bpe_tokenizer *t, const char *text, int *out, int ca
     #undef PAIR
 
     int no = 0;
+    if (t->add_bos && no < cap) out[no++] = t->bos_id;
     for (int i = 0; i >= 0 && no < cap; i = nxt[i]) {
         memcpy(tmp, buf + off[i], (size_t)len[i]);
         tmp[len[i]] = 0;
@@ -417,13 +455,18 @@ int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
     if (t && t->spm_bpe) return spm_bpe_encode(t, text, out, cap);
     if (t && t->spm) return spm_encode(t, text, out, cap);
     if (!t) return 0;               /* the span path reads t->byte_cp on its first line */
-    if (t->n_added <= 0) return bpe_encode_span(t, text, (int)strlen(text), out, cap);
+    /* Byte-level vocabularies usually say add_bos_token = false and this is a no-op; the
+     * ones that ask for it get it here, once, before any span is merged. */
+    int bos = (t->add_bos && cap > 0) ? 1 : 0;
+    if (bos) out[0] = t->bos_id;
+    if (t->n_added <= 0)
+        return bos + bpe_encode_span(t, text, (int)strlen(text), out + bos, cap - bos);
 
     /* Added tokens are matched against the raw text first, longest at each position, and the
      * merge path only ever sees what lies between them. Doing it the other way round cannot
      * work: these tokens are stored as literal bytes, so no sequence of merges over the
      * byte-level alphabet will ever spell one. */
-    int no = 0, L = (int)strlen(text), i = 0, gap = 0;
+    int no = bos, L = (int)strlen(text), i = 0, gap = 0;
     while (i < L) {
         int hit = -1, hlen = 0;
         for (int a = 0; a < t->n_added; a++) {

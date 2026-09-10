@@ -32,6 +32,13 @@ int bpe_encode(const bpe_tokenizer *t, const char *text, int *out_ids, int cap);
  * Returns bytes appended. */
 int bpe_decode_token(const bpe_tokenizer *t, int id, char *buf, int cap);
 
+/* Whether a sequence opens with a beginning-of-text token, which one, and whether the
+ * file said so at all. A file that does not declare it gets nothing prepended — see the
+ * note in bpe.c for why that differs from the reference on purpose. */
+int bpe_add_bos(const bpe_tokenizer *t);
+int bpe_bos_id(const bpe_tokenizer *t);
+int bpe_bos_declared(const bpe_tokenizer *t);
+
 /* id of an exact token string (e.g. "<|im_start|>"), or -1 if absent. */
 int bpe_token_id(const bpe_tokenizer *t, const char *token);
 
