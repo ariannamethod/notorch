@@ -13,6 +13,84 @@ Newest entries on top.
 
 ---
 
+## 2026-09-10 — the vocabulary goes into the file, and three things the gate found on the way
+
+`tools/gguf_add_tokenizer.c` writes a byte-level BPE vocabulary into a GGUF
+that has none. Resonance 200M was one: 243 tensors, eleven architecture keys,
+and a vocabulary that lived in its trainer's source as 16128 integer merge
+pairs — readable by the AML program it was written for and by nothing else.
+
+The integers are ids in the space the weights were trained in: id *i* is byte
+*i*, id 256+*k* is the *k*-th merge. GGUF wants strings, so each id is spelled
+in the GPT-2 byte-level alphabet and the merges are those spellings in pairs.
+Order is the weights' order, not the alphabet's: sorted differently, the
+tokenizer addresses different rows of the embedding table and the model answers
+fluently and wrongly.
+
+Nothing in the tensor data moves. The header is rewritten with three more keys,
+the existing keys are copied as bytes — `gguf_open` skips array-valued ones and
+cannot give them back — the tensor directory is re-emitted with its offsets
+unchanged, and the data section goes across whole. 398 408 608 bytes in,
+398 908 384 out.
+
+**The tool's own check caught the tool's first bug.** Reading "every integer in
+the file" is the obvious way to parse the merge list and the wrong one: the
+trainer's C header also states its vocabulary size and merge count in its
+`#define`s and comments, which added four pairs and made a vocabulary four rows
+longer than the model has. `resonance.vocab_size` in the file said 16384
+against the 16388 those merges produced, and the run stopped. Integers now
+count only inside brackets when the file brackets them.
+
+After: `make test_bpe` on the new file reads a byte-level scheme with 16384
+tokens and passes all seven round-trips, and `notorch <file> "The field is"`
+tokenizes, runs and prints *"not a fixed point, but a living field where every
+wave is a wave in the air, a"* — the same text the reference produces from ids,
+now from one file with nothing beside it.
+
+**Three findings, in falling order of how much they matter.**
+
+*The harness never prepends BOS.* Pointing `test_tokenizer.sh` at a
+SentencePiece model for the first time made it visible: on nano_arianna Q8_0
+the reference answers `1,338,3228,282,4135,313` where we answer
+`338,3228,282,4135,313`, and every id after the first is identical on all four
+texts that ran. The file carries no `add_bos_token` key and `bos_token_id = 1`;
+the reference's rule is the key when present and otherwise the tokenizer's
+default, which is true for llama/SPM and false for gpt2 — smallcoder-303M says
+`add_bos_token = false` explicitly, which is why byte-level models passed. So
+for most llama-family files the model has been receiving a prompt without the
+token it was trained to see. Not fixed here, and the reason is a fork rather
+than an omission: `examples/infer_llama.c` does not prepend either, so adding
+it breaks `test_parity.sh` by construction. The example is the wrong reference
+for this question and `llama-tokenize` is the right one, but retiring a frozen
+reference is a decision, not a patch.
+
+*`bpe_encode` splits on spaces where the reference applies a regex.* On
+smallcoder-303M, an indented multi-line text diverges at one position: ours
+`...711,203,264,442...` against theirs `...711,284,442...`, one of their tokens
+against two of ours, everything before and after identical. A newline followed
+by indentation is one merge in their pre-tokenizer and two symbols in ours.
+Seven of eight texts pass; this is the eighth. Same shape as the OLMoE
+added-token find — the gate was not weak in its texts, it was weak in its
+corpus, and Qwen and Gemma happen to split this text the same way we do.
+
+*llama.cpp cannot load `resonance` at all* — `unknown model architecture` — so
+parity against the reference engine is unavailable for the Method's own
+families by construction. It reads the file, reports its format and size, and
+stops at the architecture table. Worth knowing before a campaign that plans to
+hold llama.cpp beside every model: Resonance and Janus are measured against the
+Method's own forward, and only the standard families get Gerganov.
+
+**Three gate defects fixed in passing, all exposed by running it here.** A
+model the reference cannot load is now SKIPPED with the reason printed instead
+of reporting eight mismatches against an empty answer. Zero checks now report
+SKIPPED rather than a green with nothing behind it — the same lie as the red
+with nothing behind it. And the reference's output is read under `LC_ALL=C`,
+because the awk macOS ships aborts on a multibyte character it cannot convert
+and two of the gate's texts are Cyrillic and emoji; those two now compare and
+pass.
+
+---
+
 ## 2026-09-10 — Resonance comes home, and the file's shapes are written backwards
 
 `harness/arch_resonance.c` runs Resonance 200M — E=768, H=12, D=64, FFN=2048,

@@ -226,6 +226,13 @@ test_harness: notorch llama
 test_resonance:
 	./harness/test_resonance.sh $(MODEL)
 
+# Write a byte-level BPE vocabulary into a GGUF that has none, so the file can
+# be read by something other than the program it was written for.
+#   make gguf_add_tokenizer && ./gguf_add_tokenizer in.gguf out.gguf merges
+gguf_add_tokenizer: tools/gguf_add_tokenizer.c gguf.c gguf.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o gguf_add_tokenizer tools/gguf_add_tokenizer.c gguf.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: gguf_add_tokenizer"
+
 # Tokenizer ids against llama.cpp's, which is the only definition of a tokenizer being
 # right. Skips itself where llama-tokenize is not installed. MODEL= to aim it.
 test_tokenizer: notorch
