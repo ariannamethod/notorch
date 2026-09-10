@@ -281,6 +281,15 @@ int main(int argc, char **argv) {
         int n = bpe_encode(tok, text, ids, (int)(sizeof(ids) / sizeof(ids[0])));
         for (int i = 0; i < n; i++) printf("%d%s", ids[i], i + 1 < n ? "," : "\n");
         if (n == 0) printf("\n");
+        /* On stderr, so the ids on stdout stay a bare list: whether this file asked for an
+         * opening token. A file that does not declare one is where we part from the
+         * reference on purpose, and a gate comparing the two needs to be told which case
+         * it is looking at rather than guessing from a length difference. */
+        if (bpe_bos_declared(tok))
+            fprintf(stderr, "bos: %d (the file asks for %s)\n",
+                    bpe_bos_id(tok), bpe_add_bos(tok) ? "one" : "none");
+        else
+            fprintf(stderr, "bos: undeclared (the file does not say; nothing prepended)\n");
         bpe_free(tok);
         return 0;
     }

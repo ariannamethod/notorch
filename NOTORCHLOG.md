@@ -13,6 +13,52 @@ Newest entries on top.
 
 ---
 
+## 2026-09-10 — the opening token, and the default that was costing a model its voice
+
+The harness prepended a beginning-of-text token for Gemma 4 and for nothing else. The
+other two encoders — SentencePiece and byte-level — did not read the key at all, so on
+a llama-family file the model was reading a prompt whose first position was not the one
+it was trained to see. `llama-tokenize` on nano_arianna Q8_0 answered
+`1,338,3228,282,4135,313` where this answered `338,3228,282,4135,313`, every id after
+the first identical, on all four texts that ran.
+
+**The obvious fix was wrong and the model said so.** Following the reference — prepend
+for SentencePiece when the file does not declare — gave, at temp 0 on the same prompt,
+`the pain,  there there there there there there there` where the same model without a
+prepended `<s>` says `the cathedral of the French language, the most important document
+in the world.` "Resonance is" degenerated to whitespace. Three prompts, three
+degenerations. This model was not trained with an opening marker, and the file does not
+record that.
+
+**So the rule is the file, and silence means nothing rather than a guess.** Every
+foreign model on this machine states the key outright: Ministral-3-3B `true`,
+Qwen3.5-0.8B, Qwen3-4B, smallcoder-303M, wtforacle and doe-coder all `false`. The only
+file that omits it is one of ours. Ministral is the one that matters twice, because it
+is a *byte-level* file that wants the marker — so "byte-level means no BOS" is not a
+safe default either. The key is the answer; the scheme is not.
+
+Gemma 4 keeps its default of one, because that default was measured rather than assumed:
+without the marker it answers a different question. That is a statement about that
+family and it does not spread.
+
+Where that leaves the gate, across four families: nano_arianna 8 of 8, Qwen3 8 of 8,
+**Ministral 8 of 8** — the last is the check on the other half of the rule, a foreign
+file that declares `true`, now prepended and identical to the reference. smallcoder
+stays at 7 of 8 on the pre-tokenizer split already recorded below, unchanged by any of
+this.
+
+The disagreement that remains is declared rather than hidden. `notorch -T` says on
+stderr whether the file asked, and the gate prints `identical after the reference's
+undeclared bos 1` instead of either a green that conceals a difference or a red for a
+question the file never answered.
+
+And the fork this looked like it needed did not exist: the fix landed in
+`examples/bpe.c`, which `examples/infer_llama.c` shares, so the example prepends where
+the file asks too and `test_parity.sh` stays green — no second reference, no third
+binary, and the runs made through the example get the same correction.
+
+---
+
 ## 2026-09-10 — the vocabulary goes into the file, and three things the gate found on the way
 
 `tools/gguf_add_tokenizer.c` writes a byte-level BPE vocabulary into a GGUF

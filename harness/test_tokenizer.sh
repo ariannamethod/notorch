@@ -77,6 +77,8 @@ for M in $MODELS; do
     echo "tokenizer  [$NAME] SKIPPED — $WHY"
     continue
   fi
+  BOS_UNDECLARED=0
+  ./notorch -T "$M" "x" 2>&1 >/dev/null | grep -q "bos: undeclared" && BOS_UNDECLARED=1
   for P in "$@"; do
     OURS=$(./notorch -T "$M" "$P" 2>/dev/null)
     # LC_ALL=C because the awk that ships with macOS aborts on a multibyte
@@ -87,6 +89,12 @@ for M in $MODELS; do
     SHORT=$(printf '%s' "$P" | tr '\n' ' ' | cut -c1-40)
     if [ "$OURS" = "$THEIRS" ]; then
       echo "tokenizer  [$NAME] \"$SHORT\"  $(printf '%s' "$OURS" | tr ',' '\n' | grep -c .) ids  identical  PASS"
+    elif [ "$BOS_UNDECLARED" = "1" ] && [ "$THEIRS" = "${THEIRS%%,*},$OURS" ]; then
+      # The file does not say whether it wants an opening token; the reference assumes one
+      # for SentencePiece and we assume nothing (examples/bpe.c says why, with the text it
+      # costs). So one leading id and an otherwise identical list is the disagreement we
+      # chose, and it is named here rather than hidden or reported as a fault.
+      echo "tokenizer  [$NAME] \"$SHORT\"  identical after the reference's undeclared bos ${THEIRS%%,*}  PASS"
     else
       echo "tokenizer  [$NAME] \"$SHORT\"  FAIL"
       echo "  ours:   $OURS"
