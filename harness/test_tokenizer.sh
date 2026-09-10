@@ -68,9 +68,21 @@ FAILS=0
 CHECKS=0
 for M in $MODELS; do
   NAME=$(basename "$M")
+  # The reference loads the whole model to reach its vocabulary, so a family it
+  # does not implement — resonance, for one — leaves it with nothing to say. A
+  # gate with no reference has not failed, it has not run, and reporting eight
+  # mismatches against an empty answer would be a red light meaning nothing.
+  if ! "$REF" -m "$M" -p "x" >/dev/null 2>&1; then
+    WHY=$("$REF" -m "$M" -p "x" 2>&1 | grep -m1 -i "error" || echo "the reference could not load it")
+    echo "tokenizer  [$NAME] SKIPPED — $WHY"
+    continue
+  fi
   for P in "$@"; do
     OURS=$(./notorch -T "$M" "$P" 2>/dev/null)
-    THEIRS=$("$REF" -m "$M" -p "$P" 2>/dev/null | awk -F" -> " 'NF>1 { gsub(/[^0-9]/, "", $1); if ($1 != "") printf "%s%s", (n++ ? "," : ""), $1 } END { print "" }')
+    # LC_ALL=C because the awk that ships with macOS aborts on a multibyte
+    # character it cannot convert, and two of these texts are Cyrillic and
+    # emoji. The fields being read are digits either way.
+    THEIRS=$("$REF" -m "$M" -p "$P" 2>/dev/null | LC_ALL=C awk -F" -> " 'NF>1 { gsub(/[^0-9]/, "", $1); if ($1 != "") printf "%s%s", (n++ ? "," : ""), $1 } END { print "" }')
     CHECKS=$((CHECKS + 1))
     SHORT=$(printf '%s' "$P" | tr '\n' ' ' | cut -c1-40)
     if [ "$OURS" = "$THEIRS" ]; then
@@ -84,7 +96,11 @@ for M in $MODELS; do
   done
 done
 
-if [ "$FAILS" -eq 0 ]; then
+if [ "$CHECKS" -eq 0 ]; then
+  # Green with nothing behind it is the same lie as a red with nothing behind
+  # it: every model given was one the reference could not open.
+  echo "NOTORCH_TOKENIZER_SKIPPED (no model the reference could load)"
+elif [ "$FAILS" -eq 0 ]; then
   echo "NOTORCH_TOKENIZER_OK ($CHECKS checks)"
 else
   echo "NOTORCH_TOKENIZER_FAIL ($FAILS of $CHECKS)"
