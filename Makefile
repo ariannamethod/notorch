@@ -203,12 +203,12 @@ llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorc
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
-HARNESS_SRC = harness/main.c harness/runtime.c harness/arch_llama.c harness/arch_gemma4.c harness/arch_olmoe.c examples/bpe.c gguf.c notorch.c
+HARNESS_SRC = harness/main.c harness/runtime.c harness/arch_llama.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_resonance.c examples/bpe.c gguf.c notorch.c
 HARNESS_HDR = harness/arch.h harness/runtime.h harness/logo.h examples/bpe.h gguf.h notorch.h
 
 # `harness` is phony because a directory of that name sits right there, and
 # make would otherwise call it up to date and build nothing.
-.PHONY: harness test_harness
+.PHONY: harness test_harness test_resonance
 
 harness: notorch
 
@@ -220,6 +220,11 @@ notorch: $(HARNESS_SRC) $(HARNESS_HDR)
 # nothing. MODEL= to point it at one file, otherwise it looks for its defaults.
 test_harness: notorch llama
 	./harness/test_parity.sh $(MODEL)
+
+# Resonance against the forward it was ported from. The reference stays in
+# arianna.c; what lives here is its answer, frozen in tests/resonance_golden_v3.txt.
+test_resonance:
+	./harness/test_resonance.sh $(MODEL)
 
 # Tokenizer ids against llama.cpp's, which is the only definition of a tokenizer being
 # right. Skips itself where llama-tokenize is not installed. MODEL= to aim it.

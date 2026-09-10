@@ -34,5 +34,6 @@ typedef struct {
 extern const nt_arch nt_arch_llama;
 extern const nt_arch nt_arch_gemma4;
 extern const nt_arch nt_arch_olmoe;
+extern const nt_arch nt_arch_resonance;
 
 #endif

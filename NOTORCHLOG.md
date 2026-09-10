@@ -13,6 +13,74 @@ Newest entries on top.
 
 ---
 
+## 2026-09-10 — Resonance comes home, and the file's shapes are written backwards
+
+`harness/arch_resonance.c` runs Resonance 200M — E=768, H=12, D=64, FFN=2048,
+V=16384, 20 blocks, ctx 2048, rrpram_rank 48. It is the Method's own
+architecture and the first one here that was already running somewhere else:
+the forward has lived in `arianna.c/tools/resonance_forward.h`, behind an AML
+program, since long before this harness existed.
+
+A block runs two attentions over one set of values. The first is the ordinary
+content attention. The second, RRPRAM, never looks at a key: it maps the
+normalised input through a learned low-rank basis, `temp[r] = Σ_e xn[e]·wr_a[h,e,r]`,
+and scores position *j* against a second learned basis, `Σ_r temp[r]·wr_b[h,r,j]`.
+One is addressed by content and the other by position, over the same V, and a
+per-head sigmoid decides the mix. The second basis carries the context length
+in its shape — `wr_b` is [H, R, T] — so past T the model has no basis at all.
+
+**The port was wrong and the gate said where.** Not the architecture: the
+shapes. This file writes `ne` outer dimension first, the reverse of the ggml
+convention `wt_load` reads. `mlp.w_gate.weight` is `ne=[2048,768]` where a
+llama-family file would write `ne=[768,2048]`, and `wr_a` is `ne=[12,768,48]`,
+which only reads as [H,E,R] outer-first. Square matrices hide it completely —
+`wq/wk/wv/wo` come out identical either way — and every other tensor comes out
+transposed, which is fluent, confident, wrong text. The shapes now come from
+the architecture's own config, the way the reference always took them; the
+dtype still comes from the file.
+
+Finding it took a bisection rather than a reading. Position 0 was the lever:
+there the softmax is over one score, so both attentions reduce to V exactly and
+the blend is V whatever the gate says, and RoPE at pos 0 is the identity. That
+left embedding, norms, projections and MLP — and the residual stream matched
+bit for bit at the entry to block 0 and differed by 4.39 at block 1, so the
+fault was inside one block with two thirds of it already excluded. Dumping the
+blend narrowed it to what came after.
+
+**What the comparison measures now.** Logits, not text, against the reference
+forward built standalone against this tree: at one position the two agree bit
+for bit, 0.000e+00 across all 16384; from two positions on, 1.3e-05 to 1.8e-05
+absolute against a mean |logit| of 1.589. That residue is named rather than
+tolerated — rebuilding the port with `-U__ARM_NEON` gives 0.000e+00 at two,
+three and twelve positions, so it is exactly the four-lane accumulation in
+`dot_f32`/`axpy_f32` against the reference's scalar loops. Twenty greedy tokens
+are identical: "The field is not a fixed point, but a living field where every
+wave is a wave in the air, a".
+
+Red hand on both halves of the block, and the second one is why this gate reads
+logits. Swapping content and rrpram inside the per-head gate moves the argmax
+from 432 to 262 and the logits by 4.8. Transposing `wr_a` **leaves the argmax at
+432** and moves the logits by 5.6 — a text comparison would have called that a
+pass. `harness/test_resonance.sh` holds the reference's eight largest logits in
+`tests/resonance_golden_v3.txt` at a 1e-3 tolerance, and reads 4.29e-06.
+
+Adding the family needed no change to `harness/runtime.c` or to the interface —
+one file, one line in the table, and one local loader that overrides the shape
+convention for this file.
+
+Still open, and it is what stops this being finished: **the GGUF carries no
+tokenizer.** No `tokenizer.ggml.tokens`, no merges, no scores — 243 tensors and
+eleven architecture keys. The vocabulary lives in `arianna.c`'s source as 16128
+integer merge pairs, so neither this harness nor llama.cpp can read the file on
+its own, and the gate above had to be driven by ids. The canonical tokenizer on
+the Hub confirms what those integers mean: all 16128 merge pairs match its
+string pairs exactly, and its `idmap` shows the model's id space is byte-order
+— id *i* is byte *i*, id 256+*k* is merge *k* — while the Hub's JSON is in
+`tokenizers`' own codepoint-rank order. Baking the vocabulary into a copy of
+the file, in byte-order, is the next piece.
+
+---
+
 ## 2026-09-09 — Q4_K keeps four running sums, and stops being the slow format
 
 Q4_K read 13.0 GiB/s where Q4_0 read 17.3 on identical byte counts — 144 bytes per 256 values
