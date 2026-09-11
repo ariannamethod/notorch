@@ -36,5 +36,6 @@ extern const nt_arch nt_arch_gemma4;
 extern const nt_arch nt_arch_olmoe;
 extern const nt_arch nt_arch_mamba;
 extern const nt_arch nt_arch_resonance;
+extern const nt_arch nt_arch_janus;
 
 #endif

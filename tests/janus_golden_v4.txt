@@ -1,0 +1,30 @@
+# Janus v4 176M — the reference forward's answer, frozen.
+#
+# Source: ~/arianna-shared/arianna.c/tools/yent_forward.h, built standalone
+# against this tree's gguf.c and notorch.c, run on janus_arianna_q8_0.gguf with
+# token ids 84 104 101 32 102 105 101 108 100, one position per call — the
+# autoregressive path, not the batched one. These are the eight largest logits
+# of the last position, after the 15*tanh(l/15) cap.
+#
+# Why the per-token path and not the batched prefill: they are not the same
+# model. The batched one sums the low-rank RRPRAM state over every position of
+# the prompt and hands that to all of them, so row 0's scores carry tokens that
+# come after it; the per-token path accumulates, which is causal. On this prompt
+# the two answer 8.84566784 and 8.80177402 for the same argmax. The port takes
+# the causal reading.
+#
+# Tolerance is 1e-3 against a build with JANUS_EXACT_MATVEC, which is the
+# comparison that measures the forward. Observed: 3.338e-05. The shipped build
+# prefers the integer matvec where this family's own engine calls the exact one,
+# and sits 1.240e-01 from these numbers — that is the approximation, not a
+# defect, and the gate checks it by generation instead of by tolerance.
+#
+# id  logit
+42 5.25581741
+257 7.41919184
+300 6.87517738
+575 8.80177402
+4346 6.0927968
+10801 6.16575289
+15666 6.94387293
+18604 5.44595575
