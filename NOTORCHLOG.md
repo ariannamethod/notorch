@@ -99,6 +99,60 @@ creating a second process for another agent.
 
 ---
 
+## 2026-09-11 — the format nobody optimized, because nobody ships it
+
+`nt_f16_rows` was a scalar loop over one half at a time, and so it read 9.02 GiB/s on
+[50304, 2048] where the Q8_0 kernel beside it read 18.90 — half the rate for the format that
+has the least to do, since f16 unpacks nothing. Eight halves a step through two FCVTLs and two
+f32 accumulators brings it to 17.92-18.74 across three runs, which is Q8_0's rate and therefore
+the machine's, so the matvec has nothing further to give. `taskset -c 4-7`, Exynos 1580,
+`make bench_dtype`.
+
+End to end on the two f16 files here, prompt and length fixed, four interleaved pairs of old
+binary against new so the machine's drift falls on both sides:
+
+    qwen05b_fp16.gguf   decode 8.1-8.4 -> 14.7-15.3 t/s    prefill 10.7-10.9 -> 19.3-20.7
+    mamba-130m-f16      decode 21.4-23.6 -> 39.2-40.0      prefill 24.7-30.3 -> 41.0-45.7
+
+Interleaving is not decoration. The first attempt at the qwen numbers ran all three old passes
+and then all three new ones, and reported the new kernel *slower* — 6.6 against 8.3 — with
+prefill swinging from 2106 ms to 734 ms inside one process. The file was 100 percent resident
+both times, checked with `mincore`, so the usual suspect was not it. Alternating the two
+binaries produced four consecutive agreeing pairs instead.
+
+Which leaves a fact about this machine worth writing down, because it will mislead the next
+person who looks: **load average here is permanently around 14 and means nothing.** Thirteen
+kernel threads — `tz_worker_thread/0` through `/7`, `ree_time`, `tz_iwlog_thread` and their
+neighbours — sit in uninterruptible sleep forever. Linux counts D state toward load, so the
+number reads as an overloaded machine while no core is contended.
+
+Why it matters beyond one format: f16 is what a model is before anybody quantizes it. Mamba's
+whole decode is f16 because that is the only checkpoint published, the first download of
+anything is f16, and a dtype with no packed kernel falls back to it.
+
+**The gate is new and the first two versions of it were worthless.** `tests/test_f16_matvec.c`
+compares against a double accumulation across every k from 1 to 40 — every remainder of the
+vector step several times over — plus long rows where a dropped tail would be a small fraction
+of the answer. Version one used tidy values on both sides: every partial sum was exact in f32
+and the worst error came out a clean zero for every k, which is not a strong result, it is a
+measurement that cannot see the thing that changed. Version two gave the activation a full
+mantissa and went red on correct code, because it normalised the error by the answer — and a
+dot product of 2048 signed terms cancels, so a sum of magnitude one over terms of magnitude
+one divides by nearly nothing. Normalised by the sum of the magnitudes it reports what it
+means. Red-hand: dropping the scalar tail turns 37 checks red and the binary returns 1;
+restoring it returns 0.
+
+The tolerance is one part in a hundred thousand, set by the machine without a vector path
+rather than this one — a serial sum of 2048 terms drifts by about the square root of that many
+epsilons. The vector path measures 2.5e-8 against it.
+
+`bench_dtype` grew F16 and F32 columns, which is how the gap was found in the first place.
+
+Gates: 17 suites green, tokenizer identical on 24, harness parity OK on Q4_0, and both f16
+models byte-identical to the reference on three prompts each.
+
+---
+
 ## 2026-09-11 — a family with no attention, and the interface holds a fifth time
 
 `harness/arch_mamba.c` runs Mamba. Everything this tree had run until now keeps a KV cache and

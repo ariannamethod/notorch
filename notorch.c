@@ -5297,13 +5297,34 @@ static void nt_q6_k_rows(float *out, const uint8_t *W, const float *x,
 
 // F16: contiguous half weights — converted per element. Keeps weights at 2 B/param
 // (half the RAM of dense f32) without ever materializing a full f32 tensor.
+/* Eight halves a step, converted in two FCVTLs and accumulated in two f32 lanes. The scalar
+ * loop this replaces read 9.02 GiB/s on [50304, 2048] where Q8_0 beside it read 18.90 — half
+ * the rate for a format that does no unpacking at all, because a per-element __fp16 cast the
+ * compiler will not gather into FCVTL costs more than the four bits Q4_0 has to unpick. Every
+ * f16 file in the tree was paying that, and an f16 file is what a model looks like before
+ * anyone quantizes it: Mamba's whole decode is f16, and so is the first download of anything.
+ *
+ * Two accumulators rather than one because the sum is the dependency chain here, not the
+ * loads — and rather than four, because four measured the same and costs a wider tail. This
+ * is a different summation order from the scalar loop, so the last bit moves; the gate for
+ * that is tests/test_f16_matvec.c, which holds both orders and compares them. */
 static void nt_f16_rows(float *out, const uint8_t *W, const float *x,
                         int r0, int r1, int k) {
     const uint16_t *Wh = (const uint16_t *)W;
     for (int row = r0; row < r1; row++) {
         const uint16_t *r = Wh + (long)row * k;
         float acc = 0.0f;
-        for (int j = 0; j < k; j++) acc += nt_f16_to_f32(r[j]) * x[j];
+        int j = 0;
+#if defined(__aarch64__) && defined(__ARM_NEON)
+        float32x4_t a0 = vdupq_n_f32(0.0f), a1 = vdupq_n_f32(0.0f);
+        for (; j + 8 <= k; j += 8) {
+            float16x8_t h = vreinterpretq_f16_u16(vld1q_u16(r + j));
+            a0 = vfmaq_f32(a0, vcvt_f32_f16(vget_low_f16(h)),  vld1q_f32(x + j));
+            a1 = vfmaq_f32(a1, vcvt_f32_f16(vget_high_f16(h)), vld1q_f32(x + j + 4));
+        }
+        acc = vaddvq_f32(vaddq_f32(a0, a1));
+#endif
+        for (; j < k; j++) acc += nt_f16_to_f32(r[j]) * x[j];
         out[row] = acc;
     }
 }
