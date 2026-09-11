@@ -13,6 +13,23 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — one work contract for every agent in the tree
+
+`AGENTS.md` makes the repository's existing engineering discipline explicit for
+Codex, Claude, Gemini, and any later routed agent. It keeps the branch-only rule,
+the measured-claim rule, red-hand verification, the split between README and
+this log, and the Method commit format. It also records what the new harness has
+made load-bearing: architecture arithmetic stays behind `arch.h`, standard
+families earn tokenizer/logit/output parity against the reference, Metal remains
+a first-class backend, and DoE must not make the single-body path lie.
+
+This changes no arithmetic. The proof for the change is therefore structural:
+the instructions name only files and targets that exist in the current tree,
+and their branch, test, and logging rules agree with `CLAUDE.md` rather than
+creating a second process for another agent.
+
+---
+
 ## 2026-09-11 — a family with no attention, and the interface holds a fifth time
 
 `harness/arch_mamba.c` runs Mamba. Everything this tree had run until now keeps a KV cache and
