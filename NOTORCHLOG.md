@@ -13,6 +13,48 @@ Newest entries on top.
 
 ---
 
+## 2026-09-11 — a family with no attention, and the interface holds a fifth time
+
+`harness/arch_mamba.c` runs Mamba. Everything this tree had run until now keeps a KV cache and
+looks back at every token; Mamba carries a fixed-size state instead — a four-wide convolution
+window and sixteen numbers per channel — and each token updates it and reads an answer out.
+The file declares a context of 1048576 and means it, because context length is no longer a
+memory question.
+
+Parity with the reference is exact on three prompts at the first attempt. The arithmetic came
+from ggml's own kernels rather than from a description of the architecture:
+`ggml_compute_forward_ssm_conv_f32` and `ggml_compute_forward_ssm_scan_f32`, with the layer
+assembled in `models/mamba-base.cpp`. Two details would have been wrong from the paper alone —
+softplus carries a threshold at twenty, above which it returns its input unchanged, and the
+decay factor is per state element, which is Mamba-1; Mamba-2 has one per head and is a
+different family.
+
+**What it cost the interface: nothing, and one parameter is meaningless.** `arch.h` says that a
+family which cannot be added without editing `runtime.c` means the interface is lying. It did
+not have to be edited. But `kv_cache` has nowhere to go here, so the state lives in the model
+and resets when `pos0` is zero — which the harness's `-r` mode makes load-bearing, since a
+second run of the same prompt would otherwise answer with the first one still inside it. Two
+runs in one process produce identical text, which is the check for that.
+
+**A reader bug fell out of the bring-up, and it was not about Mamba.** `gguf_dequant_row`
+returned success on a row that is not a whole number of blocks, and filled the tail with
+whatever followed in memory: 48 values of Q8_0 decoded as the 34 bytes of one block, the last
+sixteen floats uninitialised, one of them reading -3.2e28. The guard was `rb == 0`, which only
+catches a row shorter than a block — `gguf_dtype_nbytes` divides, so the remainder vanished.
+Every embedding lookup in this tree goes through that function. Fixed by checking the block
+size directly; the file that exposed it is a Mamba checkpoint whose `ssm_dt` rows are 48 wide,
+which current llama.cpp refuses to load at all.
+
+Speed, warm, against `llama-bench` on the same f16 file: decode **21.4 / 23.6 t/s against
+58.64**, prefill 24.7 / 30.3 against 309.74. The profile says where, and it is not where the
+architecture would suggest: the scan with its exponential per state element is 10.5 percent,
+the convolution 1.3, and the projections 46 with the head at 21.5. The model is f16 and this
+tree's fast kernels are for the packed formats — 257 MB a token at 23.6 t/s is 5.6 GiB/s where
+Q4_0 reaches 17. The reference manages 14 on the same file. So the gap is an f16 matvec
+question rather than a Mamba question, and it belongs to every f16 model here.
+
+---
+
 ## 2026-09-11 — what stands between this tokenizer and qwen2, named exactly
 
 The two whitespace shapes Qwen still disagrees on were attempted and the attempt is reverted.
