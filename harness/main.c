@@ -23,6 +23,7 @@ static const nt_arch *const ARCHS[] = {
     &nt_arch_olmoe,
     &nt_arch_mamba,
     &nt_arch_resonance,
+    &nt_arch_janus,
     &nt_arch_llama,
 };
 

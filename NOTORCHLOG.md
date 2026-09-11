@@ -13,6 +13,75 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — Janus, three attentions in one block, and a prefill that is not causal
+
+`harness/arch_janus.c` runs Janus v4 176M — E=640, H=10, D=64, FFN=1664,
+V=32768, 20 blocks, ctx 1024, rrpram rank 64. The second of the Method's own
+families to come home, and the first architecture here that needs state the
+shared cache does not carry.
+
+A block blends three attentions per head by a softmax over three learned
+logits: ordinary content attention, RRPRAM, and Echo. RRPRAM is not Resonance's.
+Its low-rank state accumulates across positions — `mid[r] += Σ_e norm(x)[e]·wr_a[h,e,r]`
+— and it reads its values through a projection of its own, so the cache holds
+three tensors and not two. Around the blocks sit a smear that mixes the previous
+token's embedding in through a gate on 24 dimensions, a per-layer remix
+`resid_lambda·x + x0_lambda·x0`, a mid-depth snapshot subtracted at the end, and
+a soft cap of `15·tanh(l/15)` on every logit.
+
+**The source's two paths are two models, not two implementations.** Its batched
+prefill sums the RRPRAM state over *every* position of the prompt and hands that
+to all of them, so row 0's scores carry tokens that come after it; its per-token
+path accumulates, which is causal. They answer differently on the same prompt —
+8.84566784 against 8.80177402 for the same argmax — and the smear is in the
+first and marked TODO in the second. The port takes the causal reading and says
+so in the file; the asymmetry is measured rather than quietly repaired.
+
+**The divergence that took the longest was not a bug in the port.** Logits sat
+6.278e-01 apart with the argmax agreeing, and the bisection put it inside block 0
+after the blend: `cat` matched to 1.050e-05, and the residual after the output
+projection differed by 2.148e-01. The cause is that Janus ships Q8_0 weights and
+`qmv` prefers `nt_qmatvec_i8` where this family's own engine calls the exact
+`nt_qmatvec`. Building the port with the exact matvec closes it to **6.103e-05**
+on the full vector. Resonance never showed this because its weights are F16 and
+there is no integer kernel for those.
+
+That is a difference between two engines, not a defect, and every quantized
+family in this harness has been taking the integer path since D0 — which is why
+parity with `examples/infer_llama.c` holds: the example does the same. So the
+harness keeps its convention, and the gate asks the question that matters
+instead of inventing a tolerance around the approximation: eight greedy tokens
+are identical on both matvec paths.
+
+`harness/test_janus.sh` is therefore two assertions with no grey zone. The
+exact-matvec build against the reference's eight largest logits, frozen in
+`tests/janus_golden_v4.txt`, worst 3.338e-05 against 1e-3. And the shipped build
+generating the same tokens as the exact one.
+
+Red hand on both halves of the block, and the second is why this gate reads
+logits rather than text — the third time in three ports. Rotating adjacent pairs
+instead of the split halves this family uses moved the argmax 575 → 5593 and the
+logits by 8.783e+00. Pointing RRPRAM at the ordinary value cache instead of its
+own projection **left the argmax at 575** and moved the logits by 3.688e+00.
+
+Adding the family changed no line of `harness/runtime.c` and no line of the
+interface beyond one `extern`. It is the first one to keep private state — a
+second value cache and the running low-rank sum, both owned by the architecture
+and sized against the cache it is handed, rather than widening `kv_cache` for
+one family.
+
+Open, and the same shape as Resonance's: the file carries no tokenizer, and this
+one cannot simply be baked. Its merge list makes 32759 ids where the file says
+32768; the nine above are special, and only five of them are named anywhere on
+this machine — 32759 BOS, 32760 and 32761 the user turn, 32762 and 32763 the
+assistant turn. The generated text is degenerate for a reason the source states
+outright: this family was trained with its prompt wrapped in those tokens, and
+a raw prompt produces off-voice salad. The harness has no notion of a chat
+template, and the deep body coming after this one will need the same thing in a
+different dialect.
+
+---
+
 ## 2026-09-12 — one work contract for every agent in the tree
 
 `AGENTS.md` makes the repository's existing engineering discipline explicit for
