@@ -13,6 +13,48 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the wrapping moves into the file, and two guards that were never guarding
+
+`NT_CHAT` proved the mechanism and left the ids in the operator's hands, which is
+the wrong place for them: they belong to the weights. `tools/gguf_add_tokenizer`
+now takes `--chat "before|after|stop"` and writes `notorch.chat.{before,after,stop}`
+into the file as INT32 arrays, and the harness reads them when `NT_CHAT` is unset.
+The environment still wins when it is set, because trying a different wrapping is
+how the right one is found in the first place.
+
+Janus v4 Q8_0 with `32759,32760|32761,32762|32763` baked in, no environment at all,
+against the same weights driven by `NT_CHAT`: byte-identical continuation, the
+harness reporting `chat: 2 ids before, 2 after, 1 stop (file)` where the other says
+`(NT_CHAT)`. The file grew 128 bytes and kept all 247 tensors. The original, read
+with no environment, prints no `chat:` line at all.
+
+**Both refusals in that tool were decoration.** The guard against writing a second
+tokenizer and the guard against writing a second wrapping both asked `gguf_get_kv`,
+and `gguf_open` does not parse array-valued keys — so the table answers "absent"
+for a key that is sitting in the file. Writing twice produced a GGUF carrying
+`notorch.chat.before` twice, with no rule about which copy a reader takes. This was
+found by running the refusal rather than by reading it: `--chat` on an
+already-wrapped file returned 0 and wrote the file. Both guards now go through the
+path readers, `gguf_read_str_array` and `gguf_read_i32_array`, which do parse
+arrays. The second wrapping is refused; the second tokenizer is refused and now
+says how many tokens the file already has. The comment three lines below the dead
+guards had stated the reason the whole time — the fix is to read the comment next
+to the code you are trusting.
+
+A `--chat` id outside the vocabulary the file declares is refused at write time as
+well as at read time: `--chat "32759|99999|32763"` against a 32768-token Janus exits
+1 and writes nothing.
+
+Gates: `NOTORCH_PARITY_OK` on six checks, `JANUS_OK` worst 3.338e-05 against 1e-3
+plus 8 greedy tokens identical on both matvec paths, `RESONANCE_OK` worst 4.290e-06,
+`NOTORCH_TOKENIZER_OK` on 8 checks. Nothing moved for a file with no chat keys:
+nano_arianna Q8_0 still encodes `The capital of France is` to `338,3228,282,4135,313`
+and still answers `the cathedral of the French language, the most important document
+in the world.`
+
+---
+
+
 ## 2026-09-12 — a chat template made of ids, because the strings are not always there
 
 Some families were trained with the prompt wrapped in tokens of their own, and

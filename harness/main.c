@@ -71,8 +71,10 @@ typedef struct {
  *   NT_CHAT="<before>|<after>|<stop>"   each a comma-separated id list
  *   NT_CHAT="32759,32760|32761,32762|32763"
  *
- * Fields may be empty. This is the mechanism; storing a file's own wrapping
- * inside the file, so that nobody has to type ids, is the step after it. */
+ * Fields may be empty. A file that carries its own wrapping needs none of this:
+ * notorch.chat.{before,after,stop} are read from the GGUF when NT_CHAT is unset,
+ * and tools/gguf_add_tokenizer --chat writes them. The environment still wins,
+ * because trying a different wrapping is how the right one gets found. */
 #define NT_CHAT_MAX 32
 
 typedef struct {
@@ -96,16 +98,37 @@ static int parse_ids(const char *s, int *out, int max) {
     return n;
 }
 
-static void chat_wrap_init(chat_wrap *w, int vocab) {
+static int chat_from_file(const char *path, const char *key, int *out, int cap) {
+    int n = 0;
+    int32_t *v = gguf_read_i32_array(path, key, &n);
+    if (!v) return 0;
+    if (n > cap) n = cap;
+    for (int i = 0; i < n; i++) out[i] = (int)v[i];
+    free(v);
+    return n;
+}
+
+static void chat_wrap_init(chat_wrap *w, int vocab, const char *path) {
     memset(w, 0, sizeof(*w));
     const char *spec = getenv("NT_CHAT");
-    if (!spec || !*spec) return;
-    const char *a = spec;
-    const char *b = strchr(a, '|');
-    const char *c = b ? strchr(b + 1, '|') : NULL;
-    w->n_before = parse_ids(a, w->before, NT_CHAT_MAX);
-    if (b) w->n_after = parse_ids(b + 1, w->after, NT_CHAT_MAX);
-    if (c) w->n_stop  = parse_ids(c + 1, w->stop,  NT_CHAT_MAX);
+    const char *src;
+    if (spec && *spec) {
+        const char *a = spec;
+        const char *b = strchr(a, '|');
+        const char *c = b ? strchr(b + 1, '|') : NULL;
+        w->n_before = parse_ids(a, w->before, NT_CHAT_MAX);
+        if (b) w->n_after = parse_ids(b + 1, w->after, NT_CHAT_MAX);
+        if (c) w->n_stop  = parse_ids(c + 1, w->stop,  NT_CHAT_MAX);
+        src = "NT_CHAT";
+    } else {
+        /* A family that was trained with a wrapping can carry it, and then
+         * nobody has to know the ids. The environment still wins, because
+         * trying a different wrapping is how the right one gets found. */
+        w->n_before = chat_from_file(path, "notorch.chat.before", w->before, NT_CHAT_MAX);
+        w->n_after  = chat_from_file(path, "notorch.chat.after",  w->after,  NT_CHAT_MAX);
+        w->n_stop   = chat_from_file(path, "notorch.chat.stop",   w->stop,   NT_CHAT_MAX);
+        src = "file";
+    }
     /* An id outside the vocabulary would index a row the model does not have,
      * so it is refused here rather than read as garbage in the embedding. */
     for (int i = 0; i < w->n_before; i++)
@@ -114,8 +137,8 @@ static void chat_wrap_init(chat_wrap *w, int vocab) {
         if (w->after[i] < 0 || w->after[i] >= vocab) { w->n_after = 0; break; }
     w->active = (w->n_before || w->n_after || w->n_stop);
     if (w->active)
-        fprintf(stderr, "chat: %d ids before, %d after, %d stop\n",
-                w->n_before, w->n_after, w->n_stop);
+        fprintf(stderr, "chat: %d ids before, %d after, %d stop (%s)\n",
+                w->n_before, w->n_after, w->n_stop, src);
 }
 
 /* Process-wide because it is read once from the environment and never varies
@@ -397,7 +420,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "loaded in %.0f ms\n", now_ms() - t0);
 
     session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1 };
-    chat_wrap_init(&g_chat, dims.vocab);
+    chat_wrap_init(&g_chat, dims.vocab, path);
     s.tok = bpe_load(path);
     if (s.tok) {
         const gguf_kv *e = gguf_get_kv(gf, "tokenizer.ggml.eos_token_id");
