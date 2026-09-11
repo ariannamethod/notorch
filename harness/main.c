@@ -53,6 +53,80 @@ typedef struct {
 
 /* GGUF-embedded BPE where the file has one; bytes where it does not, which is
  * how the char-level models in this tree are read. */
+/* A chat template, as ids rather than as text.
+ *
+ * Some families were trained with the prompt wrapped in tokens of their own —
+ * a marker to open, one around the user's turn, one to hand over to the model —
+ * and fed a bare prompt they do not fail, they drift. Janus v4 answers "The
+ * Method of the Method of the Method of" without its wrapping and "I sense the
+ * resonance of the field: the field" with it, on the same weights and the same
+ * question.
+ *
+ * The wrapping is a sequence of ids, and deliberately not a sequence of strings.
+ * The ids are what the model was trained on; the strings that spell them may not
+ * even be recoverable — Janus has nine special ids above what its merge list
+ * reconstructs, and five of them are named anywhere at all. Ids sidestep that
+ * entirely, and they sidestep a template language with them.
+ *
+ *   NT_CHAT="<before>|<after>|<stop>"   each a comma-separated id list
+ *   NT_CHAT="32759,32760|32761,32762|32763"
+ *
+ * Fields may be empty. This is the mechanism; storing a file's own wrapping
+ * inside the file, so that nobody has to type ids, is the step after it. */
+#define NT_CHAT_MAX 32
+
+typedef struct {
+    int before[NT_CHAT_MAX], n_before;
+    int after[NT_CHAT_MAX],  n_after;
+    int stop[NT_CHAT_MAX],   n_stop;
+    int active;
+} chat_wrap;
+
+static int parse_ids(const char *s, int *out, int max) {
+    int n = 0;
+    for (const char *p = s; *p && *p != '|' && n < max; ) {
+        while (*p == ' ' || *p == ',') p++;
+        if (!*p || *p == '|') break;
+        char *end = NULL;
+        long v = strtol(p, &end, 10);
+        if (end == p) break;
+        out[n++] = (int)v;
+        p = end;
+    }
+    return n;
+}
+
+static void chat_wrap_init(chat_wrap *w, int vocab) {
+    memset(w, 0, sizeof(*w));
+    const char *spec = getenv("NT_CHAT");
+    if (!spec || !*spec) return;
+    const char *a = spec;
+    const char *b = strchr(a, '|');
+    const char *c = b ? strchr(b + 1, '|') : NULL;
+    w->n_before = parse_ids(a, w->before, NT_CHAT_MAX);
+    if (b) w->n_after = parse_ids(b + 1, w->after, NT_CHAT_MAX);
+    if (c) w->n_stop  = parse_ids(c + 1, w->stop,  NT_CHAT_MAX);
+    /* An id outside the vocabulary would index a row the model does not have,
+     * so it is refused here rather than read as garbage in the embedding. */
+    for (int i = 0; i < w->n_before; i++)
+        if (w->before[i] < 0 || w->before[i] >= vocab) { w->n_before = 0; break; }
+    for (int i = 0; i < w->n_after; i++)
+        if (w->after[i] < 0 || w->after[i] >= vocab) { w->n_after = 0; break; }
+    w->active = (w->n_before || w->n_after || w->n_stop);
+    if (w->active)
+        fprintf(stderr, "chat: %d ids before, %d after, %d stop\n",
+                w->n_before, w->n_after, w->n_stop);
+}
+
+/* Process-wide because it is read once from the environment and never varies
+ * per turn — passing it through every signature would say otherwise. */
+static chat_wrap g_chat;
+
+static int chat_is_stop(int id) {
+    for (int i = 0; i < g_chat.n_stop; i++) if (g_chat.stop[i] == id) return 1;
+    return 0;
+}
+
 static int encode_prompt(const session *s, const char *text, int *tokens, int cap) {
     /* NT_TOKENS bypasses the tokenizer with a comma-separated list of ids. Bringing a new
      * family up has two independent failure modes — the tokenizer disagrees, or the forward
@@ -69,10 +143,19 @@ static int encode_prompt(const session *s, const char *text, int *tokens, int ca
         fprintf(stderr, "tokens: %d supplied through NT_TOKENS\n", n);
         return n;
     }
-    if (s->tok) return bpe_encode(s->tok, text, tokens, cap);
+    /* The wrapping goes around whatever the tokenizer produces, so the family's
+     * own opening marker sits ahead of the text and the hand-over to the model
+     * behind it — the order the weights were trained to read. */
     int n = 0;
-    if (cap > 0) tokens[n++] = 1;                  /* BOS */
-    for (int i = 0; text[i] && n < cap; i++) tokens[n++] = (unsigned char)text[i];
+    for (int i = 0; i < g_chat.n_before && n < cap; i++) tokens[n++] = g_chat.before[i];
+
+    if (s->tok) n += bpe_encode(s->tok, text, tokens + n, cap - n);
+    else {
+        if (!g_chat.active && n < cap) tokens[n++] = 1;   /* byte-level BOS */
+        for (int i = 0; text[i] && n < cap; i++) tokens[n++] = (unsigned char)text[i];
+    }
+
+    for (int i = 0; i < g_chat.n_after && n < cap; i++) tokens[n++] = g_chat.after[i];
     return n;
 }
 
@@ -148,7 +231,8 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
     int pos = pos0 + n_tok, gen = 0;
     for (int step = 0; step < max_tokens; step++) {
         int next = sample(s->logits, s->vocab, temp);
-        if (s->tok ? (next == s->eos || bpe_is_eog(s->tok, next)) : (next <= 2)) break;
+        if (chat_is_stop(next)) break;
+        if (s->tok ? (next == s->eos || bpe_is_eog(s->tok, next)) : (!g_chat.active && next <= 2)) break;
         emit(s, next);
         gen++;
         if (pos >= s->max_seq - 1) break;
@@ -313,6 +397,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "loaded in %.0f ms\n", now_ms() - t0);
 
     session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1 };
+    chat_wrap_init(&g_chat, dims.vocab);
     s.tok = bpe_load(path);
     if (s.tok) {
         const gguf_kv *e = gguf_get_kv(gf, "tokenizer.ggml.eos_token_id");

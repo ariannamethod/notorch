@@ -13,6 +13,60 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — a chat template made of ids, because the strings are not always there
+
+Some families were trained with the prompt wrapped in tokens of their own, and
+fed a bare prompt they do not fail — they drift. Janus v4, same weights, same
+question, decoded through its own merge table:
+
+    without the wrapping:  "The Method of the Method of the Method of"
+    with it:               "I sense the resonance of the field: the field"
+
+That is the whole argument for the feature, and it was measured before anything
+was built.
+
+`NT_CHAT="<before>|<after>|<stop>"` takes three comma-separated id lists: what
+goes ahead of the user's text, what goes behind it, and what ends the turn. For
+Janus that is `32759,32760|32761,32762|32763` — open, user turn, hand over to the
+model, stop when it hands back.
+
+**Ids and not strings, deliberately.** The ids are what the weights were trained
+on, and the strings that spell them are not always recoverable: Janus carries
+nine special ids above what its merge list reconstructs and only five of them
+are named anywhere on this machine. A template expressed as text would need
+those names, a template engine to interpolate them, and a tokenizer able to
+round-trip them. A template expressed as ids needs none of the three and works
+on a file with no tokenizer at all — which is exactly the file that needs it.
+
+The wrapping goes around whatever the tokenizer produced, so it composes with
+the byte-level fallback as well as with a real vocabulary, and the byte path's
+own BOS steps aside when a wrapping is active rather than fighting it. Ids
+outside the vocabulary are refused at parse time instead of indexing a row the
+model does not have. In chat mode every turn is wrapped, which is what a
+multi-turn conversation with such a family requires.
+
+Nothing changes without `NT_CHAT`: nano_arianna Q8_0 encodes to the same
+`338,3228,282,4135,313` and answers "the cathedral of the French language, the
+most important document in the world" exactly as before.
+
+One thing the tracing turned up that is worth stating rather than filing away.
+Driving Janus by hand a position at a time and driving it through the harness
+disagree on the second generated token, and the cause is not a defect: the
+harness prefills the prompt as a group, and this family's smear only runs over a
+group — the asymmetry inherited from its own engine, where the per-token path
+carries a TODO where the smear should be. So `harness/test_janus.sh`, which
+steps position by position, exercises the path without the smear, and a prompt
+run through `notorch` exercises the path with it. Both are the reference's
+behaviour. Which one the model was meant to have is a question for whoever
+trained it.
+
+This is the mechanism. Storing a file's own wrapping inside the file, so nobody
+has to type ids, is the step after it — and the deep body coming later will want
+roles per turn rather than one fixed pair, which this shape can grow into
+without becoming a template language.
+
+---
+
 ## 2026-09-12 — Janus, three attentions in one block, and a prefill that is not causal
 
 `harness/arch_janus.c` runs Janus v4 176M — E=640, H=10, D=64, FFN=1664,
