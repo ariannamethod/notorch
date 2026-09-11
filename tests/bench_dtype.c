@@ -31,19 +31,39 @@
 #include "gguf.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 static double now(void){ struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t);
     return (double)t.tv_sec*1e3 + (double)t.tv_nsec*1e-6; }
 static size_t rb_of(int d,int k){ switch(d){
+    case GGUF_TYPE_F32:  return (size_t)k*4;        case GGUF_TYPE_F16:  return (size_t)k*2;
     case GGUF_TYPE_Q4_0: return (size_t)(k/32)*18;  case GGUF_TYPE_Q5_0: return (size_t)(k/32)*22;
     case GGUF_TYPE_Q8_0: return (size_t)(k/32)*34;  case GGUF_TYPE_Q4_K: return (size_t)(k/256)*144;
     case GGUF_TYPE_Q6_K: return (size_t)(k/256)*210; default: return 0; } }
+
+/* The unpacked formats are not quantized, so they are written here rather than through
+ * nt_quantize_row, and they do not go through the i8 entry either — that one is for the
+ * packed dtypes and refuses these. Both differences are the reason they belong in this
+ * table: whatever the unpacked path costs, no packed measurement reveals it. */
+static int fill_plain(uint8_t *dst, const float *row, int k, int d) {
+    if (d == GGUF_TYPE_F32) { memcpy(dst, row, (size_t)k*4); return 1; }
+#if defined(__ARM_NEON) || defined(__FP16_VALUE__) || defined(__ARM_FP16_FORMAT_IEEE)
+    if (d == GGUF_TYPE_F16) {
+        __fp16 *h = (__fp16 *)dst;
+        for (int i = 0; i < k; i++) h[i] = (__fp16)row[i];
+        return 1;
+    }
+#endif
+    return 0;
+}
+static int is_plain(int d){ return d == GGUF_TYPE_F32 || d == GGUF_TYPE_F16; }
 int main(int argc, char **argv) {
     int rows = argc > 1 ? atoi(argv[1]) : 50304;   /* OLMoE vocab */
     int k    = argc > 2 ? atoi(argv[2]) : 2048;    /* n_embd */
     int reps = argc > 3 ? atoi(argv[3]) : 30;
-    int dts[] = { GGUF_TYPE_Q4_0, GGUF_TYPE_Q5_0, GGUF_TYPE_Q8_0, GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K };
-    const char *nm[] = { "Q4_0", "Q5_0", "Q8_0", "Q4_K", "Q6_K" };
+    int dts[] = { GGUF_TYPE_Q4_0, GGUF_TYPE_Q5_0, GGUF_TYPE_Q8_0, GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K,
+                  GGUF_TYPE_F16, GGUF_TYPE_F32 };
+    const char *nm[] = { "Q4_0", "Q5_0", "Q8_0", "Q4_K", "Q6_K", "F16", "F32" };
     float *x = malloc((size_t)k*sizeof(float)), *o = malloc((size_t)rows*sizeof(float));
     float *row = malloc((size_t)k*sizeof(float));
     for (int i=0;i<k;i++) x[i]=(float)((i%31)-15)*0.0625f;
@@ -53,15 +73,18 @@ int main(int argc, char **argv) {
         if (!rb) continue;
         uint8_t *W = malloc(rb*(size_t)rows);
         if (!W) { printf("  %s: no memory\n", nm[d]); continue; }
-        int ok = 1;
+        int ok = 1, plain = is_plain(dts[d]);
         for (long r = 0; r < rows && ok; r++) {
             for (int i=0;i<k;i++) row[i]=(float)(((r*7919+i*104729)%2001)-1000)/500.0f;
-            if (nt_quantize_row(row, W + rb*(size_t)r, k, dts[d]) != 0) ok = 0;
+            if (plain) ok = fill_plain(W + rb*(size_t)r, row, k, dts[d]);
+            else if (nt_quantize_row(row, W + rb*(size_t)r, k, dts[d]) != 0) ok = 0;
         }
         if (!ok) { printf("  %s: this build cannot pack it\n", nm[d]); free(W); continue; }
-        for (int r=0;r<3;r++) nt_qmatvec_i8(o,W,dts[d],x,rows,k);
+        for (int r=0;r<3;r++)
+            if (plain) nt_qmatvec(o,W,dts[d],x,rows,k); else nt_qmatvec_i8(o,W,dts[d],x,rows,k);
         double t0=now();
-        for (int r=0;r<reps;r++) nt_qmatvec_i8(o,W,dts[d],x,rows,k);
+        for (int r=0;r<reps;r++)
+            if (plain) nt_qmatvec(o,W,dts[d],x,rows,k); else nt_qmatvec_i8(o,W,dts[d],x,rows,k);
         double dt=now()-t0;
         double mib = (double)rb*rows/(1024.0*1024.0);
         printf("  %-5s %7.2f MiB  %6.2f ms/pass  %5.2f GiB/s\n",

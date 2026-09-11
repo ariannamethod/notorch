@@ -70,6 +70,7 @@ bench_dtype
 check_requant
 test_wt_expert
 test_qgather
+test_f16_matvec
 test_plan_race_tsan
 
 gguf_quantize
