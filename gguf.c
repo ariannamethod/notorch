@@ -599,6 +599,17 @@ static void dequant_q5_0(const uint8_t *data, float *out, uint64_t n) {
 // that slips through the bounds check below. Returns 0 to signal a HARD REJECT:
 // unknown dtype, n too small for a full quantized block, or a multiply that
 // would overflow. Strides match the dequant_* block layouts above.
+/* Values per block for the packed formats, 1 for the ones stored element by element. A row
+ * that is not a whole number of blocks cannot be decoded on its own — the last block's scale
+ * lives in bytes this row does not own. */
+static uint64_t gguf_dtype_block(uint32_t dtype) {
+    switch (dtype) {
+    case GGUF_TYPE_Q4_0: case GGUF_TYPE_Q5_0: case GGUF_TYPE_Q8_0: return 32;
+    case GGUF_TYPE_Q4_K: case GGUF_TYPE_Q6_K:                      return 256;
+    default:                                                       return 1;
+    }
+}
+
 static uint64_t gguf_dtype_nbytes(uint32_t dtype, uint64_t n) {
     uint64_t blocks, per;
     switch (dtype) {
@@ -703,9 +714,14 @@ int gguf_dequant_row(const gguf_file* gf, int tensor_idx, uint64_t row, float* d
     uint64_t rows = ti->n_elements / cols;
     if (row >= rows) return -1;
 
-    /* Zero here means the row is not a whole number of blocks — a partial block cannot be
-     * decoded on its own, and silently reading the neighbouring row's bytes would be the
-     * wrong answer rather than a slow one. */
+    /* A partial block cannot be decoded on its own, and reading the neighbouring row's bytes
+     * would be the wrong answer rather than a slow one. The size alone does not catch it:
+     * gguf_dtype_nbytes divides, so 48 values of Q8_0 come back as the 34 bytes of one whole
+     * block and the remaining sixteen are read out of whatever follows. Seen on a Mamba
+     * checkpoint whose ssm_dt rows are 48 wide — current llama.cpp refuses that file outright,
+     * this reader used to accept it and return uninitialised floats with a success code. */
+    uint64_t blk = gguf_dtype_block(ti->dtype);
+    if (blk > 1 && (cols % blk) != 0) return -1;
     uint64_t rb = gguf_dtype_nbytes(ti->dtype, cols);
     if (rb == 0) return -1;
 
