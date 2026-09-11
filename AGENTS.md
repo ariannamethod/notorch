@@ -77,3 +77,39 @@ Assume another node may be preparing a change while you inspect the tree.
   reimplement its numerical work in another framework.
 - When a result is negative, keep the measurement. `notorch` is allowed to say
   that an optimization failed; it is not allowed to call a hope a feature.
+
+## Ownership
+
+- This repository lives in the shared zone, and the shared zone's usual rule —
+  read freely, write on the owner's word — does not apply to it. `notorch` has
+  coauthors rather than an owner. Any node opens its own branch without asking;
+  Oleg merges. Asking permission for a branch here would turn the rule meant to
+  protect somebody else's canon into a brake on the thing it is protecting.
+- One working copy per machine. Two checkouts of the same remote on one host
+  diverge, and the divergence surfaces as a gate telling you something false.
+
+## Four things already paid for
+
+Each of these was learned by getting it wrong, in this repository, with the cost
+written down in `NOTORCHLOG.md`. They are here so the next node does not buy
+them again.
+
+- **Rebuild both sides of a comparison.** A gate that compares two binaries is
+  only as honest as the older one. `test_parity.sh` reported two mismatches that
+  did not exist because the harness had been rebuilt after a kernel change and
+  the reference example had not. Use `make test_harness`, which rebuilds both.
+- **No throughput number without the memory state beside it.** The same binary
+  on the same file measured 6.7 t/s and 18.8 t/s in one afternoon, and the
+  difference was whether 1.2 GB happened to be free. A published figure and
+  three explanations built on it had to be withdrawn. Run repeated passes in one
+  process and print residency on each line; on a 12B body this is not a factor of
+  three, it is an order of magnitude.
+- **A gate that cannot run must report neither green nor red.** Both failures
+  appeared in one day: eight "mismatches" against a reference that never loaded
+  the model, and a green with zero checks behind it. Say SKIPPED, and say why.
+- **The file decides, and silence is not consent.** Where a GGUF declines to
+  answer a question — `add_bos_token` is the one that cost us — do not answer on
+  its behalf because the reference implementation does. Following that default
+  turned a model's own voice into `the pain,  there there there there`. When a
+  guess is unavoidable, measure what the guess does to the output before shipping
+  it, and say in the code which question the file left open.

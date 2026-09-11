@@ -76,3 +76,6 @@ gguf_quantize
 gguf_add_tokenizer
 test_quantize
 check_requant
+
+# machine-local, not the project’s history
+LOCAL_STATE.md
