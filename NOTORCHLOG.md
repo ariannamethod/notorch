@@ -13,6 +13,40 @@ Newest entries on top.
 
 ---
 
+## 2026-09-11 — what stands between this tokenizer and qwen2, named exactly
+
+The two whitespace shapes Qwen still disagrees on were attempted and the attempt is reverted.
+It is worth the entry because it found the blocker, which is not where anyone would look for it.
+
+qwen2's pattern, read from llama-vocab.cpp rather than remembered:
+
+    (?:'[sS]|…)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
+
+Implementing its whitespace alternatives faithfully — a run ending in newlines goes whole, any
+other run gives up its last character, and the word after it may take a character of any kind
+rather than only a space — fixed both cases that failed and broke two that passed. Not a
+mistake in the implementation. The alternative that decides those two is the fourth one,
+` ?[^\s\p{L}\p{N}]+[\r\n]*`: **a run of punctuation swallows the newlines that follow it**,
+and it is tried before any whitespace rule. `def f():\n` is `def`, ` f`, `():\n` — the
+reference has one token for `():Ċ` where a whitespace-first reading produces `():` and `Ċ`.
+
+The crude rule this tree carried before — scan to the next space — reproduced that by accident,
+which is why space-indented code always matched and tab-indented code never did.
+
+So the blocker is not whitespace at all. To know where a run of punctuation ends, one has to
+know what `\p{L}` and `\p{N}` are over Unicode, and this gate has Cyrillic in it and an
+emoji: letters and symbols land in different alternatives of that pattern, and "anything above
+0x80 is a letter" gets the Cyrillic right and the emoji wrong. Approximating character classes
+is how the previous attempt in this file became a regression, so no third approximation was
+built.
+
+What it would take, stated so the next person does not rediscover it: codepoint category
+tables for L and N, which is what llama.cpp's unicode.cpp carries, and then the alternatives
+in their written order. Until then Qwen keeps two known divergences, both in this log with
+their ids, and OLMoE has none.
+
+---
+
 ## 2026-09-10 — one pre-tokenizer where the reference keeps several
 
 The byte-level splitter treated `' '` as the only whitespace. Everything else — tab, newline,
