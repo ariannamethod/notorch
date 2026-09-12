@@ -100,49 +100,59 @@ static void q8k_quant(const float *X, int k, int n, int8_t *qa, float *dsuper, i
 
 static void q4k_q8k(float *out, int m, const uint8_t *W, const int8_t *qa,
                     const float *dsuper, const int32_t *bs32, int k, int n) {
-    int nb = k / 256, nsub = k / 32, nsb = nb;
+    int nb = k / 256, nsub = k / 32;
     const __m256i m4 = _mm256_set1_epi8(0x0F);
-    for (int j = 0; j < n; j++) {
-        const int8_t  *acol = qa     + (long)j * k;
-        const float   *dcol = dsuper + (long)j * nsb;
-        const int32_t *scol = bs32   + (long)j * nsub;
+    const int TILE = 32;
+    for (int j0 = 0; j0 < n; j0 += TILE) {
+        int jn = n - j0; if (jn > TILE) jn = TILE;
         for (int row = 0; row < m; row++) {
+            float acc[32], accm[32];
+            for (int j = 0; j < jn; j++) { acc[j] = 0.0f; accm[j] = 0.0f; }
             const uint8_t *rb = W + (long)row * nb * 144;
-            __m256 acc = _mm256_setzero_ps();
-            float accm = 0.0f;
             for (int blk = 0; blk < nb; blk++) {
                 const uint8_t *b = rb + (long)blk * 144;
                 float dw = _cvtsh_ss((uint16_t)(b[0] | (b[1] << 8)));
                 float mw = _cvtsh_ss((uint16_t)(b[2] | (b[3] << 8)));
                 const uint8_t *sc = b + 4, *qs = b + 16;
-                const int8_t *ac = acol + (long)blk * 256;
                 uint8_t ls[8], lm[8];
                 for (int s = 0; s < 8; s++) bench_scale_min(s, sc, &ls[s], &lm[s]);
-
-                /* The min term: eight mins against eight activation sums, one dot. */
-                float mt = 0.0f;
-                for (int s = 0; s < 8; s++) mt += (float)lm[s] * (float)scol[blk * 8 + s];
-                accm += mw * dcol[blk] * mt;
-
-                __m256i sumi = _mm256_setzero_si256();
-                for (int p = 0; p < 4; p++) {
-                    __m256i qv = _mm256_loadu_si256((const __m256i *)(qs + p * 32));
-                    __m256i a0 = _mm256_loadu_si256((const __m256i *)(ac + (2*p)     * 32));
-                    __m256i a1 = _mm256_loadu_si256((const __m256i *)(ac + (2*p + 1) * 32));
-                    __m256i sl = _mm256_set1_epi16((short)ls[2*p]);
-                    __m256i sh = _mm256_set1_epi16((short)ls[2*p + 1]);
-                    __m256i pl = _mm256_madd_epi16(sl,
-                                   _mm256_maddubs_epi16(_mm256_and_si256(qv, m4), a0));
-                    __m256i ph = _mm256_madd_epi16(sh,
-                                   _mm256_maddubs_epi16(_mm256_and_si256(_mm256_srli_epi16(qv, 4), m4), a1));
-                    sumi = _mm256_add_epi32(sumi, _mm256_add_epi32(pl, ph));
+                const __m256i q0 = _mm256_loadu_si256((const __m256i *)(qs));
+                const __m256i q1 = _mm256_loadu_si256((const __m256i *)(qs + 32));
+                const __m256i q2 = _mm256_loadu_si256((const __m256i *)(qs + 64));
+                const __m256i q3 = _mm256_loadu_si256((const __m256i *)(qs + 96));
+                const __m256i s0 = _mm256_set1_epi16((short)ls[0]), s1 = _mm256_set1_epi16((short)ls[1]);
+                const __m256i s2 = _mm256_set1_epi16((short)ls[2]), s3 = _mm256_set1_epi16((short)ls[3]);
+                const __m256i s4 = _mm256_set1_epi16((short)ls[4]), s5 = _mm256_set1_epi16((short)ls[5]);
+                const __m256i s6 = _mm256_set1_epi16((short)ls[6]), s7 = _mm256_set1_epi16((short)ls[7]);
+                for (int j = 0; j < jn; j++) {
+                    const int8_t *ac = qa + (long)(j0 + j) * k + (long)blk * 256;
+                    const int32_t *scol = bs32 + (long)(j0 + j) * nsub;
+                    #define LO(qv, sv, off) _mm256_madd_epi16((sv), _mm256_maddubs_epi16(  \
+                        _mm256_and_si256((qv), m4),                                        \
+                        _mm256_loadu_si256((const __m256i *)(ac + (off) * 32))))
+                    #define HI(qv, sv, off) _mm256_madd_epi16((sv), _mm256_maddubs_epi16(  \
+                        _mm256_and_si256(_mm256_srli_epi16((qv), 4), m4),                  \
+                        _mm256_loadu_si256((const __m256i *)(ac + (off) * 32))))
+                    __m256i sumi = _mm256_add_epi32(
+                        _mm256_add_epi32(LO(q0,s0,0), HI(q0,s1,1)),
+                        _mm256_add_epi32(LO(q1,s2,2), HI(q1,s3,3)));
+                    sumi = _mm256_add_epi32(sumi, _mm256_add_epi32(
+                        _mm256_add_epi32(LO(q2,s4,4), HI(q2,s5,5)),
+                        _mm256_add_epi32(LO(q3,s6,6), HI(q3,s7,7))));
+                    #undef LO
+                    #undef HI
+                    /* One float multiply per block per column, not eight. */
+                    __m256 v = _mm256_cvtepi32_ps(sumi);
+                    __m128 h = _mm_add_ps(_mm256_castps256_ps128(v), _mm256_extractf128_ps(v, 1));
+                    h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+                    float dj = dsuper[(long)(j0 + j) * nb + blk];
+                    acc[j] += dw * dj * _mm_cvtss_f32(h);
+                    float mt = 0.0f;
+                    for (int s = 0; s < 8; s++) mt += (float)lm[s] * (float)scol[blk * 8 + s];
+                    accm[j] += mw * dj * mt;
                 }
-                acc = _mm256_fmadd_ps(_mm256_set1_ps(dw * dcol[blk]),
-                                      _mm256_cvtepi32_ps(sumi), acc);
             }
-            __m128 lo = _mm_add_ps(_mm256_castps256_ps128(acc), _mm256_extractf128_ps(acc, 1));
-            lo = _mm_hadd_ps(lo, lo); lo = _mm_hadd_ps(lo, lo);
-            out[(long)j * m + row] = _mm_cvtss_f32(lo) - accm;
+            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j] - accm[j];
         }
     }
 }
