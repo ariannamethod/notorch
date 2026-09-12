@@ -117,11 +117,11 @@ program *without* the archive and requires it to fail. details in
 
 ## use it from Python
 
-notorch is C, and it stays C. But the thing most people want on a Tuesday is to
-read a GGUF and multiply something by it without installing a framework first,
-so there is a ctypes binding: no numpy, no build step for the Python side, no
-dependencies at all. `ctypes` ships with Python; the shared library is one make
-target.
+**NOTORCH** is C, it stays C, but... Python? yep. 
+the thing most people want on a Tuesday is to read a GGUF and multiply something by it 
+without installing a framework first, so there is a ctypes binding: no numpy, no build 
+step for the Python side, no dependencies at all. `ctypes` ships with Python; the shared 
+library is one make target.
 
 ```bash
 make shared          # libnotorch.so, or libnotorch.dylib on macOS
