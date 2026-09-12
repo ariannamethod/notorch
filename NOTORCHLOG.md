@@ -57,6 +57,24 @@ fp16 at 28 where it had read 42 earlier in the day. The tile stays at the width 
 measured cleanly. The sweep is open, not answered.
 
 The reference reads 329 t/s of prefill on this file, so a quarter of the way.
+## 2026-09-12 — the public registry stopped guessing Llama
+
+The newly linkable harness exposed `nt_pick_arch`, and an independent consumer
+asked it for an architecture that does not exist. It returned Llama. That made
+the public surface contradict the repository's own rule: an unfamiliar GGUF
+must not be repaired by silently pretending it is Llama.
+
+The Llama-family implementation now explicitly claims the two architecture
+names whose distinct paths it actually carries: `llama` (interleaved RoPE) and
+`qwen2` (NEOX RoPE). Unknown and NULL names return NULL, so the caller refuses
+the file before any model-family arithmetic runs. The installed consumer gate
+checks both positive names and both refusals before opening its real GGUF.
+
+Red hand: at the harness-library pin `e4c553d`, the independent strict lookup
+probe exits 2 with `unknown architecture silently selected a family`. With the
+fix it prints `STRICT_ARCH_OK`; the real installed consumer remains
+`arch=llama tokens=5 vocab=32000 argmax=264`, and the archive with `archs.o`
+removed still fails to link on `_nt_archs` and `_nt_pick_arch`.
 
 ---
 

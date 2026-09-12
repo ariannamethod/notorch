@@ -5,10 +5,9 @@
  * or the forward of another family, this interface is lying and it is the
  * interface that gets fixed, not the family.
  *
- * `names` is matched against the GGUF's general.architecture. NULL means the
- * fallback: the family that takes a file no other family claims. There is
- * exactly one of those, and today it is llama — which is what the reference
- * example already did with every architecture it had never heard of. */
+ * `names` is matched against the GGUF's general.architecture. Every family
+ * names what it actually implements: an unknown architecture is refused
+ * rather than sent through arithmetic that merely looks similar. */
 #ifndef NT_HARNESS_ARCH_H
 #define NT_HARNESS_ARCH_H
 
@@ -20,7 +19,7 @@ typedef struct {
 } nt_dims;
 
 typedef struct {
-    const char *const *names;    /* NULL-terminated, or NULL for the fallback */
+    const char *const *names;    /* NULL-terminated list of supported names */
     void *(*load)(gguf_file *gf, nt_dims *dims);
     void  (*free)(void *model);
     /* One forward for a group of consecutive positions. Decode calls it with

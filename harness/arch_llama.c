@@ -1,4 +1,4 @@
-/* arch_llama.c — the llama family, and the fallback for everything unnamed.
+/* arch_llama.c — the llama and qwen2 family.
  *
  * SmolLM2, nanollama, Qwen2.5, LLaMA, Mistral: any GGUF whose blocks are
  * attn_norm / attn_{q,k,v,output} / ffn_norm / ffn_{gate,up,down}. GQA, bias
@@ -48,10 +48,9 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
     m->ffn = gf->ffn_dim;
     m->rope_base = gf->rope_freq_base;
     m->rms_eps = gf->rms_eps;
-    /* llama and its direct descendants rotate adjacent lanes; everything else
-     * in this file's reach — qwen2, and the qwen-derived checkpoints people
-     * convert — rotates halves. Unknown architectures get the llama
-     * convention, which is the older one. */
+    /* llama and its direct descendants rotate adjacent lanes; qwen2 and its
+     * converted checkpoints rotate halves. The registry refuses everything
+     * else before this loader is called. */
     m->rope_neox = strcmp(gf->arch, "llama") != 0;
 
     int ti = gguf_find_tensor(gf, "blk.0.attn_q.weight");
@@ -278,8 +277,10 @@ static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
     free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out);
 }
 
+static const char *const llama_names[] = { "llama", "qwen2", NULL };
+
 const nt_arch nt_arch_llama = {
-    .names = NULL,          /* the fallback: whatever nobody else claims */
+    .names = llama_names,
     .load = llama_load,
     .free = llama_free,
     .forward = llama_forward,
