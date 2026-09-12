@@ -88,7 +88,7 @@ SIMD_LIBS  = -lpthread
 
 # ── Targets ──
 
-.PHONY: all test test_qpool test_qmatvec_leak test_affinity test_plan_race test_tsan bench_claim test_wt_expert test_qgather test_f16_matvec test_js test_python test_tokenizer clean cpu gpu simd help lib shared install metal test_metal infer_gguf_metal
+.PHONY: all test test_qpool test_qmatvec_leak test_affinity test_plan_race test_tsan bench_claim test_wt_expert test_qgather test_f16_matvec test_reference test_js test_python test_tokenizer clean cpu gpu simd help lib shared install metal test_metal infer_gguf_metal
 
 all: notorch_test
 	@echo "Built with $(BLAS_NAME). Run: ./notorch_test"
@@ -280,6 +280,12 @@ gguf_add_tokenizer: tools/gguf_add_tokenizer.c gguf.c gguf.h
 # right. Skips itself where llama-tokenize is not installed. MODEL= to aim it.
 test_tokenizer: notorch
 	./harness/test_tokenizer.sh $(MODEL)
+
+# Against llama.cpp rather than against this tree's own example, and it tells a
+# greedy tie-break from a defect by re-anchoring. Needs a model and llama-simple:
+# MODEL=path/to.gguf NT_REF=/path/to/llama-simple make test_reference
+test_reference: notorch
+	./harness/test_reference.sh $(MODEL)
 
 # Tokenizer round-trip. Needs a model, because the thing being tested is what
 # the file says about itself: MODEL=path/to.gguf make test_bpe

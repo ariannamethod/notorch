@@ -13,6 +13,56 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — telling a coin-flip from a defect, because the coin flips constantly
+
+`harness/test_parity.sh` compares this tree against its own example. That catches a harness
+that drifted from the arithmetic it was lifted from, and cannot catch the arithmetic being
+wrong in both. For the families llama.cpp supports, an outside reference can — and comparing
+text against one fails for a reason that is not a defect.
+
+Greedy decoding takes an argmax. Our summation order is not the reference's, so wherever the
+top two logits sit within float noise the two implementations pick differently, and everything
+after that follows from the one token. A single tie-break reads as a completely different
+answer. In one afternoon: SmolLM2 360M Q8_0 parted on one prompt of three,
+DeepSeek-R1-Distill-Qwen-1.5B Q4_K_M on two of three, qwen05b Q4_K_M on two of three, and
+qwen05b Q4_0 on one of three. Every one of them, handed the reference's own token at the point
+of disagreement, produced byte-identical text for the rest of the run.
+
+`harness/test_reference.sh` does that re-anchoring itself and reports three outcomes:
+IDENTICAL, TIE-BREAK, DIVERGED. A defect does not survive re-anchoring — a model computing the
+wrong thing goes on computing the wrong thing. Across every model on this machine:
+
+    12 identical, 6 tie-break, 0 diverged, 1 skipped
+
+The skip is Qwen3, which this tree does not load and which therefore reports SKIPPED rather
+than either colour.
+
+**It was built by breaking it, and the breaking taught two things.** Dividing rmsnorm by n-1
+instead of n turns one prompt DIVERGED with both continuations printed, and the script exits
+1; restoring the line returns 0. But the other two prompts stayed IDENTICAL under that same
+defect, so three prompts is a thin net — `NT_REF_PROMPTS` widens it, and a new family should.
+And multiplying rmsnorm's epsilon by ten changed no output at all, because eps sits five orders
+below the mean square. Not every wrong number is a detectable one.
+
+A third thing, about method rather than code: the first version of the comparison piped both
+answers into awk and matched them with NR==1/NR==2, which silently compared only their first
+lines. Model answers are routinely several. On a Python prompt it found a shared head of
+nothing and re-anchored on a fragment of a word, then reported TIE-BREAK — the right verdict
+for the wrong reason, which is the failure mode a gate is least likely to be caught in. Both
+strings now arrive through the environment, uncut.
+
+Two things this does not do. It cannot say how close a tie was, because llama-simple prints no
+logits; TIE-BREAK is evidence and not proof. And it is an oracle only for the families the
+reference implements — the Method's own architectures have no outside reference by
+construction and keep the Method's own goldens.
+
+Along the way, one finding that is not about the gate: DeepSeek-R1-Distill-Qwen-1.5B declares
+`tokenizer.ggml.pre = deepseek-r1-qwen`, a third pre-tokenizer family beside the gpt2 and
+qwen2 ones this tree knows, and fails one tokenizer check of eight on indented code. The model
+runs and its parity is sound; the whitespace rule is not this file's.
+
+---
+
 ## 2026-09-12 — README promised a fallback that had been removed under it
 
 `32ffc9e` made an unclaimed architecture a refusal instead of a trip through the
