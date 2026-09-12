@@ -7106,7 +7106,9 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
             accv = _mm256_fmadd_ps(_mm256_set1_ps(d * dsb), _mm256_cvtepi32_ps(sumi), accv);
             int32_t mt = 0;
             for (int j = 0; j < 8; j++) mt += (int32_t)lm[j] * asum[blk * 8 + j];
-            accm += dmin * dsb * (float)mt;
+            /* Spelled out, not left to the compiler: it contracts a += b*c into an FMA
+             * at one call site and not at another, and tests/test_qmatmul compares bits. */
+            accm = __builtin_fmaf(dmin * dsb, (float)mt, accm);
         }
         {
             __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv), _mm256_extractf128_ps(accv, 1));
@@ -7675,7 +7677,7 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                                               _mm256_cvtepi32_ps(sumi), accv[j]);
                     int32_t mt = 0;
                     for (int s = 0; s < 8; s++) mt += (int32_t)lm[s] * asc[blk * 8 + s];
-                    accm[j] += dmin * dsb * (float)mt;
+                    accm[j] = __builtin_fmaf(dmin * dsb, (float)mt, accm[j]);
                 }
             }
             for (int j = 0; j < jn; j++) {
