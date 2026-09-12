@@ -5022,6 +5022,15 @@ static inline float nt_f16_to_f32(uint16_t h) {
     memcpy(&v, &h, sizeof(v));
     return (float)v;
 }
+#elif defined(__F16C__)
+/* x86 has had the same instruction since Ivy Bridge and every AVX2 part carries it, so the
+ * shift chain below was running on hardware that could do it in one `vcvtph2ps`. It was not
+ * a small thing to leave: the disassembly of nt_q4_k_rows_i8n had `call nt_f16_to_f32` in
+ * it, twice per block, because a twenty-instruction function with a loop in it does not get
+ * inlined — 32768 blocks in one 4096x2048 matmul is 65536 calls that should have been
+ * 65536 instructions. Same IEEE result; the portable arm stays for everything else. */
+#include <immintrin.h>
+static inline float nt_f16_to_f32(uint16_t h) { return _cvtsh_ss(h); }
 #else
 static float nt_f16_to_f32(uint16_t h) {
     uint32_t s = (h >> 15) & 1, e = (h >> 10) & 0x1F, m = h & 0x3FF, bits;
@@ -5103,7 +5112,7 @@ static void nt_q5_0_rows(float *out, const uint8_t *W, const float *x,
 
 // ── super-block formats (256 vals/block) ────────────────────────────────────
 // Q4_K 6-bit packed scale/min unpack (matches gguf.c:get_scale_min_k4).
-static void nt_get_scale_min_k4(int j, const uint8_t *sc, uint8_t *s, uint8_t *mn) {
+static inline void nt_get_scale_min_k4(int j, const uint8_t *sc, uint8_t *s, uint8_t *mn) {
     if (j < 4) { *s = sc[j] & 63; *mn = sc[j + 4] & 63; }
     else { *s = (sc[j + 4] & 0x0F) | ((sc[j - 4] >> 6) << 4);
            *mn = (sc[j + 4] >> 4)  | ((sc[j]     >> 6) << 4); }

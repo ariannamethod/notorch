@@ -82,7 +82,10 @@ ifneq ($(filter x86_64 amd64,$(shell uname -m)),)
       X86_HOST_AVX2 := $(shell grep -qwm1 avx2 /proc/cpuinfo 2>/dev/null || \
         sysctl -n machdep.cpu.leaf7_features 2>/dev/null | grep -qw AVX2; echo $$?)
       ifeq ($(X86_HOST_AVX2),0)
-        X86_FLAGS ?= $(shell $(CC) -mavx2 -mfma -E -x c /dev/null >/dev/null 2>&1 && echo "-mavx2 -mfma")
+        # -mf16c with them: every AVX2 part has it, and without it nt_f16_to_f32 is a
+        # twenty-instruction shift chain that does not inline, called twice per weight
+        # block. It is one vcvtph2ps with the flag on.
+        X86_FLAGS ?= $(shell $(CC) -mavx2 -mfma -mf16c -E -x c /dev/null >/dev/null 2>&1 && echo "-mavx2 -mfma -mf16c")
         CFLAGS += $(X86_FLAGS)
       endif
       X86_NAME = $(if $(X86_FLAGS),$(X86_FLAGS),baseline x86-64)
