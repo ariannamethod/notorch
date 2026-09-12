@@ -5130,15 +5130,6 @@ static inline float nt_q6k_acc(float acc, float d, float sc, float da, int32_t d
     return __builtin_fmaf(d * sc * da, (float)dot, acc);
 }
 
-/* The same accumulate with d*ls and dmin*lm already formed. Those two products do not
- * depend on the activation, so a batched kernel builds them once per block; the rounding is
- * identical because they are the same two multiplies either way, which is what lets the
- * batched and per-token kernels stay bit-for-bit equal through this. */
-static inline float nt_q4k_acc_pre(float acc, float da, float dls, int32_t dot,
-                                   float dlm, int32_t asum) {
-    return __builtin_fmaf(da, __builtin_fmaf(dls, (float)dot, -(dlm * (float)asum)), acc);
-}
-
 static inline float nt_q4k_acc(float acc, float da, float d, float ls, int32_t dot,
                                float dmin, float lm, int32_t asum) {
     /* Both fused operations are spelled out rather than left to the compiler, and the
@@ -6381,7 +6372,7 @@ static void nt_quant_act_q8(const float *x, int k, int8_t *qa, float *da) {
 }
 
 static void nt_quant_act_for(int dtype, const float *x, int k, int8_t *qa, float *da) {
-    if (dtype == 12 && (k % 256) == 0) nt_quant_act_q8_super(x, k, qa, da);
+    if ((dtype == 12 || dtype == 14) && (k % 256) == 0) nt_quant_act_q8_super(x, k, qa, da);
     else                               nt_quant_act_q8(x, k, qa, da);
 }
 
@@ -6684,25 +6675,30 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                   b32 = _mm256_set1_epi8(32), ones = _mm256_set1_epi16(1);
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 210;
-        float acc = 0.0f;
+        __m256 accv = _mm256_setzero_ps();
         for (int blk = 0; blk < nb; blk++) {
+            __m256i sumi = _mm256_setzero_si256();
             const uint8_t *b = rb + (long)blk * 210, *ql = b, *qh = b + 128;
             const int8_t *sc = (const int8_t *)(b + 192);
             float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
             const int8_t *qab = qa + (long)blk * 256;
             const float  *dab = da + (long)blk * 8;
-            /* Same lane treatment the Q4_K path got. This kernel drained TWICE per group —
-             * four dependent hadds and two extracts, sixteen drains per 256-value block —
-             * because each group carries two 16-value sub-blocks, one per 128-bit half.
-             * That is exactly what a hadd tree resolves for free: hadd works within halves,
-             * so folding four groups yields the four lower sub-block sums in lanes 0-3 and
-             * the four upper ones in lanes 4-7 of a single vector. Two trees cover a block.
-             * Accumulation order is preserved group by group, lower sub-block then upper,
-             * so this is an integer re-order and the greedy vector must not move. */
+            /* The sub-block scale rides inside madd_epi16, the same move the Q4_K arm
+             * makes and for the same reason: with one activation scale per 256 values
+             * nothing has to leave the vector registers until the block is finished.
+             *
+             * Q6_K's seam is finer than Q4_K's — a scale covers 16 values, so one 32-byte
+             * maddubs spans two of them. That falls out of the lane structure rather than
+             * needing work: maddubs folds within 128-bit halves, so int16 lanes 0-7 belong
+             * to the lower sub-block and 8-15 to the upper, and the scale vector is eight
+             * copies of one and eight of the next.
+             *
+             * Accumulating into int32 caps at |w| 32 times |x| 127 times two, times a
+             * scale of at most 127, eight times per block: about 16.5 million, well inside
+             * int32, and sumi is reset every block the way the reference resets it. */
             for (int n = 0; n < 256; n += 128) {
                 const uint8_t *qlh = ql + (n / 128) * 64, *qhh = qh + (n / 128) * 32;
                 __m256i qhv = _mm256_loadu_si256((const __m256i *)qhh);
-                __m256i s[4];
                 for (int g = 0; g < 4; g++) {
                     __m256i qlv = _mm256_loadu_si256((const __m256i *)(qlh + (g & 1) * 32));
                     __m256i lo  = (g < 2) ? _mm256_and_si256(qlv, m4)
@@ -6710,35 +6706,21 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                     __m256i hi2 = _mm256_and_si256(_mm256_srli_epi16(qhv, 2 * g), m3);
                     __m256i w   = _mm256_sub_epi8(_mm256_or_si256(lo, _mm256_slli_epi16(hi2, 4)), b32);
                     __m256i xv  = _mm256_loadu_si256((const __m256i *)(qab + n + g * 32));
-                    s[g] = _mm256_madd_epi16(_mm256_maddubs_epi16(_mm256_sign_epi8(w, w),
-                                                                  _mm256_sign_epi8(xv, w)), ones);
-                }
-                /* lanes 0-3: lower sub-block of groups 0..3; lanes 4-7: their upper one */
-                __m256i T = _mm256_hadd_epi32(_mm256_hadd_epi32(s[0], s[1]),
-                                              _mm256_hadd_epi32(s[2], s[3]));
-                int32_t t[8];
-                _mm256_storeu_si256((__m256i *)t, T);
-                /* One sub-block per add, ascending, through the same helper the scalar
-                 * fallback uses. This used to fold the pair — sc[j0]*t[g] + sc[j0+1]*t[g+4]
-                 * summed before touching acc — which is the same arithmetic in a different
-                 * order and therefore a different last bit. tests/test_qmatmul asserts
-                 * batched and per-token are identical under memcmp, and once the x86 build
-                 * started defining __AVX2__ that turned seven Q6_K cases red: the batched
-                 * kernel on x86 is the scalar one, the per-token kernel here was not. The
-                 * gap was 7.3e-04 absolute on values near 1294, which is ordering and not
-                 * error — and equality is still the right bar, because it is reachable.
-                 *
-                 * The activation scale is the same for both halves of a pair: j0 is even, so
-                 * j0/2 and (j0+1)/2 are both n/32 + g, which is what dab was indexed by. */
-                for (int g = 0; g < 4; g++) {
                     int j0 = n / 16 + g * 2;
-                    float dscale = dab[(n + g * 32) / 32];
-                    acc = nt_q6k_acc(acc, d, (float)sc[j0],     dscale, t[g]);
-                    acc = nt_q6k_acc(acc, d, (float)sc[j0 + 1], dscale, t[g + 4]);
+                    __m256i sv = _mm256_inserti128_si256(_mm256_set1_epi16((short)sc[j0]),
+                                                         _mm_set1_epi16((short)sc[j0 + 1]), 1);
+                    sumi = _mm256_add_epi32(sumi, _mm256_madd_epi16(sv,
+                        _mm256_maddubs_epi16(_mm256_sign_epi8(w, w), _mm256_sign_epi8(xv, w))));
                 }
             }
+            accv = _mm256_fmadd_ps(_mm256_set1_ps(d * dab[0]),
+                                   _mm256_cvtepi32_ps(sumi), accv);
         }
-        out[row] = acc;
+        {
+            __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv), _mm256_extractf128_ps(accv, 1));
+            h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+            out[row] = _mm_cvtss_f32(h);
+        }
     }
 }
 #elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
@@ -8379,9 +8361,11 @@ static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
  * are rebuilt per column rather than held, for the same reason as in the Q4_K arm — holding
  * them spills on sixteen registers and the rebuild is three ALU ops against a reload.
  *
- * Sub-blocks are drained ascending through nt_q6k_acc, which is the per-token kernel's
- * order: tests/test_qmatmul compares the two under memcmp, and folding a pair into one add
- * is what put seven Q6_K cases red the last time. */
+ * The sub-block scale rides inside madd_epi16 and the block drains once, which the
+ * activation's one-scale-per-256 layout is what makes possible. The seam is finer than
+ * Q4_K's — a Q6_K scale covers 16 values, so one maddubs spans two of them — and that falls
+ * out of the lane structure: int16 lanes 0-7 are the lower sub-block, 8-15 the upper, so
+ * the scale vector is eight copies of one and eight of the next. */
 static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
@@ -8393,8 +8377,8 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
         int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 210;
-            float acc[NT_QMM_TILE];
-            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            __m256 accv[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) accv[j] = _mm256_setzero_ps();
             for (int blk = 0; blk < nb; blk++) {
                 const uint8_t *b = rb + (long)blk * 210, *ql = b, *qh = b + 128;
                 const int8_t *sc = (const int8_t *)(b + 192);
@@ -8402,10 +8386,10 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                 for (int j = 0; j < jn; j++) {
                     const int8_t *qab = qa + (long)(j0 + j) * k + (long)blk * 256;
                     const float  *dab = da + (long)(j0 + j) * (k / 32) + (long)blk * 8;
+                    __m256i sumi = _mm256_setzero_si256();
                     for (int nn = 0; nn < 256; nn += 128) {
                         const uint8_t *qlh = ql + (nn / 128) * 64, *qhh = qh + (nn / 128) * 32;
                         __m256i qhv = _mm256_loadu_si256((const __m256i *)qhh);
-                        __m256i s[4];
                         for (int g = 0; g < 4; g++) {
                             __m256i qlv = _mm256_loadu_si256((const __m256i *)(qlh + (g & 1) * 32));
                             __m256i lo  = (g < 2) ? _mm256_and_si256(qlv, m4)
@@ -8413,23 +8397,23 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                             __m256i hi2 = _mm256_and_si256(_mm256_srli_epi16(qhv, 2 * g), m3);
                             __m256i w   = _mm256_sub_epi8(_mm256_or_si256(lo, _mm256_slli_epi16(hi2, 4)), b32);
                             __m256i xv  = _mm256_loadu_si256((const __m256i *)(qab + nn + g * 32));
-                            s[g] = _mm256_madd_epi16(_mm256_maddubs_epi16(_mm256_sign_epi8(w, w),
-                                                                          _mm256_sign_epi8(xv, w)), ones);
-                        }
-                        __m256i T = _mm256_hadd_epi32(_mm256_hadd_epi32(s[0], s[1]),
-                                                      _mm256_hadd_epi32(s[2], s[3]));
-                        int32_t t[8];
-                        _mm256_storeu_si256((__m256i *)t, T);
-                        for (int g = 0; g < 4; g++) {
                             int js = nn / 16 + g * 2;
-                            float dscale = dab[(nn + g * 32) / 32];
-                            acc[j] = nt_q6k_acc(acc[j], d, (float)sc[js],     dscale, t[g]);
-                            acc[j] = nt_q6k_acc(acc[j], d, (float)sc[js + 1], dscale, t[g + 4]);
+                            __m256i sv = _mm256_inserti128_si256(_mm256_set1_epi16((short)sc[js]),
+                                                                 _mm_set1_epi16((short)sc[js + 1]), 1);
+                            sumi = _mm256_add_epi32(sumi, _mm256_madd_epi16(sv,
+                                _mm256_maddubs_epi16(_mm256_sign_epi8(w, w), _mm256_sign_epi8(xv, w))));
                         }
                     }
+                    accv[j] = _mm256_fmadd_ps(_mm256_set1_ps(d * dab[0]),
+                                              _mm256_cvtepi32_ps(sumi), accv[j]);
                 }
             }
-            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+            for (int j = 0; j < jn; j++) {
+                __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv[j]),
+                                      _mm256_extractf128_ps(accv[j], 1));
+                h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+                out[(long)(j0 + j) * m + row] = _mm_cvtss_f32(h);
+            }
         }
     }
 }
