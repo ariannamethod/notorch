@@ -157,8 +157,9 @@ int main(int argc, char **argv) {
     double ghz = argc > 2 ? atof(argv[2]) : 0.0;
 
     /* A feed-forward of the size the 4B bodies carry, against a prefill chunk. */
-    const int m = 4096, k = 2048, dtype = 12;
+    const int m = 4096, dtype = 12;
     int n = argc > 3 ? atoi(argv[3]) : 32;
+    int k = argc > 4 ? atoi(argv[4]) : 2048;
     uint8_t *W = make_q4_k(m, k, 7u);
     float *X = (float *)malloc(sizeof(float) * (size_t)k * n);
     float *O = (float *)malloc(sizeof(float) * (size_t)m * n);
