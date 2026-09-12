@@ -14,6 +14,20 @@
 # accumulation in dot_f32/axpy_f32 against the reference's scalar loops —
 # building the port with -U__ARM_NEON reproduces the reference bit for bit.
 #
+# Re-derived 2026-09-12, because a golden nobody can reproduce is a number with
+# a story attached. A driver written from scratch against resonance_load_gguf +
+# forward_token gives these eight ids back with a worst distance of 7.15e-06,
+# and gives them again with a worst distance of 8.58e-06 when the substrate is
+# swapped for arianna.c's own vendored notorch (ariannamethod/notorch/, 3867
+# lines of notorch.c and 353 of gguf.c different from this tree's). The two
+# substrates sit 3.34e-06 apart, so on this path our kernels and the ones the
+# model was actually run with are not hiding anything from each other.
+#
+# The delta sidecar the forward applies mid-block is absent: rank 8, alpha 0,
+# sum|A| = 0 — weights/arianna.delta.r does not exist, and resonance_load_gguf
+# loads it by a path relative to the working directory, so a driver run from the
+# wrong place would silently fold in a different model.
+#
 # id  logit
 257 6.47917223
 262 5.55650806
