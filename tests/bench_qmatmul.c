@@ -91,10 +91,10 @@ static void q4k_2row(float *out, int m, const uint8_t *W, const int8_t *qa,
                     const uint8_t *bA = W + (long)row * nb * 144 + (long)blk * 144;
                     const uint8_t *bB = bA + (pair ? (long)nb * 144 : 0);
                     const int8_t *ac = acb + (long)blk * 256;
-                    float dA = nt_f16_to_f32((uint16_t)(bA[0] | (bA[1] << 8)));
-                    float mA = nt_f16_to_f32((uint16_t)(bA[2] | (bA[3] << 8)));
-                    float dB = nt_f16_to_f32((uint16_t)(bB[0] | (bB[1] << 8)));
-                    float mB = nt_f16_to_f32((uint16_t)(bB[2] | (bB[3] << 8)));
+                    float dA = _cvtsh_ss((uint16_t)(bA[0] | (bA[1] << 8)));
+                    float mA = _cvtsh_ss((uint16_t)(bA[2] | (bA[3] << 8)));
+                    float dB = _cvtsh_ss((uint16_t)(bB[0] | (bB[1] << 8)));
+                    float mB = _cvtsh_ss((uint16_t)(bB[2] | (bB[3] << 8)));
                     const uint8_t *scA = bA + 4, *qsA = bA + 16;
                     const uint8_t *scB = bB + 4, *qsB = bB + 16;
                     /* Half a block at a time: four sub-blocks, two rows. */
