@@ -96,4 +96,16 @@ void   pf_add(int slot, double t0);
 void   pf_reset(void);
 void   pf_report(const char *phase, double wall_ms);
 
+/* Fan a range of independent items across cores.
+ *
+ * Everything heavy in this tree goes through notorch's matvec pool, and attention does not:
+ * it is f32 over the KV cache, not a quantized matmul, so it ran on one core while the rest
+ * of the layer ran on six. On a 53-token prefill of Qwen3-4B that was 353 ms of 2402 —
+ * 414 million multiply-accumulates at 1.17 GMAC/s, against roughly 14 that one core can do.
+ *
+ * Heads are independent and write disjoint output, so this changes no arithmetic. NT_ATTN_THREADS
+ * overrides the core count; below `min_items` the caller's own thread does all of it. */
+typedef void (*nt_par_fn)(void *ctx, int i0, int i1);
+void   nt_par_for(nt_par_fn fn, void *ctx, int n_items, int min_items);
+
 #endif

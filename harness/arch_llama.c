@@ -176,6 +176,42 @@ static void llama_free(void *model) {
     free(m);
 }
 
+
+/* One head of causal GQA attention, for every row of the chunk. Split out so that a fan-out
+ * can hand a worker a range of heads: everything it touches is either read-only or indexed
+ * by the head. */
+typedef struct {
+    const float *q_all;
+    float *attn_out;
+    const kv_cache *kv;
+    float *scores;                 /* one row per head, max_seq wide */
+    int n, pos0, H, HD, KVD, Q_DIM, gqa;
+    long base;
+    float scale;
+} attn_ctx;
+
+static void attn_heads(void *vctx, int h0, int h1) {
+    const attn_ctx *a = (const attn_ctx *)vctx;
+    for (int h = h0; h < h1; h++) {
+        int kv_h = h / a->gqa;
+        float *scores = a->scores + (long)h * a->kv->max_seq;
+        for (int j = 0; j < a->n; j++) {
+            int pos = a->pos0 + j;
+            const float *q = a->q_all + (long)j * a->Q_DIM + h * a->HD;
+            for (int t = 0; t <= pos; t++) {
+                const float *kt = a->kv->k + a->base + (long)t * a->KVD + kv_h * a->HD;
+                scores[t] = dot_f32(q, kt, a->HD) * a->scale;
+            }
+            softmax(scores, pos + 1);
+            float *out_h = a->attn_out + (long)j * a->Q_DIM + h * a->HD;
+            for (int t = 0; t <= pos; t++) {
+                const float *vt = a->kv->v + a->base + (long)t * a->KVD + kv_h * a->HD;
+                axpy_f32(out_h, scores[t], vt, a->HD);
+            }
+        }
+    }
+}
+
 /* One forward for a group of consecutive positions. Decode calls it with n = 1
  * and gets exactly the old arithmetic; prefill calls it with a chunk of the
  * prompt and the weight traffic drops by the chunk width, which is the whole
@@ -219,7 +255,7 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
      * (position, head): at 53 positions, 32 heads and 36 layers that is 61 thousand
      * allocations in one prefill, for a buffer whose largest size is known before the
      * first one. Nothing about the arithmetic changes. */
-    float *scratch_scores = (float*)calloc((size_t)kv->max_seq, sizeof(float));
+    float *scratch_scores = (float*)calloc((size_t)kv->max_seq * (size_t)H, sizeof(float));
     if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_gate || !ffn_up || !ffn_out ||
         !scratch_scores) {
         free(x); free(xn); free(q_all); free(k_new); free(v_new);
@@ -268,27 +304,22 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
         }
         pf_add(PF_ROPE, pft);
 
-        /* GQA attention, causal: row j sees 0..pos0+j, all already in cache */
+        /* GQA attention, causal: row j sees 0..pos0+j, all already in cache.
+         *
+         * Fanned out over heads, which is the only thing that changed and changes no
+         * arithmetic: a head reads the whole cache and writes its own slice of attn_out, so
+         * no two of them touch the same float. It was running on one core while every
+         * matmul in the same layer ran on six — 353 ms of a 2402 ms prefill, at 1.17 GMAC/s
+         * where one core can do about fourteen.
+         *
+         * Each worker needs its own scores row, so the scratch is one row per head. */
         pft = pf_mark();
-        float scale = 1.0f / sqrtf((float)HD);
-        memset(attn_out, 0, (size_t)n * Q_DIM * sizeof(float));
-        for (int j = 0; j < n; j++) {
-            int pos = pos0 + j;
-            for (int h = 0; h < H; h++) {
-                int kv_h = h / gqa;
-                float *q = q_all + (long)j * Q_DIM + h * HD;
-                float *scores = scratch_scores;
-                for (int t = 0; t <= pos; t++) {
-                    const float *kt = kv->k + base + (long)t * KVD + kv_h * HD;
-                    scores[t] = dot_f32(q, kt, HD) * scale;
-                }
-                softmax(scores, pos + 1);
-                float *out_h = attn_out + (long)j * Q_DIM + h * HD;
-                for (int t = 0; t <= pos; t++) {
-                    const float *vt = kv->v + base + (long)t * KVD + kv_h * HD;
-                    axpy_f32(out_h, scores[t], vt, HD);
-                }
-            }
+        {
+            attn_ctx ac = { q_all, attn_out, kv, scratch_scores,
+                            n, pos0, H, HD, KVD, Q_DIM, gqa, base,
+                            1.0f / sqrtf((float)HD) };
+            memset(attn_out, 0, (size_t)n * Q_DIM * sizeof(float));
+            nt_par_for(attn_heads, &ac, H, 2);
         }
         pf_add(PF_ATTN, pft);
 
