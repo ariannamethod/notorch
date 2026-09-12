@@ -13,6 +13,23 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — README promised a fallback that had been removed under it
+
+`32ffc9e` made an unclaimed architecture a refusal instead of a trip through the
+llama forward, and updated `harness/archs.h` to say so. The README section
+describing the harness as a linkable surface, written hours earlier, still said
+`llama` was the fallback and carried a code sample commenting
+`nt_pick_arch` as `never NULL`. A body written against that sample would
+dereference NULL on the first file the table does not claim.
+
+Two lines, no code. What makes it worth an entry is where the lie lived: the
+header and the implementation were changed together and correctly, and the
+document a caller reads first was not, so the surface was consistent everywhere
+except at its front door.
+
+---
+
+
 ## 2026-09-12 — the scan walks in order; the projections around it never did
 
 `mamba_layer` was written per token, and the note above it said so on purpose: the scan is
