@@ -69,6 +69,8 @@ static float *dequant_named(gguf_file *gf, const char *name) {
     return ti >= 0 ? gguf_dequant(gf, ti) : NULL;
 }
 
+static void gemma4_free(void *model);
+
 static void *gemma4_load(gguf_file *gf, nt_dims *dims) {
     int nl = gf->n_layers;
     gemma4_model *m = (gemma4_model*)calloc(1, sizeof(gemma4_model) + nl * sizeof(m->layers[0]));
@@ -157,15 +159,27 @@ static void *gemma4_load(gguf_file *gf, nt_dims *dims) {
     m->rope_freqs    = dequant_named(gf, "rope_freqs.weight");
 
     int max_kv_dim = 0;
+    int missing = 0;
     for (int l = 0; l < nl; l++) {
         char name[128];
         #define L(field, fmt) do { \
             snprintf(name, sizeof(name), fmt, l); \
             m->layers[l].field = dequant_named(gf, name); \
         } while (0)
+        /* Required means the forward dereferences it, and for this family that is
+         * layer-dependent: k and v exist only where the layer owns a cache slot,
+         * which is why W stays permissive and WR is the one that refuses. Until
+         * 2026-09-12 nothing refused at all and a file short one matrix loaded. */
         #define W(field, fmt) do { \
             snprintf(name, sizeof(name), fmt, l); \
             wt_load(&m->layers[l].field, gf, name); \
+        } while (0)
+        #define WR(field, fmt) do { \
+            snprintf(name, sizeof(name), fmt, l); \
+            if (!wt_load(&m->layers[l].field, gf, name)) { \
+                fprintf(stderr, "gemma4: required tensor '%s' missing or unreadable\n", name); \
+                missing = 1; \
+            } \
         } while (0)
         L(attn_norm,      "blk.%d.attn_norm.weight");
         L(q_norm,         "blk.%d.attn_q_norm.weight");
@@ -174,17 +188,23 @@ static void *gemma4_load(gguf_file *gf, nt_dims *dims) {
         L(ffn_norm,       "blk.%d.ffn_norm.weight");
         L(post_ffw_norm,  "blk.%d.post_ffw_norm.weight");
         L(ple_post_norm,  "blk.%d.post_norm.weight");
-        W(wq,       "blk.%d.attn_q.weight");
-        W(wk,       "blk.%d.attn_k.weight");
-        W(wv,       "blk.%d.attn_v.weight");
-        W(wo,       "blk.%d.attn_output.weight");
-        W(wgate,    "blk.%d.ffn_gate.weight");
-        W(wup,      "blk.%d.ffn_up.weight");
-        W(wdown,    "blk.%d.ffn_down.weight");
-        W(ple_gate, "blk.%d.inp_gate.weight");
-        W(ple_proj, "blk.%d.proj.weight");
+        WR(wq,       "blk.%d.attn_q.weight");
+        if (l < m->n_kv_layers) {
+            WR(wk,   "blk.%d.attn_k.weight");
+            WR(wv,   "blk.%d.attn_v.weight");
+        } else {
+            W(wk,    "blk.%d.attn_k.weight");
+            W(wv,    "blk.%d.attn_v.weight");
+        }
+        WR(wo,       "blk.%d.attn_output.weight");
+        WR(wgate,    "blk.%d.ffn_gate.weight");
+        WR(wup,      "blk.%d.ffn_up.weight");
+        WR(wdown,    "blk.%d.ffn_down.weight");
+        WR(ple_gate, "blk.%d.inp_gate.weight");
+        WR(ple_proj, "blk.%d.proj.weight");
         #undef L
         #undef W
+        #undef WR
 
         snprintf(name, sizeof(name), "blk.%d.layer_output_scale.weight", l);
         float *sc = dequant_named(gf, name);
@@ -221,9 +241,9 @@ static void *gemma4_load(gguf_file *gf, nt_dims *dims) {
     if (!(m->tok_emb.q || m->tok_emb.f32) || !m->out_norm || !m->ple_proj_q ||
         !m->ple_proj_norm || m->ple_ti < 0) {
         fprintf(stderr, "gemma4: missing critical weights\n");
-        free(m);
-        return NULL;
+        missing = 1;
     }
+    if (missing) { gemma4_free(m); return NULL; }
 
     dims->n_layers = m->n_kv_layers;   /* only the layers that store need a slot */
     dims->kv_dim   = max_kv_dim;       /* sliding layers use the front of a wide row */
@@ -278,9 +298,12 @@ static void rope_freq(float *x, int pos, int head_dim, int rot, float base,
     (void)head_dim;
 }
 
-static void gemma4_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                           int pos0, float *logits) {
+static int gemma4_forward(void *model, kv_cache *kv, const int *tokens, int n,
+                          int pos0, float *logits) {
     gemma4_model *m = (gemma4_model*)model;
+    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_kv_layers, 0);
+    if (rc != NT_OK) return rc;
+
     int E = m->embed, H = m->n_heads, KVH = m->n_kv_heads, P = m->ple_dim;
     int NL = m->n_layers;
     float eps = m->rms_eps;
@@ -293,7 +316,7 @@ static void gemma4_forward(void *model, kv_cache *kv, const int *tokens, int n,
     float *proj = (float*)calloc((size_t)P * NL, sizeof(float));
     if (!x || !xn || !ple || !ple_row || !proj) {
         free(x); free(xn); free(ple); free(ple_row); free(proj);
-        return;
+        return NT_E_MEMORY;
     }
 
     double pft = pf_mark();
@@ -476,6 +499,7 @@ static void gemma4_forward(void *model, kv_cache *kv, const int *tokens, int n,
     free(x); free(xn); free(ple); free(ple_row); free(proj);
     free(q_all); free(k_new); free(v_new); free(attn_out); free(proj_out);
     free(g_buf); free(u_buf); free(pe_in); free(pe_buf);
+    return NT_OK;
 }
 
 static const char *const gemma4_names[] = { "gemma4", NULL };

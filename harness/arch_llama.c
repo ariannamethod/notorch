@@ -36,6 +36,8 @@ typedef struct {
     } layers[];
 } llama_model;
 
+static void llama_free(void *model);
+
 static void *llama_load(gguf_file *gf, nt_dims *dims) {
     int nl = gf->n_layers;
     llama_model *m = (llama_model*)calloc(1, sizeof(llama_model) + nl * sizeof(m->layers[0]));
@@ -79,6 +81,7 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
     if (ti >= 0) m->out_norm = gguf_dequant(gf, ti);   /* [embed], f32 either way */
     m->has_output_weight = wt_load(&m->out_weight, gf, "output.weight");
 
+    int missing = 0;
     for (int l = 0; l < nl; l++) {
         char name[128];
         /* 1-D: norms and biases are a few thousand floats and are read
@@ -89,9 +92,18 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
             ti = gguf_find_tensor(gf, name); \
             if (ti >= 0) m->layers[l].field = gguf_dequant(gf, ti); \
         } while(0)
+        /* wt_load's answer was thrown away here until 2026-09-12, and a file
+         * missing one attention matrix loaded, ran, and answered — with a
+         * different sentence on a scalar build and a BLAS abort on Accelerate,
+         * from the same file. A weight this forward will dereference is not
+         * optional, so the loop stops at the first one that is not there and
+         * names it. The 1-D reads above stay optional: biases genuinely are. */
         #define W(field, fmt) do { \
             snprintf(name, sizeof(name), fmt, l); \
-            wt_load(&m->layers[l].field, gf, name); \
+            if (!wt_load(&m->layers[l].field, gf, name)) { \
+                fprintf(stderr, "llama: required tensor '%s' missing or unreadable\n", name); \
+                missing = 1; \
+            } \
         } while(0)
         L(attn_norm, "blk.%d.attn_norm.weight");
         W(wq, "blk.%d.attn_q.weight");
@@ -111,9 +123,13 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
 
     if (!(m->tok_emb.q || m->tok_emb.f32) || !m->out_norm) {
         fprintf(stderr, "llama: missing critical weights\n");
-        free(m);
-        return NULL;
+        missing = 1;
     }
+    /* llama_free and not free: every tensor already expanded belongs to this
+     * model, and dropping the struct alone left them behind — on a 24B that is
+     * the difference between a refused load and a refused load that took the
+     * machine down with it. */
+    if (missing) { llama_free(m); return NULL; }
     if (m->layers[0].q_bias) fprintf(stderr, "  (has attention bias — qwen-style)\n");
     if (!m->has_output_weight) fprintf(stderr, "  (tied embeddings)\n");
     fprintf(stderr, "  rope: %s | weights: packed%s\n", m->rope_neox ? "neox" : "norm",
@@ -147,9 +163,12 @@ static void llama_free(void *model) {
  * difference between a prompt that costs the same as generating it and one
  * that does not. Attention still runs per row — it reads the KV cache rather
  * than the weights, so batching it buys little and costs a mask. */
-static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                          int pos0, float *logits) {
+static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
+                         int pos0, float *logits) {
     llama_model *m = (llama_model*)model;
+    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_layers, m->kv_dim);
+    if (rc != NT_OK) return rc;
+
     int E = m->embed, H = m->n_heads, KV = m->n_kv_heads;
     int HD = m->head_dim, KVD = m->kv_dim, FFN = m->ffn, Q_DIM = m->q_dim;
     float eps = m->rms_eps;
@@ -160,6 +179,7 @@ static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
      * 933 MB to read 1536 floats per token. */
     double pft = pf_mark();
     float *x = (float*)calloc((size_t)n * E, sizeof(float));
+    if (!x) return NT_E_MEMORY;
     for (int j = 0; j < n; j++) {
         float *xj = x + (long)j * E;
         if (m->tok_emb.f32) memcpy(xj, m->tok_emb.f32 + (long)tokens[j] * E, E * sizeof(float));
@@ -176,6 +196,11 @@ static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
     float *ffn_gate = (float*)calloc((size_t)n * FFN, sizeof(float));
     float *ffn_up = (float*)calloc((size_t)n * FFN, sizeof(float));
     float *ffn_out = (float*)calloc((size_t)n * E, sizeof(float));
+    if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_gate || !ffn_up || !ffn_out) {
+        free(x); free(xn); free(q_all); free(k_new); free(v_new);
+        free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out);
+        return NT_E_MEMORY;
+    }
 
     for (int l = 0; l < m->n_layers; l++) {
         pft = pf_mark();
@@ -275,6 +300,7 @@ static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
     free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out);
+    return NT_OK;
 }
 
 static const char *const llama_names[] = { "llama", "qwen2", NULL };

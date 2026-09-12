@@ -457,21 +457,31 @@ fuck torch — but also, you do not need llama.cpp to *run* what you built. the 
 
 ```bash
 make lib lib_harness && make install PREFIX=/opt/homebrew
-cc -I$PREFIX/include/ariannamethod body.c -lnotorch_harness -lnotorch -lm
+cc -I$PREFIX/include/ariannamethod body.c \
+   -L$PREFIX/lib -lnotorch_harness -lnotorch \
+   -framework Accelerate -lm          # macOS; -lopenblas on Linux, nothing without BLAS
 ```
+
+the backend flag is not optional and neither is `-L`: both archives call into whatever BLAS the tree was built with, and leaving the linker to find `libnotorch` on its own is how it finds a *shared* one instead — `-lnotorch` prefers `libnotorch.dylib` over `libnotorch.a`, so a stale dylib anywhere on the search path silently replaces the library you just built, and the missing symbols read like an archive ordering problem. `make clean` removes ours; point `-L` at the prefix you installed to.
 
 ```c
 #include "harness/archs.h"
 gguf_file *gf = gguf_open(path);
-const nt_arch *arch = nt_pick_arch(gf->arch);   /* NULL if no family claims it — check it */
+const nt_arch *arch = nt_pick_arch(gf->arch);   /* NULL if no family claims it */
+if (!arch) return;
 nt_dims dims; void *model = arch->load(gf, &dims);
+if (!model) return;                             /* a file short one weight is refused here */
 kv_cache *kv = kv_new(dims.n_layers, max_seq, dims.kv_dim);
-arch->forward(model, kv, ids, n, 0, logits);    /* n>1 prefills; logits are the last row */
+if (!kv) return;                                /* all of it or NULL, never half a cache */
+int rc = arch->forward(model, kv, ids, n, 0, logits);
+if (rc != NT_OK) fprintf(stderr, "%s\n", nt_strerror(rc));
 ```
+
+every one of those checks is load-bearing and every one of them was added on 2026-09-12, after an outside audit found the harness compiling as a library without behaving like one: `forward` returned `void` and could not report a refusal, `kv_new` handed back a live object with no storage when the allocation failed, and a GGUF missing an attention matrix loaded fine and then answered a different sentence on a scalar build and aborted inside BLAS on Accelerate. `nt_check_call` in the runtime now refuses a bad token id, an impossible position or a mismatched cache before any family touches it, and on a refusal `logits` is not written at all rather than half written.
 
 two archives on purpose. `libnotorch` is the substrate anything can use — tensors, kernels, GGUF. `libnotorch_harness` is family code that only means something to a caller running models: the six forwards, the runtime, the KV cache, the GGUF-embedded BPE. an organism links both and vendors neither, which is the difference between depending on notorch and forking it.
 
-`make test_consumer_link` proves it the only way that counts: install into a throwaway prefix, build a program from outside the tree with nothing but those two `-l` flags, run a model through it — and then build it *again* without `-lnotorch_harness` and require that one to fail.
+`make test_consumer_link` proves it the only way that counts: install into a throwaway prefix, build a program from outside the tree with nothing but those two `-l` flags, run a model through it — and then build it *again* without `-lnotorch_harness` and require that one to fail. `make test_repeat` covers the other half of a runtime contract: a family that keeps state outside the KV cache — Mamba's scan, Janus's running low-rank sum — has to clear it when a sequence starts, and the check is exact equality between two identical runs, because Janus drifted 0.49 on the logits while keeping its argmax and nothing noticed.
 
 ---
 

@@ -336,9 +336,12 @@ static void resonance_step(resonance_model *m, kv_cache *kv, int tok, int pos,
     }
 }
 
-static void resonance_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                              int pos0, float *logits) {
+static int resonance_forward(void *model, kv_cache *kv, const int *tokens, int n,
+                             int pos0, float *logits) {
     resonance_model *m = (resonance_model*)model;
+    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->blocks, m->embed);
+    if (rc != NT_OK) return rc;
+
     /* Ten E-wide buffers (x, xn, q, k, v, content, rrpram, blend, proj, mlp-out),
      * two FFN-wide, one score row per cached position, one rank row. Counting
      * these wrong does not crash: the score row lands on top of the MLP output
@@ -346,14 +349,17 @@ static void resonance_forward(void *model, kv_cache *kv, const int *tokens, int 
     size_t words = (size_t)m->embed * 10 + (size_t)m->ffn * 2
                  + (size_t)kv->max_seq + (size_t)m->rank;
     float *scratch = (float*)malloc(words * sizeof(float));
-    if (!scratch) return;
+    if (!scratch) return NT_E_MEMORY;
+    /* The bounds check that used to live on this loop is gone: nt_check_call
+     * refused the call before any of it ran, so a position past the cache can
+     * no longer arrive here to be silently dropped mid-prompt. */
     for (int j = 0; j < n; j++) {
         int pos = pos0 + j;
-        if (pos >= kv->max_seq) break;
         resonance_step(m, kv, tokens[j], pos,
                        (logits && j == n - 1) ? logits : NULL, scratch);
     }
     free(scratch);
+    return NT_OK;
 }
 
 static const char *const RESONANCE_NAMES[] = { "resonance", NULL };

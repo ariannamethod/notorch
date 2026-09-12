@@ -242,18 +242,35 @@ static void janus_free(void *model) {
     free(m);
 }
 
-/* The second value cache and the running low-rank sum, sized once against the
- * cache the harness handed us. A shorter cache than last time means a new run,
- * so the sum starts over rather than carrying somebody else's prompt. */
-static int janus_state(janus_model *m, const kv_cache *kv) {
+/* The second value cache and the running low-rank sum, sized against the cache
+ * the harness handed us.
+ *
+ * `fresh` says this call starts a sequence at position zero, and then the sum
+ * has to start at zero with it. It is model-owned rather than cache-owned —
+ * the sum is this family's recurrence, not the KV — so nothing else clears it,
+ * and until 2026-09-12 nothing did: the comment here claimed a new run started
+ * the sum over, the code reallocated `vr` and left `mid` holding the previous
+ * prompt. Two identical forwards at pos0 = 0 on one model came out 0.4929
+ * apart on the logits, and 0.5026 apart on the next pair, so it accumulated
+ * rather than settling. Greedy sampling kept the argmax, which is why every
+ * gate stayed green. */
+static int janus_state(janus_model *m, const kv_cache *kv, int fresh) {
     size_t vr_words = (size_t)m->blocks * (size_t)kv->max_seq * (size_t)m->embed;
+    size_t mid_words = (size_t)m->blocks * m->heads * m->rank;
     if (!m->vr || m->vr_seq != kv->max_seq) {
         free(m->vr);
         m->vr = (float*)calloc(vr_words, sizeof(float));
         m->vr_seq = kv->max_seq;
     }
+    /* vr is not cleared on a fresh sequence and does not need to be: it is
+     * indexed by position and every position is written before it is read, so
+     * a shorter run leaves stale rows above itself that nothing causal reaches.
+     * Clearing it as well also drove the probe to zero, which is how a fix ends
+     * up carrying a line that does nothing — the isolation was run. */
     if (!m->mid)
-        m->mid = (float*)calloc((size_t)m->blocks * m->heads * m->rank, sizeof(float));
+        m->mid = (float*)calloc(mid_words, sizeof(float));
+    else if (fresh)
+        memset(m->mid, 0, mid_words * sizeof(float));
     return m->vr && m->mid;
 }
 
@@ -401,16 +418,19 @@ static void janus_step(janus_model *m, kv_cache *kv, const float *xin, int pos,
     }
 }
 
-static void janus_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                          int pos0, float *logits) {
+static int janus_forward(void *model, kv_cache *kv, const int *tokens, int n,
+                         int pos0, float *logits) {
     janus_model *m = (janus_model*)model;
+    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->blocks, m->embed);
+    if (rc != NT_OK) return rc;
+
     const int E = m->embed;
-    if (!janus_state(m, kv)) return;
+    if (!janus_state(m, kv, pos0 == 0)) return NT_E_STATE;
 
     size_t words = (size_t)E * 12 + (size_t)m->ffn * 2 + (size_t)kv->max_seq;
     float *scratch = (float*)malloc(words * sizeof(float));
     float *emb = (float*)malloc((size_t)n * E * sizeof(float));
-    if (!scratch || !emb) { free(scratch); free(emb); return; }
+    if (!scratch || !emb) { free(scratch); free(emb); return NT_E_MEMORY; }
 
     /* Embeddings first, because the smear needs the previous position's and the
      * per-position path would have thrown it away. */
@@ -437,15 +457,17 @@ static void janus_forward(void *model, kv_cache *kv, const int *tokens, int n,
         }
     }
 
+    /* The bounds check that used to live on this loop is gone: nt_check_call
+     * refused the call before any of it ran, so a position past the cache can
+     * no longer arrive here to be silently dropped mid-prompt. */
     for (int j = 0; j < n; j++) {
-        int pos = pos0 + j;
-        if (pos >= kv->max_seq) break;
-        janus_step(m, kv, emb + (size_t)j * E, pos,
+        janus_step(m, kv, emb + (size_t)j * E, pos0 + j,
                    (logits && j == n - 1) ? logits : NULL, scratch);
     }
 
     free(scratch);
     free(emb);
+    return NT_OK;
 }
 
 static const char *const JANUS_NAMES[] = { "janus", NULL };

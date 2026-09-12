@@ -41,8 +41,10 @@ int main(int argc, char **argv) {
      * same path a generation does rather than a prefill-only shape. */
     kv_cache *kv = kv_new(dims.n_layers, n + 1, dims.kv_dim);
     float *logits = (float*)calloc(dims.vocab, sizeof(float));
-    for (int i = 0; i < n; i++)
-        nt_arch_resonance.forward(model, kv, &ids[i], 1, i, logits);
+    for (int i = 0; i < n; i++) {
+        int rc = nt_arch_resonance.forward(model, kv, &ids[i], 1, i, logits);
+        if (rc != NT_OK) { fprintf(stderr, "forward refused: %s\n", nt_strerror(rc)); return 1; }
+    }
 
     for (int i = 0; i < dims.vocab; i++) printf("%.9g\n", logits[i]);
 

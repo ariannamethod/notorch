@@ -192,9 +192,12 @@ static void top_k(const float *p, int n, int k, int *idx) {
     }
 }
 
-static void olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                          int pos0, float *logits) {
+static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
+                         int pos0, float *logits) {
     olmoe_model *m = (olmoe_model*)model;
+    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_layers, m->kv_dim);
+    if (rc != NT_OK) return rc;
+
     int E = m->embed, H = m->n_heads, KV = m->n_kv_heads;
     int HD = m->head_dim, KVD = m->kv_dim, FFN = m->ffn, Q_DIM = m->q_dim;
     int NE = m->n_expert, NU = m->n_expert_used;
@@ -203,6 +206,7 @@ static void olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
     double pft = pf_mark();
     float *x = (float*)calloc((size_t)n * E, sizeof(float));
+    if (!x) return NT_E_MEMORY;
     for (int j = 0; j < n; j++) {
         float *xj = x + (long)j * E;
         if (m->tok_emb.f32) memcpy(xj, m->tok_emb.f32 + (long)tokens[j] * E, E * sizeof(float));
@@ -224,6 +228,12 @@ static void olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
     float *eg = (float*)calloc((size_t)NU * FFN, sizeof(float));
     float *eu = (float*)calloc((size_t)NU * FFN, sizeof(float));
     float *eo = (float*)calloc((size_t)E, sizeof(float));
+    if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_out || !router ||
+        !eg || !eu || !eo) {
+        free(x); free(xn); free(q_all); free(k_new); free(v_new);
+        free(attn_out); free(ffn_out); free(router); free(eg); free(eu); free(eo);
+        return NT_E_MEMORY;
+    }
 
     for (int l = 0; l < m->n_layers; l++) {
         pft = pf_mark();
@@ -400,6 +410,7 @@ static void olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
     free(attn_out); free(ffn_out); free(router); free(eg); free(eu); free(eo);
+    return NT_OK;
 }
 
 static const char *const olmoe_names[] = { "olmoe", NULL };
