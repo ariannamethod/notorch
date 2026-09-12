@@ -13,6 +13,7 @@
 ## table of contents
 
 - [what is this](#what)
+- [run a model](#run-a-model)
 - [use it from Python](#use-it-from-python)
 - [why](#why)
 - [the funeral](#the-funeral)
@@ -58,6 +59,60 @@ just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural net
 it's part of [the Arianna Method](https://github.com/ariannamethod/ariannamethod.ai) — patterns over parameters, emergence over engineering, raw C over existential dread.
 
 extracted from the core of [ariannamethod.ai](https://ariannamethod.ai) where it actually runs in production. training actual models. in C. like adults.
+
+---
+
+## run a model
+
+one binary, one file, no runtime. point it at a GGUF and it talks.
+
+```bash
+make harness
+./notorch model.gguf "The capital of France is" 64 0.8
+./notorch model.gguf                      # no prompt: chat in the terminal
+```
+
+`harness/` is deliberately small — GGUF in, text out — and a model family is one file
+behind one interface (`harness/arch.h`). what runs today: **llama**, **mistral3**,
+**qwen2**, **qwen3**, **gemma4**, **olmoe**, **qwen3moe**, **mamba**, and the Method's
+own **resonance** and **janus**. an architecture no family claims is refused by name
+rather than quietly pushed through the llama forward — a file the harness has never
+seen is a file it has never been tested on.
+
+it is measured against llama.cpp rather than against itself. `make test_reference`
+runs both on the same weights at temperature 0 and compares the bytes; where the two
+part on a coin-flip it hands the reference's own answer back to both and requires them
+to agree again. on the polygon — an i5-8500T, six cores, no AVX-512 — Qwen3-4B Q4_K_M
+reads 2 identical and 1 tie-break of 3, Ministral-3B reads 3 identical, and
+Qwen3-30B-A3B Q4_K_M, a mixture of 128 experts, reads 3 identical of 3 at 17.3 GiB
+resident. speed on that machine, six threads on both sides, against `llama-bench`:
+
+| | notorch prefill | llama.cpp | notorch decode | llama.cpp |
+|---|---|---|---|---|
+| Qwen3-4B Q4_K_M | 11.6 t/s | 49.63 | 6.1 t/s | 11.10 |
+| Ministral-3B Q4_K_M | 14.1 | 60.68 | 7.2 | 13.14 |
+| Qwen3-30B-A3B Q4_K_M | 9.4 | 31.99 | 6.3 | 13.12 |
+
+not parity yet, and the gap is written down rather than rounded off.
+
+the harness is also a library, because a body should link it rather than fork it:
+
+```bash
+make lib lib_harness && make install PREFIX=/opt/homebrew
+cc -I$PREFIX/include/ariannamethod body.c \
+   -L$PREFIX/lib -lnotorch_harness -lnotorch -framework Accelerate -lm
+```
+
+```c
+#include "harness/archs.h"
+const nt_arch *arch = nt_pick_arch(gf->arch);        /* NULL if no family claims it */
+void *model = arch->load(gf, &dims);
+int rc = arch->forward(model, kv, ids, n, 0, logits);  /* NT_OK, or a refusal */
+```
+
+`make test_consumer_link` proves that from outside the tree, and then builds the same
+program *without* the archive and requires it to fail. details in
+[inference](#inference--notorch-runs-models-it-doesnt-just-train-them).
 
 ---
 
