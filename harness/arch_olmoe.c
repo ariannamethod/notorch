@@ -468,7 +468,10 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
             /* The layer's input, quantized once for every expert that will read it. This
              * line is the difference between the grouping paying and costing. */
             pft = pf_mark();
-            nt_quant_act_batch(xn, E, n, grp_qa, grp_da, grp_as);
+            /* The granularity the gate and up experts want. They share a dtype in every
+             * mixture here; a per-256 scale is a valid scale for any kernel that reads it,
+             * only a coarser one, so a mismatch would cost accuracy and not correctness. */
+            nt_quant_act_batch(xn, m->layers[l].gate_exps.dtype, E, n, grp_qa, grp_da, grp_as);
             pf_add(PF_FFN, pft);
 
             for (int ex = 0; ex < NE; ex++) {
@@ -528,7 +531,7 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
                 pft = pf_mark();
                 if (!(batched &&
-                      nt_quant_act_batch(grp_g, FFN, cnt, grp_dqa, grp_dda, grp_das) == 0 &&
+                      nt_quant_act_batch(grp_g, dw.dtype, FFN, cnt, grp_dqa, grp_dda, grp_das) == 0 &&
                       nt_qmatmul_i8_pre(grp_o, dw.q, dw.dtype, grp_dqa, grp_dda, grp_das,
                                         E, FFN, cnt) == 0))
                     for (int c = 0; c < cnt; c++)

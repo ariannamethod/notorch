@@ -601,7 +601,7 @@ int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
 // weights — a mixture reading each expert against the positions that chose it. qa is
 // [n][k] int8, da is [n][k/32] floats, asum is [n][k/32] int32 and may be NULL for the
 // formats that do not lift a bias out of the dot (everything but Q4_K and Q5_0).
-int nt_quant_act_batch(const float *X, int k, int n,
+int nt_quant_act_batch(const float *X, int dtype, int k, int n,
                        int8_t *qa, float *da, int32_t *asum);
 int nt_qmatmul_i8_pre(float *out, const uint8_t *Wq, int dtype,
                       const int8_t *qa, const float *da, const int32_t *asum,

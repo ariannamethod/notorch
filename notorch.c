@@ -6324,6 +6324,45 @@ static void nt_act_block_sums(const int8_t *qa, int k, int32_t *asum) {
 #endif
 }
 
+/* The same quantization with one scale per 256 values instead of one per 32, written into
+ * all eight slots of the superblock so that nothing downstream has to know.
+ *
+ * This exists because of what the reference does. ggml's block_q8_K carries a single float
+ * for 256 values, and that is what lets ggml_vec_dot_q4_K_q8_K keep the Q4_K sub-block
+ * scales in the integer domain — `madd_epi16(scale, p16)` folds the scale into the same
+ * instruction that folds the products, and a whole block drains with one cvtepi32_ps and
+ * one fmadd. Eight different activation scales per superblock make that impossible: eight
+ * different floats have to multiply eight different sums, so the sums must come out to
+ * scalars first, which is a hadd tree and eight scalar FMAs per block. Measured against the
+ * reference on an i5-8500T, that difference is 1.37x on the kernel.
+ *
+ * It costs accuracy, and the amount is measured rather than assumed: 6.0e-03 of the output
+ * RMS at k=14336, 4.4e-03 at k=2048, on random weights. What decides whether that is
+ * acceptable is harness/test_reference.sh against llama.cpp, not this comment.
+ *
+ * Only Q4_K uses it. Q8_0 keeps the per-32 scale, which leaves Janus's shipped path exactly
+ * where it was. */
+static void nt_quant_act_q8_super(const float *x, int k, int8_t *qa, float *da) {
+    int nsb = k / 256;
+    for (int b = 0; b < nsb; b++) {
+        const float *xb = x + (long)b * 256;
+        float amax = 0.0f;
+        for (int i = 0; i < 256; i++) { float a = fabsf(xb[i]); if (a > amax) amax = a; }
+        float d  = amax / 127.0f;
+        float id = (d > 0.0f) ? 1.0f / d : 0.0f;
+        for (int s = 0; s < 8; s++) da[b * 8 + s] = d;
+        for (int i = 0; i < 256; i++) {
+            int q = (int)lrintf(xb[i] * id);
+            if (q > 127) q = 127; else if (q < -127) q = -127;
+            qa[(long)b * 256 + i] = (int8_t)q;
+        }
+    }
+}
+
+/* Which granularity a dtype's kernels expect. One place, so the entry points and the
+ * kernels cannot disagree about what `da` means. */
+static void nt_quant_act_for(int dtype, const float *x, int k, int8_t *qa, float *da);
+
 static void nt_quant_act_q8(const float *x, int k, int8_t *qa, float *da) {
     int nb = k / 32;
     for (int b = 0; b < nb; b++) {
@@ -6339,6 +6378,11 @@ static void nt_quant_act_q8(const float *x, int k, int8_t *qa, float *da) {
             qa[(long)b * 32 + i] = (int8_t)q;
         }
     }
+}
+
+static void nt_quant_act_for(int dtype, const float *x, int k, int8_t *qa, float *da) {
+    if (dtype == 12 && (k % 256) == 0) nt_quant_act_q8_super(x, k, qa, da);
+    else                               nt_quant_act_q8(x, k, qa, da);
 }
 
 // Q4_0 int8-dot rows: packed weights (18 B/32) × pre-quantized int8 activation.
@@ -7001,7 +7045,8 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
     const __m256i m4 = _mm256_set1_epi8(0x0F), ones = _mm256_set1_epi16(1);
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 144;
-        float acc = 0.0f;
+        __m256 accv = _mm256_setzero_ps();
+        float accm = 0.0f;
         for (int blk = 0; blk < nb; blk++) {
             const uint8_t *b = rb + (long)blk * 144;
             float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
@@ -7024,40 +7069,50 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
              * hadd tree instead of a drain per sub-block.
              * The float accumulation order is unchanged — still ascending by sub-block — so
              * this remains an integer re-order and the consumer's greedy vector must not move. */
+            /* The sub-block scale rides inside madd_epi16, which is the shape of
+             * ggml_vec_dot_q4_K_q8_K and the reason it is faster. It is possible only
+             * because the activation now carries one scale per 256 values: with eight
+             * different scales per superblock the eight sums have to leave the vector
+             * registers to meet eight different floats, and that drain — a six-deep hadd
+             * tree, a store, and eight dependent scalar FMAs per block — was this kernel's
+             * largest single cost. Here the scaling is free, everything stays int32 to the
+             * end of the block, and one cvtepi32_ps and one fmadd finish it.
+             *
+             * The mins take the same shape: eight of them against the eight per-32
+             * activation sums, one integer dot and one multiply instead of eight
+             * subtractions. */
             uint8_t ls[8], lm[8];
             for (int j = 0; j < 8; j++) nt_get_scale_min_k4(j, sc, &ls[j], &lm[j]);
-            __m256i s[8];
-            for (int p = 0; p < 4; p++) {
-                __m256i qsv = _mm256_loadu_si256((const __m256i *)(qs + p * 32));
-                __m256i lo  = _mm256_and_si256(qsv, m4);
-                __m256i hi  = _mm256_and_si256(_mm256_srli_epi16(qsv, 4), m4);
-                __m256i a0  = _mm256_loadu_si256((const __m256i *)(qa + (long)(blk * 8 + 2*p) * 32));
-                __m256i a1  = _mm256_loadu_si256((const __m256i *)(qa + (long)(blk * 8 + 2*p + 1) * 32));
-                s[2*p]     = _mm256_madd_epi16(_mm256_maddubs_epi16(lo, a0), ones);
-                s[2*p + 1] = _mm256_madd_epi16(_mm256_maddubs_epi16(hi, a1), ones);
-            }
-            __m256i A = _mm256_hadd_epi32(_mm256_hadd_epi32(s[0], s[1]),
-                                          _mm256_hadd_epi32(s[2], s[3]));
-            __m256i B = _mm256_hadd_epi32(_mm256_hadd_epi32(s[4], s[5]),
-                                          _mm256_hadd_epi32(s[6], s[7]));
-            __m256i sums = _mm256_add_epi32(_mm256_permute2x128_si256(A, B, 0x20),
-                                            _mm256_permute2x128_si256(A, B, 0x31));
-            /* The scalar tail stays scalar on purpose. GCC contracts
-             * d * scale * dot - dmin * min * asum into an FMA under -march=native, and that
-             * single rounding is part of every number this kernel has ever been accepted on.
-             * Intrinsics cannot express the compiler's contraction choice: a hand-vectorised
-             * tail was measured against this one and differed on 521 of 768 rows, worst 4.8e-4
-             * relative, which moved the perplexity of an untouched container in the fourth
-             * decimal while every argmax and every six-digit probe stayed put. The dots are
-             * vectorised because they are integers and exact; the float tail is not. */
-            int32_t dots[8];
-            _mm256_storeu_si256((__m256i *)dots, sums);
-            for (int j = 0; j < 8; j++) {
-                int sub = blk * 8 + j;
-                acc = nt_q4k_acc(acc, da[sub], d, (float)ls[j], dots[j], dmin, (float)lm[j], asum[sub]);
-            }
+            const __m256i q0 = _mm256_loadu_si256((const __m256i *)(qs));
+            const __m256i q1 = _mm256_loadu_si256((const __m256i *)(qs + 32));
+            const __m256i q2 = _mm256_loadu_si256((const __m256i *)(qs + 64));
+            const __m256i q3 = _mm256_loadu_si256((const __m256i *)(qs + 96));
+            const int8_t *ab = qa + (long)blk * 256;
+            #define NT_Q4K_LO(qv, s16, off) _mm256_madd_epi16(_mm256_set1_epi16((short)(s16)), \
+                _mm256_maddubs_epi16(_mm256_and_si256((qv), m4),                               \
+                    _mm256_loadu_si256((const __m256i *)(ab + (off) * 32))))
+            #define NT_Q4K_HI(qv, s16, off) _mm256_madd_epi16(_mm256_set1_epi16((short)(s16)), \
+                _mm256_maddubs_epi16(_mm256_and_si256(_mm256_srli_epi16((qv), 4), m4),         \
+                    _mm256_loadu_si256((const __m256i *)(ab + (off) * 32))))
+            __m256i sumi = _mm256_add_epi32(
+                _mm256_add_epi32(NT_Q4K_LO(q0, ls[0], 0), NT_Q4K_HI(q0, ls[1], 1)),
+                _mm256_add_epi32(NT_Q4K_LO(q1, ls[2], 2), NT_Q4K_HI(q1, ls[3], 3)));
+            sumi = _mm256_add_epi32(sumi, _mm256_add_epi32(
+                _mm256_add_epi32(NT_Q4K_LO(q2, ls[4], 4), NT_Q4K_HI(q2, ls[5], 5)),
+                _mm256_add_epi32(NT_Q4K_LO(q3, ls[6], 6), NT_Q4K_HI(q3, ls[7], 7))));
+            #undef NT_Q4K_LO
+            #undef NT_Q4K_HI
+            float dsb = da[blk * 8];          /* one scale for the whole superblock now */
+            accv = _mm256_fmadd_ps(_mm256_set1_ps(d * dsb), _mm256_cvtepi32_ps(sumi), accv);
+            int32_t mt = 0;
+            for (int j = 0; j < 8; j++) mt += (int32_t)lm[j] * asum[blk * 8 + j];
+            accm += dmin * dsb * (float)mt;
         }
-        out[row] = acc;
+        {
+            __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv), _mm256_extractf128_ps(accv, 1));
+            h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+            out[row] = _mm_cvtss_f32(h) - accm;
+        }
     }
 }
 #elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
@@ -7173,6 +7228,9 @@ static nt_qrows_i8_fn nt_qrows_i8_for(int dtype, int k) {
     }
 }
 
+/* The public per-32 quantizer, unchanged: it names no dtype and so cannot pick a
+ * granularity. Callers that hand the result to a Q4_K kernel want nt_quant_act_batch,
+ * which does. */
 void nt_quant_act(const float *x, int k, int8_t *qa, float *da) {
     nt_quant_act_q8(x, k, qa, da);
 }
@@ -7216,7 +7274,7 @@ int nt_qmatvec_i8(float *out, const uint8_t *Wq, int dtype,
      * produces the bytes it sums. */
     int32_t *asum = (int32_t *)malloc((size_t)nb * sizeof(int32_t));
     if (!qa || !da || !asum) { free(qa); free(da); free(asum); return -1; }
-    nt_quant_act_q8(x, k, qa, da);
+    nt_quant_act_for(dtype, x, k, qa, da);
     nt_act_block_sums(qa, k, asum);
 
     /* Selected by table, not by a ternary chain whose last arm is a default. That shape
@@ -7312,7 +7370,7 @@ int nt_qmatvec_i8_gather(float *out, const uint8_t *const *slices, int n_slices,
     float  *da = (float *)malloc((size_t)nb * sizeof(float));
     int32_t *asum = (int32_t *)malloc((size_t)nb * sizeof(int32_t));
     if (!qa || !da || !asum) { free(qa); free(da); free(asum); return -1; }
-    nt_quant_act_q8(x, k, qa, da);
+    nt_quant_act_for(dtype, x, k, qa, da);
     nt_act_block_sums(qa, k, asum);
 
     long total = (long)n_slices * rows_each;
@@ -7495,8 +7553,9 @@ static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
         int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 18;
-            float acc[NT_QMM_TILE];
-            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            __m256 accv[NT_QMM_TILE];
+            float accm[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) { accv[j] = _mm256_setzero_ps(); accm[j] = 0.0f; }
             for (int b = 0; b < nb; b++) {
                 const uint8_t *blk = rb + (long)b * 18;
                 float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
@@ -7566,12 +7625,15 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                  * were being redone 32 times for one block of weights. callgrind put the
                  * kernel at 216 instructions per (block, column) against 16 for the MACs
                  * themselves, which is what pointed here. */
+                /* The scales stay integers: they go into madd_epi16 beside the products
+                 * they scale, which is only possible because the activation now carries one
+                 * float per 256 values. See the per-token arm above for why that decides
+                 * the shape of the whole kernel. */
                 uint8_t ls[8], lm[8];
-                float dls[8], dlm[8];
+                __m256i sv[8];
                 for (int s = 0; s < 8; s++) {
                     nt_get_scale_min_k4(s, sc, &ls[s], &lm[s]);
-                    dls[s] = d * (float)ls[s];
-                    dlm[s] = dmin * (float)lm[s];
+                    sv[s] = _mm256_set1_epi16((short)ls[s]);
                 }
                 /* Named, not indexed, and the loop over the four nibble vectors unrolled.
                  *
@@ -7590,38 +7652,38 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
 
                 for (int j = 0; j < jn; j++) {
                     const int8_t *ac = qa + (long)(j0 + j) * k + (long)blk * 256;
-                    #define NT_Q4K_SUB(qv, off) \
-                        _mm256_madd_epi16(_mm256_maddubs_epi16(                            \
+                    #define NT_Q4K_SUB(qv, si, off) \
+                        _mm256_madd_epi16(sv[si], _mm256_maddubs_epi16(                    \
                             _mm256_and_si256((qv), m4),                                    \
-                            _mm256_loadu_si256((const __m256i *)(ac + (off) * 32))), ones)
-                    #define NT_Q4K_SUB_HI(qv, off) \
-                        _mm256_madd_epi16(_mm256_maddubs_epi16(                            \
+                            _mm256_loadu_si256((const __m256i *)(ac + (off) * 32))))
+                    #define NT_Q4K_SUB_HI(qv, si, off) \
+                        _mm256_madd_epi16(sv[si], _mm256_maddubs_epi16(                    \
                             _mm256_and_si256(_mm256_srli_epi16((qv), 4), m4),              \
-                            _mm256_loadu_si256((const __m256i *)(ac + (off) * 32))), ones)
-                    __m256i s0 = NT_Q4K_SUB(q0, 0),    s1 = NT_Q4K_SUB_HI(q0, 1);
-                    __m256i s2 = NT_Q4K_SUB(q1, 2),    s3 = NT_Q4K_SUB_HI(q1, 3);
-                    __m256i s4 = NT_Q4K_SUB(q2, 4),    s5 = NT_Q4K_SUB_HI(q2, 5);
-                    __m256i s6 = NT_Q4K_SUB(q3, 6),    s7 = NT_Q4K_SUB_HI(q3, 7);
+                            _mm256_loadu_si256((const __m256i *)(ac + (off) * 32))))
+                    __m256i sumi = _mm256_add_epi32(
+                        _mm256_add_epi32(NT_Q4K_SUB(q0, 0, 0), NT_Q4K_SUB_HI(q0, 1, 1)),
+                        _mm256_add_epi32(NT_Q4K_SUB(q1, 2, 2), NT_Q4K_SUB_HI(q1, 3, 3)));
+                    sumi = _mm256_add_epi32(sumi, _mm256_add_epi32(
+                        _mm256_add_epi32(NT_Q4K_SUB(q2, 4, 4), NT_Q4K_SUB_HI(q2, 5, 5)),
+                        _mm256_add_epi32(NT_Q4K_SUB(q3, 6, 6), NT_Q4K_SUB_HI(q3, 7, 7))));
                     #undef NT_Q4K_SUB
                     #undef NT_Q4K_SUB_HI
-                    __m256i A = _mm256_hadd_epi32(_mm256_hadd_epi32(s0, s1),
-                                                  _mm256_hadd_epi32(s2, s3));
-                    __m256i B = _mm256_hadd_epi32(_mm256_hadd_epi32(s4, s5),
-                                                  _mm256_hadd_epi32(s6, s7));
-                    __m256i sums = _mm256_add_epi32(_mm256_permute2x128_si256(A, B, 0x20),
-                                                    _mm256_permute2x128_si256(A, B, 0x31));
-                    int32_t dots[8];
-                    _mm256_storeu_si256((__m256i *)dots, sums);
                     const float   *dac = da   + (long)(j0 + j) * nsub;
                     const int32_t *asc = asum + (long)(j0 + j) * nsub;
-                    for (int s = 0; s < 8; s++) {
-                        int sub = blk * 8 + s;
-                        acc[j] = nt_q4k_acc_pre(acc[j], dac[sub], dls[s], dots[s],
-                                                dlm[s], asc[sub]);
-                    }
+                    float dsb = dac[blk * 8];
+                    accv[j] = _mm256_fmadd_ps(_mm256_set1_ps(d * dsb),
+                                              _mm256_cvtepi32_ps(sumi), accv[j]);
+                    int32_t mt = 0;
+                    for (int s = 0; s < 8; s++) mt += (int32_t)lm[s] * asc[blk * 8 + s];
+                    accm[j] += dmin * dsb * (float)mt;
                 }
             }
-            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+            for (int j = 0; j < jn; j++) {
+                __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv[j]),
+                                      _mm256_extractf128_ps(accv[j], 1));
+                h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+                out[(long)(j0 + j) * m + row] = _mm_cvtss_f32(h) - accm[j];
+            }
         }
     }
 }
@@ -8457,12 +8519,12 @@ static void *nt_qmm_worker(void *p) { nt_qmm_drain((nt_qmm_job *)p); return NULL
  * asum may be NULL. Where it is not, it is filled for every dtype rather than only for the
  * two that read it, because the caller allocating one buffer is simpler than the caller
  * knowing which formats lift a bias out of the dot. */
-int nt_quant_act_batch(const float *X, int k, int n,
+int nt_quant_act_batch(const float *X, int dtype, int k, int n,
                        int8_t *qa, float *da, int32_t *asum) {
     if (!X || !qa || !da || k <= 0 || n <= 0 || (k % 32)) return -1;
     int nsub = k / 32;
     for (int j = 0; j < n; j++) {
-        nt_quant_act_q8(X + (long)j * k, k, qa + (long)j * k, da + (long)j * nsub);
+        nt_quant_act_for(dtype, X + (long)j * k, k, qa + (long)j * k, da + (long)j * nsub);
         if (!asum) continue;
         for (int s = 0; s < nsub; s++) {
             const int8_t *p = qa + (long)j * k + (long)s * 32;
@@ -8529,7 +8591,7 @@ int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
     if (!qa || !da || ((dtype == 12 || dtype == 6) && !asum)) {
         free(qa); free(da); free(asum); return -1;
     }
-    nt_quant_act_batch(X, k, n, qa, da, asum);
+    nt_quant_act_batch(X, dtype, k, n, qa, da, asum);
     int rc = nt_qmatmul_i8_pre(out, Wq, dtype, qa, da, asum, m, k, n);
     free(qa); free(da); free(asum);
     return rc;
