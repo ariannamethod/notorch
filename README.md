@@ -50,16 +50,15 @@
 
 ## what
 
-**NOTORCH** is a complete neural network framework written in pure C — it **runs** models and it **trains** them. no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no handing the model to llama.cpp to actually generate. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
+**NOTORCH** is a complete neural network framework written in pure C — it **runs** models and it **trains** them. 
+no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no handing the model to llama.cpp to actually generate. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
 
 just NOTORCH. just C.
 
 just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in a couple seconds. try that with PyTorch. go ahead — you'd be waiting 47 minutes while cmake does whatever cmake does.
 
-it's part of [the Arianna Method](https://github.com/ariannamethod/ariannamethod.ai) — patterns over parameters, emergence over engineering, raw C over existential dread.
-
-extracted from the core of [ariannamethod.ai](https://ariannamethod.ai) where it actually runs in production. training actual models. in C. like adults.
-
+it's part of [the Arianna Method Language](https://github.com/ariannamethod/ariannamethod.ai) — patterns over parameters, emergence over engineering, raw C over existential dread. unpleasant truth over bullshit.
+  
 ---
 
 ## run a model
