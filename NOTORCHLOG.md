@@ -13,6 +13,47 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — correcting the 1.89x: per core it is 2.4x, and the bench was timing its own setup
+
+The entry below reports the kernel as 1.89x behind llama.cpp's and concludes
+that more than half the end-to-end gap lies outside the matmul. The first number
+is wall throughput at unequal core counts and I published it without checking
+the second axis. Corrected here.
+
+`bench_qmatmul` spent most of its life building weights — one `rand()` per byte,
+single threaded, 33 MB at the larger shapes — so `time -v` was reporting a CPU
+percentage that belonged to the setup rather than the kernel. It now probes one
+call and picks a repetition count that puts two seconds of work in the timed
+region, which makes the percentage mean something.
+
+    MUL_MAT q4_K, m=4096 k=14336 n=8, i5-8500T, same machine
+      llama.cpp   132 GMAC/s at 370% CPU   =  35.7 GMAC/s per core
+      notorch      70.7 GMAC/s at 475% CPU =  14.9 GMAC/s per core
+      1.85x on the wall, 2.4x per core
+
+Both numbers are true and they say different things. The wall figure is what a
+caller sees when the pool can have the machine; the per-core figure is the
+kernel's own efficiency, and that is the one that was 1.4x in the earlier reading
+because our CPU percentage was contaminated. Their figure does not move with
+`GGML_N_THREADS` or `OMP_NUM_THREADS` — 264 GFLOPS at 4 and at 6 alike — so it is
+whatever `test-backend-ops` sets internally, and the comparison is per core
+rather than per configuration.
+
+**What survives from the earlier conclusion, and what does not.** With matmul at
+roughly 85% of our prefill and a 2.4x kernel, a perfect thread engagement would
+put us near 27 t/s against llama.cpp's 49.63 — so there is still something
+outside the kernel, but it is smaller than "more than half" and I cannot split it
+cleanly without profiling their graph the way I profiled ours. The honest
+statement is: the kernel is 2.4x behind per core, that does not account for all
+of 3.58x, and the remainder is not yet measured.
+
+Also removed: `bench_qmatmul` the binary, which a `git add -A` had committed. The
+rule against generated binaries is in this repository's agent rules; the polygon
+found it as `Exec format error` on a checkout that had never built the file.
+
+---
+
+
 ## 2026-09-12 — the kernel is 1.9x behind llama.cpp's, not 3.6x, and seven ideas about the difference were wrong
 
 The end-to-end gap on prefill is 3.6x and it had been standing in for the kernel's
