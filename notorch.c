@@ -7553,9 +7553,8 @@ static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
         int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 18;
-            __m256 accv[NT_QMM_TILE];
-            float accm[NT_QMM_TILE];
-            for (int j = 0; j < jn; j++) { accv[j] = _mm256_setzero_ps(); accm[j] = 0.0f; }
+            float acc[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
             for (int b = 0; b < nb; b++) {
                 const uint8_t *blk = rb + (long)b * 18;
                 float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
@@ -7610,8 +7609,9 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
         int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 144;
-            float acc[NT_QMM_TILE];
-            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            __m256 accv[NT_QMM_TILE];
+            float accm[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) { accv[j] = _mm256_setzero_ps(); accm[j] = 0.0f; }
             for (int blk = 0; blk < nb; blk++) {
                 const uint8_t *b = rb + (long)blk * 144;
                 float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
