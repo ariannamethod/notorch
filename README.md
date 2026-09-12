@@ -3,7 +3,7 @@
 </p>
   
 
-# NOTORCH — Neural Networks In Pure C | by Arianna Method
+# notorch — Neural Networks In Pure C | by Arianna Method
 
 > *"fuck torch"*
 > — the entire header file, line 8
