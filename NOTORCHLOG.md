@@ -13,6 +13,54 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — attention was the one part of a layer not using the machine
+
+Re-profiling after the three kernel changes moved the target. The FFN's share of
+prefill fell from 62.3% to 55.3%, and attention rose from 9.1% to 15.1% — not
+because it got slower, but because it never got faster. 357 ms then, 353 ms now,
+while everything around it halved.
+
+Then the number that named the cause: 414 million multiply-accumulates in 353 ms
+is 1.17 GMAC/s, against roughly fourteen that one core of this machine can do in
+f32. It was not slow arithmetic. **It was running on one core while every matmul
+in the same layer ran on six** — the matvec pool owns the quantized work and
+attention is f32 over the KV cache, so nothing owned it.
+
+`nt_par_for` in `harness/runtime.c` is a pulled-chunk pthread fan-out for work
+the matvec pool does not cover, and attention now goes through it per head. Heads
+are independent and write disjoint slices of the output, so this changes no
+arithmetic at all — and the reference agrees: 2 identical / 1 tie-break on
+Qwen3-4B, 1 / 2 on Ministral, 3 / 0 on the mixture, the same verdicts to the
+letter as before the change.
+
+    attention in prefill   353 ms -> 84 ms      15.1% -> 4.0%
+
+    prefill / decode, 53-token prompt, six threads, i5-8500T
+      Qwen3-4B Q4_K_M       19.3 / 8.7   ->  22.0 / 8.7
+      Ministral-3B Q4_K_M   24.2 / 10.6  ->  27.7 / 10.5
+      Qwen3-30B-A3B Q4_K_M  12.3 / 7.7   ->  14.0 / 7.9
+
+Against llama.cpp on the same machine, prefill is now 2.26x, 2.19x and 2.29x
+behind, from 2.6x, 2.5x and 2.6x.
+
+**Threading decode was a regression and the first version shipped it.** At one
+row per head the work is a single dot over the cache, and waking five threads
+thirty-six times per token cost more than it saved: decode went 8.8 to 6.9 t/s.
+The gate is now the work — `n * (pos0 + n) * HD` against 65536 — and not the head
+count, which is always 32 and therefore always looked like enough.
+
+Also measured and worth keeping as a number rather than a belief: the same
+attention loop was doing a `calloc` and a `free` per (position, head), 61
+thousand allocations in one prefill. Removing them moved 359 ms to 353 — within
+noise. The allocator was not the problem; it just looked like it.
+
+Gates: `test_qmatmul` 46/46 on both machines, notorch_test 49/49 and 73/73,
+`NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_REPEAT_OK (3 checks)`, `JANUS_OK`,
+`RESONANCE_OK`, `NOTORCH_REFERENCE_OK` on all three bodies.
+
+---
+
+
 ## 2026-09-12 — the 2.4x is the activation layout, and a prototype of the reference's puts 1.37x of it on the table
 
 Seven attempts at the kernel measured to nothing or worse. Reading
