@@ -13,6 +13,42 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the mixture's prefill: grouping by expert, measured, and 2.4x slower
+
+The batched kernels moved the dense bodies and left the mixture at 7.8 t/s of
+prefill against llama.cpp's 31.99, because a mixture reads a different eighth of
+the layer per position and a tile of activations has nothing in common to hoist.
+The known answer is llama.cpp's `ggml_mul_mat_id`: invert the loop, collect the
+positions that chose each expert, read that expert once for all of them.
+
+Built and measured rather than assumed. Routing runs for the whole chunk first,
+each position's eight results are kept apart and summed afterwards ascending by
+slot — the order the per-position path adds them in, so the arithmetic is the
+same float. It is: `NOTORCH_REFERENCE_OK (3 identical, 0 tie-break)` on the 30B
+with the grouping in.
+
+**And prefill went from 7.8 t/s to 3.3.**
+
+The reason is dispatch, not arithmetic. With 32 positions choosing 8 of 128
+experts there are about two positions per expert, and every expert costs a full
+`nt_qmatmul_i8` call: a malloc for the quantized activation, a malloc for the
+scales, a malloc for the block sums, and a wake of the thread pool. Three calls
+per expert, up to 128 experts, 48 layers — against 320 dispatches for the whole
+chunk before. The fixed cost of a call is larger than two positions of work.
+
+Reverted. The measurement is the deliverable: **grouping by expert does not pay
+until the activation quantization is shared across the group.** What that needs
+is an entry this library does not have — a batched matmul that takes activations
+already quantized, so a chunk is quantized once and every expert reads its own
+columns out of that. `nt_qmatvec_i8_rows` takes pre-quantized input but is a
+single row range with no tile, and rebuilds the block sums per call besides.
+
+Named and not attempted here. It is the same shape of work as the two batched
+arms added today, one level lower down.
+
+---
+
+
 ## 2026-09-12 — prefill: the batched kernels were all NEON, so x86 read the weights once per position
 
 Every `*_rows_i8n` in this file — the batched entry points, the ones that carry a
