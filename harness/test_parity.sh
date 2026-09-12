@@ -71,6 +71,19 @@ for M in $MODELS; do
     echo "parity  [$NAME] SKIPPED — the reference could not load it: $(why_not ./infer_llama "$M")"
     continue
   fi
+  # The example is the reference for the forward that was moved out of it, and
+  # it was frozen before qwen3 arrived. It loads a Qwen3 file happily and then
+  # skips the QK norm it does not know about, so it answers `Resonance isateate
+  # thereate itn` where the harness answers `a phenomenon that occurs when a
+  # system is` — three FAILs on the polygon that said nothing about the harness.
+  # Where they part on a family the example never implemented, llama.cpp is the
+  # reference: harness/test_reference.sh reads OK on that same file.
+  ARCH=$(./notorch -A "$M" 2>/dev/null || echo "?")
+  case "$ARCH" in
+    llama|qwen2) ;;
+    *) echo "parity  [$NAME] SKIPPED — the example implements llama and qwen2; this file is '$ARCH'"
+       continue ;;
+  esac
   for P in "The capital of France is" "Resonance is" "def fibonacci(n):"; do
     A=$(./notorch "$M" "$P" 24 0 2>/dev/null)
     B=$(./infer_llama "$M" "$P" 24 0 2>/dev/null | ref_text)
