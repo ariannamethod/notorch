@@ -80,8 +80,8 @@ for M in $MODELS; do
   # reference: harness/test_reference.sh reads OK on that same file.
   ARCH=$(./notorch -A "$M" 2>/dev/null || echo "?")
   case "$ARCH" in
-    llama|qwen2) ;;
-    *) echo "parity  [$NAME] SKIPPED — the example implements llama and qwen2; this file is '$ARCH'"
+    llama|mistral3|qwen2) ;;
+    *) echo "parity  [$NAME] SKIPPED — the example implements llama, mistral3 and qwen2; this file is '$ARCH'"
        continue ;;
   esac
   for P in "The capital of France is" "Resonance is" "def fibonacci(n):"; do
