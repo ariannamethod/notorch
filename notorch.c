@@ -6656,11 +6656,23 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                                               _mm256_hadd_epi32(s[2], s[3]));
                 int32_t t[8];
                 _mm256_storeu_si256((__m256i *)t, T);
+                /* One sub-block per add, ascending, through the same helper the scalar
+                 * fallback uses. This used to fold the pair — sc[j0]*t[g] + sc[j0+1]*t[g+4]
+                 * summed before touching acc — which is the same arithmetic in a different
+                 * order and therefore a different last bit. tests/test_qmatmul asserts
+                 * batched and per-token are identical under memcmp, and once the x86 build
+                 * started defining __AVX2__ that turned seven Q6_K cases red: the batched
+                 * kernel on x86 is the scalar one, the per-token kernel here was not. The
+                 * gap was 7.3e-04 absolute on values near 1294, which is ordering and not
+                 * error — and equality is still the right bar, because it is reachable.
+                 *
+                 * The activation scale is the same for both halves of a pair: j0 is even, so
+                 * j0/2 and (j0+1)/2 are both n/32 + g, which is what dab was indexed by. */
                 for (int g = 0; g < 4; g++) {
                     int j0 = n / 16 + g * 2;
-                    acc += d * dab[(n + g * 32) / 32]
-                         * ((float)sc[j0]     * (float)t[g]
-                          + (float)sc[j0 + 1] * (float)t[g + 4]);
+                    float dscale = dab[(n + g * 32) / 32];
+                    acc = nt_q6k_acc(acc, d, (float)sc[j0],     dscale, t[g]);
+                    acc = nt_q6k_acc(acc, d, (float)sc[j0 + 1], dscale, t[g + 4]);
                 }
             }
         }
