@@ -43,18 +43,6 @@ static uint8_t *make_q4_k(int m, int k, unsigned seed) {
 }
 
 
-#if defined(__AVX2__) && defined(__FMA__)
-#include <immintrin.h>
-#include <math.h>
-
-static void bench_scale_min(int j, const uint8_t *sc, uint8_t *s, uint8_t *mn) {
-    if (j < 4) { *s = sc[j] & 63; *mn = sc[j + 4] & 63; }
-    else { *s = (sc[j + 4] & 0x0F) | ((sc[j - 4] >> 6) << 4);
-           *mn = (sc[j + 4] >> 4)  | ((sc[j]     >> 6) << 4); }
-}
-
-#endif
-
 int main(int argc, char **argv) {
     int cores = argc > 1 ? atoi(argv[1]) : 1;
     double ghz = argc > 2 ? atof(argv[2]) : 0.0;
@@ -78,7 +66,6 @@ int main(int argc, char **argv) {
     double t0 = now_s();
     for (int r = 0; r < reps; r++) nt_qmatmul_i8(O, W, dtype, X, m, k, n);
     double dt = (now_s() - t0) / reps;
-    double dt_1 = dt;   /* the shipped kernel, for the variant to be read against */
 
     double macs  = (double)m * k * n;
     double bytes = (double)m * ((double)k / 256.0) * 144.0;   /* the weights, read once */
