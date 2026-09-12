@@ -8398,14 +8398,46 @@ static void nt_qmm_drain(nt_qmm_job *j) {
 
 static void *nt_qmm_worker(void *p) { nt_qmm_drain((nt_qmm_job *)p); return NULL; }
 
-int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
-                  const float *X, int m, int k, int n) {
-    if (m <= 0 || k <= 0 || n <= 0) return -1;
-    if (n == 1) return nt_qmatvec_i8(out, Wq, dtype, X, m, k);
+/* Quantize a whole tile of activations once, into buffers the caller owns.
+ *
+ * A mixture is why this is public. Its feed-forward reads a different eighth of the layer
+ * per position, so grouping the chunk by expert is the only way to read a weight once for
+ * more than one position — and the first attempt at that was 2.4x SLOWER than not doing it,
+ * because every expert paid a fresh nt_qmatmul_i8: three mallocs and a re-quantization of
+ * two positions' worth of activation. The arithmetic was never the problem. With the tile
+ * quantized once and the buffers reused, an expert costs a dispatch and nothing else.
+ *
+ * asum may be NULL. Where it is not, it is filled for every dtype rather than only for the
+ * two that read it, because the caller allocating one buffer is simpler than the caller
+ * knowing which formats lift a bias out of the dot. */
+int nt_quant_act_batch(const float *X, int k, int n,
+                       int8_t *qa, float *da, int32_t *asum) {
+    if (!X || !qa || !da || k <= 0 || n <= 0 || (k % 32)) return -1;
+    int nsub = k / 32;
+    for (int j = 0; j < n; j++) {
+        nt_quant_act_q8(X + (long)j * k, k, qa + (long)j * k, da + (long)j * nsub);
+        if (!asum) continue;
+        for (int s = 0; s < nsub; s++) {
+            const int8_t *p = qa + (long)j * k + (long)s * 32;
+            int32_t t = 0;
+            for (int i = 0; i < 32; i++) t += p[i];
+            asum[(long)j * nsub + s] = t;
+        }
+    }
+    return 0;
+}
+
+/* The batched matmul with the activation already quantized. nt_qmatmul_i8 is this plus the
+ * buffers; nothing else differs, so the two cannot drift. */
+int nt_qmatmul_i8_pre(float *out, const uint8_t *Wq, int dtype,
+                      const int8_t *qa, const float *da, const int32_t *asum,
+                      int m, int k, int n) {
+    if (!out || !Wq || !qa || !da || m <= 0 || k <= 0 || n <= 0) return -1;
     if (k % 32) return -1;
     if ((dtype == 12 || dtype == 14) && (k % 256)) return -1;
+    if ((dtype == 12 || dtype == 6) && !asum) return -1;   /* these lift a bias out of the dot */
     nt_qmmrows_fn fn;
-    switch (dtype) {                     /* dtypes without a batched kernel go per token */
+    switch (dtype) {
     case 2:  fn = nt_q4_0_rows_i8n; break;
     case 6:  fn = nt_q5_0_rows_i8n; break;
     case 8:  fn = nt_q8_0_rows_i8n; break;
@@ -8413,44 +8445,11 @@ int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
     case 14: fn = nt_q6_k_rows_i8n; break;
     default: return -1;
     }
-
-    int nsub = k / 32;
-    int8_t *qa = (int8_t *)malloc((size_t)k * (size_t)n);
-    float  *da = (float *)malloc((size_t)nsub * (size_t)n * sizeof(float));
-    int32_t *asum = NULL;
-    if (!qa || !da) { free(qa); free(da); return -1; }
-    for (int j = 0; j < n; j++)
-        nt_quant_act_q8(X + (long)j * k, k, qa + (long)j * k, da + (long)j * nsub);
-
-    /* Q4_K's affine minimum and Q5_0's -16 bias both lift out of the integer dot as a
-     * multiple of SUM(qa) per block. It depends on the activation alone, so every row
-     * range and every tile reads the same numbers — computed once, here. */
-    if (dtype == 12 || dtype == 6) {
-        asum = (int32_t *)malloc((size_t)nsub * (size_t)n * sizeof(int32_t));
-        if (!asum) { free(qa); free(da); return -1; }
-        for (int j = 0; j < n; j++)
-            for (int s = 0; s < nsub; s++) {
-                const int8_t *p = qa + (long)j * k + (long)s * 32;
-                int32_t t = 0;
-                for (int i = 0; i < 32; i++) t += p[i];
-                asum[(long)j * nsub + s] = t;
-            }
-    }
-
-    /* The gate counts the work, and a batched call does n times the work of one matvec:
-     * a 0.5B Qwen's query projection is 896x896, under the 4M floor and therefore
-     * single-threaded per token, while the same projection over a chunk of 32 positions is
-     * 25M and belongs on every core. Leaving n out of this comparison left most of a
-     * prefill on one core and hid the batched kernel's own speedup behind it. */
     int nt = nt_qmv_host_threads(m);
     if (nt <= 1 || (long)m * k * (long)n < nt_qmv_thread_floor()) {
         fn(out, m, Wq, qa, da, asum, 0, m, k, n);
-        free(qa); free(da); free(asum);
         return 0;
     }
-
-    /* One fan-out per matmul, not per token: a 24-layer prefill opens seven of these per
-     * layer instead of seven per layer per token, so pthread_create lands in the noise. */
     nt_qmm_job job = { fn, out, Wq, qa, da, asum, m, k, n, m, 0, 0 };
     job.chunk = m / (nt * 8); if (job.chunk < 1) job.chunk = 1;
     pthread_t th[NT_QMV_MAX_THREADS];
@@ -8459,12 +8458,36 @@ int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
         if (pthread_create(&th[t], NULL, nt_qmm_worker, &job) != 0) break;
         launched++;
     }
-    nt_qmm_drain(&job);                   /* the caller is a worker too */
+    nt_qmm_drain(&job);
     for (int t = 0; t < launched; t++) pthread_join(th[t], NULL);
-
-    free(qa); free(da); free(asum);
     return 0;
 }
+
+int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
+                  const float *X, int m, int k, int n) {
+    if (m <= 0 || k <= 0 || n <= 0) return -1;
+    if (n == 1) return nt_qmatvec_i8(out, Wq, dtype, X, m, k);
+    if (k % 32) return -1;
+    if ((dtype == 12 || dtype == 14) && (k % 256)) return -1;
+    if (dtype != 2 && dtype != 6 && dtype != 8 && dtype != 12 && dtype != 14) return -1;
+
+    int nsub = k / 32;
+    int8_t *qa = (int8_t *)malloc((size_t)k * (size_t)n);
+    float  *da = (float *)malloc((size_t)nsub * (size_t)n * sizeof(float));
+    /* Q4_K's affine minimum and Q5_0's -16 bias both lift out of the integer dot as a
+     * multiple of SUM(qa) per block. It depends on the activation alone, so every row
+     * range and every tile reads the same numbers — computed once, here. */
+    int32_t *asum = (dtype == 12 || dtype == 6)
+                  ? (int32_t *)malloc((size_t)nsub * (size_t)n * sizeof(int32_t)) : NULL;
+    if (!qa || !da || ((dtype == 12 || dtype == 6) && !asum)) {
+        free(qa); free(da); free(asum); return -1;
+    }
+    nt_quant_act_batch(X, k, n, qa, da, asum);
+    int rc = nt_qmatmul_i8_pre(out, Wq, dtype, qa, da, asum, m, k, n);
+    free(qa); free(da); free(asum);
+    return rc;
+}
+
 
 
 // ── batched f16 matmul — the unpacked half of the same argument ─────────────────
