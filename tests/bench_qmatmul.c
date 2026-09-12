@@ -62,7 +62,16 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    int reps = 20;
+    /* Enough repetitions that building the weights — one rand() per byte, single
+     * threaded — is noise beside the kernel. Without this the process spends most of its
+     * life in setup and `time -v` reports a CPU percentage that belongs to the setup, which
+     * is how a per-core comparison against another implementation goes wrong. */
+    double probe0 = now_s();
+    nt_qmatmul_i8(O, W, dtype, X, m, k, n);
+    double one = now_s() - probe0;
+    int reps = (int)(2.0 / (one > 1e-6 ? one : 1e-6));
+    if (reps < 20) reps = 20;
+    if (reps > 4000) reps = 4000;
     double t0 = now_s();
     for (int r = 0; r < reps; r++) nt_qmatmul_i8(O, W, dtype, X, m, k, n);
     double dt = (now_s() - t0) / reps;
