@@ -5022,6 +5022,15 @@ static inline float nt_f16_to_f32(uint16_t h) {
     memcpy(&v, &h, sizeof(v));
     return (float)v;
 }
+#elif defined(__F16C__)
+/* x86 has had the same instruction since Ivy Bridge and every AVX2 part carries it, so the
+ * shift chain below was running on hardware that could do it in one `vcvtph2ps`. It was not
+ * a small thing to leave: the disassembly of nt_q4_k_rows_i8n had `call nt_f16_to_f32` in
+ * it, twice per block, because a twenty-instruction function with a loop in it does not get
+ * inlined — 32768 blocks in one 4096x2048 matmul is 65536 calls that should have been
+ * 65536 instructions. Same IEEE result; the portable arm stays for everything else. */
+#include <immintrin.h>
+static inline float nt_f16_to_f32(uint16_t h) { return _cvtsh_ss(h); }
 #else
 static float nt_f16_to_f32(uint16_t h) {
     uint32_t s = (h >> 15) & 1, e = (h >> 10) & 0x1F, m = h & 0x3FF, bits;
@@ -5103,7 +5112,7 @@ static void nt_q5_0_rows(float *out, const uint8_t *W, const float *x,
 
 // ── super-block formats (256 vals/block) ────────────────────────────────────
 // Q4_K 6-bit packed scale/min unpack (matches gguf.c:get_scale_min_k4).
-static void nt_get_scale_min_k4(int j, const uint8_t *sc, uint8_t *s, uint8_t *mn) {
+static inline void nt_get_scale_min_k4(int j, const uint8_t *sc, uint8_t *s, uint8_t *mn) {
     if (j < 4) { *s = sc[j] & 63; *mn = sc[j + 4] & 63; }
     else { *s = (sc[j + 4] & 0x0F) | ((sc[j - 4] >> 6) << 4);
            *mn = (sc[j + 4] >> 4)  | ((sc[j]     >> 6) << 4); }
@@ -5119,6 +5128,15 @@ static void nt_get_scale_min_k4(int j, const uint8_t *sc, uint8_t *s, uint8_t *m
  * are free to disagree in the last bit. */
 static inline float nt_q6k_acc(float acc, float d, float sc, float da, int32_t dot) {
     return __builtin_fmaf(d * sc * da, (float)dot, acc);
+}
+
+/* The same accumulate with d*ls and dmin*lm already formed. Those two products do not
+ * depend on the activation, so a batched kernel builds them once per block; the rounding is
+ * identical because they are the same two multiplies either way, which is what lets the
+ * batched and per-token kernels stay bit-for-bit equal through this. */
+static inline float nt_q4k_acc_pre(float acc, float da, float dls, int32_t dot,
+                                   float dlm, int32_t asum) {
+    return __builtin_fmaf(da, __builtin_fmaf(dls, (float)dot, -(dlm * (float)asum)), acc);
 }
 
 static inline float nt_q4k_acc(float acc, float da, float d, float ls, int32_t dot,
@@ -7540,8 +7558,21 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                 float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
                 float dmin = nt_f16_to_f32((uint16_t)(b[2] | (b[3] << 8)));
                 const uint8_t *sc = b + 4, *qs = b + 16;
+                /* The two products the tail needs, built once per block instead of once per
+                 * block per column. d*ls and dmin*lm are the same numbers whichever loop
+                 * they are computed in — the same two multiplies, the same rounding — so
+                 * this is free of the bit-exactness contract and only removes work: at a
+                 * tile of 32 the sixteen int-to-float conversions and sixteen multiplies
+                 * were being redone 32 times for one block of weights. callgrind put the
+                 * kernel at 216 instructions per (block, column) against 16 for the MACs
+                 * themselves, which is what pointed here. */
                 uint8_t ls[8], lm[8];
-                for (int s = 0; s < 8; s++) nt_get_scale_min_k4(s, sc, &ls[s], &lm[s]);
+                float dls[8], dlm[8];
+                for (int s = 0; s < 8; s++) {
+                    nt_get_scale_min_k4(s, sc, &ls[s], &lm[s]);
+                    dls[s] = d * (float)ls[s];
+                    dlm[s] = dmin * (float)lm[s];
+                }
                 __m256i qsv[4];
                 for (int p = 0; p < 4; p++)
                     qsv[p] = _mm256_loadu_si256((const __m256i *)(qs + p * 32));
@@ -7569,8 +7600,8 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                     const int32_t *asc = asum + (long)(j0 + j) * nsub;
                     for (int s = 0; s < 8; s++) {
                         int sub = blk * 8 + s;
-                        acc[j] = nt_q4k_acc(acc[j], dac[sub], d, (float)ls[s], dots[s],
-                                            dmin, (float)lm[s], asc[sub]);
+                        acc[j] = nt_q4k_acc_pre(acc[j], dac[sub], dls[s], dots[s],
+                                                dlm[s], asc[sub]);
                     }
                 }
             }

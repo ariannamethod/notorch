@@ -13,6 +13,79 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the kernel is at ten percent of the instruction set, and four guesses about why were wrong
+
+End-to-end timings say prefill is 4.3x behind llama.cpp and cannot say where it
+goes, because they carry attention, the router and the memory system with them.
+`tests/bench_qmatmul.c` asks the narrower question: how much of the machine does
+the batched packed matmul actually use. The ceiling in it is arithmetic rather
+than a guess — one `_mm256_maddubs_epi16` takes 32 int8 pairs and one
+`_mm256_madd_epi16` folds them, so a sub-block of 32 weights costs two vector
+instructions, and the bench divides by cores × clock × 32.
+
+    q4_k batched  m=4096 k=2048 n=32, one thread, i5-8500T at 3.5 GHz
+      10.8 GMAC/s — 9.7% of the 112 GMAC/s the instruction set allows
+
+So the kernel is a long way from the machine, not near it. Threading is not the
+problem: six cores give 49.2 GMAC/s, 4.6x of one.
+
+### Four hypotheses, measured, all wrong
+
+**The nibble unpack.** `lo` and `hi` were rebuilt per column — 32 times per block
+at a tile of 32. Hoisted them into eight vectors held across the column loop:
+11.6 t/s of prefill before, 11.6 after. The compiler was already doing it, or the
+ALU work is free beside the loads. Branch deleted.
+
+**The tile width.** At 53 tokens a tile of 32 reads the weights twice. `NT_QMM_TILE`
+at 32, 64 and 128 reads 11.6, 11.6 and 11.3 t/s. Wider is not better; 128 is worse.
+
+**The bit-exact float tail.** Eight dependent scalar FMAs per block are forced by
+`test_qmatmul`'s memcmp against the per-token kernel, and I expected to be putting
+a trade to Oleg. Replaced with an independent sum that breaks the equality: 11.6
+t/s. **The contract costs nothing.** There is no trade to offer.
+
+**The hadd tree.** Six dependent horizontal adds and two permutes drain eight
+sub-block dots per (row, column, block), and the scale is a scalar, so the sum is
+distributive and the drain is avoidable: convert each sub-block's lanes to float,
+multiply by its coefficient, accumulate in a float vector, drain once per row. The
+prototype ran at **0.81x** — slower — and was also wrong (worst relative 11.2, a
+defect in the prototype's own half-float read). Slower and wrong; the idea is not
+salvaged by fixing the second.
+
+### What the instruction count says
+
+`perf` is closed on that machine (`perf_event_paranoid` is 4, and lowering it is
+root's decision), so callgrind, which needs no privilege:
+
+    nt_q4_k_rows_i8n   1,132,513,899 instructions   32.75% of the run
+      => 216 instructions per (block, column), for 256 MACs
+
+Sixteen would do the MACs. So it is instruction count, not stalls, and there are
+thirteen instructions of overhead for every one that multiplies.
+
+One of them was visible immediately. The tail recomputed `d * ls[s]` and
+`dmin * lm[s]` inside the column loop — sixteen int-to-float conversions and
+sixteen multiplies, redone for every one of 32 columns against the same block of
+weights. They do not depend on the activation. Hoisted into two arrays built once
+per block, through a helper that takes the products already formed, so the
+rounding is unchanged and the memcmp holds: `test_qmatmul` 46/46.
+
+    kernel      10.8 -> 12.1 GMAC/s      9.7% -> 10.8% of the ceiling
+    Qwen3-4B    11.6 -> 12.4 t/s prefill
+    Ministral   14.1 -> 15.5
+    Qwen3-30B    9.4 ->  9.6
+
+Decode is untouched at 6.2, 7.4, 6.3 — the per-token kernel has no column loop to
+hoist out of. `NOTORCH_REFERENCE_OK` on both bodies checked, notorch_test 49/49
+and 73/73, test_qmatmul 46/46, neo unmoved.
+
+Seven percent for two lines, and the number that matters is the other one: 216
+instructions per block-column, now somewhat fewer, against 16. The rest of that
+is measurable the same way and has not been looked at yet.
+
+---
+
+
 ## 2026-09-12 — the mixture's prefill, second attempt: 7.8 to 9.4, and a correction
 
 **First, the correction.** The entry below this one says the expert grouping was
