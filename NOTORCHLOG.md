@@ -13,6 +13,50 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the scan walks in order; the projections around it never did
+
+`mamba_layer` was written per token, and the note above it said so on purpose: the scan is
+sequential by construction, token t's state is token t-1's output, so a batched version would
+have to walk them in order and prefill must cost what decode costs. Half of that is true. The
+scan walks in order and the convolution walks in order. The four projections around them do
+not look across positions at all, and they are where the weights are — a 350-token prompt was
+streaming the whole file 350 times to compute what a handful of passes could.
+
+The layer now takes a chunk. Each projection runs once for it through `qmm`; the scan and the
+convolution keep their loops over positions, ascending as before.
+
+Measured on mamba-130m-f16, 350-token prompt, three interleaved pairs of the two binaries:
+
+    prefill  40.1 / 41.0 / 40.8   ->   74.0 / 78.1 / 78.3 t/s
+    decode   36.4 / 35.4 / 35.5   ->   37.8 / 36.2 / 35.8
+
+Parity with the reference is unchanged: byte-identical on three short prompts and on the
+350-token one, which crosses eleven chunk boundaries. Nothing about the arithmetic moved —
+`qmm` is bit-identical to `qmv` per row, and both sequential loops visit positions in the same
+order.
+
+The profile says where the win came from and what is left:
+
+    per token   qkv 4675 ms   out 1950   scan 1868   total 8672
+    per chunk   qkv 2144 ms   out 1003   scan 1457   total 4684
+
+The projections halve, and the scan drops a fifth it was not asked for — the same arithmetic
+reading its inputs in chunk order instead of walking a scratch buffer per token. The
+projections are still two thirds of the time, but they are no longer memory-bound: 7.9 GB of
+weight traffic in 3.1 seconds is 2.5 GB/s where this machine gives 18. The cost that remains
+is the conversion and the FMAs, at about a quarter of what four cores can retire.
+
+**Three things measured wrong along the way, and the wrong numbers are here because they were
+believable.** A first A/B compared the chunked build against itself — the two binaries had the
+same md5, which is the check that should have come first, and it said chunking bought nothing.
+A per-call `calloc` looked like the reason the first pass of a repeat read twice what the next
+ones did; holding the buffer changed nothing and the real cause was thread affinity in the
+pool, a floor below this file. And a tile-width sweep taken on this model at this hour read
+78, 82, 72 and 87 for widths 8, 12, 16 and 24 — not a curve, and the same build read qwen
+fp16 at 28 where it had read 42 earlier in the day. The tile stays at the width that was
+measured cleanly. The sweep is open, not answered.
+
+The reference reads 329 t/s of prefill on this file, so a quarter of the way.
 ## 2026-09-12 — the public registry stopped guessing Llama
 
 The newly linkable harness exposed `nt_pick_arch`, and an independent consumer
