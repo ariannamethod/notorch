@@ -13,6 +13,47 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the reference gate called a documented difference a defect
+
+Qwen3 and the audit repairs met in one tree, and the meeting turned up something
+neither had touched. `harness/test_reference.sh` on nano_arianna Q8_0 reports
+`NOTORCH_REFERENCE_FAIL (3 of 3)` — every prompt DIVERGED. It does so at
+`30ae5fa`, at `claude/qwen3`, and on the merge, so it belongs to none of them.
+
+The reference is reading a different prompt. `llama-simple` echoes
+`<s> def fibonacci(n):` and writes `: With::::::::::::::`; this tree, given the
+same text, writes `the pattern of resonance that is not possible, but the field
+that is the source`. The file declares no `add_bos_token`, the reference prepends
+one anyway, and forcing the same token in front here degenerates this model in
+the same way — `6coding the fibrous structure the fibrous structure`. That is the
+09-10 entry, the one where following the reference's default cost this model its
+voice, arriving back as a red gate.
+
+So the gate now checks that first, reusing the signal `test_tokenizer.sh`
+already prints, and skips with the reason instead of reporting three defects
+that are not there.
+
+**Unverified, and named rather than left to be discovered:** every GGUF on this
+machine has an undeclared BOS, so nothing here proves the gate still exercises a
+model that declares one. That check waits for a file that does.
+
+Merged in the same commit: Qwen3, which turned out not to be a family — two
+optional per-head norms and two lines in the rotation loop, in `arch_llama.c`
+rather than a file of its own — and the coin-flip gate's re-anchoring rewrite.
+Both are Defender's, both survive the new call contract unchanged: `q_norm` and
+`k_norm` load through the optional path, so the strict loader added hours
+earlier does not refuse a file that lacks them.
+
+Gates on the merged tree: `NOTORCH_PARITY_OK (6 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`, `NOTORCH_REPEAT_OK (3 checks)`,
+`NOTORCH_TOKENIZER_OK (8 checks)`, `JANUS_OK`, `RESONANCE_OK`,
+`NOTORCH_REFERENCE_SKIPPED` on the only model this machine can offer it,
+notorch_test 49/49 and 73/73, test_qmatmul 46/46. `test_quantize` still FAILs
+Q8_0 at 2.081e-04 over 2.067e-04, unchanged since `cd659e8`.
+
+---
+
+
 ## 2026-09-12 — the coin-flip gate was wrong twice before it was right
 
 Yesterday's entry below describes a gate that re-anchors on the single word where this tree and

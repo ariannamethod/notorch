@@ -131,6 +131,18 @@ check_model() {
   if ! $REF -m "$m" -n 1 "x" >/dev/null 2>&1; then
     echo "  SKIP $(basename "$m") — the reference does not load it"; skipped=$((skipped + 1)); return 0
   fi
+  # Where the file does not declare add_bos_token, the reference prepends one
+  # anyway and this tree does not — so the two are not answering the same
+  # prompt and no verdict below means anything. This is not a hypothesis: on
+  # nano_arianna Q8_0 the reference echoes `<s> def fibonacci(n):` and writes
+  # `: With::::::::`, and the same model degenerates the same way here the
+  # moment a BOS is forced in front. See the 09-10 entry; that default is what
+  # cost this model its voice in the first place. Three prompts read DIVERGED
+  # for it, which is the gate calling a documented difference a defect.
+  if ./notorch -T "$m" "x" 2>&1 >/dev/null | grep -q "bos: undeclared"; then
+    echo "  SKIP $(basename "$m") — the file declares no add_bos_token and the reference prepends one anyway; the two are not reading the same prompt"
+    skipped=$((skipped + 1)); return 0
+  fi
 
   while IFS= read -r p; do
     [ -n "$p" ] || continue
