@@ -7,6 +7,8 @@
 #include <string.h>
 #include <math.h>
 #include <sys/time.h>
+#include <pthread.h>
+#include <unistd.h>
 #include <time.h>
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
@@ -280,4 +282,48 @@ const char *nt_strerror(int rc) {
         case NT_E_STATE:    return "model state could not be prepared";
         default:            return "unknown error";
     }
+}
+
+
+/* ── a fan-out for work the matvec pool does not own ───────────────────────── */
+typedef struct {
+    nt_par_fn fn;
+    void *ctx;
+    int n, next, chunk;
+} nt_par_job;
+
+static void nt_par_drain(nt_par_job *j) {
+    for (;;) {
+        int i0 = __atomic_fetch_add(&j->next, j->chunk, __ATOMIC_RELAXED);
+        if (i0 >= j->n) return;
+        int i1 = i0 + j->chunk; if (i1 > j->n) i1 = j->n;
+        j->fn(j->ctx, i0, i1);
+    }
+}
+
+static void *nt_par_worker(void *p) { nt_par_drain((nt_par_job *)p); return NULL; }
+
+void nt_par_for(nt_par_fn fn, void *ctx, int n_items, int min_items) {
+    if (!fn || n_items <= 0) return;
+    int nt = 0;
+    const char *env = getenv("NT_ATTN_THREADS");
+    if (env && *env) nt = atoi(env);
+    if (nt <= 0) {
+        long online = sysconf(_SC_NPROCESSORS_ONLN);
+        nt = online > 0 ? (int)online : 1;
+    }
+    if (nt > 64) nt = 64;
+    /* Pulled, not dealt: heads late in a causal prefill carry the same work as early ones,
+     * but a big.LITTLE machine does not run them at the same speed. */
+    if (nt <= 1 || n_items < min_items) { fn(ctx, 0, n_items); return; }
+
+    nt_par_job job = { fn, ctx, n_items, 0, 1 };
+    pthread_t th[64];
+    int launched = 0;
+    for (int t = 0; t + 1 < nt; t++) {
+        if (pthread_create(&th[t], NULL, nt_par_worker, &job) != 0) break;
+        launched++;
+    }
+    nt_par_drain(&job);
+    for (int t = 0; t < launched; t++) pthread_join(th[t], NULL);
 }
