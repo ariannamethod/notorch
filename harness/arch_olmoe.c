@@ -1,22 +1,29 @@
-/* arch_olmoe.c — OLMoE, and the first mixture this tree has run.
+/* arch_olmoe.c — the mixtures: OLMoE, and Qwen3-MoE.
  *
  * Everything before the feed-forward is llama with two additions: Q and K are RMS-normalised
- * after their projections and before the heads are split out, with a weight vector as long as
- * the whole projection rather than one per head. Read that from the file rather than from a
- * family resemblance — gemma4 normalises per head, this one does not, and the two are one
- * reshape apart.
+ * after their projections and before the heads are split out. Whether that norm is one weight
+ * for the projection or one for each head differs between the two families, so it is read off
+ * the tensor's own length rather than assumed — OLMoE ships [q_dim], Qwen3-MoE ships
+ * [head_dim]. The two are one reshape apart and both produce fluent text.
  *
- * The feed-forward is the new part and it changes how weights are read. A dense model streams
- * every byte of every layer for every token; this one has sixty-four experts per layer and
- * uses eight, so it reads an eighth of the feed-forward — but reads it *gathered*, eight
- * slices chosen per token out of a 75 MB region, instead of one sweep. Everything this
- * library has been tuned on assumed the sweep.
+ * The feed-forward is the part that changes how weights are read. A dense model streams every
+ * byte of every layer for every token; a mixture reads a slice — eight of sixty-four on OLMoE,
+ * eight of a hundred and twenty-eight on Qwen3-MoE — but reads it *gathered*, chosen per token
+ * out of one large region, instead of one sweep. Everything this library has been tuned on
+ * assumed the sweep.
  *
  * Routing, from the reference and not from the usual shape of these things: softmax over all
- * sixty-four, top eight by that probability, and the weights are those probabilities taken as
- * they are. No renormalisation over the chosen eight (llama.cpp passes norm_w = false here)
- * and no scale (the file carries no expert_weights_scale). Both are common in other mixtures
- * and wrong for this one.
+ * experts, top k by that probability. Then the families part. OLMoE takes those probabilities
+ * as they stand — llama.cpp's src/models/olmoe.cpp passes norm_w = false. Qwen3-MoE
+ * renormalises them over the chosen k — src/models/qwen3moe.cpp:144 passes true. Neither GGUF
+ * records which, so the name decides and the reference is cited beside it. Neither carries
+ * expert_weights_scale, and llama.cpp skips the scale at 0.0 (src/llama-graph.cpp:1955), so
+ * there is none here either.
+ *
+ * Qwen3-MoE is here rather than in a file of its own for the reason qwen3 is in arch_llama.c:
+ * two switches read at load are not a family. What it does add is a name collision worth
+ * knowing about — its feed_forward_length is the dense-equivalent 6144 while an expert is 768,
+ * so the expert's own key wins when the file carries one.
  *
  * Prints go to stderr: stdout belongs to the model. */
 #include "harness/arch.h"
@@ -34,6 +41,13 @@
 typedef struct {
     int n_layers, n_heads, n_kv_heads, embed, ffn, vocab, head_dim, kv_dim, q_dim;
     int n_expert, n_expert_used;
+    /* The two places two mixtures disagree, decided at load and not per token.
+     * qk_norm_per_head comes off the tensor: a [head_dim] weight is applied to
+     * each head, a [q_dim] one to the projection whole, and the two are one
+     * reshape apart with entirely different arithmetic. renorm_topk cannot come
+     * off the file — nothing in the GGUF records it — so it comes off the name,
+     * with the reference's line beside it. */
+    int qk_norm_per_head, renorm_topk;
     float rope_base, rms_eps;
 
     gguf_file *gf;
@@ -46,7 +60,7 @@ typedef struct {
     struct {
         float *attn_norm;
         wt wq, wk, wv, wo;
-        float *q_norm, *k_norm;       /* over the whole projection, not per head */
+        float *q_norm, *k_norm;       /* [q_dim] or [head_dim]; see qk_norm_per_head */
         float *ffn_norm;
         wt gate_inp;                  /* [n_expert, embed] — the router, as the file has it */
         wt gate_exps, up_exps, down_exps;   /* stacked: n_expert slices each */
@@ -73,12 +87,30 @@ static void *olmoe_load(gguf_file *gf, nt_dims *dims) {
     m->gf = gf;
 
     /* Expert counts have no home in gguf_file's convenience fields, and a mixture without
-     * them is not a mixture. Exact keys, because this family's names are not suffixes of
-     * anything else. */
-    const gguf_kv *kv = gguf_get_kv(gf, "olmoe.expert_count");
+     * them is not a mixture. The key is prefixed with the file's own architecture, because
+     * this loader now answers to more than one name and a hardcoded "olmoe." would read as
+     * "no experts" on the other. */
+    char key[96];
+    snprintf(key, sizeof(key), "%s.expert_count", gf->arch);
+    const gguf_kv *kv = gguf_get_kv(gf, key);
     m->n_expert = kv ? (int)kv->val.u32 : 0;
-    kv = gguf_get_kv(gf, "olmoe.expert_used_count");
+    snprintf(key, sizeof(key), "%s.expert_used_count", gf->arch);
+    kv = gguf_get_kv(gf, key);
     m->n_expert_used = kv ? (int)kv->val.u32 : 0;
+
+    /* feed_forward_length is the dense-equivalent width on qwen3moe — 6144 where an expert
+     * is 768 — so the expert's own key wins when the file carries it. Getting this wrong is
+     * caught below by the stack-geometry check rather than by the output, but the message
+     * would blame the expert count for a feed-forward mistake. */
+    snprintf(key, sizeof(key), "%s.expert_feed_forward_length", gf->arch);
+    kv = gguf_get_kv(gf, key);
+    if (kv && (int)kv->val.u32 > 0) m->ffn = (int)kv->val.u32;
+
+    /* llama.cpp renormalises the chosen weights for qwen3moe and does not for olmoe —
+     * src/models/qwen3moe.cpp passes norm_w = true where src/models/olmoe.cpp passes false.
+     * Nothing in either GGUF says so, so it is the name that decides and the reference that
+     * is cited. */
+    m->renorm_topk = (strcmp(gf->arch, "qwen3moe") == 0);
     if (m->n_expert <= 0 || m->n_expert > OLMOE_MAX_EXPERTS ||
         m->n_expert_used <= 0 || m->n_expert_used > OLMOE_MAX_USED ||
         m->n_expert_used > m->n_expert) {
@@ -97,6 +129,23 @@ static void *olmoe_load(gguf_file *gf, nt_dims *dims) {
         m->head_dim = m->embed / m->n_heads;
     }
     m->kv_dim = m->n_kv_heads * m->head_dim;
+
+    /* Whether the QK norm is one weight for the projection or one for each head is a
+     * property of the tensor, so it is read off the tensor. OLMoE ships [q_dim]; qwen3moe
+     * ships [head_dim], the same shape qwen3 does. Both are plausible on sight and the
+     * difference is invisible until the logits are compared. */
+    ti = gguf_find_tensor(gf, "blk.0.attn_q_norm.weight");
+    if (ti >= 0) {
+        uint64_t ne = gf->tensors[ti].n_elements;
+        if (ne == (uint64_t)m->head_dim)      m->qk_norm_per_head = 1;
+        else if (ne == (uint64_t)m->q_dim)    m->qk_norm_per_head = 0;
+        else {
+            fprintf(stderr, "olmoe: attn_q_norm is %llu long, neither head_dim %d nor q_dim %d\n",
+                    (unsigned long long)ne, m->head_dim, m->q_dim);
+            free(m);
+            return NULL;
+        }
+    }
 
     m->emb_ti = gguf_find_tensor(gf, "token_embd.weight");
     if (!wt_load(&m->tok_emb, gf, "token_embd.weight") || m->emb_ti < 0) {
@@ -247,14 +296,23 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
         qmm(v_new, &m->layers[l].wv, xn, n);
         pf_add(PF_QKV, pft);
 
-        /* The projection is normalised whole, then split into heads. Doing it after the
-         * split would divide by a different scale per head and is a different model. */
+        /* OLMoE normalises the projection whole and then splits it into heads; qwen3moe
+         * normalises each head. Doing either one the other way divides by a different scale
+         * and is a different model, and both still produce fluent text. */
         pft = pf_mark();
         for (int j = 0; j < n; j++) {
-            rmsnorm(q_all + (long)j * Q_DIM, q_all + (long)j * Q_DIM,
-                    m->layers[l].q_norm, Q_DIM, eps);
-            rmsnorm(k_new + (long)j * KVD, k_new + (long)j * KVD,
-                    m->layers[l].k_norm, KVD, eps);
+            if (m->qk_norm_per_head) {
+                float *qj = q_all + (long)j * Q_DIM, *kj = k_new + (long)j * KVD;
+                for (int h = 0; h < H; h++)
+                    rmsnorm(qj + h * HD, qj + h * HD, m->layers[l].q_norm, HD, eps);
+                for (int h = 0; h < KV; h++)
+                    rmsnorm(kj + h * HD, kj + h * HD, m->layers[l].k_norm, HD, eps);
+            } else {
+                rmsnorm(q_all + (long)j * Q_DIM, q_all + (long)j * Q_DIM,
+                        m->layers[l].q_norm, Q_DIM, eps);
+                rmsnorm(k_new + (long)j * KVD, k_new + (long)j * KVD,
+                        m->layers[l].k_norm, KVD, eps);
+            }
         }
         pf_add(PF_NORM, pft);
 
@@ -331,6 +389,17 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
             pft = pf_mark();
             softmax(probs, NE);
             top_k(probs, NE, NU, idx);
+            /* Renormalised over the chosen experts, or taken as they stand. Nothing in
+             * either file records which, so it was decided at load from the name and the
+             * reference. Writing it back into `probs` keeps the one place downstream that
+             * reads a weight reading one thing. */
+            float w[OLMOE_MAX_USED];
+            for (int e = 0; e < NU; e++) w[e] = probs[idx[e]];
+            if (m->renorm_topk) {
+                float s = 0;
+                for (int e = 0; e < NU; e++) s += w[e];
+                if (s > 0) for (int e = 0; e < NU; e++) w[e] /= s;
+            }
             pf_add(PF_SILU, pft);
 
             /* Slice first, all of them, before any arithmetic. Load has already checked that
@@ -391,9 +460,7 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
                 pft = pf_mark();
                 qmv(eo, &de[e], eg + (long)e * FFN);
                 pf_add(PF_FFN, pft);
-                /* The weight is the softmax probability as it stands: this family neither
-                 * renormalises over the chosen eight nor scales them. */
-                axpy_f32(dst, probs[idx[e]], eo, E);
+                axpy_f32(dst, w[e], eo, E);
             }
         }
         pft = pf_mark();
@@ -413,7 +480,7 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
     return NT_OK;
 }
 
-static const char *const olmoe_names[] = { "olmoe", NULL };
+static const char *const olmoe_names[] = { "olmoe", "qwen3moe", NULL };
 
 const nt_arch nt_arch_olmoe = {
     .names = olmoe_names,

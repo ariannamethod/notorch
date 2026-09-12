@@ -79,6 +79,12 @@ for M in $MODELS; do
   # Where they part on a family the example never implemented, llama.cpp is the
   # reference: harness/test_reference.sh reads OK on that same file.
   ARCH=$(./notorch -A "$M" 2>/dev/null || echo "?")
+  # mistral3 is not on this list although the harness runs it, and the reason is
+  # the same one: examples/infer_llama.c:234 decides the rotation with
+  # `strcmp(arch,"llama") != 0`, so it rotates halves where a Mistral file wants
+  # adjacent lanes. Against llama.cpp the harness reads 3 identical on that file
+  # and the example does not, which makes the example the wrong side of this
+  # comparison rather than a reference for it.
   case "$ARCH" in
     llama|qwen2) ;;
     *) echo "parity  [$NAME] SKIPPED — the example implements llama and qwen2; this file is '$ARCH'"

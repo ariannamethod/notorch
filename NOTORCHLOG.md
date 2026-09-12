@@ -13,6 +13,101 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the polygon: parity with llama.cpp on qwen3 and mistral3, and three gates that had only ever run on a Mac
+
+First run on `polygon` — Ubuntu, i5-8500T, six cores at 2.1 GHz, no AVX-512, 31 GB
+with 29 free, OpenBLAS, gcc 13.3. Three GGUFs were already on the disk, so
+nothing was downloaded: Qwen3-4B-Base Q4_K_M, Ministral-3-3B-Base Q4_K_M, and
+Qwen3-30B-A3B-Base Q4_K_M. llama.cpp was there too, built, just not on `PATH`,
+which is why `command -v` said it was absent.
+
+### What the harness got right on someone else's weights
+
+Qwen3-4B Q4_K_M, one day after the family landed, against llama-simple:
+**2 identical, 1 tie-break, 0 diverged**, forced next token 3 of 3. Tokenizer
+identical on all eight strings. That also closes a check that could not be made
+on this laptop: every GGUF here has an undeclared BOS, so nothing here proved
+`test_reference.sh` still exercises a file that declares one. Qwen3 declares
+`bos: 151643` and the gate gave a verdict instead of skipping.
+
+The registry refused what it does not implement, out loud and on real weights:
+`no architecture handles 'qwen3moe'`, `no architecture handles 'mistral3'`. That
+is `32ffc9e`'s strictness meeting files it was not written against.
+
+### mistral3, and why it was not one line
+
+Ministral-3-3B is the llama shape exactly — 236 tensors, 26 layers of
+attn_norm / attn_{q,k,v,output} / ffn_norm / ffn_{gate,up,down}, no bias, no QK
+norm, tied embeddings, GQA 32/8 with `q_dim` 4096 over `embed` 3072.
+
+But `rope_neox` was written as `strcmp(arch,"llama") != 0`, and under that rule a
+new name gets the rotation by coin-flip. **Both polarities produce fluent text**:
+interleaved says `Paris. It is located in the north of the country, on the banks
+of`, halves says `Paris. The capital of France, Paris is the largest city in the
+country of`. Neither reads as broken, which is the whole reason this repository
+does not accept fluent text as evidence.
+
+The reference decides it. Interleaved: **3 identical, 0 diverged**. Halves:
+1 identical, 1 tie-break, 1 diverged, `NOTORCH_REFERENCE_FAIL`. One prompt agreed
+on the wrong rotation, so a single-prompt check would have shipped it. The rule
+is now a named list of families rather than a negation of one.
+
+### Two reds on Ministral, and only one of them is ours
+
+`test_parity.sh` fails on it, and the harness is the side that is right:
+`examples/infer_llama.c:234` carries the same `strcmp(arch,"llama") != 0` and so
+rotates halves for a Mistral file. Against llama.cpp the harness reads 3
+identical on that file and the example does not. `mistral3` therefore stays off
+the parity gate's list, with the line number of the reason in the script.
+
+`test_tokenizer.sh` fails 1 of 8, on `def fibonacci(n):\n    return n if n < 2`:
+ours `...4990,4244,1010,1293...` where `llama-tokenize` says `...4990,3640,1293...`.
+That is the open `bpe_encode` finding — it splits on spaces where the reference
+applies the GPT-2 regex — now with a second witness on a second family. Not
+repaired here; named.
+
+### Three gates that had only ever run on one machine
+
+`mktemp -t` wants a template ending in `XXXXXX` under GNU coreutils and does not
+under BSD, so `test_consumer_link.sh`, `test_repeat.sh` and `test_resonance.sh`
+all died on `mktemp: too few X's in template` before their first check.
+
+Under that, one that would not have announced itself: the build chain in
+`test_repeat.sh` and `test_resonance.sh` was Accelerate, then nothing — so on
+Linux the first line fails and the gate compiles with no BLAS at all and still
+says PASS. OpenBLAS now sits between the two.
+
+And `test_consumer_link.sh` passed `-framework Accelerate` on Darwin and nothing
+anywhere else, so the consumer it builds had no BLAS and the gate died on
+`undefined reference to cblas_sgemm` from inside `libnotorch.a`. It probes for
+`-lopenblas`, then `-lblas`, then nothing.
+
+Three in one afternoon, all the same shape, all written by the same hand on the
+same laptop. A gate is a claim about the code; a gate that has run on one machine
+is a claim about one machine.
+
+### Numbers, with the machine attached
+
+Qwen3-4B Q4_K_M on polygon: prefill 3.0 t/s, decode 2.2 t/s, 2.35 GiB resident
+of 29.55 available. Ministral-3B Q4_K_M: prefill 3.8–4.0 t/s, decode 2.5 t/s.
+Both single runs on a cold process, both unpinned, and llama.cpp was not timed on
+the same files — so these say what this machine does, and nothing yet about how
+it compares.
+
+Gates: `NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_REPEAT_OK (3 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`, `JANUS_OK`, `RESONANCE_OK`, notorch_test 49/49
+and 73/73, test_qmatmul 46/46 on this laptop; on the polygon
+`NOTORCH_REFERENCE_OK` on both new families, `NOTORCH_REPEAT_OK`,
+`NOTORCH_CONSUMER_OK`, tokenizer 8/8 on Qwen3 and 7/8 on Ministral.
+`test_quantize` still FAILs Q8_0 at 2.081e-04 over 2.067e-04, unchanged since
+`cd659e8`.
+
+Open and named: `qwen3moe` is on that disk at 18.5 GB and has no family here —
+it routes its feed-forward to experts and belongs beside `olmoe`.
+
+---
+
+
 ## 2026-09-12 — the reference gate called a documented difference a defect
 
 Qwen3 and the audit repairs met in one tree, and the meeting turned up something

@@ -63,10 +63,13 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
     m->ffn = gf->ffn_dim;
     m->rope_base = gf->rope_freq_base;
     m->rms_eps = gf->rms_eps;
-    /* llama and its direct descendants rotate adjacent lanes; qwen2 and its
-     * converted checkpoints rotate halves. The registry refuses everything
-     * else before this loader is called. */
-    m->rope_neox = strcmp(gf->arch, "llama") != 0;
+    /* Which lanes the rotation pairs is a property of the converter, not of the
+     * file, so it is a list and the list is named rather than inferred. llama
+     * and mistral come out of llama.cpp's converter with the weights permuted
+     * for adjacent-lane rotation; qwen2 and qwen3 rotate halves. Writing this as
+     * "anything that is not llama is neox" made the answer for a new name a
+     * coin-flip, and mistral3 is the name that would have lost it. */
+    m->rope_neox = !(strcmp(gf->arch, "llama") == 0 || strcmp(gf->arch, "mistral3") == 0);
 
     int ti = gguf_find_tensor(gf, "blk.0.attn_q.weight");
     if (ti >= 0) {
@@ -329,7 +332,7 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
     return NT_OK;
 }
 
-static const char *const llama_names[] = { "llama", "qwen2", "qwen3", NULL };
+static const char *const llama_names[] = { "llama", "mistral3", "qwen2", "qwen3", NULL };
 
 const nt_arch nt_arch_llama = {
     .names = llama_names,
