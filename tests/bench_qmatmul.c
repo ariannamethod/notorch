@@ -43,6 +43,111 @@ static uint8_t *make_q4_k(int m, int k, unsigned seed) {
 }
 
 
+#if defined(__AVX2__) && defined(__FMA__)
+#include <immintrin.h>
+
+/* The reference's activation layout, and the kernel shape it makes possible.
+ *
+ * Seven attempts at our own kernel measured to nothing or worse, and reading
+ * ggml_vec_dot_q4_K_q8_K in llama.cpp's ggml/src/ggml-cpu/arch/x86/quants.c said why. It is
+ * not the instruction selection. It is that their quantized activation carries ONE float
+ * scale per 256 values (block_q8_K) where ours carries one per 32, plus per-16 block sums.
+ *
+ * With one scale per superblock the whole sub-block scaling stays in the integer domain:
+ * `_mm256_madd_epi16(scale_l, p16l)` multiplies the int16 partial products by the sub-block
+ * scale in the same instruction that folds them, everything accumulates into one int32
+ * vector, and a block costs one cvtepi32_ps and one fmadd at the end. Eight scalar FMAs and
+ * a six-deep hadd tree per (row, column, block) disappear.
+ *
+ * Ours cannot do that because eight different activation scales per superblock have to
+ * multiply eight different sub-block sums, which forces them out to scalars first.
+ *
+ * The min term rides along: mins dot the per-32 activation sums in one _mm_madd_epi16 and
+ * one fmadd, instead of eight scalar multiply-subtracts.
+ *
+ * This measures what changing the layout would buy. It is not bit-compatible with anything
+ * in the tree — a coarser activation scale is a different number, not a different order. */
+static void bench_scale_min(int j, const uint8_t *sc, uint8_t *s, uint8_t *mn) {
+    if (j < 4) { *s = sc[j] & 63; *mn = sc[j + 4] & 63; }
+    else { *s = (sc[j + 4] & 0x0F) | ((sc[j - 4] >> 6) << 4);
+           *mn = (sc[j + 4] >> 4)  | ((sc[j]     >> 6) << 4); }
+}
+
+static void q8k_quant(const float *X, int k, int n, int8_t *qa, float *dsuper, int32_t *bs32) {
+    int nsb = k / 256, nsub = k / 32;
+    for (int j = 0; j < n; j++) {
+        const float *x = X + (long)j * k;
+        for (int b = 0; b < nsb; b++) {
+            const float *xb = x + (long)b * 256;
+            float amax = 0.0f;
+            for (int i = 0; i < 256; i++) { float a = fabsf(xb[i]); if (a > amax) amax = a; }
+            float d = amax / 127.0f, id = d > 0.0f ? 1.0f / d : 0.0f;
+            dsuper[(long)j * nsb + b] = d;
+            for (int i = 0; i < 256; i++) {
+                int q = (int)lrintf(xb[i] * id);
+                if (q > 127) q = 127; else if (q < -127) q = -127;
+                qa[(long)j * k + (long)b * 256 + i] = (int8_t)q;
+            }
+        }
+        for (int s = 0; s < nsub; s++) {
+            const int8_t *p = qa + (long)j * k + (long)s * 32;
+            int32_t t = 0;
+            for (int i = 0; i < 32; i++) t += p[i];
+            bs32[(long)j * nsub + s] = t;
+        }
+    }
+}
+
+static void q4k_q8k(float *out, int m, const uint8_t *W, const int8_t *qa,
+                    const float *dsuper, const int32_t *bs32, int k, int n) {
+    int nb = k / 256, nsub = k / 32, nsb = nb;
+    const __m256i m4 = _mm256_set1_epi8(0x0F);
+    for (int j = 0; j < n; j++) {
+        const int8_t  *acol = qa     + (long)j * k;
+        const float   *dcol = dsuper + (long)j * nsb;
+        const int32_t *scol = bs32   + (long)j * nsub;
+        for (int row = 0; row < m; row++) {
+            const uint8_t *rb = W + (long)row * nb * 144;
+            __m256 acc = _mm256_setzero_ps();
+            float accm = 0.0f;
+            for (int blk = 0; blk < nb; blk++) {
+                const uint8_t *b = rb + (long)blk * 144;
+                float dw = _cvtsh_ss((uint16_t)(b[0] | (b[1] << 8)));
+                float mw = _cvtsh_ss((uint16_t)(b[2] | (b[3] << 8)));
+                const uint8_t *sc = b + 4, *qs = b + 16;
+                const int8_t *ac = acol + (long)blk * 256;
+                uint8_t ls[8], lm[8];
+                for (int s = 0; s < 8; s++) bench_scale_min(s, sc, &ls[s], &lm[s]);
+
+                /* The min term: eight mins against eight activation sums, one dot. */
+                float mt = 0.0f;
+                for (int s = 0; s < 8; s++) mt += (float)lm[s] * (float)scol[blk * 8 + s];
+                accm += mw * dcol[blk] * mt;
+
+                __m256i sumi = _mm256_setzero_si256();
+                for (int p = 0; p < 4; p++) {
+                    __m256i qv = _mm256_loadu_si256((const __m256i *)(qs + p * 32));
+                    __m256i a0 = _mm256_loadu_si256((const __m256i *)(ac + (2*p)     * 32));
+                    __m256i a1 = _mm256_loadu_si256((const __m256i *)(ac + (2*p + 1) * 32));
+                    __m256i sl = _mm256_set1_epi16((short)ls[2*p]);
+                    __m256i sh = _mm256_set1_epi16((short)ls[2*p + 1]);
+                    __m256i pl = _mm256_madd_epi16(sl,
+                                   _mm256_maddubs_epi16(_mm256_and_si256(qv, m4), a0));
+                    __m256i ph = _mm256_madd_epi16(sh,
+                                   _mm256_maddubs_epi16(_mm256_and_si256(_mm256_srli_epi16(qv, 4), m4), a1));
+                    sumi = _mm256_add_epi32(sumi, _mm256_add_epi32(pl, ph));
+                }
+                acc = _mm256_fmadd_ps(_mm256_set1_ps(dw * dcol[blk]),
+                                      _mm256_cvtepi32_ps(sumi), acc);
+            }
+            __m128 lo = _mm_add_ps(_mm256_castps256_ps128(acc), _mm256_extractf128_ps(acc, 1));
+            lo = _mm_hadd_ps(lo, lo); lo = _mm_hadd_ps(lo, lo);
+            out[(long)j * m + row] = _mm_cvtss_f32(lo) - accm;
+        }
+    }
+}
+#endif
+
 int main(int argc, char **argv) {
     int cores = argc > 1 ? atoi(argv[1]) : 1;
     double ghz = argc > 2 ? atof(argv[2]) : 0.0;
@@ -96,6 +201,33 @@ int main(int argc, char **argv) {
         printf("              %s ceiling %.1f GMAC/s on %d cores at %.2f GHz — %.1f%% of it\n",
                isa, ceil_g, cores, ghz, 100.0 * (macs / dt / 1e9) / ceil_g);
     }
+
+#if defined(__AVX2__) && defined(__FMA__)
+    {
+        int nsb = k / 256, nsub = k / 32;
+        int8_t  *q2 = (int8_t *)malloc((size_t)k * n);
+        float   *ds = (float *)malloc((size_t)nsb * n * sizeof(float));
+        int32_t *bs = (int32_t *)malloc((size_t)nsub * n * sizeof(int32_t));
+        float   *O2 = (float *)malloc(sizeof(float) * (size_t)m * n);
+        if (q2 && ds && bs && O2) {
+            q8k_quant(X, k, n, q2, ds, bs);
+            q4k_q8k(O2, m, W, q2, ds, bs, k, n);
+            double t2 = now_s();
+            for (int r = 0; r < reps; r++) q4k_q8k(O2, m, W, q2, ds, bs, k, n);
+            double d2 = (now_s() - t2) / reps;
+            double worst = 0;
+            for (long i = 0; i < (long)m * n; i++) {
+                double a = O[i], b2 = O2[i];
+                double rel = fabs(a) > 1e-6 ? fabs(a - b2) / fabs(a) : fabs(a - b2);
+                if (rel > worst) worst = rel;
+            }
+            printf("q4_k q8_K-style   %.2f ms   %.1f GMAC/s   %.2fx   worst rel %.3g\n",
+                   d2 * 1e3, macs / d2 / 1e9, dt / d2, worst);
+        }
+        free(q2); free(ds); free(bs); free(O2);
+    }
+#endif
+
     free(W); free(X); free(O);
     return 0;
 }
