@@ -13,6 +13,50 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the mixture's prefill, second attempt: 7.8 to 9.4, and a correction
+
+**First, the correction.** The entry below this one says the expert grouping was
+reverted. It was reverted on the branch, by a reset, and the commit that carried
+it — `04d1996` — had already reached `main` through the merge. So `main` has been
+running the 3.3 t/s version since, and the log said otherwise. A reset is not a
+revert once someone else has pulled, and "reverted" is a claim about the tree
+rather than about a branch.
+
+The repair is the thing itself rather than a revert, because the diagnosis was
+right and the fix was one entry point away.
+
+`nt_qmatmul_i8` is now two halves. `nt_quant_act_batch` quantizes a tile of
+activations into buffers the caller owns; `nt_qmatmul_i8_pre` is the batched
+matmul with that setup lifted out. The old entry is those two plus the mallocs,
+so the paths cannot drift, and everything else in the tree sees no change:
+notorch_test 49/49 and 73/73, test_qmatmul 46/46 on both machines, and
+`test_quantize` still failing Q8_0 at 2.081e-04 over 2.067e-04 on this laptop —
+verified against `684e6f0` without the split, which fails at the same number.
+
+The mixture then quantizes its layer input once and hands every expert a gather
+of the columns that chose it. A column is `k` bytes plus two small arrays; the
+matmul that follows dwarfs it. What used to cost three mallocs and a
+re-quantization of two positions per expert now costs a memcpy and a dispatch.
+
+    Qwen3-30B-A3B Q4_K_M prefill, 53-token prompt, six threads, polygon
+      no grouping          7.8 t/s
+      grouping, per-call   3.3 t/s
+      grouping, shared     9.4 t/s
+
+Decode is untouched at 6.3, which is expected: at one position there is nothing
+to group and the path is not taken. The dense bodies are untouched too —
+Qwen3-4B still 11.6 t/s of prefill. Correctness holds where it matters:
+`NOTORCH_REFERENCE_OK (3 identical, 0 tie-break)` on the 30B, which is what says
+the contributions are still summed in slot order after being computed out of it.
+
+Against llama.cpp's 31.99 the mixture is 3.4x behind where it was 4.1x. Not
+measured and worth naming: whether a wider prefill chunk helps. At 53 tokens the
+whole prompt is one chunk at 64 and at 128 alike, so the two read the same 9.4
+t/s and the question is still open.
+
+---
+
+
 ## 2026-09-12 — the mixture's prefill: grouping by expert, measured, and 2.4x slower
 
 The batched kernels moved the dense bodies and left the mixture at 7.8 t/s of

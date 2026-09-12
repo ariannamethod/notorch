@@ -284,21 +284,42 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
      * positions of a 2048-wide body that is 2 MB. A failure here is not fatal: grouping is
      * an optimisation and the per-position path below is the definition of the answer. */
     float *grp_part = NULL, *grp_x = NULL, *grp_g = NULL, *grp_u = NULL, *grp_o = NULL, *grp_w = NULL;
+    /* The quantized layer input, its per-expert gather, and the same pair for the down
+     * projection. These are why the grouping is worth doing at all: without them every
+     * expert re-quantized about two positions of activation and paid three mallocs for the
+     * privilege, which measured 2.4x slower than not grouping. */
+    int8_t *grp_qa = NULL, *grp_cqa = NULL, *grp_dqa = NULL;
+    float *grp_da = NULL, *grp_cda = NULL, *grp_dda = NULL;
+    int32_t *grp_as = NULL, *grp_cas = NULL, *grp_das = NULL;
     int *grp_idx = NULL, *grp_pos = NULL, *grp_slot = NULL;
     if (n > 1) {
+        long nsubE = E / 32, nsubF = FFN / 32;
         grp_part = (float*)malloc((size_t)n * NU * E * sizeof(float));
         grp_x    = (float*)malloc((size_t)n * E * sizeof(float));
         grp_g    = (float*)malloc((size_t)n * FFN * sizeof(float));
         grp_u    = (float*)malloc((size_t)n * FFN * sizeof(float));
         grp_o    = (float*)malloc((size_t)n * E * sizeof(float));
         grp_w    = (float*)malloc((size_t)n * NU * sizeof(float));
+        grp_qa   = (int8_t*)malloc((size_t)n * E);
+        grp_cqa  = (int8_t*)malloc((size_t)n * E);
+        grp_dqa  = (int8_t*)malloc((size_t)n * FFN);
+        grp_da   = (float*)malloc((size_t)n * nsubE * sizeof(float));
+        grp_cda  = (float*)malloc((size_t)n * nsubE * sizeof(float));
+        grp_dda  = (float*)malloc((size_t)n * nsubF * sizeof(float));
+        grp_as   = (int32_t*)malloc((size_t)n * nsubE * sizeof(int32_t));
+        grp_cas  = (int32_t*)malloc((size_t)n * nsubE * sizeof(int32_t));
+        grp_das  = (int32_t*)malloc((size_t)n * nsubF * sizeof(int32_t));
         grp_idx  = (int*)malloc((size_t)n * NU * sizeof(int));
         grp_pos  = (int*)malloc((size_t)n * NU * sizeof(int));
         grp_slot = (int*)malloc((size_t)n * NU * sizeof(int));
         if (!grp_part || !grp_x || !grp_g || !grp_u || !grp_o || !grp_w ||
+            !grp_qa || !grp_cqa || !grp_dqa || !grp_da || !grp_cda || !grp_dda ||
+            !grp_as || !grp_cas || !grp_das ||
             !grp_idx || !grp_pos || !grp_slot) {
-            free(grp_part); free(grp_x); free(grp_g); free(grp_u); free(grp_o);
-            free(grp_w); free(grp_idx); free(grp_pos); free(grp_slot);
+            free(grp_part); free(grp_x); free(grp_g); free(grp_u); free(grp_o); free(grp_w);
+            free(grp_qa); free(grp_cqa); free(grp_dqa); free(grp_da); free(grp_cda);
+            free(grp_dda); free(grp_as); free(grp_cas); free(grp_das);
+            free(grp_idx); free(grp_pos); free(grp_slot);
             grp_part = NULL;
         }
     }
@@ -427,6 +448,7 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
          * position's choice before it can read any expert. */
         int grouped = (n > 1 && grp_part != NULL);
         if (grouped) {
+            long nsubE = E / 32;
             for (int j = 0; j < n; j++) {
                 float *probs = router + (long)j * NE;
                 int *ridx = grp_idx + (long)j * NU;
@@ -443,7 +465,13 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
                 pf_add(PF_SILU, pft);
             }
 
-            for (int ex = 0; ex < NE && grouped; ex++) {
+            /* The layer's input, quantized once for every expert that will read it. This
+             * line is the difference between the grouping paying and costing. */
+            pft = pf_mark();
+            nt_quant_act_batch(xn, E, n, grp_qa, grp_da, grp_as);
+            pf_add(PF_FFN, pft);
+
+            for (int ex = 0; ex < NE; ex++) {
                 int cnt = 0;
                 for (int j = 0; j < n; j++)
                     for (int e = 0; e < NU; e++)
@@ -468,13 +496,22 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
                     continue;
                 }
 
-                for (int c = 0; c < cnt; c++)
-                    memcpy(grp_x + (long)c * E, xn + (long)grp_pos[c] * E, (size_t)E * sizeof(float));
+                /* This expert's columns out of the tile quantized once above. A column is
+                 * k bytes plus two small arrays; against the matmul that follows, free. */
+                for (int c = 0; c < cnt; c++) {
+                    long jj = grp_pos[c];
+                    memcpy(grp_x   + (long)c * E,     xn      + jj * E, (size_t)E * sizeof(float));
+                    memcpy(grp_cqa + (long)c * E,     grp_qa  + jj * E, (size_t)E);
+                    memcpy(grp_cda + (long)c * nsubE, grp_da  + jj * nsubE, (size_t)nsubE * sizeof(float));
+                    memcpy(grp_cas + (long)c * nsubE, grp_as  + jj * nsubE, (size_t)nsubE * sizeof(int32_t));
+                }
 
                 pft = pf_mark();
                 int batched = gw.q && uw.q && dw.q &&
-                    nt_qmatmul_i8(grp_g, gw.q, gw.dtype, grp_x, FFN, E, cnt) == 0 &&
-                    nt_qmatmul_i8(grp_u, uw.q, uw.dtype, grp_x, FFN, E, cnt) == 0;
+                    nt_qmatmul_i8_pre(grp_g, gw.q, gw.dtype, grp_cqa, grp_cda, grp_cas,
+                                      FFN, E, cnt) == 0 &&
+                    nt_qmatmul_i8_pre(grp_u, uw.q, uw.dtype, grp_cqa, grp_cda, grp_cas,
+                                      FFN, E, cnt) == 0;
                 if (!batched)
                     for (int c = 0; c < cnt; c++) {
                         qmv(grp_g + (long)c * FFN, &gw, grp_x + (long)c * E);
@@ -490,7 +527,10 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
                 pf_add(PF_SILU, pft);
 
                 pft = pf_mark();
-                if (!(batched && nt_qmatmul_i8(grp_o, dw.q, dw.dtype, grp_g, E, FFN, cnt) == 0))
+                if (!(batched &&
+                      nt_quant_act_batch(grp_g, FFN, cnt, grp_dqa, grp_dda, grp_das) == 0 &&
+                      nt_qmatmul_i8_pre(grp_o, dw.q, dw.dtype, grp_dqa, grp_dda, grp_das,
+                                        E, FFN, cnt) == 0))
                     for (int c = 0; c < cnt; c++)
                         qmv(grp_o + (long)c * E, &dw, grp_g + (long)c * FFN);
                 pf_add(PF_FFN, pft);
@@ -610,8 +650,10 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
     free(attn_out); free(ffn_out); free(router); free(eg); free(eu); free(eo);
-    free(grp_part); free(grp_x); free(grp_g); free(grp_u); free(grp_o);
-    free(grp_w); free(grp_idx); free(grp_pos); free(grp_slot);
+    free(grp_part); free(grp_x); free(grp_g); free(grp_u); free(grp_o); free(grp_w);
+    free(grp_qa); free(grp_cqa); free(grp_dqa); free(grp_da); free(grp_cda);
+    free(grp_dda); free(grp_as); free(grp_cas); free(grp_das);
+    free(grp_idx); free(grp_pos); free(grp_slot);
     return NT_OK;
 }
 
