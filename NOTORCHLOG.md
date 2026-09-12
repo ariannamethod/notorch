@@ -13,6 +13,73 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the 2.4x is the activation layout, and a prototype of the reference's puts 1.37x of it on the table
+
+Seven attempts at the kernel measured to nothing or worse. Reading
+`ggml_vec_dot_q4_K_q8_K` in the reference — `ggml/src/ggml-cpu/arch/x86/quants.c`
+— said why, and it is not instruction selection.
+
+**Their quantized activation carries one float scale per 256 values; ours carries
+one per 32.** `block_q8_K` is `{ float d; int8 qs[256]; int16 bsums[16]; }`;
+`nt_quant_act_q8` writes a scale every 32. That single difference decides the
+whole shape of the kernel:
+
+    llama.cpp                            notorch
+    p16 = maddubs(q4, q8)                p16 = maddubs(q4, q8)
+    p16 = madd_epi16(scale, p16)   <---  madd_epi16(ones, p16)
+    sumi += p16                          hadd tree -> 8 scalars
+    ...once per block:                   ...per sub-block:
+    acc = fmadd(d*dy, cvt(sumi), acc)    8 scalar FMAs with 8 float scales
+
+With one activation scale per superblock the sub-block scale can be an int16
+inside `madd_epi16`, so the scaling costs nothing extra and a whole 256-weight
+block drains with one `cvtepi32_ps` and one `fmadd`. With eight activation scales
+per superblock, eight different floats have to multiply eight different sums, and
+they have to come out to scalars first — which is the hadd tree and the eight
+FMAs that `perf` has been pointing at all along, correctly, while every attempt
+to remove them in place made things slower.
+
+### Prototyped and measured
+
+`tests/bench_qmatmul.c` now carries a q8_K-style activation and a kernel in that
+shape, beside the shipped one, on the same weights:
+
+    m=4096 k=14336 n=8, one thread     14.0 -> 19.7 GMAC/s   1.37x
+    m=4096 k=2048  n=32, one thread    14.8 -> 20.2 GMAC/s   1.37x
+
+The error is what a coarser activation scale costs and not a defect: RMS 5.99
+against an output RMS of 994, so 6.0e-03 relative at k=14336 and 4.4e-03 at
+k=2048. (An earlier reading of "worst relative 604" was a near-zero denominator
+on random weights, which is why the metric is now against the RMS.)
+
+Two of the 1.37x are separable and both were needed: the integer-domain scale is
+worth about 1.20x, and keeping the float accumulator a vector across the whole
+row — one horizontal sum per (row, column) instead of one per block, 56 of them
+saved at k=14336 — is the rest.
+
+### What it would cost, and what it would not
+
+It is 1.37x of a 2.4x gap, so it does not close it; something else is worth the
+remaining 1.75x and is not yet identified.
+
+It changes numbers. Every Q4_K matmul would move by ~5e-3 relative, which means
+every model's output bits move. `test_qmatmul` compares batched against
+per-token and stays green if both change together. `test_reference` against
+llama.cpp is the real arbiter, and moving toward their layout should not hurt
+that — but that is a prediction and it would have to be measured on all three
+bodies before the change is worth anything.
+
+It does not touch the goldens. Resonance's file is F16, which the integer entry
+refuses, so it runs the exact path; Janus's gate builds with
+`JANUS_EXACT_MATVEC`, which forces the same. Restricting the change to Q4_K
+leaves Q8_0 — and therefore Janus's shipped path — alone as well.
+
+Nothing is changed in the shipped kernels. This is a measurement and a decision
+to put to the maintainer: 1.37x for 5e-3 of relative error on one dtype.
+
+---
+
+
 ## 2026-09-12 — two quantizations looked like a broken kernel and the tokenizer had done it
 
 The reference gate re-anchors on the reference's own text, and text handed back as a prompt is
