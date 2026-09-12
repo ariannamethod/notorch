@@ -11,15 +11,12 @@
 
 #include "harness/arch.h"
 
-/* Exact name first, the unnamed fallback second. `arch` is the GGUF's
- * general.architecture. Never returns NULL while a fallback family is in the
- * table, which is the behaviour the reference example had: an architecture it
- * had never heard of went through the llama forward rather than being refused. */
+/* Exact name lookup. `arch` is the GGUF's general.architecture. Returns NULL
+ * for NULL or an architecture no family explicitly claims. */
 const nt_arch *nt_pick_arch(const char *arch);
 
 /* The table itself, for a caller that wants to enumerate rather than look up —
- * printing what is supported, or refusing a file the fallback would have taken.
- * NULL-terminated. */
+ * printing what is supported without duplicating the registry. NULL-terminated. */
 extern const nt_arch *const nt_archs[];
 
 #endif

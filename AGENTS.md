@@ -19,6 +19,12 @@ Assume another node may be preparing a change while you inspect the tree.
 - Work on a dedicated branch (`codex/<topic>`, `claude/<topic>`, or another
   agent-specific prefix). Never push directly to `main`. Push the branch and let
   Oleg merge it.
+- Immediately before finalizing a commit, fetch `origin` and integrate the
+  current `origin/main` into the working branch. Work arrives from several
+  machines; a branch that was current at checkout may already be stale. Preserve
+  local work while doing this — never use a destructive reset as a shortcut.
+  After integrating, re-read the top of `NOTORCHLOG.md` and place the new entry
+  in true reverse-chronological order. Check `origin/main` once more before push.
 - Preserve unknown or unrelated work. Do not clean, reset, overwrite, or commit
   another agent's files merely because they are present.
 - Every commit must have a technical subject/body plus a unique, relevant
