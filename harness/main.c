@@ -335,7 +335,7 @@ int main(int argc, char **argv) {
     /* The positional form is what examples/infer_llama.c takes and what the
      * parity gate drives; the flags are for chat, which has no prompt to hang
      * positional arguments behind. */
-    int tokenize_only = 0, repeats = 1;
+    int tokenize_only = 0, arch_only = 0, repeats = 1;
     while (ai < argc && argv[ai][0] == '-' && argv[ai][1] && !argv[ai][2]) {
         char f = argv[ai][1];
         if (f == 'q') { quiet = 1; ai++; continue; }
@@ -362,12 +362,27 @@ int main(int argc, char **argv) {
          * separates them: the tokenizer can be diffed against another implementation without
          * loading a single weight, and the forward can be fed ids through NT_TOKENS. */
         if (f == 'T') { tokenize_only = 1; quiet = 1; ai++; continue; }
+        /* -A prints the file's own general.architecture and stops. A gate needs to
+         * know which family it is looking at before it decides whether its
+         * comparison partner implements that family at all — test_parity.sh read
+         * three FAILs off a Qwen3 file because examples/infer_llama.c predates
+         * qwen3 and has no QK norm. Cheaper than a tensor probe and it is the
+         * same string nt_pick_arch matches on. */
+        if (f == 'A') { arch_only = 1; quiet = 1; ai++; continue; }
         break;
     }
     if (ai >= argc) { nt_logo(quiet); usage(argv[0]); return 1; }
 
     nt_logo(quiet);
     const char *path = argv[ai];
+
+    if (arch_only) {
+        gguf_file *g = gguf_open(path);
+        if (!g) return 1;
+        printf("%s\n", g->arch);
+        gguf_close(g);
+        return 0;
+    }
 
     if (tokenize_only) {
         bpe_tokenizer *tok = bpe_load(path);

@@ -21,7 +21,7 @@ if [ ! -f "$MODEL" ]; then
   exit 0
 fi
 
-PREFIX=$(mktemp -d -t nt_consumer)
+PREFIX=$(mktemp -d "${TMPDIR:-/tmp}/nt_consumer.XXXXXX")
 trap 'rm -rf "$PREFIX"' EXIT
 
 make -s lib lib_harness >/dev/null
@@ -33,10 +33,22 @@ for h in harness/arch.h harness/archs.h harness/runtime.h examples/bpe.h gguf.h 
 done
 [ -f "$PREFIX/lib/libnotorch_harness.a" ] || { echo "consumer  libnotorch_harness.a was not installed  FAIL"; echo "NOTORCH_CONSUMER_FAIL"; exit 1; }
 
-# Accelerate on this machine, nothing on a machine without it. The point of the
-# gate is the two archives, not the BLAS underneath them.
+# The two archives are the point of this gate, but they still call into whatever
+# BLAS the tree was built with, and a consumer has to name it. "Accelerate or
+# nothing" was written on a Mac and reached the polygon as
+# `undefined reference to cblas_sgemm` — the third gate today to have only ever
+# run on one machine. Ask the linker rather than guess: a build made without
+# BLAS links fine with no flag at all, and the probe below finds that too.
 EXTRA=""
-[ "$(uname)" = "Darwin" ] && EXTRA="-framework Accelerate"
+if [ "$(uname)" = "Darwin" ]; then
+  EXTRA="-framework Accelerate"
+else
+  for cand in "-lopenblas" "-lblas" ""; do
+    if echo 'int main(void){return 0;}' | ${CC:-cc} -x c - $cand -o /dev/null 2>/dev/null; then
+      EXTRA="$cand"; break
+    fi
+  done
+fi
 
 # shellcheck disable=SC2086
 if ! ${CC:-cc} -O2 -std=gnu11 -I"$INC" -o "$PREFIX/consumer" tests/consumer_link.c \

@@ -28,14 +28,20 @@ if [ -z "$MODELS" ]; then
   exit 0
 fi
 
-BIN=$(mktemp -t nt_repeat)
+BIN=$(mktemp "${TMPDIR:-/tmp}/nt_repeat.XXXXXX")
 trap 'rm -f "$BIN"' EXIT
 SRC="tests/test_repeat.c harness/archs.c harness/runtime.c harness/arch_llama.c \
      harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c \
      harness/arch_resonance.c harness/arch_janus.c examples/bpe.c gguf.c notorch.c"
+# Accelerate, then OpenBLAS, then nothing. The last one is a real fallback and
+# not a formality — but a machine that has a BLAS must not land on it silently
+# just because the first line named the wrong one, least of all on a 30B where
+# the gate would then be timing the fallback. Found on the polygon, where the
+# two-step chain went straight to scalar.
 # shellcheck disable=SC2086
 ${CC:-cc} -O2 -std=gnu11 -I. -DUSE_BLAS -DACCELERATE -DACCELERATE_NEW_LAPACK \
   -framework Accelerate -o "$BIN" $SRC -lm 2>/dev/null \
+  || ${CC:-cc} -O2 -std=gnu11 -I. -DUSE_BLAS -o "$BIN" $SRC -lopenblas -lm 2>/dev/null \
   || ${CC:-cc} -O2 -std=gnu11 -I. -o "$BIN" $SRC -lm
 
 # Exit 1 means the probe ran and the model drifted; 2 and 3 mean it never got

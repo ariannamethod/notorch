@@ -24,12 +24,15 @@ if [ ! -f "$MODEL" ]; then
   exit 0
 fi
 
-BIN=$(mktemp -t nt_res_parity)
+BIN=$(mktemp "${TMPDIR:-/tmp}/nt_res_parity.XXXXXX")
 trap 'rm -f "$BIN" "$BIN.out"' EXIT
 ${CC:-cc} -O2 -std=gnu11 -I. -DUSE_BLAS -DACCELERATE -DACCELERATE_NEW_LAPACK \
   -framework Accelerate -o "$BIN" \
   tests/test_resonance_parity.c harness/arch_resonance.c harness/runtime.c \
   gguf.c notorch.c -lm 2>/dev/null \
+  || ${CC:-cc} -O2 -std=gnu11 -I. -DUSE_BLAS -o "$BIN" \
+       tests/test_resonance_parity.c harness/arch_resonance.c harness/runtime.c \
+       gguf.c notorch.c -lopenblas -lm 2>/dev/null \
   || ${CC:-cc} -O2 -std=gnu11 -I. -o "$BIN" \
        tests/test_resonance_parity.c harness/arch_resonance.c harness/runtime.c \
        gguf.c notorch.c -lm
