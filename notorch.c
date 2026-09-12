@@ -7028,7 +7028,7 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 144;
         __m256 accv = _mm256_setzero_ps();
-        float accm = 0.0f;
+        __m128 accmv = _mm_setzero_ps();
         for (int blk = 0; blk < nb; blk++) {
             const uint8_t *b = rb + (long)blk * 144;
             float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
@@ -7065,6 +7065,7 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
              * subtractions. */
             uint8_t ls[8], lm[8];
             for (int j = 0; j < 8; j++) nt_get_scale_min_k4(j, sc, &ls[j], &lm[j]);
+            const __m128i mins16 = _mm_cvtepu8_epi16(_mm_loadl_epi64((const __m128i *)lm));
             const __m256i q0 = _mm256_loadu_si256((const __m256i *)(qs));
             const __m256i q1 = _mm256_loadu_si256((const __m256i *)(qs + 32));
             const __m256i q2 = _mm256_loadu_si256((const __m256i *)(qs + 64));
@@ -7086,18 +7087,24 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
             #undef NT_Q4K_HI
             float dsb = da[blk * 8];          /* one scale for the whole superblock now */
             accv = _mm256_fmadd_ps(_mm256_set1_ps(d * dsb), _mm256_cvtepi32_ps(sumi), accv);
-            int32_t mt = 0;
-            for (int j = 0; j < 8; j++) mt += (int32_t)lm[j] * asum[blk * 8 + j];
-            /* Spelled out, not left to the compiler: it contracts a += b*c into an FMA at
-             * one call site and not at another, and tests/test_qmatmul compares bits. The
-             * comment above nt_q4k_acc has said so for months; writing these two sites
-             * without it turned 72 of 3968 outputs red, identical to six printed digits. */
-            accm = __builtin_fmaf(dmin * dsb, (float)mt, accm);
+            /* The min term in the same domain as the rest. The eight mins are 6-bit and the
+             * eight per-32 activation sums fit int16 by construction (32 values of at most
+             * 127 is 4064), so one madd_epi16 does what eight scalar multiplies and eight
+             * adds did, and the float accumulator stays a vector to the end of the row the
+             * way accv does. No __builtin_fmaf needed here any more: _mm_fmadd_ps IS the
+             * instruction, so the contraction the compiler used to apply at one site and
+             * not the other has nothing left to decide. */
+            __m128i as16 = _mm_packs_epi32(
+                _mm_loadu_si128((const __m128i *)(asum + blk * 8)),
+                _mm_loadu_si128((const __m128i *)(asum + blk * 8 + 4)));
+            accmv = _mm_fmadd_ps(_mm_set1_ps(dmin * dsb),
+                                 _mm_cvtepi32_ps(_mm_madd_epi16(mins16, as16)), accmv);
         }
         {
             __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv), _mm256_extractf128_ps(accv, 1));
             h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
-            out[row] = _mm_cvtss_f32(h) - accm;
+            __m128 hm = _mm_hadd_ps(accmv, accmv); hm = _mm_hadd_ps(hm, hm);
+            out[row] = _mm_cvtss_f32(h) - _mm_cvtss_f32(hm);
         }
     }
 }
@@ -7596,8 +7603,8 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 144;
             __m256 accv[NT_QMM_TILE];
-            float accm[NT_QMM_TILE];
-            for (int j = 0; j < jn; j++) { accv[j] = _mm256_setzero_ps(); accm[j] = 0.0f; }
+            __m128 accmv[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) { accv[j] = _mm256_setzero_ps(); accmv[j] = _mm_setzero_ps(); }
             for (int blk = 0; blk < nb; blk++) {
                 const uint8_t *b = rb + (long)blk * 144;
                 float d    = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
@@ -7621,6 +7628,10 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                     nt_get_scale_min_k4(s, sc, &ls[s], &lm[s]);
                     sv[s] = _mm256_set1_epi16((short)ls[s]);
                 }
+                /* Column-independent, so it is built once per block rather than once per
+                 * block per column — which is the whole reason the min term was worth
+                 * moving. See the per-token arm for what the shape is. */
+                const __m128i mins16 = _mm_cvtepu8_epi16(_mm_loadl_epi64((const __m128i *)lm));
                 /* Named, not indexed, and the loop over the four nibble vectors unrolled.
                  *
                  * As arrays these two lived on the stack: perf annotate showed the hot loop
@@ -7659,16 +7670,20 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                     float dsb = dac[blk * 8];
                     accv[j] = _mm256_fmadd_ps(_mm256_set1_ps(d * dsb),
                                               _mm256_cvtepi32_ps(sumi), accv[j]);
-                    int32_t mt = 0;
-                    for (int s = 0; s < 8; s++) mt += (int32_t)lm[s] * asc[blk * 8 + s];
-                    accm[j] = __builtin_fmaf(dmin * dsb, (float)mt, accm[j]);
+                    __m128i as16 = _mm_packs_epi32(
+                        _mm_loadu_si128((const __m128i *)(asc + blk * 8)),
+                        _mm_loadu_si128((const __m128i *)(asc + blk * 8 + 4)));
+                    accmv[j] = _mm_fmadd_ps(_mm_set1_ps(dmin * dsb),
+                                            _mm_cvtepi32_ps(_mm_madd_epi16(mins16, as16)),
+                                            accmv[j]);
                 }
             }
             for (int j = 0; j < jn; j++) {
                 __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv[j]),
                                       _mm256_extractf128_ps(accv[j], 1));
                 h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
-                out[(long)(j0 + j) * m + row] = _mm_cvtss_f32(h) - accm[j];
+                __m128 hm = _mm_hadd_ps(accmv[j], accmv[j]); hm = _mm_hadd_ps(hm, hm);
+                out[(long)(j0 + j) * m + row] = _mm_cvtss_f32(h) - _mm_cvtss_f32(hm);
             }
         }
     }

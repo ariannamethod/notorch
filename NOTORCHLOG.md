@@ -13,6 +13,97 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — the Q4_K min term is a vector now: a fifth of every instruction gone, and one body that got slower for it
+
+The two AVX2 Q4_K arms computed the min term as eight scalar multiplies, eight
+adds and one `fmaf` per (block, column), to produce one float. At nb=56 and a
+tile of 32 that is thirty thousand scalar operations per row against sixty-six
+thousand vector ones — a third of the kernel's instructions for a scalar. ggml
+has done it in four SSE operations for years, and the shape is available to us
+for the same reason the main term's was: the mins are 6-bit and the per-32
+activation sums fit int16 by construction, 32 values of at most 127 being 4064.
+One `madd_epi16`, and the float accumulator stays a vector to the end of the row
+the way `accv` already does.
+
+Both arms changed together, because `tests/test_qmatmul` memcmps them: 46 of 46.
+
+    kernel, one pinned core, i5-8500T
+      m=4096 k=14336 n=8      22.0 -> 27.2 GMAC/s
+      m=4096 k=14336 n=32     20.1 -> 25.6
+      m=768  k=2048  n=8      24.0 -> 29.6      (a 30B expert's gate/up)
+      m=2048 k=768   n=16     24.9 -> 32.0      (its down)
+      m=2048 k=2048  n=16     26.0 -> 34.9
+
+Faster at every shape measured, and at n=8 on one core the kernel is now ahead of
+llama.cpp's on the same machine and the same shape: 27.2 against their 24.9
+(`test-backend-ops perf -o MUL_MAT`, `taskset -c 0`).
+
+### What it does to the bodies, including the one it hurts
+
+61-token prompt, six threads, two runs each, alternating binaries:
+
+    Qwen3-4B Q4_K_M        prefill 21.9 -> 23.9   decode 8.4 -> 8.4
+    Ministral-3B Q4_K_M    prefill 27.3 -> 28.7   decode 10.2 -> 10.2
+    Qwen3-30B-A3B Q4_K_M   prefill 13.4 -> 12.7   decode 6.95 -> 7.1
+
+The MoE loses 5% of prefill and it is not noise: eight alternating runs in both
+orders, 13.3-13.6 against 12.6-12.7, no overlap. Splitting the change in half
+put it on the batched arm — a build with the new per-token arm and the old
+batched one runs exactly at the old number.
+
+What the counters say about the whole MoE run, old against new:
+
+    instructions   137.4 -> 109.8 G    -20%
+    uops executed  159.1 -> 134.7 G    -15%
+    loads           39.7 ->  32.6 G    -18%
+    cycles           66.4 ->  61.8 G    -7%
+    resource_stalls.any  16.0% -> 19.7% of cycles
+
+Everything the kernel is charged for went down. The one thing that went up is
+backend occupancy, and it is not the store buffer (1.57 -> 1.38 G) and not
+memory (`cycle_activity.stalls_mem_any` flat). The reading that fits: the new
+inner loop carries two dependent accumulator chains where the old one carried a
+vector chain beside scalar work on idle ports, and the 30B's down-projection has
+k=768 — three blocks per row, nothing to hide the latency behind. The dense
+bodies have k=9728 and k=14336 and do not care.
+
+Four fixes tried and rejected, measured on the polygon:
+
+1. **Thread count.** 1, 2, 4 and 6 threads all give 13.3 old / 12.7 new. Not the
+    pool.
+2. **Spin budget.** `NT_QMV_SPIN` at 500000 and 4000000: unchanged.
+3. **Chunk granularity.** `NT_QMV_CHUNKS` at 4, 16, 32: 12.7, 12.7, 12.6.
+4. **Register pressure.** Dropping `sv[8]` from the batched arm, so eight
+    architectural registers stop being held across the column loop and the scale
+    broadcast is rebuilt inline the way the per-token arm does it: MoE 12.6-12.7,
+    dense 23.7-23.8. Exactly nothing.
+
+The fix that would settle it — holding the row's mins in registers instead of a
+stack array indexed by column — needs an array sized by `nb` in the hot kernel,
+and that is a bigger restructuring than this change is. Left open and named.
+
+### What it costs in bits
+
+`harness/test_reference.sh` against llama.cpp on the polygon, both binaries, same
+machine, same reference build:
+
+    Qwen3-4B Q4_K_M       2 identical, 1 tie-break  ->  1 identical, 2 tie-break
+    Ministral-3B Q4_K_M   1 identical, 2 tie-break  ->  2 identical, 1 tie-break
+    Qwen3-30B-A3B Q4_K_M  3 identical, 0 tie-break  ->  3 identical, 0 tie-break
+
+Zero diverged in all six. The min term's summation order moved by one ULP, one
+greedy path per model crossed a tie, and it crossed in both directions.
+
+Gates: notorch_test 49/49 and 73/73, test_qmatmul 46/46 on both machines,
+`NOTORCH_REFERENCE_OK` on all three bodies, `NOTORCH_REPEAT_OK`, `JANUS_OK`,
+`RESONANCE_OK`, `NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_CONSUMER_OK (3 checks)`.
+
+Still owed, unchanged: the NEON arms keep the per-32 shape and take none of this.
+Noted in passing and not touched: `nsub` has been unused in the per-token AVX2
+Q4_K arm since before this change.
+
+---
+
 ## 2026-09-13 — attention was the one part of a layer not using the machine
 
 Re-profiling after the three kernel changes moved the target. The FFN's share of
