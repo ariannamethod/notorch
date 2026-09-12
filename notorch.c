@@ -8259,6 +8259,72 @@ static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
     }
 }
 
+#if defined(__AVX2__) && defined(__FMA__)
+/* The x86 arm, missing for the same reason the Q4_K one was: every batched kernel here was
+ * written for NEON and everything else fell to the scalar loop below. In a Q4_K_M file this
+ * is the one that matters most for prefill despite the smaller count — 37 Q6_K tensors
+ * against 216 Q4_K in Qwen3-4B, but they are ffn_down and the output head, and the profile
+ * put 69.5% of prefill in the FFN.
+ *
+ * The two loaded halves stay in registers across the column loop; the four weight vectors
+ * are rebuilt per column rather than held, for the same reason as in the Q4_K arm — holding
+ * them spills on sixteen registers and the rebuild is three ALU ops against a reload.
+ *
+ * Sub-blocks are drained ascending through nt_q6k_acc, which is the per-token kernel's
+ * order: tests/test_qmatmul compares the two under memcmp, and folding a pair into one add
+ * is what put seven Q6_K cases red the last time. */
+static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
+                             const float *da, const int32_t *asum,
+                             int r0, int r1, int k, int n) {
+    (void)asum;
+    int nb = k / 256;
+    const __m256i m4 = _mm256_set1_epi8(0x0F), m3 = _mm256_set1_epi8(3),
+                  b32 = _mm256_set1_epi8(32), ones = _mm256_set1_epi16(1);
+    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
+        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 210;
+            float acc[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            for (int blk = 0; blk < nb; blk++) {
+                const uint8_t *b = rb + (long)blk * 210, *ql = b, *qh = b + 128;
+                const int8_t *sc = (const int8_t *)(b + 192);
+                float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
+                for (int j = 0; j < jn; j++) {
+                    const int8_t *qab = qa + (long)(j0 + j) * k + (long)blk * 256;
+                    const float  *dab = da + (long)(j0 + j) * (k / 32) + (long)blk * 8;
+                    for (int nn = 0; nn < 256; nn += 128) {
+                        const uint8_t *qlh = ql + (nn / 128) * 64, *qhh = qh + (nn / 128) * 32;
+                        __m256i qhv = _mm256_loadu_si256((const __m256i *)qhh);
+                        __m256i s[4];
+                        for (int g = 0; g < 4; g++) {
+                            __m256i qlv = _mm256_loadu_si256((const __m256i *)(qlh + (g & 1) * 32));
+                            __m256i lo  = (g < 2) ? _mm256_and_si256(qlv, m4)
+                                                  : _mm256_and_si256(_mm256_srli_epi16(qlv, 4), m4);
+                            __m256i hi2 = _mm256_and_si256(_mm256_srli_epi16(qhv, 2 * g), m3);
+                            __m256i w   = _mm256_sub_epi8(_mm256_or_si256(lo, _mm256_slli_epi16(hi2, 4)), b32);
+                            __m256i xv  = _mm256_loadu_si256((const __m256i *)(qab + nn + g * 32));
+                            s[g] = _mm256_madd_epi16(_mm256_maddubs_epi16(_mm256_sign_epi8(w, w),
+                                                                          _mm256_sign_epi8(xv, w)), ones);
+                        }
+                        __m256i T = _mm256_hadd_epi32(_mm256_hadd_epi32(s[0], s[1]),
+                                                      _mm256_hadd_epi32(s[2], s[3]));
+                        int32_t t[8];
+                        _mm256_storeu_si256((__m256i *)t, T);
+                        for (int g = 0; g < 4; g++) {
+                            int js = nn / 16 + g * 2;
+                            float dscale = dab[(nn + g * 32) / 32];
+                            acc[j] = nt_q6k_acc(acc[j], d, (float)sc[js],     dscale, t[g]);
+                            acc[j] = nt_q6k_acc(acc[j], d, (float)sc[js + 1], dscale, t[g + 4]);
+                        }
+                    }
+                }
+            }
+            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+        }
+    }
+}
+#else
 static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
@@ -8305,6 +8371,7 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
         }
     }
 }
+#endif
 #endif
 
 typedef void (*nt_qmmrows_fn)(float *out, int m, const uint8_t *W, const int8_t *qa,
