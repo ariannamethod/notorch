@@ -13,6 +13,66 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — prefill: the batched kernels were all NEON, so x86 read the weights once per position
+
+Every `*_rows_i8n` in this file — the batched entry points, the ones that carry a
+tile of activations through one pass over the weights — was written under
+`#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)` with a scalar
+fallback. There was no x86 arm at all. So on Linux, decode had a vector kernel
+and prefill walked the scalar loop, streaming the whole weight matrix once per
+position, which is the thing `nt_qmatmul_i8` exists to avoid.
+
+Profiled first, on the AVX2 build so the decode work was already vectorised:
+prefill on a 53-token prompt spent 69.5% in the FFN matmul, 13.0% in qkv, 6.8%
+in the attention projection, 6.6% in attention itself. Nowhere else to look.
+
+Two arms added, Q4_K and Q6_K, each modelled on the per-token AVX2 kernel beside
+it. What is hoisted is what the per-token kernel repeats per position: for Q4_K
+the four nibble loads and the eight 6-bit (scale, min) unpacks, for Q6_K the -32
+bias reconstruction. The loaded halves stay in registers across the column loop
+and the derived weight vectors are rebuilt per column rather than held — holding
+them spills on sixteen registers, and an AND plus a shift is cheaper than the
+reload that spilling costs.
+
+The float tail in both is the per-token tail unchanged: same helper, same
+ascending sub-block order, per column. `tests/test_qmatmul` compares batched
+against per-token with `memcmp`, and folding a pair of sub-blocks into one add is
+exactly what put seven Q6_K cases red earlier today. Red hand on the new arm:
+folding the pair returns those same seven failures; unfolded, 46 of 46.
+
+Prefill on the polygon, same 53-token prompt, six threads, second run in one
+process, i5-8500T:
+
+    Qwen3-4B Q4_K_M       6.3 -> 8.6 (Q4_K arm) -> 11.6 t/s   1.84x
+    Ministral-3B Q4_K_M   7.5 -> 10.0           -> 14.1 t/s   1.88x
+    Qwen3-30B-A3B Q4_K_M  6.8 -> 7.5            ->  7.8 t/s   1.15x
+
+**The mixture barely moved, and that is the next thing rather than a
+disappointment.** Its feed-forward does not go through the ordinary batched
+dispatch: eight experts are chosen per token out of a hundred and twenty-eight,
+so the weights are gathered through the `slices` path, and a tile of activations
+that each picked different experts has nothing in common to hoist. Whatever the
+answer is, it is not this kernel.
+
+Against llama.cpp on the same machine and the same six threads, `llama-bench`
+`pp32`: 49.63 for Qwen3-4B, 60.68 for Ministral, 31.99 for the 30B. Prefill is
+now 4.3x behind on the dense bodies where it was 7.9x, and 4.1x on the mixture.
+Decode is unchanged by this — 6.3, 7.2, 6.3 t/s against llama.cpp's 11.10, 13.14,
+13.12.
+
+`NOTORCH_REFERENCE_OK` on all three afterwards, unchanged from before the
+kernels: 2 identical and 1 tie-break on the two dense bodies, 3 identical on the
+mixture.
+
+Gates: polygon `make test` all green, `test_qmatmul` 46/46. neo unmoved —
+`NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_REPEAT_OK (3 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`, `JANUS_OK`, `RESONANCE_OK`, notorch_test 49/49
+and 73/73, test_qmatmul 46/46, `test_quantize` still red at Q8_0 2.081e-04 over
+2.067e-04 on this laptop and green on the polygon.
+
+---
+
+
 ## 2026-09-12 — the AVX2 kernels had never been compiled, and turning them on found a Q6_K that had never been run
 
 `notorch.c` carries an AVX2+FMA integer kernel for every quantized dtype, each
