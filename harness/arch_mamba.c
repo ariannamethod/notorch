@@ -43,6 +43,19 @@ typedef struct {
     float *conv_state;     /* [n_layers][d_inner][d_conv-1] */
     float *ssm_state;      /* [n_layers][d_inner][d_state]  */
 
+    /* Working room for one chunk, kept rather than taken per call, and nothing in it is read
+     * before it is written — so malloc, not calloc.
+     *
+     * It was taken per call at first, and the first pass of a repeat then read 99.1 t/s of
+     * prefill against 47.8 and 47.6 for the two after it. The allocator looked like the
+     * answer: calloc over pages the kernel has just handed out is free because they arrive
+     * zeroed, while calloc over recycled heap has to write every byte. It was not the
+     * answer. Holding the buffer here changed those numbers by nothing, and the cause turned
+     * out to be thread affinity in the pool, a floor below this file. The buffer stays
+     * because it belongs here; the explanation is recorded as wrong because it was. */
+    float *work;
+    int    work_pos;       /* positions the buffer is sized for; grows, never shrinks */
+
     struct {
         float *attn_norm;
         wt in;             /* [2*d_inner, embed] */
@@ -169,7 +182,7 @@ static void mamba_free(void *model) {
     mamba_model *m = (mamba_model*)model;
     if (!m) return;
     free(m->tok_emb.f32); free(m->out_norm); free(m->out_weight.f32);
-    free(m->conv_state); free(m->ssm_state);
+    free(m->conv_state); free(m->ssm_state); free(m->work);
     for (int l = 0; l < m->n_layers; l++) {
         free(m->layers[l].attn_norm);
         free(m->layers[l].in.f32);
@@ -181,78 +194,108 @@ static void mamba_free(void *model) {
     free(m);
 }
 
-/* One token through one layer, state in and state out. Written per token rather than per
- * chunk because the scan is sequential by construction: token t's state is token t-1's
- * output, and a batched version would still have to walk them in order. Prefill therefore
- * costs what decode costs, which is the trade this architecture makes. */
-static void mamba_layer(mamba_model *m, int l, float *x, float *scratch) {
+/* A chunk of consecutive positions through one layer, state in and state out.
+ *
+ * This was written per token, on the reasoning that the scan is sequential by construction —
+ * token t's state is token t-1's output — so a batched version would have to walk them in
+ * order anyway and prefill must cost what decode costs. Half of that is true and the half
+ * that is false was expensive. The scan walks in order. The convolution walks in order. The
+ * four projections around them do not look across positions at all, and they are where the
+ * weights are: a 350-token prompt was streaming the whole file 350 times to compute what one
+ * pass could. So the order survives and the traffic does not — each projection now runs once
+ * for the chunk through qmm, and the two sequential parts keep their loops.
+ *
+ * Nothing about the arithmetic moves. qmm is bit-identical to qmv called per row, which
+ * tests/test_qmatmul.c asserts as equality rather than a tolerance, and both sequential loops
+ * visit positions ascending exactly as before. The channels of the convolution are
+ * independent of each other, so their order is free; the loop below keeps the per-token one
+ * anyway, since a reader comparing the two files should not have to prove that. */
+static void mamba_layer(mamba_model *m, int l, float *X, int n, float *scratch) {
     int E = m->embed, DI = m->d_inner, DS = m->d_state, DC = m->d_conv, DT = m->dt_rank;
-    float *xn   = scratch;                 /* [E]            */
-    float *xz   = xn + E;                  /* [2*DI]         */
-    float *xdb  = xz + 2 * DI;             /* [DT + 2*DS]    */
-    float *dt   = xdb + DT + 2 * DS;       /* [DI]           */
-    float *conv = dt + DI;                 /* [DI]           */
-    float *y    = conv + DI;               /* [DI]           */
-    float *outv = y + DI;                  /* [E]            */
+    int XDBW = DT + 2 * DS;
+    float *XN   = scratch;                          /* [n, E]      */
+    float *XZ   = XN   + (size_t)n * E;             /* [n, 2*DI]   */
+    float *XDB  = XZ   + (size_t)n * 2 * DI;        /* [n, XDBW]   */
+    float *DTIN = XDB  + (size_t)n * XDBW;          /* [n, DT]     */
+    float *DTO  = DTIN + (size_t)n * DT;            /* [n, DI]     */
+    float *CONV = DTO  + (size_t)n * DI;            /* [n, DI]     */
+    float *Y    = CONV + (size_t)n * DI;            /* [n, DI]     */
+    float *OUTV = Y    + (size_t)n * DI;            /* [n, E]      */
 
     float *cstate = m->conv_state + (size_t)l * DI * (DC - 1);
     float *sstate = m->ssm_state + (size_t)l * DI * DS;
 
     double pft = pf_mark();
-    rmsnorm(xn, x, m->layers[l].attn_norm, E, m->rms_eps);
+    for (int j = 0; j < n; j++)
+        rmsnorm(XN + (size_t)j * E, X + (size_t)j * E, m->layers[l].attn_norm, E, m->rms_eps);
     pf_add(PF_NORM, pft);
 
     pft = pf_mark();
-    qmv(xz, &m->layers[l].in, xn);          /* [2*DI]: x in the first half, z in the second */
+    qmm(XZ, &m->layers[l].in, XN, n);       /* [2*DI] each: x in the first half, z in the second */
     pf_add(PF_QKV, pft);
-    const float *z = xz + DI;
 
     /* Depthwise convolution over time. Each channel keeps the d_conv-1 inputs before this one;
      * the window is those followed by the new value, and the state moves along by one. */
     pft = pf_mark();
-    for (int i = 0; i < DI; i++) {
-        const float *w = m->layers[l].conv_w + (size_t)i * DC;
-        float *st = cstate + (size_t)i * (DC - 1);
-        float sum = 0.0f;
-        for (int k = 0; k < DC - 1; k++) sum += st[k] * w[k];
-        sum += xz[i] * w[DC - 1];
-        for (int k = 0; k + 1 < DC - 1; k++) st[k] = st[k + 1];
-        st[DC - 2] = xz[i];
-        sum += m->layers[l].conv_b[i];
-        conv[i] = sum / (1.0f + expf(-sum));      /* silu */
+    for (int j = 0; j < n; j++) {
+        const float *xz = XZ + (size_t)j * 2 * DI;
+        float *conv = CONV + (size_t)j * DI;
+        for (int i = 0; i < DI; i++) {
+            const float *w = m->layers[l].conv_w + (size_t)i * DC;
+            float *st = cstate + (size_t)i * (DC - 1);
+            float sum = 0.0f;
+            for (int k = 0; k < DC - 1; k++) sum += st[k] * w[k];
+            sum += xz[i] * w[DC - 1];
+            for (int k = 0; k + 1 < DC - 1; k++) st[k] = st[k + 1];
+            st[DC - 2] = xz[i];
+            sum += m->layers[l].conv_b[i];
+            conv[i] = sum / (1.0f + expf(-sum));      /* silu */
+        }
     }
     pf_add(PF_ATTN, pft);
 
     pft = pf_mark();
-    qmv(xdb, &m->layers[l].x_proj, conv);   /* dt_rank + 2*d_state: dt, then B, then C */
-    qmv(dt, &m->layers[l].dt_proj, xdb);    /* the projection reads only the first dt_rank */
+    qmm(XDB, &m->layers[l].x_proj, CONV, n);   /* dt_rank + 2*d_state: dt, then B, then C */
+    /* dt_proj reads only the first dt_rank of each row, and a batched call wants those rows
+     * contiguous — which is what this copy is for. It is dt_rank floats a position, 48 on
+     * this model against the 1536 the projection then produces from them. */
+    for (int j = 0; j < n; j++)
+        memcpy(DTIN + (size_t)j * DT, XDB + (size_t)j * XDBW, (size_t)DT * sizeof(float));
+    qmm(DTO, &m->layers[l].dt_proj, DTIN, n);
     pf_add(PF_QKV, pft);
-    const float *B = xdb + DT, *C = xdb + DT + DS;
 
     /* The selective scan. Per channel: a time step of its own, a decay per state element,
-     * and an answer read out by C. This is the whole of the recurrence. */
+     * and an answer read out by C. This is the whole of the recurrence, and it stays here. */
     pft = pf_mark();
-    for (int i = 0; i < DI; i++) {
-        float dt_sp = softplus(dt[i] + m->layers[l].dt_b[i]);
-        float x_dt = conv[i] * dt_sp;
-        const float *A = m->layers[l].A + (size_t)i * DS;
-        float *s = sstate + (size_t)i * DS;
-        float sum = 0.0f;
-        for (int j = 0; j < DS; j++) {
-            float st = s[j] * expf(dt_sp * A[j]) + B[j] * x_dt;
-            sum += st * C[j];
-            s[j] = st;
+    for (int j = 0; j < n; j++) {
+        const float *xdb  = XDB + (size_t)j * XDBW;
+        const float *B = xdb + DT, *C = xdb + DT + DS;
+        const float *dt   = DTO + (size_t)j * DI;
+        const float *conv = CONV + (size_t)j * DI;
+        const float *z    = XZ + (size_t)j * 2 * DI + DI;
+        float *y = Y + (size_t)j * DI;
+        for (int i = 0; i < DI; i++) {
+            float dt_sp = softplus(dt[i] + m->layers[l].dt_b[i]);
+            float x_dt = conv[i] * dt_sp;
+            const float *A = m->layers[l].A + (size_t)i * DS;
+            float *s = sstate + (size_t)i * DS;
+            float sum = 0.0f;
+            for (int q = 0; q < DS; q++) {
+                float st = s[q] * expf(dt_sp * A[q]) + B[q] * x_dt;
+                sum += st * C[q];
+                s[q] = st;
+            }
+            y[i] = sum + conv[i] * m->layers[l].D[i];
+            y[i] *= z[i] / (1.0f + expf(-z[i]));      /* silu(z) gates the answer */
         }
-        y[i] = sum + conv[i] * m->layers[l].D[i];
-        y[i] *= z[i] / (1.0f + expf(-z[i]));      /* silu(z) gates the answer */
     }
     pf_add(PF_SILU, pft);
 
     pft = pf_mark();
-    qmv(outv, &m->layers[l].out, y);
+    qmm(OUTV, &m->layers[l].out, Y, n);
     pf_add(PF_PROJ, pft);
     pft = pf_mark();
-    for (int i = 0; i < E; i++) x[i] += outv[i];
+    for (long i = 0; i < (long)n * E; i++) X[i] += OUTV[i];
     pf_add(PF_RESID, pft);
 }
 
@@ -271,31 +314,42 @@ static void mamba_forward(void *model, kv_cache *kv, const int *tokens, int n,
         memset(m->ssm_state, 0, (size_t)m->n_layers * DI * DS * sizeof(float));
     }
 
-    size_t scratch_n = (size_t)E + 2 * DI + (DT + 2 * DS) + DI + DI + DI + E;
-    float *scratch = (float*)calloc(scratch_n, sizeof(float));
-    float *x = (float*)calloc((size_t)E, sizeof(float));
-    if (!scratch || !x) { free(scratch); free(x); return; }
+    /* Per position rather than per token now, because a projection wants the whole chunk at
+     * once. The harness already caps a prefill chunk at NT_PREFILL_CHUNK, so this is bounded
+     * by that and not by the prompt: 1.4 MB at 32 positions on this model, held across calls
+     * for the reason written beside the field. */
+    size_t per_pos = (size_t)E + 2 * DI + (DT + 2 * DS) + DT + DI + DI + DI + E; /* mamba_layer */
+    size_t need    = (per_pos + (size_t)E) * (size_t)n                           /* + X         */
+                   + (size_t)E;                                                  /* + head_in   */
+    if (n > m->work_pos) {
+        float *w = (float*)realloc(m->work, need * sizeof(float));
+        if (!w) return;
+        m->work = w; m->work_pos = n;
+    }
+    float *scratch = m->work;                        /* [per_pos, n], carved up by the layer */
+    float *X       = scratch + per_pos * (size_t)n;  /* [n, E] */
+    float *head_in = X + (size_t)n * E;              /* [E]    */
 
+    double pft = pf_mark();
     for (int j = 0; j < n; j++) {
-        double pft = pf_mark();
+        float *x = X + (size_t)j * E;
         if (m->tok_emb.f32) memcpy(x, m->tok_emb.f32 + (long)tokens[j] * E, E * sizeof(float));
         else if (gguf_dequant_row(m->gf, m->emb_ti, (uint64_t)tokens[j], x) != 0)
             memset(x, 0, E * sizeof(float));
-        pf_add(PF_EMBED, pft);
+    }
+    pf_add(PF_EMBED, pft);
 
-        for (int l = 0; l < m->n_layers; l++) mamba_layer(m, l, x, scratch);
+    for (int l = 0; l < m->n_layers; l++) mamba_layer(m, l, X, n, scratch);
 
-        /* Only the last token of a chunk is ever sampled from, so the head runs once. */
-        if (logits && j == n - 1) {
-            pft = pf_mark();
-            rmsnorm(scratch, x, m->out_norm, E, m->rms_eps);
-            const wt *head = m->has_output_weight ? &m->out_weight : &m->tok_emb;
-            qmv(logits, head, scratch);
-            pf_add(PF_HEAD, pft);
-        }
+    /* Only the last position of a chunk is ever sampled from, so the head runs once. */
+    if (logits) {
+        pft = pf_mark();
+        rmsnorm(head_in, X + (size_t)(n - 1) * E, m->out_norm, E, m->rms_eps);
+        const wt *head = m->has_output_weight ? &m->out_weight : &m->tok_emb;
+        qmv(logits, head, head_in);
+        pf_add(PF_HEAD, pft);
     }
 
-    free(scratch); free(x);
 }
 
 static const char *const mamba_names[] = { "mamba", NULL };
