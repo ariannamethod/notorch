@@ -13,6 +13,255 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the reference gate called a documented difference a defect
+
+Qwen3 and the audit repairs met in one tree, and the meeting turned up something
+neither had touched. `harness/test_reference.sh` on nano_arianna Q8_0 reports
+`NOTORCH_REFERENCE_FAIL (3 of 3)` — every prompt DIVERGED. It does so at
+`30ae5fa`, at `claude/qwen3`, and on the merge, so it belongs to none of them.
+
+The reference is reading a different prompt. `llama-simple` echoes
+`<s> def fibonacci(n):` and writes `: With::::::::::::::`; this tree, given the
+same text, writes `the pattern of resonance that is not possible, but the field
+that is the source`. The file declares no `add_bos_token`, the reference prepends
+one anyway, and forcing the same token in front here degenerates this model in
+the same way — `6coding the fibrous structure the fibrous structure`. That is the
+09-10 entry, the one where following the reference's default cost this model its
+voice, arriving back as a red gate.
+
+So the gate now checks that first, reusing the signal `test_tokenizer.sh`
+already prints, and skips with the reason instead of reporting three defects
+that are not there.
+
+**Unverified, and named rather than left to be discovered:** every GGUF on this
+machine has an undeclared BOS, so nothing here proves the gate still exercises a
+model that declares one. That check waits for a file that does.
+
+Merged in the same commit: Qwen3, which turned out not to be a family — two
+optional per-head norms and two lines in the rotation loop, in `arch_llama.c`
+rather than a file of its own — and the coin-flip gate's re-anchoring rewrite.
+Both are Defender's, both survive the new call contract unchanged: `q_norm` and
+`k_norm` load through the optional path, so the strict loader added hours
+earlier does not refuse a file that lacks them.
+
+Gates on the merged tree: `NOTORCH_PARITY_OK (6 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`, `NOTORCH_REPEAT_OK (3 checks)`,
+`NOTORCH_TOKENIZER_OK (8 checks)`, `JANUS_OK`, `RESONANCE_OK`,
+`NOTORCH_REFERENCE_SKIPPED` on the only model this machine can offer it,
+notorch_test 49/49 and 73/73, test_qmatmul 46/46. `test_quantize` still FAILs
+Q8_0 at 2.081e-04 over 2.067e-04, unchanged since `cd659e8`.
+
+---
+
+
+## 2026-09-12 — the coin-flip gate was wrong twice before it was right
+
+Yesterday's entry below describes a gate that re-anchors on the single word where this tree and
+the reference part, and calls agreement from there a tie-break. Qwen3 broke it within an hour
+of arriving, and the two repairs are worth more than the original.
+
+**One word of help is not enough, because ties cluster.** Qwen3 0.6B parted twice on two
+prompts of ten and stayed apart after one word, so the gate said DIVERGED for a model whose
+arithmetic is sound. **And a longer anchor is not the fix either.** Handing back the reference's
+whole answer and comparing what each writes next moved the count from one DIVERGED to three,
+because a free run from any context collects ties of its own. Lengthening the rope does not
+help when the rope is the problem.
+
+The question that separates the two cases has to be asked in a way that cannot accumulate:
+given identical context, does the **next token** agree? That is one argmax over one forward
+pass. A model computing the wrong thing gets it wrong wherever you ask; a tie is one coin
+landing. It is asked at three points along the reference's answer rather than one, since a
+single position can itself be a tie, and two of three must agree.
+
+The separation is not a matter of threshold. On Qwen3 0.6B with ten prompts:
+
+    sound build          6 identical, 4 tie-break, 0 diverged   —  11 of 12 forced points agreed
+    QK norm not loaded   0 identical, 0 tie-break, 10 diverged  —   0 of 30 forced points agreed
+
+Across six models and ten prompts: 38 identical, 22 tie-break, 0 diverged, 62 of 66 forced
+points agreed.
+
+**What it cannot see, stated because it was measured.** Dividing rmsnorm by n-1 instead of n —
+a 0.05 percent error at n=1024 — passes. Both builds report OK on SmolLM2, and the forced points
+agree 9 of 9 under the defect. The older, noisier version of the gate did flag it, so this is a
+trade and not an improvement in every direction: the new rule stops crying wolf and in exchange
+stops seeing perturbations below the tie threshold. Something that small only moves which
+near-ties fall which way, and catching it needs logits, which the reference does not print.
+
+One more shape it now names rather than fails on. A reference answer that is the prompt and a
+few newlines — OLMoE on a Cyrillic prompt — gives nothing to anchor on, and the gate says
+INCONCLUSIVE, which is neither colour.
+
+---
+
+## 2026-09-12 — Qwen3, which turned out not to be a family
+
+`general.architecture = qwen3` is Qwen2's shape plus two tensors. It drops the qkv bias Qwen2
+carries, which was already optional in this tree, and adds an RMS norm over each head of q and
+of k before the rotation — `attn_q_norm.weight` and `attn_k_norm.weight`, both `[head_dim]`,
+both applied with the model's own epsilon. Before the rotation, not after: RoPE mixes lanes
+within a head, so a norm taken afterwards is a different function.
+
+So it lives in `arch_llama.c` behind two optional weights and two lines in the rotation loop.
+`arch.h` asks whether a family can be added without editing `runtime.c`; the question before
+that is whether it is a family at all, and a separate file would have been 280 lines copied to
+hold two tensors. `qwen3moe` is a different answer — it routes its feed-forward to experts and
+belongs beside olmoe.
+
+One trap was already closed and worth recording as closed. Qwen3 0.6B has `head_count = 16` and
+`embedding_length = 1024`, which divide to 64, while the file's `key_length` is 128 and
+`attn_q.weight` is `[1024, 2048]`. Anything deriving head_dim as embed/n_heads gets this model
+wrong. This tree reads it off the q tensor, has since before Qwen3 arrived, and the same
+arithmetic is what makes Mistral Nemo work.
+
+Qwen3 0.6B Q8_0, ten prompts against llama.cpp: 6 identical, 4 tie-break, 0 diverged, with the
+forced next token agreeing at 11 of 12 points. Tokenizer identical on 8. Not loading the QK
+norm turns all ten DIVERGED and every one of 30 forced points wrong, which is how you can tell
+the two lines are doing the work and not decorating it.
+
+Speed on four big cores, Q8_0, 0.6B: prefill 79.6 t/s, decode 26.3.
+
+The same file now also takes SmolLM2 and DeepSeek-R1-Distill-Qwen-1.5B without a line of code —
+both are this shape already, and both were verified rather than assumed.
+
+---
+## 2026-09-12 — the harness answers an audit: forward can refuse, and the archive stops lying
+
+An independent audit at `781f135` returned eleven findings and deliberately
+withheld its commands, so every one of them was a hypothesis here until a tool
+said otherwise. Nine were reproduced and repaired, one was already fixed, and
+one turned out to have a different cause than the one it was filed under. What
+follows is the reproduction, not the report.
+
+### The archive kept members the build had dropped
+
+`ar rcs` adds and replaces; it never deletes. Take `arch_mamba.o` out of
+`HARNESS_LIB_OBJ`, rebuild, and `ar t` still lists it with `_nt_arch_mamba`
+still exported — a consumer links a family the build no longer contains and the
+link test passes. Worse, and not in the report: without `Makefile` in the
+prerequisites the archive is newer than every surviving object, so make answers
+`Nothing to be done` and the stale member is never even given the chance to be
+overwritten. Both archives are now removed before they are written and both
+depend on the Makefile. Red hand: with `arch_mamba.o` dropped, `ar t` no longer
+lists it and `nm` no longer exports it, from a list change alone.
+
+This went first, ahead of everything else in the repair order, because every
+later fix is verified through these archives.
+
+### forward returned void, and had three ways to not do what it said
+
+A scratch allocation could fail, two families stopped quietly at the end of the
+cache while three ran past it, and any caller could hand in a token id the model
+has no row for. In all of them the caller got its buffer back unchanged and no
+way to know.
+
+`nt_arch.forward` now returns a code — `NT_OK`, or one of `NT_E_ARG`,
+`NT_E_TOKEN`, `NT_E_CAPACITY`, `NT_E_CACHE`, `NT_E_MEMORY`, `NT_E_STATE` — and
+on a refusal the output buffer is not written at all rather than half written.
+`nt_check_call` in the runtime holds the checks no family should be writing for
+itself, and a forward's first line is a call to it. The per-family bounds checks
+in `arch_janus.c` and `arch_resonance.c` are gone: the boundary is one place now
+and it refuses before the call instead of truncating inside it. Every caller in
+the tree checks the code, the CLI included.
+
+Measured, all seven cases, logits pre-filled with a sentinel to see whether
+anything touched them:
+
+    id == vocab          rc=2  token id outside the vocabulary    logits untouched
+    id negative          rc=2  token id outside the vocabulary    logits untouched
+    n = 0                rc=1  bad argument                       logits untouched
+    pos0 negative        rc=1  bad argument                       logits untouched
+    pos0+n one past      rc=3  sequence does not fit the cache    logits untouched
+    pos0+n exactly fits  rc=0  ok                                 logits WRITTEN
+    the good call        rc=0  ok                                 logits WRITTEN
+
+### kv_new returned a cache with no storage
+
+Both `calloc` results went unchecked, so a request too large for the machine
+came back non-NULL with the right dimensions in its fields and NULL where the
+memory should be. `kv_new(1, INT_MAX, INT_MAX)` printed
+`kv_new=NONNULL k=NULL v=NULL max_seq=2147483647`. It is all-or-nothing now,
+and non-positive dimensions are refused before the multiplication rather than
+after: `kv_new=NULL (atomic)`.
+
+### A model missing one weight loaded, ran, and answered
+
+`arch_llama.c` threw away every `wt_load` result in the per-layer loop and
+checked only `token_embd` and `out_norm`. Reproduced by renaming
+`blk.7.attn_q.weight` to `blk.7.attn_Q.weight` in a copy of nano_arianna Q8_0 —
+one byte, same length, same file size. Before: the Accelerate build exited 255
+inside `cblas_sgemm` with `Parameter number 9 ... had an invalid value`, and the
+scalar build exited **0** and answered `the Arianna, the city of the Arianna`
+where the intact file says `the cathedral of the French language`. Same file,
+same source, two platforms, one silent and one fatal.
+
+Now both exit 1 with `llama: required tensor 'blk.7.attn_q.weight' missing or
+unreadable` and write nothing to stdout. Gemma 4 gets the same treatment, with
+one difference the file forces: `attn_k` and `attn_v` exist only on layers that
+own a cache slot, so the requirement is per-layer rather than blanket. **That
+loader could not be exercised here** — no Gemma 4 GGUF is on this machine — so
+the change is reasoned from `arch_gemma4.c:366`, where the forward reads those
+two only when `l < n_kv_layers`, and it is untested until a file arrives.
+
+A refused load also used to leak: `free(m)` dropped the struct and left every
+tensor already expanded behind. Both loaders now go out through their own free.
+
+### Janus ate the previous prompt
+
+Its running low-rank sum is model-owned, and nothing cleared it. Two identical
+`forward(pos0 = 0)` calls on one model came out `0.492908299` apart on the
+logits and the next pair `0.502647579` apart — accumulating, not settling — with
+the argmax unchanged, which is why every gate stayed green. The comment above
+`janus_state` had claimed for weeks that a new run started the sum over; the
+code reallocated `vr` and left `mid` holding the last prompt.
+
+Isolated before fixing: clearing `mid` alone drives both numbers to exactly 0,
+so the `vr` clear that was in the first version of the patch is not there — `vr`
+is position-indexed and every position is written before it is read.
+
+`make test_repeat` is the gate that would have caught it, over every model on
+the machine, two runs sharing a cache and a third on a fresh one, and the
+invariant is exact equality rather than a tolerance. Red hand: with the reset
+removed it prints `janus same-cache 0.492908299 (id 310) new-cache 0.526572466
+(id 13431) FAIL`.
+
+**And the gate's own first version was wrong in the way this log spent the
+morning fixing.** The probe exits 1 on drift and 3 when it cannot run, and the
+script collapsed both into SKIPPED — so the red-hand run reported the drift as
+"skipped". A gate written hours after `test_parity.sh` was repaired for exactly
+that shipped with exactly that. It separates the two now.
+
+### One finding had a different cause than the one it was filed under
+
+The report said the two archives do not close their own symbols in the
+documented order. They do: `cc ... ./libnotorch_harness.a ./libnotorch.a
+-framework Accelerate -lm` links at rc=0, and so does the `-l` form. The
+undefined `_gguf_read_f32_array` came from a `libnotorch.dylib` dated **22
+August** sitting in the working tree — `-lnotorch` prefers a shared library over
+a static one, so three weeks of kernel changes were silently replaced by a file
+that predates them. Real, and worse than an ordering bug, because nothing in the
+output points at it. `make clean` now removes the dylib along with everything
+else this Makefile can produce, and the README says which way the linker
+resolves.
+
+The documented link command was genuinely incomplete: no `-L`, no backend flag.
+Both are there now, with the reason.
+
+Also reproduced and not reproduced: the report has the scalar build's output on
+a broken model as byte-identical to the intact one. Here it is different text,
+not identical text. The platform fork is real; that detail is not, and it
+changes how the failure looks in production — not "quietly the same" but
+"confidently different".
+
+Gates: `NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_CONSUMER_OK (3 checks)`,
+`NOTORCH_REPEAT_OK (3 checks)`, `NOTORCH_TOKENIZER_OK (8 checks)`, `JANUS_OK`,
+`RESONANCE_OK`, notorch_test 49/49 and 73/73, test_qmatmul 46/46.
+`test_quantize` still FAILs Q8_0 at 2.081e-04 over 2.067e-04, unchanged since
+`cd659e8`.
+
+---
+
+
 ## 2026-09-12 — telling a coin-flip from a defect, because the coin flips constantly
 
 `harness/test_parity.sh` compares this tree against its own example. That catches a harness

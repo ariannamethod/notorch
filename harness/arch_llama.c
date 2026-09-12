@@ -1,8 +1,20 @@
-/* arch_llama.c — the llama and qwen2 family.
+/* arch_llama.c — the llama, qwen2 and qwen3 family.
  *
- * SmolLM2, nanollama, Qwen2.5, LLaMA, Mistral: any GGUF whose blocks are
- * attn_norm / attn_{q,k,v,output} / ffn_norm / ffn_{gate,up,down}. GQA, bias
- * and tied embeddings are read off the file rather than configured.
+ * SmolLM2, nanollama, Qwen2.5, Qwen3, LLaMA, Mistral, and the distills of any of
+ * them: any GGUF whose blocks are attn_norm / attn_{q,k,v,output} / ffn_norm /
+ * ffn_{gate,up,down}. GQA, bias and tied embeddings are read off the file rather
+ * than configured.
+ *
+ * Qwen3 lives here rather than in a file of its own because it is this shape plus
+ * two tensors. It drops the qkv bias Qwen2 carries — already optional here, so it
+ * costs nothing — and adds an RMS norm over each head of q and of k before the
+ * rotation. Two optional weights and two lines in the rotation loop is not a
+ * family; a separate file would be 280 lines copied to hold them. arch.h asks
+ * whether a family can be added without editing runtime.c, and the question
+ * before that is whether it is a family at all.
+ *
+ * What is not here: qwen3moe, which routes its feed-forward to experts and
+ * belongs beside olmoe rather than beside this.
  *
  * Moved from examples/infer_llama.c with the arithmetic untouched. That file
  * stays put as the reference this is measured against.
@@ -30,11 +42,14 @@ typedef struct {
     struct {
         float *attn_norm;
         wt wq, wk, wv, wo;
-        float *q_bias, *k_bias, *v_bias;   /* Qwen has bias */
+        float *q_bias, *k_bias, *v_bias;   /* Qwen2 has bias; Qwen3 does not */
+        float *q_norm, *k_norm;            /* [head_dim] — Qwen3's QK norm, absent elsewhere */
         float *ffn_norm;
         wt wgate, wup, wdown;
     } layers[];
 } llama_model;
+
+static void llama_free(void *model);
 
 static void *llama_load(gguf_file *gf, nt_dims *dims) {
     int nl = gf->n_layers;
@@ -79,6 +94,7 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
     if (ti >= 0) m->out_norm = gguf_dequant(gf, ti);   /* [embed], f32 either way */
     m->has_output_weight = wt_load(&m->out_weight, gf, "output.weight");
 
+    int missing = 0;
     for (int l = 0; l < nl; l++) {
         char name[128];
         /* 1-D: norms and biases are a few thousand floats and are read
@@ -89,9 +105,18 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
             ti = gguf_find_tensor(gf, name); \
             if (ti >= 0) m->layers[l].field = gguf_dequant(gf, ti); \
         } while(0)
+        /* wt_load's answer was thrown away here until 2026-09-12, and a file
+         * missing one attention matrix loaded, ran, and answered — with a
+         * different sentence on a scalar build and a BLAS abort on Accelerate,
+         * from the same file. A weight this forward will dereference is not
+         * optional, so the loop stops at the first one that is not there and
+         * names it. The 1-D reads above stay optional: biases genuinely are. */
         #define W(field, fmt) do { \
             snprintf(name, sizeof(name), fmt, l); \
-            wt_load(&m->layers[l].field, gf, name); \
+            if (!wt_load(&m->layers[l].field, gf, name)) { \
+                fprintf(stderr, "llama: required tensor '%s' missing or unreadable\n", name); \
+                missing = 1; \
+            } \
         } while(0)
         L(attn_norm, "blk.%d.attn_norm.weight");
         W(wq, "blk.%d.attn_q.weight");
@@ -101,6 +126,8 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
         L(q_bias, "blk.%d.attn_q.bias");
         L(k_bias, "blk.%d.attn_k.bias");
         L(v_bias, "blk.%d.attn_v.bias");
+        L(q_norm, "blk.%d.attn_q_norm.weight");
+        L(k_norm, "blk.%d.attn_k_norm.weight");
         L(ffn_norm, "blk.%d.ffn_norm.weight");
         W(wgate, "blk.%d.ffn_gate.weight");
         W(wup, "blk.%d.ffn_up.weight");
@@ -111,9 +138,13 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
 
     if (!(m->tok_emb.q || m->tok_emb.f32) || !m->out_norm) {
         fprintf(stderr, "llama: missing critical weights\n");
-        free(m);
-        return NULL;
+        missing = 1;
     }
+    /* llama_free and not free: every tensor already expanded belongs to this
+     * model, and dropping the struct alone left them behind — on a 24B that is
+     * the difference between a refused load and a refused load that took the
+     * machine down with it. */
+    if (missing) { llama_free(m); return NULL; }
     if (m->layers[0].q_bias) fprintf(stderr, "  (has attention bias — qwen-style)\n");
     if (!m->has_output_weight) fprintf(stderr, "  (tied embeddings)\n");
     fprintf(stderr, "  rope: %s | weights: packed%s\n", m->rope_neox ? "neox" : "norm",
@@ -135,6 +166,7 @@ static void llama_free(void *model) {
         free(m->layers[l].wq.f32); free(m->layers[l].wk.f32);
         free(m->layers[l].wv.f32); free(m->layers[l].wo.f32);
         free(m->layers[l].q_bias); free(m->layers[l].k_bias); free(m->layers[l].v_bias);
+        free(m->layers[l].q_norm); free(m->layers[l].k_norm);
         free(m->layers[l].ffn_norm);
         free(m->layers[l].wgate.f32); free(m->layers[l].wup.f32); free(m->layers[l].wdown.f32);
     }
@@ -147,9 +179,12 @@ static void llama_free(void *model) {
  * difference between a prompt that costs the same as generating it and one
  * that does not. Attention still runs per row — it reads the KV cache rather
  * than the weights, so batching it buys little and costs a mask. */
-static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                          int pos0, float *logits) {
+static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
+                         int pos0, float *logits) {
     llama_model *m = (llama_model*)model;
+    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_layers, m->kv_dim);
+    if (rc != NT_OK) return rc;
+
     int E = m->embed, H = m->n_heads, KV = m->n_kv_heads;
     int HD = m->head_dim, KVD = m->kv_dim, FFN = m->ffn, Q_DIM = m->q_dim;
     float eps = m->rms_eps;
@@ -160,6 +195,7 @@ static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
      * 933 MB to read 1536 floats per token. */
     double pft = pf_mark();
     float *x = (float*)calloc((size_t)n * E, sizeof(float));
+    if (!x) return NT_E_MEMORY;
     for (int j = 0; j < n; j++) {
         float *xj = x + (long)j * E;
         if (m->tok_emb.f32) memcpy(xj, m->tok_emb.f32 + (long)tokens[j] * E, E * sizeof(float));
@@ -176,6 +212,11 @@ static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
     float *ffn_gate = (float*)calloc((size_t)n * FFN, sizeof(float));
     float *ffn_up = (float*)calloc((size_t)n * FFN, sizeof(float));
     float *ffn_out = (float*)calloc((size_t)n * E, sizeof(float));
+    if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_gate || !ffn_up || !ffn_out) {
+        free(x); free(xn); free(q_all); free(k_new); free(v_new);
+        free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out);
+        return NT_E_MEMORY;
+    }
 
     for (int l = 0; l < m->n_layers; l++) {
         pft = pf_mark();
@@ -199,10 +240,20 @@ static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
         for (int j = 0; j < n; j++) {
             int pos = pos0 + j;
             float *qj = q_all + (long)j * Q_DIM, *kj = k_new + (long)j * KVD;
-            for (int h = 0; h < H; h++)
+            /* Qwen3 normalises each head of q and k before rotating it, with the
+             * model's own epsilon. Before, not after: the rotation mixes lanes
+             * within a head, so a norm taken afterwards is a different function.
+             * Absent weights mean an older file and the loop is the old loop. */
+            for (int h = 0; h < H; h++) {
+                if (m->layers[l].q_norm)
+                    rmsnorm(qj + h*HD, qj + h*HD, m->layers[l].q_norm, HD, eps);
                 rope(qj + h*HD, pos, HD, m->rope_base, m->rope_neox);
-            for (int h = 0; h < KV; h++)
+            }
+            for (int h = 0; h < KV; h++) {
+                if (m->layers[l].k_norm)
+                    rmsnorm(kj + h*HD, kj + h*HD, m->layers[l].k_norm, HD, eps);
                 rope(kj + h*HD, pos, HD, m->rope_base, m->rope_neox);
+            }
             memcpy(kv->k + base + (long)pos * KVD, kj, KVD * sizeof(float));
             memcpy(kv->v + base + (long)pos * KVD, v_new + (long)j * KVD, KVD * sizeof(float));
         }
@@ -275,9 +326,10 @@ static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
     free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out);
+    return NT_OK;
 }
 
-static const char *const llama_names[] = { "llama", "qwen2", NULL };
+static const char *const llama_names[] = { "llama", "qwen2", "qwen3", NULL };
 
 const nt_arch nt_arch_llama = {
     .names = llama_names,

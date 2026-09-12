@@ -1,6 +1,7 @@
 /* runtime.c — see runtime.h. Lifted from examples/infer_llama.c unchanged in
  * arithmetic; the gate that keeps it that way is harness/test_parity.sh. */
-#include "harness/runtime.h"
+#include "harness/arch.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,11 +74,28 @@ int wt_expert(wt *dst, const wt *src, int index, int rows_each) {
     return 0;
 }
 
+/* All of it or none of it.
+ *
+ * This used to return the struct whatever happened to the two allocations
+ * inside it, so a cache too large for the machine came back looking like a
+ * cache — non-NULL, with the right dimensions in its fields and NULL where the
+ * memory should be. Every caller checked the pointer it was given; none checked
+ * the two behind it. An outside audit reached it with kv_new(1, INT_MAX,
+ * INT_MAX) and got a live object with no storage.
+ *
+ * The dimensions are checked before the multiplication rather than after: a
+ * negative one turns into an enormous unsigned request, and a zero makes a
+ * cache that every later bounds check treats as valid and empty. */
 kv_cache *kv_new(int nl, int max_seq, int kv_dim) {
+    if (nl < 1 || max_seq < 1 || kv_dim < 1) return NULL;
+    size_t cells = (size_t)nl * (size_t)max_seq * (size_t)kv_dim;
+    if (cells > SIZE_MAX / sizeof(float)) return NULL;
+
     kv_cache *kv = (kv_cache*)calloc(1, sizeof(kv_cache));
     if (!kv) return NULL;
-    kv->k = (float*)calloc((long)nl * max_seq * kv_dim, sizeof(float));
-    kv->v = (float*)calloc((long)nl * max_seq * kv_dim, sizeof(float));
+    kv->k = (float*)calloc(cells, sizeof(float));
+    kv->v = (float*)calloc(cells, sizeof(float));
+    if (!kv->k || !kv->v) { free(kv->k); free(kv->v); free(kv); return NULL; }
     kv->max_seq = max_seq; kv->n_layers = nl; kv->kv_dim = kv_dim;
     return kv;
 }
@@ -226,4 +244,40 @@ void pf_report(const char *phase, double wall_ms) {
         if (pf_acc[i] > 0)
             fprintf(stderr, "  %-11s %8.0f ms  %5.1f%%\n", pf_name[i], pf_acc[i] * 1e3,
                     wall_ms > 0 ? pf_acc[i] * 1e5 / wall_ms : 0.0);
+}
+
+/* ── The call contract, checked once for every family ──────────────────────
+ *
+ * Before this, a token id outside the vocabulary read a row past the end of the
+ * embedding table, a prompt longer than the cache wrote past the end of it, and
+ * two families out of six stopped quietly at the boundary while the rest did
+ * not. None of that was any family's fault: the interface never said whose job
+ * it was, so it was nobody's. It is here now, and a forward's first line is a
+ * call to it. */
+int nt_check_call(const kv_cache *kv, const int *tokens, int n, int pos0,
+                  int vocab, int n_layers, int kv_dim) {
+    if (!tokens || n < 1 || pos0 < 0) return NT_E_ARG;
+    if (!kv || !kv->k || !kv->v) return NT_E_CACHE;
+    if (kv->n_layers < n_layers) return NT_E_CACHE;
+    if (kv_dim > 0 && kv->kv_dim != kv_dim) return NT_E_CACHE;
+    /* The cache is indexed by absolute position, so the last position this call
+     * writes has to be inside it. Signed comparison on ints that are already
+     * bounded by the cache's own dimensions. */
+    if (pos0 > kv->max_seq - n) return NT_E_CAPACITY;
+    for (int i = 0; i < n; i++)
+        if (tokens[i] < 0 || tokens[i] >= vocab) return NT_E_TOKEN;
+    return NT_OK;
+}
+
+const char *nt_strerror(int rc) {
+    switch (rc) {
+        case NT_OK:         return "ok";
+        case NT_E_ARG:      return "bad argument";
+        case NT_E_TOKEN:    return "token id outside the vocabulary";
+        case NT_E_CAPACITY: return "sequence does not fit the cache";
+        case NT_E_CACHE:    return "cache does not match the model";
+        case NT_E_MEMORY:   return "allocation failed";
+        case NT_E_STATE:    return "model state could not be prepared";
+        default:            return "unknown error";
+    }
 }

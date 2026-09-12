@@ -222,8 +222,13 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
     double gen0 = now_ms();
     for (int i = 0; i < n_tok; i += NT_PREFILL_CHUNK) {
         int cn = n_tok - i; if (cn > NT_PREFILL_CHUNK) cn = NT_PREFILL_CHUNK;
-        s->arch->forward(s->model, s->kv, tokens + i, cn, pos0 + i,
-                         (i + cn == n_tok) ? s->logits : NULL);
+        int rc = s->arch->forward(s->model, s->kv, tokens + i, cn, pos0 + i,
+                                  (i + cn == n_tok) ? s->logits : NULL);
+        if (rc != NT_OK) {
+            fprintf(stderr, "\nprefill refused at position %d: %s\n", pos0 + i, nt_strerror(rc));
+            putchar(10); fflush(stdout);
+            return 0;
+        }
     }
     double prefill_ms = now_ms() - gen0;
     pf_report("prefill", prefill_ms);
@@ -237,7 +242,11 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
         emit(s, next);
         gen++;
         if (pos >= s->max_seq - 1) break;
-        s->arch->forward(s->model, s->kv, &next, 1, pos, s->logits);
+        int rc = s->arch->forward(s->model, s->kv, &next, 1, pos, s->logits);
+        if (rc != NT_OK) {
+            fprintf(stderr, "\ndecode stopped at position %d: %s\n", pos, nt_strerror(rc));
+            break;
+        }
         pos++;
     }
     putchar('\n');

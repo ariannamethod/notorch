@@ -299,10 +299,16 @@ static void mamba_layer(mamba_model *m, int l, float *X, int n, float *scratch) 
     pf_add(PF_RESID, pft);
 }
 
-static void mamba_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                          int pos0, float *logits) {
+static int mamba_forward(void *model, kv_cache *kv, const int *tokens, int n,
+                         int pos0, float *logits) {
     mamba_model *m = (mamba_model*)model;
-    (void)kv;   /* nothing per position to keep: see the note at the top of this file */
+    /* This family keeps no per-position cache — see the note at the top of the
+     * file — so it passes kv_dim 0 and the cache shape is not compared. The
+     * rest of the contract still applies: token ids and a sane group size are
+     * checked here exactly as everywhere else. */
+    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, 0, 0);
+    if (rc != NT_OK) return rc;
+
     int E = m->embed, DI = m->d_inner, DS = m->d_state, DT = m->dt_rank;
 
     /* A sequence starting over starts from silence. The harness runs a prompt more than once
@@ -323,7 +329,7 @@ static void mamba_forward(void *model, kv_cache *kv, const int *tokens, int n,
                    + (size_t)E;                                                  /* + head_in   */
     if (n > m->work_pos) {
         float *w = (float*)realloc(m->work, need * sizeof(float));
-        if (!w) return;
+        if (!w) return NT_E_MEMORY;
         m->work = w; m->work_pos = n;
     }
     float *scratch = m->work;                        /* [per_pos, n], carved up by the layer */
@@ -349,7 +355,7 @@ static void mamba_forward(void *model, kv_cache *kv, const int *tokens, int n,
         qmv(logits, head, head_in);
         pf_add(PF_HEAD, pft);
     }
-
+    return NT_OK;
 }
 
 static const char *const mamba_names[] = { "mamba", NULL };

@@ -47,7 +47,8 @@ int main(int argc, char **argv) {
     float *logits = (float *)malloc((size_t)dims.vocab * sizeof(float));
     if (!kv || !logits) return 1;
 
-    arch->forward(model, kv, ids, n, 0, logits);
+    int rc = arch->forward(model, kv, ids, n, 0, logits);
+    if (rc != NT_OK) { fprintf(stderr, "forward refused: %s\n", nt_strerror(rc)); return 1; }
 
     int best = 0;
     for (int i = 1; i < dims.vocab; i++) if (logits[i] > logits[best]) best = i;

@@ -125,6 +125,7 @@ lib: libnotorch.a $(if $(filter 1,$(USE_CUDA)),libnotorch_gpu.a)
 libnotorch.a: notorch.c notorch.h gguf.c gguf.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf.o
+	rm -f libnotorch.a
 	$(AR) rcs libnotorch.a notorch.o gguf.o
 	@echo "Built: libnotorch.a (CPU + BLAS)"
 
@@ -178,7 +179,18 @@ HARNESS_LIB_OBJ = harness/archs.o harness/runtime.o harness/arch_llama.o \
 
 lib_harness: libnotorch_harness.a
 
-libnotorch_harness.a: $(HARNESS_LIB_OBJ)
+# Removed before it is written, and rebuilt when this file changes.
+#
+# `ar rcs` adds and replaces; it never deletes. Take a family out of
+# HARNESS_LIB_OBJ and its object stays in the archive, still exporting its
+# symbols, so a consumer links against a family the build no longer contains —
+# and the link test passes. Worse, without Makefile in the prerequisites the
+# archive is newer than every surviving object, so make answers "Nothing to be
+# done" and the stale member is not even given the chance to be overwritten.
+# Found by an outside audit at 781f135; both halves are reproduced in
+# NOTORCHLOG.md.
+libnotorch_harness.a: $(HARNESS_LIB_OBJ) Makefile
+	rm -f libnotorch_harness.a
 	$(AR) rcs libnotorch_harness.a $(HARNESS_LIB_OBJ)
 	@echo "Built: libnotorch_harness.a (families, runtime, tokenizer — link with -lnotorch)"
 
@@ -240,7 +252,7 @@ HARNESS_HDR = harness/arch.h harness/archs.h harness/runtime.h harness/logo.h ex
 
 # `harness` is phony because a directory of that name sits right there, and
 # make would otherwise call it up to date and build nothing.
-.PHONY: harness test_harness test_resonance test_janus test_consumer_link lib_harness
+.PHONY: harness test_harness test_resonance test_janus test_consumer_link test_repeat lib_harness
 
 harness: notorch
 
@@ -258,6 +270,12 @@ test_harness: notorch llama
 # archive carried the symbols rather than the compiler finding them elsewhere.
 test_consumer_link:
 	./harness/test_consumer_link.sh $(MODEL)
+
+# A family that keeps state outside the KV cache must clear it when a sequence
+# starts. Exact equality between two identical runs, because greedy sampling
+# hid a 0.49 drift on the logits and every other gate stayed green.
+test_repeat:
+	./harness/test_repeat.sh $(MODEL)
 
 # Janus against the forward it was ported from: the exact-matvec build against
 # the reference's frozen answer, and the shipped build against its own generation.
@@ -514,8 +532,15 @@ bench/bench_blas: bench/bench_simd.c notorch.c notorch.h
 
 bench: bench/bench_simd bench/bench_blas
 
+# The dylib is on this list because it outlived three weeks of kernel changes
+# and then won a link against the archive built minutes earlier: `-lnotorch`
+# takes a shared library over a static one, so a stale libnotorch.dylib in the
+# tree silently replaces libnotorch.a and the missing symbols read as an archive
+# ordering problem. Anything this Makefile can produce, this target removes.
 clean:
-	rm -f notorch_test notorch_test_gpu notorch.o gguf.o libnotorch.a notorch_cuda.o \
+	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
+		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul \
+		notorch_test notorch_test_gpu notorch.o gguf.o libnotorch.a notorch_cuda.o \
 		infer_janus_nt infer_gemma infer_llama \
 		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \
 		train_dpo train_grpo train_distillation test_vision test_gguf \
