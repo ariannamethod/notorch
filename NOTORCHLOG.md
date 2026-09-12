@@ -13,6 +13,77 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — perf found in one pass what four guesses had missed: a software f16 and a spilled array
+
+`perf_event_paranoid` went to 1 on the polygon and the counters opened. IPC on
+the batched matmul is 1.98 on a four-wide core with 860k cache misses in a
+one-second run, so nothing is waiting on memory — it is instruction count, which
+is what callgrind had already said. What the counters and `perf annotate` added
+was *which* instructions.
+
+### Two findings, both the same shape as the AVX2 one
+
+**The f16 conversion was software, on hardware that has the instruction.**
+`nt_f16_to_f32` had an aarch64 arm using the FCVT the chip has had since armv8,
+and everything else fell to a twenty-instruction shift chain with a loop in it
+for subnormals. x86 has had `vcvtph2ps` since Ivy Bridge and every AVX2 part
+carries F16C, so that chain was running on machines that could do it in one
+instruction — and being *called*, not inlined, because a function that size is
+past the inliner's budget. The disassembly of `nt_q4_k_rows_i8n` had
+`call nt_f16_to_f32` in it twice per weight block: 65536 calls in one
+4096×2048 matmul that should have been 65536 instructions. `nt_get_scale_min_k4`
+was a call for the same reason, eight more per block.
+
+`-mf16c` joins `-mavx2 -mfma` in the host detection, both helpers are inline, and
+the kernel's disassembly has no calls left but the stack-protector check.
+
+**The eight sub-block sums were living on the stack.** `perf annotate` on the hot
+loop:
+
+    vmovdqa (%rsi), %ymm6
+    vpand   (%rsi), %ymm4, %ymm0      <- reloads what is already in ymm6
+    vpmaddubsw -0x20(%rax), %ymm0, %ymm0
+    vpmaddwd   %ymm3, %ymm0, %ymm0
+    vmovdqa %ymm0, -0x40(%rcx)        <- spills the sum
+    ...
+    vphaddd 0x2a0(%rsp), %ymm7, %ymm1 <- and the drain reads it back
+
+`__m256i s8[8]` and `__m256i qsv[4]` are arrays written through a variable index,
+so the compiler made them addressable and put them in memory — sixteen memory
+operations per (block, column) that exist only because of the index. Unrolled
+into named variables: eight live vectors plus temporaries fit sixteen registers,
+the arithmetic and its order are unchanged, and the disassembly now has zero
+spills and zero hadds reading the stack.
+
+### What it bought
+
+    kernel, one thread, i5-8500T at 3.5 GHz
+      12.1 -> 12.5 GMAC/s   f16c + inline
+      12.5 -> 14.8 GMAC/s   unrolled
+      9.7% -> 13.2% of the 112 GMAC/s ceiling
+
+    prefill / decode, 53-token prompt, six threads
+      Qwen3-4B Q4_K_M       12.4 / 6.2  ->  13.9 / 7.4
+      Ministral-3B Q4_K_M   15.5 / 7.4  ->  17.3 / 9.0
+      Qwen3-30B-A3B Q4_K_M   9.6 / 6.3  ->  10.6 / 6.9
+
+Decode gained more than prefill from the f16 change and nothing from the unroll:
+the per-token kernels have no column loop and the compiler was already keeping
+their arrays in registers — checked, zero spills in both `nt_q4_k_rows_i8` and
+`nt_q6_k_rows_i8`. That trick is spent.
+
+Against llama.cpp on the same machine and threads: prefill 3.6x behind where it
+was 4.3x, decode 1.5x where it was 1.6x. Where this session started, on the same
+file and machine, was 3.3 and 2.2 t/s.
+
+`test_qmatmul` 46/46 on both machines — the equality with the per-token kernel
+survived all of it, which is what says none of this changed the arithmetic.
+notorch_test 49/49 and 73/73, `NOTORCH_REFERENCE_OK` on Qwen3-4B and on the 30B,
+neo unmoved.
+
+---
+
+
 ## 2026-09-12 — the kernel is at ten percent of the instruction set, and four guesses about why were wrong
 
 End-to-end timings say prefill is 4.3x behind llama.cpp and cannot say where it
