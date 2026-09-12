@@ -13,6 +13,74 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the kernel is 1.9x behind llama.cpp's, not 3.6x, and seven ideas about the difference were wrong
+
+The end-to-end gap on prefill is 3.6x and it had been standing in for the kernel's
+gap, which nobody had measured. `test-backend-ops perf` benchmarks one ggml
+operation at a time, so the comparison exists and only had to be run.
+
+    MUL_MAT q4_K, m=4096 k=14336 n=8, i5-8500T, same machine
+      llama.cpp   261.94 GFLOPS = 131 GMAC/s
+      notorch      69.2 GMAC/s
+      1.89x
+
+So **more than half the end-to-end gap is outside the matmul**. The profile puts
+62.3% of prefill in the FFN and that is where the attention has been, but a
+kernel 1.9x behind cannot account for a body 3.6x behind. The rest is in
+attention, the projections, the rope, and whatever else the graph does between
+them — none of which has been looked at.
+
+### Seven negative results, in order
+
+Everything below was built, measured on the polygon, and reverted. They are
+worth as much as the two that worked, because each one closes a direction.
+
+1. **Hoisting the nibble unpack** out of the column loop, eight vectors held
+   across the tile. 11.6 t/s before, 11.6 after.
+2. **A wider tile.** `NT_QMM_TILE` at 32, 64, 128 reads 11.6, 11.6, 11.3.
+3. **Dropping the bit-exact float tail** for an independent sum, which would have
+   cost `test_qmatmul` its memcmp. 11.6 t/s. There was no trade to offer.
+4. **Removing the hadd tree**, keeping sub-block sums in a float vector and
+   draining once per row. 0.81x, and the prototype was also wrong.
+5. **Converting SUM(qa) to float once per column** instead of once per row —
+   `perf` had put 23.7% of the kernel in two `vcvtsi2ssl`. 14.8 -> 13.8 GMAC/s.
+6. **Four accumulators in the tail**, breaking the FMA dependency chain that
+   `perf` put at 24.49%. 14.8 -> 12.4 GMAC/s.
+7. **Two rows through one activation load**, the textbook register-blocking move,
+   bit-exact against the shipped kernel and measured twice: 0.70x, and 0.60x
+   after the prototype's own scale unpack was hoisted where the shipped kernel
+   has it.
+
+Five and six are the interesting pair: `perf annotate` attributed 48% of the
+kernel to those instructions and removing either made it slower. On an
+out-of-order core a sample lands where the stall resolves, not where it started —
+the conversions were filling issue slots and the FMA chain was not the thing
+being waited on. I read the profile as a cause and it was a symptom, twice.
+
+Seven is the one that should have worked. Activations are two thirds of the loads
+in the inner loop and do not depend on the row; sharing them across a pair is the
+standard answer. It loses by a third, bit-exactly, at every shape tried.
+
+### What did work, and what is left
+
+The two wins today were both structural and both removed something rather than
+rearranged it: a software f16 conversion that was a function call on hardware
+with the instruction, and two arrays that lived on the stack because a variable
+index made them addressable. 12.1 -> 14.8 GMAC/s, 9.7% -> 13.2% of the ISA
+ceiling.
+
+`tests/bench_qmatmul.c` now takes `n` and `k` so any shape can be put beside
+`test-backend-ops`, and carries no prototypes — the two it held were measured and
+rejected, and a rejected prototype in the tree is a claim nobody re-checks.
+
+The next thing is not the kernel. It is the 62.3% figure: if the FFN matmul went
+to zero, prefill would go from 13.9 t/s to about 36, and llama.cpp is at 49.63.
+Whatever explains the rest is in the part of the graph nobody has profiled
+against a reference.
+
+---
+
+
 ## 2026-09-12 — perf found in one pass what four guesses had missed: a software f16 and a spilled array
 
 `perf_event_paranoid` went to 1 on the polygon and the counters opened. IPC on
