@@ -41,13 +41,43 @@ ref_text() {
   '
 }
 
+# A comparison needs both sides to have run. The reference loads only the
+# standard families, so on resonance or janus it prints nothing and every
+# prompt reads as a mismatch — three FAILs that say nothing about the harness.
+# Ask each binary to load the model before comparing anything, and when one
+# cannot, say so and move on: neither green nor red.
+can_load() {
+  "$1" "$2" "x" 1 0 >/dev/null 2>&1
+}
+# The first line of stderr is the shape banner, so the reason is the first line
+# that reads like one, and failing that the last thing said before it gave up.
+why_not() {
+  OUT=$("$1" "$2" "x" 1 0 2>&1 >/dev/null) || true
+  R=$(printf '%s\n' "$OUT" | grep -m1 -iE 'error|cannot|missing|unsupported|unknown|failed|truncat|short') || true
+  [ -n "$R" ] || R=$(printf '%s\n' "$OUT" | grep . | tail -1) || true
+  [ -n "$R" ] || R="it exited non-zero with nothing to say"
+  printf '%s\n' "$R"
+}
+
 FAILS=0
+CHECKS=0
 for M in $MODELS; do
   NAME=$(basename "$M")
+  if ! can_load ./notorch "$M"; then
+    echo "parity  [$NAME] SKIPPED — the harness could not load it: $(why_not ./notorch "$M")"
+    continue
+  fi
+  if ! can_load ./infer_llama "$M"; then
+    echo "parity  [$NAME] SKIPPED — the reference could not load it: $(why_not ./infer_llama "$M")"
+    continue
+  fi
   for P in "The capital of France is" "Resonance is" "def fibonacci(n):"; do
     A=$(./notorch "$M" "$P" 24 0 2>/dev/null)
     B=$(./infer_llama "$M" "$P" 24 0 2>/dev/null | ref_text)
-    if [ "$A" = "$B" ]; then
+    CHECKS=$((CHECKS + 1))
+    # Two empty strings are equal and prove nothing, so an empty side is a
+    # failure even when both sides are empty.
+    if [ -n "$A" ] && [ "$A" = "$B" ]; then
       echo "parity  [$NAME] \"$P\"  identical  PASS"
     else
       echo "parity  [$NAME] \"$P\"  FAIL"
@@ -58,9 +88,12 @@ for M in $MODELS; do
   done
 done
 
-if [ "$FAILS" -eq 0 ]; then
-  echo "NOTORCH_PARITY_OK"
-else
+if [ "$FAILS" -ne 0 ]; then
   echo "NOTORCH_PARITY_FAIL ($FAILS)"
   exit 1
+elif [ "$CHECKS" -eq 0 ]; then
+  echo "parity  (every model given was skipped — nothing was compared)"
+  echo "NOTORCH_PARITY_SKIPPED"
+else
+  echo "NOTORCH_PARITY_OK ($CHECKS checks)"
 fi

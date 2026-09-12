@@ -160,14 +160,46 @@ libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c -lm $(BLAS_LIBS)
 	@echo "Built: libnotorch.$(SOEXT) ($(BLAS_NAME)) — load it with any FFI"
 
+# ── The harness as a linkable surface ──────────────────────────────────────
+#
+# A body that wants to run a GGUF through this tree used to have two options:
+# copy harness/*.c into its own build, or link main.c and inherit its main().
+# The first is a fork, the second is not a library. Yent's inference is being
+# rebuilt on this harness, so the third option now exists: the arithmetic, the
+# family table, the KV cache and the tokenizer in one archive, and main.c left
+# out of it as the CLI it is.
+#
+# Two archives and not one, because the split is real: libnotorch is the
+# substrate anything can use, libnotorch_harness is model-family code that only
+# means something to a caller that runs models. Link both, harness first.
+HARNESS_LIB_OBJ = harness/archs.o harness/runtime.o harness/arch_llama.o \
+                  harness/arch_gemma4.o harness/arch_olmoe.o harness/arch_mamba.o \
+                  harness/arch_resonance.o harness/arch_janus.o examples/bpe.o
+
+lib_harness: libnotorch_harness.a
+
+libnotorch_harness.a: $(HARNESS_LIB_OBJ)
+	$(AR) rcs libnotorch_harness.a $(HARNESS_LIB_OBJ)
+	@echo "Built: libnotorch_harness.a (families, runtime, tokenizer — link with -lnotorch)"
+
+$(HARNESS_LIB_OBJ): %.o: %.c $(HARNESS_HDR)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c $< -o $@
+
 # ── Install — system-wide baseline at $PREFIX (default /opt/homebrew) ──
 PREFIX ?= /opt/homebrew
 
-install: lib
-	install -d $(PREFIX)/lib $(PREFIX)/include/ariannamethod
+install: lib lib_harness
+	install -d $(PREFIX)/lib $(PREFIX)/include/ariannamethod $(PREFIX)/include/ariannamethod/harness $(PREFIX)/include/ariannamethod/examples
 	install -m 0644 libnotorch.a $(PREFIX)/lib/libnotorch.a
+	install -m 0644 libnotorch_harness.a $(PREFIX)/lib/libnotorch_harness.a
 	install -m 0644 notorch.h    $(PREFIX)/include/ariannamethod/notorch.h
 	install -m 0644 gguf.h       $(PREFIX)/include/ariannamethod/gguf.h
+	# The harness headers include each other as "harness/arch.h", so they are
+	# installed under a directory of that name and the caller adds one -I.
+	install -m 0644 harness/arch.h    $(PREFIX)/include/ariannamethod/harness/arch.h
+	install -m 0644 harness/archs.h   $(PREFIX)/include/ariannamethod/harness/archs.h
+	install -m 0644 harness/runtime.h $(PREFIX)/include/ariannamethod/harness/runtime.h
+	install -m 0644 examples/bpe.h    $(PREFIX)/include/ariannamethod/examples/bpe.h
 	install -m 0644 notorch_vision.h $(PREFIX)/include/ariannamethod/notorch_vision.h
 	install -m 0644 stb_image.h  $(PREFIX)/include/ariannamethod/stb_image.h
 ifeq ($(UNAME),Darwin)
@@ -203,12 +235,12 @@ llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorc
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
-HARNESS_SRC = harness/main.c harness/runtime.c harness/arch_llama.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c examples/bpe.c gguf.c notorch.c
-HARNESS_HDR = harness/arch.h harness/runtime.h harness/logo.h examples/bpe.h gguf.h notorch.h
+HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c examples/bpe.c gguf.c notorch.c
+HARNESS_HDR = harness/arch.h harness/archs.h harness/runtime.h harness/logo.h examples/bpe.h gguf.h notorch.h
 
 # `harness` is phony because a directory of that name sits right there, and
 # make would otherwise call it up to date and build nothing.
-.PHONY: harness test_harness test_resonance test_janus
+.PHONY: harness test_harness test_resonance test_janus test_consumer_link lib_harness
 
 harness: notorch
 
@@ -220,6 +252,12 @@ notorch: $(HARNESS_SRC) $(HARNESS_HDR)
 # nothing. MODEL= to point it at one file, otherwise it looks for its defaults.
 test_harness: notorch llama
 	./harness/test_parity.sh $(MODEL)
+
+# The harness as a body sees it: two installed archives, four installed
+# headers, no notorch source. Runs the negative case too, so a pass means the
+# archive carried the symbols rather than the compiler finding them elsewhere.
+test_consumer_link:
+	./harness/test_consumer_link.sh $(MODEL)
 
 # Janus against the forward it was ported from: the exact-matvec build against
 # the reference's frozen answer, and the shipped build against its own generation.

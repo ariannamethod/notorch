@@ -58,6 +58,133 @@ byte-identical to the reference on three prompts, and qwen05b_fp16 byte-identica
 
 ---
 
+## 2026-09-12 — the goldens re-derived, and the harness made linkable
+
+Two things that both come down to the same question: does the thing everyone is
+about to build on actually hold.
+
+### The goldens had one witness, and it was us
+
+`tests/resonance_golden_v3.txt` and `tests/janus_golden_v4.txt` are the only
+reference for the Method's own two families — llama.cpp refuses both with
+`unknown model architecture`, so there is no outside oracle. Three green gates
+hang off two text files, and the header of each says where its numbers came
+from. Nobody had ever run that recipe back.
+
+Both were re-derived from `arianna.c`'s own forwards, with drivers written from
+scratch rather than recovered, and both were re-derived a second time with the
+entire substrate swapped for `arianna.c`'s vendored notorch — a different
+`notorch.c` by 3867 lines and a different `gguf.c` by 353.
+
+- **Resonance** comes back with a worst distance of **7.15e-06** on this tree's
+  substrate and **8.58e-06** on the vendored one, against a 1e-3 tolerance. The
+  two substrates sit **3.34e-06** apart, so on this path our kernels and the
+  ones the model was actually run with are not covering for each other.
+- **Janus** comes back **bit-identical** on both, all eight logits to the
+  printed digit.
+
+Three things the exercise turned up that the headers did not say.
+
+The Janus recipe as written **does not run**. That file is Q8_0, dtype 8, and
+the reference's packed path takes F16 only: `not F16 (packed path needs F16;
+use YENT_DENSE=1)`. `YENT_DENSE=1` is required and was never recorded, which
+also means the reference runs dense F32 there while the port runs packed — the
+tolerance measures dequantization and the exact integer matvec against dense
+arithmetic, not one packed path against another.
+
+The reference forward applies a low-rank delta mid-block, and it loads that
+delta by a path **relative to the working directory**
+(`weights/arianna.delta.r`, inside `resonance_load_gguf`). It is absent here —
+rank 8, alpha 0, `sum|A| = 0` — so the goldens are clean, but a driver run from
+a directory where that file exists would have frozen a different model with no
+sign of it. Both headers now say so.
+
+And the number that had been asserted in a comment is now measured: the shipped
+integer-matvec build sits **1.240e-01** from the reference on those eight ids,
+8 of 8 matched. The exact-matvec build, which is what the tolerance gate
+compares, sits at 3.338e-05.
+
+The drivers stay out of this tree. They include `arianna.c` headers, and a
+build here that reaches into a sibling repository is the contamination rule.
+What travels is the number and a recipe that has now been run.
+
+### The harness became a linkable surface
+
+`libnotorch.a` was `notorch.o` and `gguf.o`, nothing else, and `make install`
+shipped four headers, none of them the harness's. A body wanting to run a GGUF
+through this tree had two options: copy `harness/*.c` into its own build, or
+link `main.c` and inherit its `main()`. The first is a fork; the second is not
+a library. Yent's inference is being rebuilt on this harness, so it needed a
+third option.
+
+The family table and its lookup moved out of `main.c` into `harness/archs.c`
+behind `harness/archs.h` — `main.c` had kept everything else `static`, so that
+table was the only thing a caller needed and could not reach.
+`libnotorch_harness.a` now carries the six families, the runtime, the KV cache
+and the tokenizer; `make install` adds it and four more headers under
+`include/ariannamethod/harness/` and `.../examples/`. Two archives and not one,
+because the split is real: `libnotorch` is the substrate anything can use,
+`libnotorch_harness` is family code that only means something to a caller
+running models.
+
+`harness/test_consumer_link.sh` installs into a throwaway prefix and builds
+`tests/consumer_link.c` against it with `-lnotorch_harness -lnotorch` and no
+notorch source on the command line — `arch=llama tokens=5 vocab=32000
+argmax=264`. It runs the negative case in the same pass and requires the build
+**without** `-lnotorch_harness` to fail, because a link test that would pass
+without the archive is testing nothing. Red hand: dropping `archs.o` from the
+archive puts the gate straight into `Undefined symbols: _nt_pick_arch`.
+
+Gates unmoved by the split: `NOTORCH_PARITY_OK (6 checks)`, `JANUS_OK`,
+`RESONANCE_OK`, `NOTORCH_CONSUMER_OK (3 checks)`, notorch_test 49/49 and 73/73,
+test_qmatmul 34/34. `test_quantize` still FAILs Q8_0 at 2.081e-04 over
+2.067e-04, unchanged since `cd659e8`.
+
+---
+
+
+## 2026-09-12 — the parity gate could not run, and said FAIL
+
+The agent rules in this tree carry "a gate that cannot run must report neither
+green nor red" as one of four things already paid for. `harness/test_parity.sh`
+had never been brought up to it, and it had all three failure directions at once.
+
+Against Janus Q8_0 the reference exits 1 with `llama: missing critical weights`
+and the gate printed **three FAILs** with an empty `example:` line under each —
+a red about the harness produced by a reference that never loaded the model. That
+is the same shape as the eight tokenizer "mismatches" from 09-10, in the script
+next to it.
+
+Against a truncated GGUF neither binary loads, `A=$(./notorch ...)` fails, `set -e`
+kills the script, and it printed **nothing at all**: no verdict line, rc=1. A
+wrapper reading stdout for `NOTORCH_PARITY_*` sees neither.
+
+And with both sides empty the comparison is `"" = ""`, which is **PASS**. Proved
+rather than argued: the same script with the two capture lines forced empty prints
+`NOTORCH_PARITY_OK (3 checks)` under the old condition and `NOTORCH_PARITY_FAIL (3)`
+under the new one.
+
+Each model is now offered to both binaries before anything is compared, and one
+that will not load is `SKIPPED` with the reason taken off stderr — the first line
+that reads like an error, since the first line is the shape banner, and the last
+line said before it gave up when nothing matches. `NOTORCH_PARITY_OK` now carries
+its check count and is unreachable at zero: every model skipped prints
+`NOTORCH_PARITY_SKIPPED`. An empty harness side is a failure even when the
+reference side is empty too.
+
+One thing this cost twice: `set -e` kills a function at `OUT=$(cmd)` when the
+command exits non-zero, so the first version of the reason lookup silently
+returned nothing at all — the truncated file reported `SKIPPED — ` with the reason
+missing. A pipeline hides it (the status is the last stage) and a bare assignment
+does not.
+
+Janus, the truncated file and a path that does not exist all skip with a real
+reason at rc=0. `make test_harness` unmoved: 6 PASS, `NOTORCH_PARITY_OK (6 checks)`.
+Mixed input skips Janus and still compares nano_arianna, 3 checks, rc=0.
+
+---
+
+
 ## 2026-09-12 — the wrapping moves into the file, and two guards that were never guarding
 
 `NT_CHAT` proved the mechanism and left the ids in the operator's hands, which is

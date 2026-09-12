@@ -451,6 +451,28 @@ the f32 engines are still here for what fits in RAM without packing:
 
 fuck torch — but also, you do not need llama.cpp to *run* what you built. the packed-Metal path is what turns "run a 24B on the laptop you already own" into a true sentence.
 
+### the harness is a library, not just a binary
+
+`harness/` is the small one: GGUF in, text out, one `nt_arch` interface, one file per family (`llama` as the fallback, plus `gemma4`, `olmoe`, `mamba`, and the Method's own `resonance` and `janus`). the CLI on top of it is `main.c` — and `main.c` is *only* the CLI. everything a body needs is in the archive next to it.
+
+```bash
+make lib lib_harness && make install PREFIX=/opt/homebrew
+cc -I$PREFIX/include/ariannamethod body.c -lnotorch_harness -lnotorch -lm
+```
+
+```c
+#include "harness/archs.h"
+gguf_file *gf = gguf_open(path);
+const nt_arch *arch = nt_pick_arch(gf->arch);   /* never NULL: llama is the fallback */
+nt_dims dims; void *model = arch->load(gf, &dims);
+kv_cache *kv = kv_new(dims.n_layers, max_seq, dims.kv_dim);
+arch->forward(model, kv, ids, n, 0, logits);    /* n>1 prefills; logits are the last row */
+```
+
+two archives on purpose. `libnotorch` is the substrate anything can use — tensors, kernels, GGUF. `libnotorch_harness` is family code that only means something to a caller running models: the six forwards, the runtime, the KV cache, the GGUF-embedded BPE. an organism links both and vendors neither, which is the difference between depending on notorch and forking it.
+
+`make test_consumer_link` proves it the only way that counts: install into a throwaway prefix, build a program from outside the tree with nothing but those two `-l` flags, run a model through it — and then build it *again* without `-lnotorch_harness` and require that one to fail.
+
 ---
 
 ## alignment training — DPO / GRPO / distillation
