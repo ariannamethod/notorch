@@ -21,7 +21,7 @@ if [ ! -f "$MODEL" ]; then
   exit 0
 fi
 
-PREFIX=$(mktemp -d -t nt_consumer)
+PREFIX=$(mktemp -d "${TMPDIR:-/tmp}/nt_consumer.XXXXXX")
 trap 'rm -rf "$PREFIX"' EXIT
 
 make -s lib lib_harness >/dev/null
