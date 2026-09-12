@@ -319,7 +319,12 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
                             n, pos0, H, HD, KVD, Q_DIM, gqa, base,
                             1.0f / sqrtf((float)HD) };
             memset(attn_out, 0, (size_t)n * Q_DIM * sizeof(float));
-            nt_par_for(attn_heads, &ac, H, 2);
+            /* Threading decode was a regression: at one row per head the work is a single
+             * dot over the cache, and waking five threads 36 times per token cost more than
+             * it saved — 8.8 t/s down to 6.9. The gate is the work, not the head count. */
+            long work = (long)n * (long)(pos0 + n) * (long)HD;
+            if (work >= 65536) nt_par_for(attn_heads, &ac, H, 2);
+            else               attn_heads(&ac, 0, H);
         }
         pf_add(PF_ATTN, pft);
 
