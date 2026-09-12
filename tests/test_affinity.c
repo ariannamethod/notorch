@@ -90,6 +90,14 @@ static int run_one_matvec(void) {
     return rc;
 }
 
+/* Reports the mask it was born with, which is the mask its parent held. */
+static void *child_mask(void *out) {
+    cpu_set_t *m = (cpu_set_t *)out;
+    CPU_ZERO(m);
+    pthread_getaffinity_np(pthread_self(), sizeof(*m), m);
+    return NULL;
+}
+
 int main(int argc, char **argv) {
     const char *mode = argc > 1 ? argv[1] : "default";
     printf("core selection [%s]\n", mode);
@@ -130,7 +138,7 @@ int main(int argc, char **argv) {
     describe(&want, a, sizeof(a));
 
     int planned = nt_qmv_planned_threads();
-    char detail[128];
+    char detail[640];
     snprintf(detail, sizeof(detail), "planned %d, expected %d over cpus %s", planned, want_n, a);
     check("thread count matches the core plan", planned == want_n, detail);
 
@@ -143,26 +151,46 @@ int main(int argc, char **argv) {
         return 1;
     }
     describe(&now, b, sizeof(b));
-    /* One thread per core, in order, so the thread that drove the matvec holds the first CPU
-     * of the plan and nothing else. A shared mask is not enough: the scheduler will put two
-     * spin-then-park threads on one core and keep them there. */
-    cpu_set_t first;
-    CPU_ZERO(&first);
-    if (!strcmp(mode, "nopin")) first = start;        /* nothing may have touched it */
-    else
-        for (int c = 0; c < CPU_SETSIZE; c++)
-            if (CPU_ISSET(c, &want)) { CPU_SET(c, &first); break; }
-    char fbuf[64];
-    describe(&first, fbuf, sizeof(fbuf));
-    /* The message has to name what this mode actually expects. With NT_QMV_PIN=0 the mask
-     * must come back untouched, and calling that "the plan's first core" would send whoever
-     * reads a failure here looking in the wrong place. */
+    /* Every thread is held to the plan's cores and placed among them by the scheduler.
+     *
+     * This used to assert the opposite — one core per thread, the driving thread on the first
+     * of them — and that assertion was the bug written down as a requirement. A thread pinned
+     * to one core cannot be moved off it, and on Linux a new thread inherits its parent's
+     * mask: once the pool narrowed the thread that started it, every fan-out a batched matmul
+     * opened afterwards was born onto that one core. Prefill after the first answer ran on a
+     * quarter of the machine. The set is what was measured and the set is what is asserted. */
+    cpu_set_t expect;
+    if (!strcmp(mode, "nopin")) expect = start;       /* nothing may have touched it */
+    else expect = want;
+    char fbuf[256];
+    describe(&expect, fbuf, sizeof(fbuf));
     if (!strcmp(mode, "nopin")) {
         snprintf(detail, sizeof(detail), "on cpus %s, expected the mask untouched: %s", b, fbuf);
-        check("nothing touched the affinity mask", CPU_EQUAL(&now, &first), detail);
+        check("nothing touched the affinity mask", CPU_EQUAL(&now, &expect), detail);
     } else {
-        snprintf(detail, sizeof(detail), "on cpus %s, expected the plan's first core %s", b, fbuf);
-        check("the driving thread holds one core of its own", CPU_EQUAL(&now, &first), detail);
+        snprintf(detail, sizeof(detail), "on cpus %s, expected the plan's cores %s", b, fbuf);
+        check("the driving thread holds the whole chosen set", CPU_EQUAL(&now, &expect), detail);
+    }
+
+    /* And the consequence, checked rather than reasoned about: a thread created after the
+     * pool exists must be able to run on every core the plan chose. This is the assertion the
+     * old one-core-per-thread arrangement fails, which is the point of having it. */
+    {
+        cpu_set_t child;
+        CPU_ZERO(&child);
+        pthread_t th;
+        if (pthread_create(&th, NULL, child_mask, &child) == 0) {
+            pthread_join(th, NULL);
+            char cbuf[256];
+            describe(&child, cbuf, sizeof(cbuf));
+            snprintf(detail, sizeof(detail),
+                     "a thread opened after the pool sees cpus %s, expected %s", cbuf, fbuf);
+            check("a thread born after the pool inherits every chosen core",
+                  CPU_EQUAL(&child, &expect), detail);
+        } else {
+            check("a thread born after the pool inherits every chosen core", 0,
+                  "pthread_create refused");
+        }
     }
 
     printf("\nResults: %s\n", fails ? "FAILED" : "all passed");

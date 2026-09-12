@@ -5604,18 +5604,44 @@ static inline const nt_qmv_plan *nt_qmv_get_plan(void) {
 
 static long nt_qmv_plan_thread_min(void) { return nt_qmv_get_plan()->thread_min; }
 
-static void nt_qmv_pin_nth(pthread_t t, int idx) {
+/* Hold a thread to the cores the plan chose, and let the scheduler place it among them.
+ *
+ * This used to give each thread one core of its own, by index. The core *selection* is what
+ * was measured and it stands — dropping the slowest cluster is worth a third on this SoC,
+ * and NT_QMV_PIN=0 gives that up. The per-thread narrowing is the part nobody measured, and
+ * it costs more than it was ever shown to buy.
+ *
+ * Two ways. A pinned thread cannot be moved off a busy core onto an idle one, so a pool
+ * thread waking for one matvec preempts whatever the scheduler had put there instead of
+ * going somewhere free. And on Linux a new thread inherits its parent's mask, so once the
+ * pool pinned the thread that started it to a single core, every fan-out a batched matmul
+ * opened from that thread afterwards was born onto that same core — a prefill running on one
+ * core with three idle beside it.
+ *
+ * Which reads as a prefill that drops by a third or a half after the first answer: on every
+ * turn of a conversation but the first. A 350-token prompt, three passes in one process,
+ * four big cores, `taskset -c 4-7`:
+ *
+ *     qwen05b Q4_0    96.7 then 47.5 and 47.8       Q4_K_M  89.0 then 36.0 and 35.7
+ *     mamba-130m-f16  92.8 then 47.5 and 47.0
+ *
+ * Holding every thread to the whole chosen set instead reads 104.4, 98.2, 96.8 on Q4_0 and
+ * 83.3, 84.2, 83.5 on Q4_K_M. Decode — the thing the narrowing was for — measures the same or
+ * better on every model here: gemma-4 Q4_0 10.8 against 10.8, qwen Q4_0 51.0 against 56.9,
+ * mamba f16 36.2 against 38.7. Nothing was traded for it.
+ *
+ * Two explanations were tried and refuted before this one. The allocator: the chunk buffers
+ * were being taken per call, and calloc over recycled heap has to write every byte where
+ * calloc over fresh kernel pages does not — holding the buffer changed nothing. And heat:
+ * the die reads 55-57 C either way, and with NT_QMV_PIN=0 the same three passes at the same
+ * temperature stay flat. */
+static void nt_qmv_place(pthread_t t) {
 #if defined(__linux__)
     const nt_qmv_plan *p = nt_qmv_get_plan();
     if (!p->pin || p->ncpu <= 0) return;
-    int want = idx % p->ncpu, seen = 0;
-    cpu_set_t one;
-    CPU_ZERO(&one);
-    for (int c = 0; c < CPU_SETSIZE; c++)
-        if (CPU_ISSET(c, &p->cpus) && seen++ == want) { CPU_SET(c, &one); break; }
-    if (CPU_COUNT(&one)) pthread_setaffinity_np(t, sizeof(one), &one);
+    pthread_setaffinity_np(t, sizeof(p->cpus), &p->cpus);
 #else
-    (void)t; (void)idx;
+    (void)t;
 #endif
 }
 
@@ -5745,12 +5771,12 @@ static void nt_qpool_shutdown(void) {
 
 static void nt_qpool_init_once(void) {
     int nt = nt_qmv_host_threads(NT_QMV_MAX_THREADS);
-    nt_qmv_pin_nth(pthread_self(), 0);
+    nt_qmv_place(pthread_self());
     for (int i = 0; i < nt; i++) {
         g_nt_qpool.ids[i] = i;
         if (pthread_create(&g_nt_qpool.threads[i], NULL, nt_qpool_loop, &g_nt_qpool.ids[i]) != 0)
             break;
-        nt_qmv_pin_nth(g_nt_qpool.threads[i], i + 1);
+        nt_qmv_place(g_nt_qpool.threads[i]);
         g_nt_qpool.nthreads++;
     }
     g_nt_qpool.ready = g_nt_qpool.nthreads > 0;
@@ -6879,11 +6905,11 @@ static void nt_qpool_i8_init_once(void) {
      * a pool sized to the core count puts one thread too many on the cluster and every
      * matvec pays for the context switch. */
     int nt = nt_qmv_host_threads(NT_QMV_MAX_THREADS) - 1;
-    nt_qmv_pin_nth(pthread_self(), 0);   /* the dispatcher takes a chunk too */
+    nt_qmv_place(pthread_self());        /* the dispatcher takes a chunk too */
     for (int i = 0; i < nt; i++) {
         if (pthread_create(&g_nt_qpool_i8.threads[i], NULL, nt_qpool_i8_loop, NULL) != 0)
             break;
-        nt_qmv_pin_nth(g_nt_qpool_i8.threads[i], i + 1);
+        nt_qmv_place(g_nt_qpool_i8.threads[i]);
         g_nt_qpool_i8.nthreads++;
     }
     g_nt_qpool_i8.ready = g_nt_qpool_i8.nthreads > 0;

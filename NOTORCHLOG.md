@@ -13,6 +13,54 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — a prefill that halved after the first answer
+
+The pool gave each of its threads one core of its own and pinned it there, including the
+thread that starts it. That arrangement is ten days old — `79950c9`, 2026-09-02, "the method
+gives each thread a core instead of a promise" — and two things follow from it that were
+never measured.
+
+A pinned thread cannot be moved off a busy core onto an idle one, so a pool thread waking for
+one matvec preempts whatever the scheduler had put there rather than going somewhere free.
+And on Linux a new thread inherits its parent's affinity mask — so from the first decode
+onward, every fan-out a batched matmul opened was born onto the single core the pool had
+pinned its parent to. The prompt was processed by one core with three idle beside it.
+
+Which reads as a prefill that drops by a third or a half after the first answer: every turn of
+a conversation but the first. A 350-token prompt, three passes in one process,
+`taskset -c 4-7`:
+
+    qwen05b Q4_0    96.7  47.5  47.8   ->   104.4  98.2  96.8
+    qwen05b Q4_K_M  89.0  36.0  35.7   ->    83.3  84.2  83.5
+    mamba-130m-f16  92.8  47.5  47.0   ->    85.6  94.2  95.8
+
+Decode, the thing the narrowing was for, measures the same or better on every model here:
+gemma-4 Q4_0 10.8 against 10.8, qwen Q4_0 51.0 against 56.9, mamba f16 36.2 against 38.7.
+Nothing was traded. The core *selection* is untouched and still worth what it was measured at
+— `NT_QMV_PIN=0` gives that up and remains the way to.
+
+**Two explanations were tried first and both were wrong.** The allocator: a new per-call chunk
+buffer had just been added elsewhere, and calloc over recycled heap writes every byte where
+calloc over fresh kernel pages does not — holding the buffer across calls changed the numbers
+by nothing. Heat: the die reads 55-57 C either way, and under `NT_QMV_PIN=0` the same three
+passes at the same temperature stay flat. What named the cause was deleting the caller's pin
+outright and watching the collapse go, then putting it back and watching it return.
+
+Widening only the fan-out was tried too and was not enough: the caller drains chunks as well,
+so a worker that cannot leave one core holds the whole call. Holding every thread to the whole
+chosen set is the change; there is no wrapper around the batched entries.
+
+`tests/test_affinity.c` asserted the old arrangement — "the driving thread holds one core of
+its own" — which is the bug written down as a requirement. It now asserts the set, and carries
+the consequence as its own check: a thread created after the pool exists must see every core
+the plan chose. Restoring one-core pinning turns both red, and the child's mask in the failure
+reads `cpus 4` where four were expected.
+
+Gates: 17 suites green, tokenizer identical on 24, harness parity OK, ThreadSanitizer clean on
+both pools.
+
+---
+
 ## 2026-09-12 — prefill stopped reading the file once per token, for f16
 
 `nt_qmatmul_i8` has said since it was written that a prompt of n tokens streams the weights n
