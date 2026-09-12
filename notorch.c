@@ -8290,6 +8290,122 @@ int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
     return 0;
 }
 
+
+// ── batched f16 matmul — the unpacked half of the same argument ─────────────────
+/* Everything the batched int8 entry above says about prefill is true of f16 and was not
+ * being acted on: with no batched kernel the harness looped the per-token matvec, so an
+ * n-token prompt streamed the whole file n times. On mamba-130m-f16 that is 45 t/s of
+ * prefill against the reference's 309, and the gap is entirely re-reading.
+ *
+ * There is no activation quantization here, which is the whole difference from the int8
+ * path — f16 weights meet float activations directly, so a tile costs nothing to set up
+ * and the only question is how wide it can be before the accumulators spill. Eight
+ * activations need sixteen vector registers for their partial sums plus two for the
+ * converted weights; thirty-two exist. Measured on a 350-token prefill of qwen05b_fp16,
+ * two runs each: four gives 36.4 t/s, eight 41.9, sixteen 39.2, and the int8 path's
+ * thirty-two collapses to 25.7-28.9 where the spills start. Eight it is.
+ *
+ * The first attempt at that table was taken on mamba-130m-f16 and measured nothing at
+ * all: that family walks its prompt one position at a time, so this kernel never ran and
+ * the three numbers were noise reading 37 to 40. A tile width has to be measured where
+ * the tile is used.
+ *
+ * Per (row, activation) the walk over k is the same eight-wide, two-accumulator shape as
+ * nt_f16_rows, and the scalar tail is added to the vector sum in the same order. So a
+ * batched prefill and a token-by-token one agree bit for bit, and tests/test_qmatmul.c
+ * asserts equality rather than a tolerance.
+ *
+ * F32 is deliberately not here. Its tensors in every file on this machine are norms and
+ * biases — 121 of them in qwen05b_fp16, none large — so batching them buys nothing
+ * measurable, while writing the kernel would take the summation order away from the
+ * compiler and change results for no reason. */
+#define NT_QMM_TILE_F 8   /* activations carried through one pass over an f16 row */
+
+typedef void (*nt_fmmrows_fn)(float *out, int m, const uint8_t *W, const float *X,
+                              int r0, int r1, int k, int n);
+
+static void nt_f16_rows_n(float *out, int m, const uint8_t *W, const float *X,
+                          int r0, int r1, int k, int n) {
+    const uint16_t *Wh = (const uint16_t *)W;
+    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE_F) {
+        int jn = n - j0; if (jn > NT_QMM_TILE_F) jn = NT_QMM_TILE_F;
+        for (int row = r0; row < r1; row++) {
+            const uint16_t *r = Wh + (long)row * k;
+            float acc[NT_QMM_TILE_F];
+            int i = 0;
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+#if defined(__aarch64__) && defined(__ARM_NEON)
+            float32x4_t a0[NT_QMM_TILE_F], a1[NT_QMM_TILE_F];
+            for (int j = 0; j < jn; j++) { a0[j] = vdupq_n_f32(0.0f); a1[j] = vdupq_n_f32(0.0f); }
+            for (; i + 8 <= k; i += 8) {
+                float16x8_t h = vreinterpretq_f16_u16(vld1q_u16(r + i));
+                float32x4_t w0 = vcvt_f32_f16(vget_low_f16(h));
+                float32x4_t w1 = vcvt_f32_f16(vget_high_f16(h));
+                for (int j = 0; j < jn; j++) {
+                    const float *xj = X + (long)(j0 + j) * k + i;
+                    a0[j] = vfmaq_f32(a0[j], w0, vld1q_f32(xj));
+                    a1[j] = vfmaq_f32(a1[j], w1, vld1q_f32(xj + 4));
+                }
+            }
+            for (int j = 0; j < jn; j++) acc[j] = vaddvq_f32(vaddq_f32(a0[j], a1[j]));
+#endif
+            for (int j = 0; j < jn; j++) {
+                const float *xj = X + (long)(j0 + j) * k;
+                float s = acc[j];
+                for (int t = i; t < k; t++) s += nt_f16_to_f32(r[t]) * xj[t];
+                out[(long)(j0 + j) * m + row] = s;
+            }
+        }
+    }
+}
+
+/* Its own job rather than the int8 one, whose three activation pointers have no meaning
+ * here; the row-claiming is the same because the reason for it is the same. */
+typedef struct {
+    nt_fmmrows_fn fn;
+    float *out; const uint8_t *W; const float *X;
+    int m, k, n, hi, chunk;
+    int next;
+} nt_fmm_job;
+
+static void nt_fmm_drain(nt_fmm_job *j) {
+    for (;;) {
+        int r0 = __atomic_fetch_add(&j->next, j->chunk, __ATOMIC_RELAXED);
+        if (r0 >= j->hi) return;
+        int r1 = r0 + j->chunk; if (r1 > j->hi) r1 = j->hi;
+        j->fn(j->out, j->m, j->W, j->X, r0, r1, j->k, j->n);
+    }
+}
+
+static void *nt_fmm_worker(void *p) { nt_fmm_drain((nt_fmm_job *)p); return NULL; }
+
+int nt_qmatmul(float *out, const uint8_t *W, int dtype,
+               const float *X, int m, int k, int n) {
+    if (!out || !W || !X || m <= 0 || k <= 0 || n <= 0) return -1;
+    if (n == 1) return nt_qmatvec(out, W, dtype, X, m, k);
+    if (dtype != 1) return -1;           /* only f16 has a batched unpacked kernel */
+
+    /* Same gate as the int8 entry, and for the same reason: the work is m*k*n, and
+     * leaving n out of it left most of a prefill on one core. */
+    int nt = nt_qmv_host_threads(m);
+    if (nt <= 1 || (long)m * k * (long)n < nt_qmv_thread_floor()) {
+        nt_f16_rows_n(out, m, W, X, 0, m, k, n);
+        return 0;
+    }
+
+    nt_fmm_job job = { nt_f16_rows_n, out, W, X, m, k, n, m, 0, 0 };
+    job.chunk = m / (nt * 8); if (job.chunk < 1) job.chunk = 1;
+    pthread_t th[NT_QMV_MAX_THREADS];
+    int launched = 0;
+    for (int t = 0; t + 1 < nt; t++) {
+        if (pthread_create(&th[t], NULL, nt_fmm_worker, &job) != 0) break;
+        launched++;
+    }
+    nt_fmm_drain(&job);                   /* the caller is a worker too */
+    for (int t = 0; t < launched; t++) pthread_join(th[t], NULL);
+    return 0;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // IMAGE OPS — conv2d (im2col + GEMM) + group norm — forward-only inference ops
 // for diffusion engines (Stable-Diffusion UNet/VAE). Companions to nt_qmatvec:

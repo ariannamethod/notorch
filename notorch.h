@@ -597,6 +597,15 @@ int nt_quantize_row(const float *x, void *dst, int k, int dtype);
 int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
                   const float *X, int m, int k, int n);
 
+// The same for the unpacked formats, which the entry above refuses. F16 only: its
+// tensors are what a model is made of before anyone quantizes it, while the F32 ones
+// in a real file are norms and biases and carry no traffic worth batching. X is [n, k]
+// row-major, out is [n, m] row-major, and the per-row accumulation order is the one
+// nt_qmatvec uses, so results are identical to calling it n times rather than close.
+// Returns -1 for any other dtype; a caller that gets it loops nt_qmatvec and is correct.
+int nt_qmatmul(float *out, const uint8_t *W, int dtype,
+               const float *X, int m, int k, int n);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // IMAGE OPS — forward-only conv2d + group norm for diffusion inference engines
 // ═══════════════════════════════════════════════════════════════════════════════
