@@ -58,6 +58,40 @@ ifneq ($(filter aarch64 arm64,$(shell uname -m)),)
   endif
 endif
 
+# ── x86-64: the same question, which nobody had asked ─────────────────────────
+#
+# notorch.c carries an AVX2+FMA integer kernel for every quantized dtype, guarded
+# by `#if defined(__AVX2__) && defined(__FMA__)`. Neither is defined by default on
+# x86-64, and the flags that define them appeared only in the SIMD test and bench
+# targets — so on every Linux box the library shipped its scalar fallback and the
+# kernel that was written for that machine never compiled.
+#
+# It cost a factor of three. Qwen3-4B Q4_K_M on the polygon, an i5-8500T with six
+# cores and no AVX-512: decode 2.2 t/s scalar, 6.9 t/s with these two flags, same
+# source, same file, same threads. Prefill 3.3 to 5.2.
+#
+# Detected the way ARM's features are, from the host and then from the compiler,
+# because -mavx2 on a pre-Haswell machine produces a binary that dies on its first
+# vector instruction. X86_SIMD=0 skips it; pass X86_FLAGS= by hand when
+# cross-compiling.
+X86_SIMD ?= 1
+ifneq ($(filter x86_64 amd64,$(shell uname -m)),)
+  ifeq ($(X86_SIMD), 1)
+    X86_HAS_AVX2 := $(shell echo | $(CC) -dM -E - 2>/dev/null | grep -c __AVX2__)
+    ifeq ($(X86_HAS_AVX2),0)
+      X86_HOST_AVX2 := $(shell grep -qwm1 avx2 /proc/cpuinfo 2>/dev/null || \
+        sysctl -n machdep.cpu.leaf7_features 2>/dev/null | grep -qw AVX2; echo $$?)
+      ifeq ($(X86_HOST_AVX2),0)
+        X86_FLAGS ?= $(shell $(CC) -mavx2 -mfma -E -x c /dev/null >/dev/null 2>&1 && echo "-mavx2 -mfma")
+        CFLAGS += $(X86_FLAGS)
+      endif
+      X86_NAME = $(if $(X86_FLAGS),$(X86_FLAGS),baseline x86-64)
+    else
+      X86_NAME = compiler default (already carries AVX2)
+    endif
+  endif
+endif
+
 # ── Linux: OpenBLAS ──
 # Prefer pkg-config when available — handles distros that ship cblas.h in
 # a subdir (Termux: /usr/include/openblas/) and custom $PREFIX layouts.
