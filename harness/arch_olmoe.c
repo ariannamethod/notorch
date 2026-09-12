@@ -277,6 +277,11 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
     float *eg = (float*)calloc((size_t)NU * FFN, sizeof(float));
     float *eu = (float*)calloc((size_t)NU * FFN, sizeof(float));
     float *eo = (float*)calloc((size_t)E, sizeof(float));
+    /* One scores row for the whole forward. It used to be a calloc and a free per
+     * (position, head): at 53 positions, 32 heads and 36 layers that is 61 thousand
+     * allocations in one prefill, for a buffer whose largest size is known before the
+     * first one. Nothing about the arithmetic changes. */
+    float *scratch_scores = (float*)calloc((size_t)kv->max_seq, sizeof(float));
 
     /* The expert-grouped prefill's working set, allocated only when there is a group to
      * make. grp_part is the big one — one E-wide result per (position, slot) so the eight
@@ -325,9 +330,10 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
     }
 
     if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_out || !router ||
-        !eg || !eu || !eo) {
+        !eg || !eu || !eo || !scratch_scores) {
         free(x); free(xn); free(q_all); free(k_new); free(v_new);
         free(attn_out); free(ffn_out); free(router); free(eg); free(eu); free(eo);
+    free(scratch_scores);
         return NT_E_MEMORY;
     }
 
@@ -383,7 +389,7 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
             for (int h = 0; h < H; h++) {
                 int kv_h = h / gqa;
                 float *q = q_all + (long)j * Q_DIM + h * HD;
-                float *scores = (float*)calloc(pos + 1, sizeof(float));
+                float *scores = scratch_scores;
                 for (int t = 0; t <= pos; t++) {
                     const float *kt = kv->k + base + (long)t * KVD + kv_h * HD;
                     scores[t] = dot_f32(q, kt, HD) * scale;
@@ -394,7 +400,6 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
                     const float *vt = kv->v + base + (long)t * KVD + kv_h * HD;
                     axpy_f32(out_h, scores[t], vt, HD);
                 }
-                free(scores);
             }
         }
         pf_add(PF_ATTN, pft);
@@ -653,6 +658,7 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
     free(attn_out); free(ffn_out); free(router); free(eg); free(eu); free(eo);
+    free(scratch_scores);
     free(grp_part); free(grp_x); free(grp_g); free(grp_u); free(grp_o); free(grp_w);
     free(grp_qa); free(grp_cqa); free(grp_dqa); free(grp_da); free(grp_cda);
     free(grp_dda); free(grp_as); free(grp_cas); free(grp_das);

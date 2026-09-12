@@ -215,9 +215,15 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
     float *ffn_gate = (float*)calloc((size_t)n * FFN, sizeof(float));
     float *ffn_up = (float*)calloc((size_t)n * FFN, sizeof(float));
     float *ffn_out = (float*)calloc((size_t)n * E, sizeof(float));
-    if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_gate || !ffn_up || !ffn_out) {
+    /* One scores row for the whole forward. It used to be a calloc and a free per
+     * (position, head): at 53 positions, 32 heads and 36 layers that is 61 thousand
+     * allocations in one prefill, for a buffer whose largest size is known before the
+     * first one. Nothing about the arithmetic changes. */
+    float *scratch_scores = (float*)calloc((size_t)kv->max_seq, sizeof(float));
+    if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_gate || !ffn_up || !ffn_out ||
+        !scratch_scores) {
         free(x); free(xn); free(q_all); free(k_new); free(v_new);
-        free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out);
+        free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out); free(scratch_scores);
         return NT_E_MEMORY;
     }
 
@@ -271,7 +277,7 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
             for (int h = 0; h < H; h++) {
                 int kv_h = h / gqa;
                 float *q = q_all + (long)j * Q_DIM + h * HD;
-                float *scores = (float*)calloc(pos + 1, sizeof(float));
+                float *scores = scratch_scores;
                 for (int t = 0; t <= pos; t++) {
                     const float *kt = kv->k + base + (long)t * KVD + kv_h * HD;
                     scores[t] = dot_f32(q, kt, HD) * scale;
@@ -282,7 +288,6 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
                     const float *vt = kv->v + base + (long)t * KVD + kv_h * HD;
                     axpy_f32(out_h, scores[t], vt, HD);
                 }
-                free(scores);
             }
         }
         pf_add(PF_ATTN, pft);
@@ -328,7 +333,7 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
     }
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
-    free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out);
+    free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out); free(scratch_scores);
     return NT_OK;
 }
 
