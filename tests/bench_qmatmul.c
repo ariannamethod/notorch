@@ -102,12 +102,13 @@ static void q4k_q8k(float *out, int m, const uint8_t *W, const int8_t *qa,
                     const float *dsuper, const int32_t *bs32, int k, int n) {
     int nb = k / 256, nsub = k / 32;
     const __m256i m4 = _mm256_set1_epi8(0x0F);
-    const int TILE = 32;
+    const int TILE = 8;
     for (int j0 = 0; j0 < n; j0 += TILE) {
         int jn = n - j0; if (jn > TILE) jn = TILE;
         for (int row = 0; row < m; row++) {
-            float acc[32], accm[32];
-            for (int j = 0; j < jn; j++) { acc[j] = 0.0f; accm[j] = 0.0f; }
+            __m256 accv[32];
+            float accm[32];
+            for (int j = 0; j < jn; j++) { accv[j] = _mm256_setzero_ps(); accm[j] = 0.0f; }
             const uint8_t *rb = W + (long)row * nb * 144;
             for (int blk = 0; blk < nb; blk++) {
                 const uint8_t *b = rb + (long)blk * 144;
@@ -141,18 +142,23 @@ static void q4k_q8k(float *out, int m, const uint8_t *W, const int8_t *qa,
                         _mm256_add_epi32(LO(q3,s6,6), HI(q3,s7,7))));
                     #undef LO
                     #undef HI
-                    /* One float multiply per block per column, not eight. */
-                    __m256 v = _mm256_cvtepi32_ps(sumi);
-                    __m128 h = _mm_add_ps(_mm256_castps256_ps128(v), _mm256_extractf128_ps(v, 1));
-                    h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+                    /* The drain stays a vector across the whole row: one horizontal sum per
+                     * (row, column) instead of one per block, which at k=14336 is 56 hadd
+                     * chains saved. This is the shape of ggml_vec_dot_q4_K_q8_K. */
                     float dj = dsuper[(long)(j0 + j) * nb + blk];
-                    acc[j] += dw * dj * _mm_cvtss_f32(h);
+                    accv[j] = _mm256_fmadd_ps(_mm256_set1_ps(dw * dj),
+                                              _mm256_cvtepi32_ps(sumi), accv[j]);
                     float mt = 0.0f;
                     for (int s = 0; s < 8; s++) mt += (float)lm[s] * (float)scol[blk * 8 + s];
                     accm[j] += mw * dj * mt;
                 }
             }
-            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j] - accm[j];
+            for (int j = 0; j < jn; j++) {
+                __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv[j]),
+                                      _mm256_extractf128_ps(accv[j], 1));
+                h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+                out[(long)(j0 + j) * m + row] = _mm_cvtss_f32(h) - accm[j];
+            }
         }
     }
 }
