@@ -277,6 +277,32 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
     float *eg = (float*)calloc((size_t)NU * FFN, sizeof(float));
     float *eu = (float*)calloc((size_t)NU * FFN, sizeof(float));
     float *eo = (float*)calloc((size_t)E, sizeof(float));
+
+    /* The expert-grouped prefill's working set, allocated only when there is a group to
+     * make. grp_part is the big one — one E-wide result per (position, slot) so the eight
+     * contributions can be summed in slot order after being computed out of it — and at 32
+     * positions of a 2048-wide body that is 2 MB. A failure here is not fatal: grouping is
+     * an optimisation and the per-position path below is the definition of the answer. */
+    float *grp_part = NULL, *grp_x = NULL, *grp_g = NULL, *grp_u = NULL, *grp_o = NULL, *grp_w = NULL;
+    int *grp_idx = NULL, *grp_pos = NULL, *grp_slot = NULL;
+    if (n > 1) {
+        grp_part = (float*)malloc((size_t)n * NU * E * sizeof(float));
+        grp_x    = (float*)malloc((size_t)n * E * sizeof(float));
+        grp_g    = (float*)malloc((size_t)n * FFN * sizeof(float));
+        grp_u    = (float*)malloc((size_t)n * FFN * sizeof(float));
+        grp_o    = (float*)malloc((size_t)n * E * sizeof(float));
+        grp_w    = (float*)malloc((size_t)n * NU * sizeof(float));
+        grp_idx  = (int*)malloc((size_t)n * NU * sizeof(int));
+        grp_pos  = (int*)malloc((size_t)n * NU * sizeof(int));
+        grp_slot = (int*)malloc((size_t)n * NU * sizeof(int));
+        if (!grp_part || !grp_x || !grp_g || !grp_u || !grp_o || !grp_w ||
+            !grp_idx || !grp_pos || !grp_slot) {
+            free(grp_part); free(grp_x); free(grp_g); free(grp_u); free(grp_o);
+            free(grp_w); free(grp_idx); free(grp_pos); free(grp_slot);
+            grp_part = NULL;
+        }
+    }
+
     if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_out || !router ||
         !eg || !eu || !eo) {
         free(x); free(xn); free(q_all); free(k_new); free(v_new);
@@ -380,6 +406,113 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
         pf_add(PF_QKV, pft);
 
         memset(ffn_out, 0, (size_t)n * E * sizeof(float));
+
+        /* Prefill groups the chunk by expert; decode cannot and does not try.
+         *
+         * A mixture reads a different eighth of the layer for every position, so the tile a
+         * dense body carries through one pass over the weights has nothing in common here —
+         * which is why arch_olmoe was the one family the batched kernels did not help. The
+         * grouping is the answer llama.cpp reaches through ggml_mul_mat_id: invert the loop,
+         * collect the positions that chose each expert, and read that expert once for all of
+         * them. With 32 positions over 128 experts that is about two positions per read; over
+         * OLMoE's 64 it is about four.
+         *
+         * What must not change is the order the contributions are added in. Regrouping
+         * computes them out of order by construction, so each position's eight results are
+         * kept apart and summed afterwards ascending by slot, which is the order the
+         * per-position path adds them in and therefore the same float. The path below stays
+         * as the fallback and as the definition of that order.
+         *
+         * Routing is done for the whole chunk first because the grouping needs to see every
+         * position's choice before it can read any expert. */
+        int grouped = (n > 1 && grp_part != NULL);
+        if (grouped) {
+            for (int j = 0; j < n; j++) {
+                float *probs = router + (long)j * NE;
+                int *ridx = grp_idx + (long)j * NU;
+                float *rw  = grp_w  + (long)j * NU;
+                pft = pf_mark();
+                softmax(probs, NE);
+                top_k(probs, NE, NU, ridx);
+                for (int e = 0; e < NU; e++) rw[e] = probs[ridx[e]];
+                if (m->renorm_topk) {
+                    float s = 0;
+                    for (int e = 0; e < NU; e++) s += rw[e];
+                    if (s > 0) for (int e = 0; e < NU; e++) rw[e] /= s;
+                }
+                pf_add(PF_SILU, pft);
+            }
+
+            for (int ex = 0; ex < NE && grouped; ex++) {
+                int cnt = 0;
+                for (int j = 0; j < n; j++)
+                    for (int e = 0; e < NU; e++)
+                        if (grp_idx[(long)j * NU + e] == ex) {
+                            grp_pos[cnt] = j; grp_slot[cnt] = e; cnt++;
+                        }
+                if (!cnt) continue;
+
+                /* No abandoning the grouping once routing has run: softmax has already been
+                 * applied in place, and the per-position path below would apply it a second
+                 * time. A weight the batched entry will not take is handled here instead,
+                 * per position through the same matvec the fallback would have used, which
+                 * writes into the same slots and keeps the same order. */
+                wt gw, uw, dw;
+                int have = wt_expert(&gw, &m->layers[l].gate_exps, ex, FFN)
+                        && wt_expert(&uw, &m->layers[l].up_exps,   ex, FFN)
+                        && wt_expert(&dw, &m->layers[l].down_exps, ex, E);
+                if (!have) {
+                    for (int c = 0; c < cnt; c++)
+                        memset(grp_part + ((long)grp_pos[c] * NU + grp_slot[c]) * E, 0,
+                               (size_t)E * sizeof(float));
+                    continue;
+                }
+
+                for (int c = 0; c < cnt; c++)
+                    memcpy(grp_x + (long)c * E, xn + (long)grp_pos[c] * E, (size_t)E * sizeof(float));
+
+                pft = pf_mark();
+                int batched = gw.q && uw.q && dw.q &&
+                    nt_qmatmul_i8(grp_g, gw.q, gw.dtype, grp_x, FFN, E, cnt) == 0 &&
+                    nt_qmatmul_i8(grp_u, uw.q, uw.dtype, grp_x, FFN, E, cnt) == 0;
+                if (!batched)
+                    for (int c = 0; c < cnt; c++) {
+                        qmv(grp_g + (long)c * FFN, &gw, grp_x + (long)c * E);
+                        qmv(grp_u + (long)c * FFN, &uw, grp_x + (long)c * E);
+                    }
+                pf_add(PF_FFN, pft);
+
+                pft = pf_mark();
+                for (long i = 0; i < (long)cnt * FFN; i++) {
+                    float g = grp_g[i];
+                    grp_g[i] = (g / (1.0f + expf(-g))) * grp_u[i];
+                }
+                pf_add(PF_SILU, pft);
+
+                pft = pf_mark();
+                if (!(batched && nt_qmatmul_i8(grp_o, dw.q, dw.dtype, grp_g, E, FFN, cnt) == 0))
+                    for (int c = 0; c < cnt; c++)
+                        qmv(grp_o + (long)c * E, &dw, grp_g + (long)c * FFN);
+                pf_add(PF_FFN, pft);
+
+                for (int c = 0; c < cnt; c++)
+                    memcpy(grp_part + ((long)grp_pos[c] * NU + grp_slot[c]) * E,
+                           grp_o + (long)c * E, (size_t)E * sizeof(float));
+            }
+        }
+        if (grouped) {
+            for (int j = 0; j < n; j++) {
+                float *dst = ffn_out + (long)j * E;
+                const float *rw = grp_w + (long)j * NU;
+                for (int e = 0; e < NU; e++)
+                    axpy_f32(dst, rw[e], grp_part + ((long)j * NU + e) * E, E);
+            }
+            pft = pf_mark();
+            for (long i = 0; i < (long)n * E; i++) x[i] += ffn_out[i];
+            pf_add(PF_RESID, pft);
+            continue;
+        }
+
         for (int j = 0; j < n; j++) {
             float *probs = router + (long)j * NE;
             const float *xj = xn + (long)j * E;
@@ -477,6 +610,8 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
     free(attn_out); free(ffn_out); free(router); free(eg); free(eu); free(eo);
+    free(grp_part); free(grp_x); free(grp_g); free(grp_u); free(grp_o);
+    free(grp_w); free(grp_idx); free(grp_pos); free(grp_slot);
     return NT_OK;
 }
 
