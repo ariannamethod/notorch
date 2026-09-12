@@ -93,9 +93,9 @@ resident. speed on that machine, six threads on both sides, against `llama-bench
 | Ministral-3B Q4_K_M | 14.1 | 60.68 | 7.2 | 13.14 |
 | Qwen3-30B-A3B Q4_K_M | 9.4 | 31.99 | 6.3 | 13.12 |
 
-not parity yet, and the gap is written down rather than rounded off.
+wait for the fucking parity
 
-the harness is also a library, because a body should link it rather than fork it:
+the harness is also a library. a body should link it rather than fork it:
 
 ```bash
 make lib lib_harness && make install PREFIX=/opt/homebrew
