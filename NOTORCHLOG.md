@@ -13,6 +13,51 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — prefill stopped reading the file once per token, for f16
+
+`nt_qmatmul_i8` has said since it was written that a prompt of n tokens streams the weights n
+times if nobody batches, and the unpacked formats had nobody. `qmm` asked the int8 entry, was
+refused, and fell to the per-token loop — so every f16 model here ran its prefill at decode
+speed. `nt_qmatmul` is the other half: one pass over an f16 row against a tile of activations,
+no activation quantization, since f16 weights meet float activations directly.
+
+qwen05b_fp16, 350-token prompt, two runs each, `taskset -c 4-7`:
+
+    prefill  20.1-20.6  ->  41.9-42.0 t/s
+
+Per (row, activation) the walk over k is the same eight-wide two-accumulator shape as
+`nt_f16_rows` with the scalar tail added in the same order, so batched and per-token agree bit
+for bit. `tests/test_qmatmul.c` grew eleven f16 cases asserting equality rather than a
+tolerance, including three where k is not a multiple of eight — dropping the tail turns exactly
+those three red, which is how you can tell they are there on purpose. Writing the result
+through a factor of 1.0000001 turns nine red. Restoring gives 46 passed, 0 failed.
+
+Tile width, measured where it is used: four gives 36.4 t/s, **eight 41.9**, sixteen 39.2, and
+the int8 path's thirty-two collapses to 25.7-28.9 where the register spills start. Eight
+activations need sixteen vector registers for partial sums plus two for the converted weights,
+against thirty-two that exist.
+
+**The first version of that table measured nothing.** It was taken on mamba-130m-f16, which
+walks its prompt one position at a time — so the kernel under test never ran, and four, eight
+and sixteen read 37.3, 40.2 and 39.6, which is the spread of an idle measurement. A tile width
+has to be measured where the tile is used.
+
+Which names the next piece rather than hiding it. `mamba_forward` loops positions and calls
+`qmv` inside each, because the scan is a recurrence — but only the scan is. The projections
+around it do not look across positions and could go through this kernel for the whole chunk at
+once, which is what the reference does and why it reads 309 t/s of prefill where this tree
+reads 40.
+
+F32 is deliberately not batched. Its tensors in every file on this machine are norms and
+biases — 121 of them in qwen05b_fp16, none large — so there is no traffic to save, and writing
+the kernel would take the summation order away from the compiler for nothing.
+
+Gates: 17 suites green, tokenizer identical on 24, harness parity OK on Q4_0, both f16 models
+byte-identical to the reference on three prompts, and qwen05b_fp16 byte-identical on the
+350-token prompt that actually exercises the new path.
+
+---
+
 ## 2026-09-12 — the goldens re-derived, and the harness made linkable
 
 Two things that both come down to the same question: does the thing everyone is
