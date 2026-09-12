@@ -32,6 +32,9 @@
 #   TIE-BREAK     — disagreed free-running, agreed on the reference's own context. Sound.
 #   DIVERGED      — disagreed even on the reference's own context. Something is wrong.
 #   INCONCLUSIVE  — the reference wrote nothing to anchor on. Neither colour; says so.
+#   TOKENIZER     — the two split the anchor into different ids, so there is nothing to
+#                   compare arithmetically. Also neither colour, and a pointer at the real
+#                   difference rather than a wrong accusation against the kernel.
 #
 # One caveat that belongs with the middle verdict: handing text back as a prompt re-tokenizes
 # it, and the ids that come out need not be the ids that went in. For every model checked here
@@ -59,6 +62,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 REF=${NT_REF:-llama-simple}
+TOK=${NT_REF_TOK:-llama-tokenize}
 command -v "$REF" >/dev/null 2>&1 || {
   echo "reference  (no $REF on this machine — set NT_REF or install llama.cpp)"
   echo "NOTORCH_REFERENCE_SKIPPED"
@@ -71,6 +75,11 @@ PIN=${NT_REF_PIN:-}                       # e.g. "taskset -c 4-7"; empty runs un
 PROMPTS_FILE=${NT_REF_PROMPTS:-}
 
 fails=0; ties=0; ok=0; skipped=0; odd=0; pts=0; pts_ok=0
+# The tokenizer cross-check is optional: without it the gate still works and can still be
+# fooled by a split, which is why it says so rather than pretending.
+TOK_OK=""
+command -v "$TOK" >/dev/null 2>&1 && TOK_OK=1
+[ -n "$TOK_OK" ] || echo "  (no $TOK — anchors are not cross-checked for tokenization)"
 
 # The reference prints the prompt back, and prepends the BOS token as text when the file asks
 # for one. Ours prints the prompt and nothing else, so line them up by cutting the reference at
@@ -172,6 +181,23 @@ check_model() {
     if [ "${#ctx}" -le "${#p}" ]; then
       echo "  INCONCLUSIVE [$(basename "$m")] \"$p\" — the reference wrote nothing to anchor on"
       odd=$((odd + 1)); continue
+    fi
+
+    # Before asking whether the two compute the same thing, check they are being asked the
+    # same thing. Handing text back as a prompt re-tokenizes it, and the two tokenizers can
+    # split it differently — which makes the forced comparison meaningless and, worse, look
+    # like an arithmetic defect. Found rather than foreseen: on this machine a space followed
+    # by "\u2460" splits as 2858,239,254 here and 220,48312,254 in the reference, because that
+    # codepoint is Unicode category No and this tree's pre-tokenizer treats anything above
+    # 0x80 as a symbol that may absorb a preceding space. Two Qwen quantizations looked like
+    # a broken Q4_K path for exactly that reason and neither was.
+    if [ -n "$TOK_OK" ]; then
+      ids_a=$($PIN ./notorch -T "$m" "$ctx" 2>/dev/null | tr -d ' ')
+      ids_b=$($TOK -m "$m" -p "$ctx" --ids 2>/dev/null | tail -1 | tr -d '[] ')
+      if [ -n "$ids_a" ] && [ -n "$ids_b" ] && [ "$ids_a" != "$ids_b" ]; then
+        echo "  TOKENIZER  [$(basename "$m")] \"$p\" — the two split the anchor differently; no arithmetic conclusion"
+        odd=$((odd + 1)); continue
+      fi
     fi
 
     agreed=0; asked=0; shown=""

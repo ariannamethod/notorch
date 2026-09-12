@@ -7573,25 +7573,41 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                     dls[s] = d * (float)ls[s];
                     dlm[s] = dmin * (float)lm[s];
                 }
-                __m256i qsv[4];
-                for (int p = 0; p < 4; p++)
-                    qsv[p] = _mm256_loadu_si256((const __m256i *)(qs + p * 32));
+                /* Named, not indexed, and the loop over the four nibble vectors unrolled.
+                 *
+                 * As arrays these two lived on the stack: perf annotate showed the hot loop
+                 * storing every one of the eight sub-block sums with `vmovdqa %ymm0,
+                 * -0x40(%rcx)` and the hadd tree reading them back from `0x2a0(%rsp)`, and
+                 * `vpand (%rsi), %ymm4, %ymm0` reloading the weight vector it had just put
+                 * in ymm6. Sixteen memory operations per (block, column) that exist only
+                 * because a variable index makes an array addressable. Eight live vectors
+                 * plus temporaries fits sixteen registers; the arithmetic below is the same
+                 * arithmetic in the same order. */
+                const __m256i q0 = _mm256_loadu_si256((const __m256i *)(qs));
+                const __m256i q1 = _mm256_loadu_si256((const __m256i *)(qs + 32));
+                const __m256i q2 = _mm256_loadu_si256((const __m256i *)(qs + 64));
+                const __m256i q3 = _mm256_loadu_si256((const __m256i *)(qs + 96));
 
                 for (int j = 0; j < jn; j++) {
                     const int8_t *ac = qa + (long)(j0 + j) * k + (long)blk * 256;
-                    __m256i s8[8];
-                    for (int p = 0; p < 4; p++) {
-                        __m256i lo = _mm256_and_si256(qsv[p], m4);
-                        __m256i hi = _mm256_and_si256(_mm256_srli_epi16(qsv[p], 4), m4);
-                        __m256i a0 = _mm256_loadu_si256((const __m256i *)(ac + (2*p)     * 32));
-                        __m256i a1 = _mm256_loadu_si256((const __m256i *)(ac + (2*p + 1) * 32));
-                        s8[2*p]     = _mm256_madd_epi16(_mm256_maddubs_epi16(lo, a0), ones);
-                        s8[2*p + 1] = _mm256_madd_epi16(_mm256_maddubs_epi16(hi, a1), ones);
-                    }
-                    __m256i A = _mm256_hadd_epi32(_mm256_hadd_epi32(s8[0], s8[1]),
-                                                  _mm256_hadd_epi32(s8[2], s8[3]));
-                    __m256i B = _mm256_hadd_epi32(_mm256_hadd_epi32(s8[4], s8[5]),
-                                                  _mm256_hadd_epi32(s8[6], s8[7]));
+                    #define NT_Q4K_SUB(qv, off) \
+                        _mm256_madd_epi16(_mm256_maddubs_epi16(                            \
+                            _mm256_and_si256((qv), m4),                                    \
+                            _mm256_loadu_si256((const __m256i *)(ac + (off) * 32))), ones)
+                    #define NT_Q4K_SUB_HI(qv, off) \
+                        _mm256_madd_epi16(_mm256_maddubs_epi16(                            \
+                            _mm256_and_si256(_mm256_srli_epi16((qv), 4), m4),              \
+                            _mm256_loadu_si256((const __m256i *)(ac + (off) * 32))), ones)
+                    __m256i s0 = NT_Q4K_SUB(q0, 0),    s1 = NT_Q4K_SUB_HI(q0, 1);
+                    __m256i s2 = NT_Q4K_SUB(q1, 2),    s3 = NT_Q4K_SUB_HI(q1, 3);
+                    __m256i s4 = NT_Q4K_SUB(q2, 4),    s5 = NT_Q4K_SUB_HI(q2, 5);
+                    __m256i s6 = NT_Q4K_SUB(q3, 6),    s7 = NT_Q4K_SUB_HI(q3, 7);
+                    #undef NT_Q4K_SUB
+                    #undef NT_Q4K_SUB_HI
+                    __m256i A = _mm256_hadd_epi32(_mm256_hadd_epi32(s0, s1),
+                                                  _mm256_hadd_epi32(s2, s3));
+                    __m256i B = _mm256_hadd_epi32(_mm256_hadd_epi32(s4, s5),
+                                                  _mm256_hadd_epi32(s6, s7));
                     __m256i sums = _mm256_add_epi32(_mm256_permute2x128_si256(A, B, 0x20),
                                                     _mm256_permute2x128_si256(A, B, 0x31));
                     int32_t dots[8];

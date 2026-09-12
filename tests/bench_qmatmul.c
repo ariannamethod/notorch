@@ -45,76 +45,119 @@ static uint8_t *make_q4_k(int m, int k, unsigned seed) {
 
 #if defined(__AVX2__) && defined(__FMA__)
 #include <immintrin.h>
-#include <math.h>
 
+/* The reference's activation layout, and the kernel shape it makes possible.
+ *
+ * Seven attempts at our own kernel measured to nothing or worse, and reading
+ * ggml_vec_dot_q4_K_q8_K in llama.cpp's ggml/src/ggml-cpu/arch/x86/quants.c said why. It is
+ * not the instruction selection. It is that their quantized activation carries ONE float
+ * scale per 256 values (block_q8_K) where ours carries one per 32, plus per-16 block sums.
+ *
+ * With one scale per superblock the whole sub-block scaling stays in the integer domain:
+ * `_mm256_madd_epi16(scale_l, p16l)` multiplies the int16 partial products by the sub-block
+ * scale in the same instruction that folds them, everything accumulates into one int32
+ * vector, and a block costs one cvtepi32_ps and one fmadd at the end. Eight scalar FMAs and
+ * a six-deep hadd tree per (row, column, block) disappear.
+ *
+ * Ours cannot do that because eight different activation scales per superblock have to
+ * multiply eight different sub-block sums, which forces them out to scalars first.
+ *
+ * The min term rides along: mins dot the per-32 activation sums in one _mm_madd_epi16 and
+ * one fmadd, instead of eight scalar multiply-subtracts.
+ *
+ * This measures what changing the layout would buy. It is not bit-compatible with anything
+ * in the tree — a coarser activation scale is a different number, not a different order. */
 static void bench_scale_min(int j, const uint8_t *sc, uint8_t *s, uint8_t *mn) {
     if (j < 4) { *s = sc[j] & 63; *mn = sc[j + 4] & 63; }
     else { *s = (sc[j + 4] & 0x0F) | ((sc[j - 4] >> 6) << 4);
            *mn = (sc[j + 4] >> 4)  | ((sc[j]     >> 6) << 4); }
 }
 
-/* The variant the ceiling measurement points at.
- *
- * The shipped kernel drains eight sub-block dots to scalars through a hadd tree — six
- * dependent horizontal adds, two permutes and a store — and then adds them one at a time.
- * That drain is per (row, column, block) and it is latency, not throughput: nothing else
- * issues while it resolves.
- *
- * It is avoidable because the scale is a scalar and the sum is distributive: sum(lanes) * c
- * is sum(lanes * c). So each sub-block's vector of partial sums is converted to float,
- * multiplied by its own coefficient, and accumulated into a float vector that is drained
- * once per row. Two accumulators, because one is a serial dependency eight deep per block.
- *
- * The min term stays scalar — it multiplies SUM(qa), which is already a scalar — and gets
- * its own accumulator so it does not lengthen the other chain.
- *
- * This changes the order the floats are added in, so it is not bit-identical to the
- * per-token kernel and would cost tests/test_qmatmul its memcmp. That is the trade this
- * measures. */
-static void q4k_vecdrain(float *out, int m, const uint8_t *W, const int8_t *qa,
-                         const float *da, const int32_t *asum, int k, int n, int tile) {
+static void q8k_quant(const float *X, int k, int n, int8_t *qa, float *dsuper, int32_t *bs32) {
+    int nsb = k / 256, nsub = k / 32;
+    for (int j = 0; j < n; j++) {
+        const float *x = X + (long)j * k;
+        for (int b = 0; b < nsb; b++) {
+            const float *xb = x + (long)b * 256;
+            float amax = 0.0f;
+            for (int i = 0; i < 256; i++) { float a = fabsf(xb[i]); if (a > amax) amax = a; }
+            float d = amax / 127.0f, id = d > 0.0f ? 1.0f / d : 0.0f;
+            dsuper[(long)j * nsb + b] = d;
+            for (int i = 0; i < 256; i++) {
+                int q = (int)lrintf(xb[i] * id);
+                if (q > 127) q = 127; else if (q < -127) q = -127;
+                qa[(long)j * k + (long)b * 256 + i] = (int8_t)q;
+            }
+        }
+        for (int s = 0; s < nsub; s++) {
+            const int8_t *p = qa + (long)j * k + (long)s * 32;
+            int32_t t = 0;
+            for (int i = 0; i < 32; i++) t += p[i];
+            bs32[(long)j * nsub + s] = t;
+        }
+    }
+}
+
+static void q4k_q8k(float *out, int m, const uint8_t *W, const int8_t *qa,
+                    const float *dsuper, const int32_t *bs32, int k, int n) {
     int nb = k / 256, nsub = k / 32;
-    const __m256i m4 = _mm256_set1_epi8(0x0F), ones = _mm256_set1_epi16(1);
-    for (int j0 = 0; j0 < n; j0 += tile) {
-        int jn = n - j0; if (jn > tile) jn = tile;
+    const __m256i m4 = _mm256_set1_epi8(0x0F);
+    const int TILE = 8;
+    for (int j0 = 0; j0 < n; j0 += TILE) {
+        int jn = n - j0; if (jn > TILE) jn = TILE;
         for (int row = 0; row < m; row++) {
-            for (int j = 0; j < jn; j++) {
-                const int8_t *ac0 = qa + (long)(j0 + j) * k;
-                const float *dac = da + (long)(j0 + j) * nsub;
-                const int32_t *asc = asum + (long)(j0 + j) * nsub;
-                __m256 f0 = _mm256_setzero_ps(), f1 = _mm256_setzero_ps();
-                float mins = 0.0f;
-                for (int blk = 0; blk < nb; blk++) {
-                    const uint8_t *b = W + (long)row * nb * 144 + (long)blk * 144;
-                    float d    = (float)(*(const _Float16 *)(const void *)b);
-                    float dmin = (float)(*(const _Float16 *)(const void *)(b + 2));
-                    const uint8_t *sc = b + 4, *qs = b + 16;
-                    const int8_t *ac = ac0 + (long)blk * 256;
-                    for (int p = 0; p < 4; p++) {
-                        __m256i qsv = _mm256_loadu_si256((const __m256i *)(qs + p * 32));
-                        __m256i lo  = _mm256_and_si256(qsv, m4);
-                        __m256i hi  = _mm256_and_si256(_mm256_srli_epi16(qsv, 4), m4);
-                        __m256i a0  = _mm256_loadu_si256((const __m256i *)(ac + (2*p)     * 32));
-                        __m256i a1  = _mm256_loadu_si256((const __m256i *)(ac + (2*p + 1) * 32));
-                        __m256i d0  = _mm256_madd_epi16(_mm256_maddubs_epi16(lo, a0), ones);
-                        __m256i d1  = _mm256_madd_epi16(_mm256_maddubs_epi16(hi, a1), ones);
-                        uint8_t ls0, lm0, ls1, lm1;
-                        bench_scale_min(2*p,     sc, &ls0, &lm0);
-                        bench_scale_min(2*p + 1, sc, &ls1, &lm1);
-                        int s0 = blk * 8 + 2*p, s1 = s0 + 1;
-                        f0 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(d0),
-                                             _mm256_set1_ps(d * (float)ls0 * dac[s0]), f0);
-                        f1 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(d1),
-                                             _mm256_set1_ps(d * (float)ls1 * dac[s1]), f1);
-                        mins += dac[s0] * dmin * (float)lm0 * (float)asc[s0]
-                              + dac[s1] * dmin * (float)lm1 * (float)asc[s1];
-                    }
+            __m256 accv[32];
+            float accm[32];
+            for (int j = 0; j < jn; j++) { accv[j] = _mm256_setzero_ps(); accm[j] = 0.0f; }
+            const uint8_t *rb = W + (long)row * nb * 144;
+            for (int blk = 0; blk < nb; blk++) {
+                const uint8_t *b = rb + (long)blk * 144;
+                float dw = _cvtsh_ss((uint16_t)(b[0] | (b[1] << 8)));
+                float mw = _cvtsh_ss((uint16_t)(b[2] | (b[3] << 8)));
+                const uint8_t *sc = b + 4, *qs = b + 16;
+                uint8_t ls[8], lm[8];
+                for (int s = 0; s < 8; s++) bench_scale_min(s, sc, &ls[s], &lm[s]);
+                const __m256i q0 = _mm256_loadu_si256((const __m256i *)(qs));
+                const __m256i q1 = _mm256_loadu_si256((const __m256i *)(qs + 32));
+                const __m256i q2 = _mm256_loadu_si256((const __m256i *)(qs + 64));
+                const __m256i q3 = _mm256_loadu_si256((const __m256i *)(qs + 96));
+                const __m256i s0 = _mm256_set1_epi16((short)ls[0]), s1 = _mm256_set1_epi16((short)ls[1]);
+                const __m256i s2 = _mm256_set1_epi16((short)ls[2]), s3 = _mm256_set1_epi16((short)ls[3]);
+                const __m256i s4 = _mm256_set1_epi16((short)ls[4]), s5 = _mm256_set1_epi16((short)ls[5]);
+                const __m256i s6 = _mm256_set1_epi16((short)ls[6]), s7 = _mm256_set1_epi16((short)ls[7]);
+                for (int j = 0; j < jn; j++) {
+                    const int8_t *ac = qa + (long)(j0 + j) * k + (long)blk * 256;
+                    const int32_t *scol = bs32 + (long)(j0 + j) * nsub;
+                    #define LO(qv, sv, off) _mm256_madd_epi16((sv), _mm256_maddubs_epi16(  \
+                        _mm256_and_si256((qv), m4),                                        \
+                        _mm256_loadu_si256((const __m256i *)(ac + (off) * 32))))
+                    #define HI(qv, sv, off) _mm256_madd_epi16((sv), _mm256_maddubs_epi16(  \
+                        _mm256_and_si256(_mm256_srli_epi16((qv), 4), m4),                  \
+                        _mm256_loadu_si256((const __m256i *)(ac + (off) * 32))))
+                    __m256i sumi = _mm256_add_epi32(
+                        _mm256_add_epi32(LO(q0,s0,0), HI(q0,s1,1)),
+                        _mm256_add_epi32(LO(q1,s2,2), HI(q1,s3,3)));
+                    sumi = _mm256_add_epi32(sumi, _mm256_add_epi32(
+                        _mm256_add_epi32(LO(q2,s4,4), HI(q2,s5,5)),
+                        _mm256_add_epi32(LO(q3,s6,6), HI(q3,s7,7))));
+                    #undef LO
+                    #undef HI
+                    /* The drain stays a vector across the whole row: one horizontal sum per
+                     * (row, column) instead of one per block, which at k=14336 is 56 hadd
+                     * chains saved. This is the shape of ggml_vec_dot_q4_K_q8_K. */
+                    float dj = dsuper[(long)(j0 + j) * nb + blk];
+                    accv[j] = _mm256_fmadd_ps(_mm256_set1_ps(dw * dj),
+                                              _mm256_cvtepi32_ps(sumi), accv[j]);
+                    float mt = 0.0f;
+                    for (int s = 0; s < 8; s++) mt += (float)lm[s] * (float)scol[blk * 8 + s];
+                    accm[j] += mw * dj * mt;
                 }
-                __m256 f = _mm256_add_ps(f0, f1);
-                __m128 lo4 = _mm_add_ps(_mm256_castps256_ps128(f), _mm256_extractf128_ps(f, 1));
-                lo4 = _mm_hadd_ps(lo4, lo4);
-                lo4 = _mm_hadd_ps(lo4, lo4);
-                out[(long)(j0 + j) * m + row] = _mm_cvtss_f32(lo4) - mins;
+            }
+            for (int j = 0; j < jn; j++) {
+                __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv[j]),
+                                      _mm256_extractf128_ps(accv[j], 1));
+                h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+                out[(long)(j0 + j) * m + row] = _mm_cvtss_f32(h) - accm[j];
             }
         }
     }
@@ -126,8 +169,9 @@ int main(int argc, char **argv) {
     double ghz = argc > 2 ? atof(argv[2]) : 0.0;
 
     /* A feed-forward of the size the 4B bodies carry, against a prefill chunk. */
-    const int m = 4096, k = 2048, dtype = 12;
+    const int m = 4096, dtype = 12;
     int n = argc > 3 ? atoi(argv[3]) : 32;
+    int k = argc > 4 ? atoi(argv[4]) : 2048;
     uint8_t *W = make_q4_k(m, k, 7u);
     float *X = (float *)malloc(sizeof(float) * (size_t)k * n);
     float *O = (float *)malloc(sizeof(float) * (size_t)m * n);
@@ -139,11 +183,19 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    int reps = 20;
+    /* Enough repetitions that building the weights — one rand() per byte, single
+     * threaded — is noise beside the kernel. Without this the process spends most of its
+     * life in setup and `time -v` reports a CPU percentage that belongs to the setup, which
+     * is how a per-core comparison against another implementation goes wrong. */
+    double probe0 = now_s();
+    nt_qmatmul_i8(O, W, dtype, X, m, k, n);
+    double one = now_s() - probe0;
+    int reps = (int)(2.0 / (one > 1e-6 ? one : 1e-6));
+    if (reps < 20) reps = 20;
+    if (reps > 4000) reps = 4000;
     double t0 = now_s();
     for (int r = 0; r < reps; r++) nt_qmatmul_i8(O, W, dtype, X, m, k, n);
     double dt = (now_s() - t0) / reps;
-    double dt_1 = dt;   /* the shipped kernel, for the variant to be read against */
 
     double macs  = (double)m * k * n;
     double bytes = (double)m * ((double)k / 256.0) * 144.0;   /* the weights, read once */
@@ -165,28 +217,37 @@ int main(int argc, char **argv) {
         printf("              %s ceiling %.1f GMAC/s on %d cores at %.2f GHz — %.1f%% of it\n",
                isa, ceil_g, cores, ghz, 100.0 * (macs / dt / 1e9) / ceil_g);
     }
+
 #if defined(__AVX2__) && defined(__FMA__)
     {
-        int nsub = k / 32;
-        int8_t *qa = (int8_t *)malloc((size_t)k * n);
-        float *da = (float *)malloc((size_t)nsub * n * sizeof(float));
-        int32_t *as = (int32_t *)malloc((size_t)nsub * n * sizeof(int32_t));
-        float *O2 = (float *)malloc(sizeof(float) * (size_t)m * n);
-        if (qa && da && as && O2 && nt_quant_act_batch(X, k, n, qa, da, as) == 0) {
-            q4k_vecdrain(O2, m, W, qa, da, as, k, n, 32);
-            double t1 = now_s();
-            for (int r = 0; r < reps; r++) q4k_vecdrain(O2, m, W, qa, da, as, k, n, 32);
-            double dv = (now_s() - t1) / reps;
-            double worst = 0;
+        int nsb = k / 256, nsub = k / 32;
+        int8_t  *q2 = (int8_t *)malloc((size_t)k * n);
+        float   *ds = (float *)malloc((size_t)nsb * n * sizeof(float));
+        int32_t *bs = (int32_t *)malloc((size_t)nsub * n * sizeof(int32_t));
+        float   *O2 = (float *)malloc(sizeof(float) * (size_t)m * n);
+        if (q2 && ds && bs && O2) {
+            q8k_quant(X, k, n, q2, ds, bs);
+            q4k_q8k(O2, m, W, q2, ds, bs, k, n);
+            double t2 = now_s();
+            for (int r = 0; r < reps; r++) q4k_q8k(O2, m, W, q2, ds, bs, k, n);
+            double d2 = (now_s() - t2) / reps;
+            /* Per-element relative error is meaningless where an output lands near zero,
+             * and with random weights some do. Against the RMS of the reference it says
+             * what a different activation granularity actually costs. */
+            double se = 0, sr = 0, worst = 0;
             for (long i = 0; i < (long)m * n; i++) {
-                double a = O[i], b = O2[i];
-                double rel = fabs(a) > 1e-6 ? fabs(a - b) / fabs(a) : fabs(a - b);
-                if (rel > worst) worst = rel;
+                double a = O[i], b2 = O2[i], e = a - b2;
+                se += e * e; sr += a * a;
+                if (fabs(e) > worst) worst = fabs(e);
             }
-            printf("q4_k vec-drain, 1 thread   %.2f ms   %.1f GMAC/s   %.2fx   worst rel %.3g\n",
-                   dv * 1e3, macs / dv / 1e9, dt_1 / dv, worst);
+            double rms_ref = sqrt(sr / ((double)m * n));
+            printf("q4_k q8_K-style   %.2f ms   %.1f GMAC/s   %.2fx   rms err %.3g of rms %.3g"
+                   " (%.2e), worst abs %.3g\n",
+                   d2 * 1e3, macs / d2 / 1e9, dt / d2,
+                   sqrt(se / ((double)m * n)), rms_ref,
+                   sqrt(se / ((double)m * n)) / (rms_ref > 0 ? rms_ref : 1), worst);
         }
-        free(qa); free(da); free(as); free(O2);
+        free(q2); free(ds); free(bs); free(O2);
     }
 #endif
 

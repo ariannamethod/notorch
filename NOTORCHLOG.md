@@ -13,6 +13,289 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the 2.4x is the activation layout, and a prototype of the reference's puts 1.37x of it on the table
+
+Seven attempts at the kernel measured to nothing or worse. Reading
+`ggml_vec_dot_q4_K_q8_K` in the reference — `ggml/src/ggml-cpu/arch/x86/quants.c`
+— said why, and it is not instruction selection.
+
+**Their quantized activation carries one float scale per 256 values; ours carries
+one per 32.** `block_q8_K` is `{ float d; int8 qs[256]; int16 bsums[16]; }`;
+`nt_quant_act_q8` writes a scale every 32. That single difference decides the
+whole shape of the kernel:
+
+    llama.cpp                            notorch
+    p16 = maddubs(q4, q8)                p16 = maddubs(q4, q8)
+    p16 = madd_epi16(scale, p16)   <---  madd_epi16(ones, p16)
+    sumi += p16                          hadd tree -> 8 scalars
+    ...once per block:                   ...per sub-block:
+    acc = fmadd(d*dy, cvt(sumi), acc)    8 scalar FMAs with 8 float scales
+
+With one activation scale per superblock the sub-block scale can be an int16
+inside `madd_epi16`, so the scaling costs nothing extra and a whole 256-weight
+block drains with one `cvtepi32_ps` and one `fmadd`. With eight activation scales
+per superblock, eight different floats have to multiply eight different sums, and
+they have to come out to scalars first — which is the hadd tree and the eight
+FMAs that `perf` has been pointing at all along, correctly, while every attempt
+to remove them in place made things slower.
+
+### Prototyped and measured
+
+`tests/bench_qmatmul.c` now carries a q8_K-style activation and a kernel in that
+shape, beside the shipped one, on the same weights:
+
+    m=4096 k=14336 n=8, one thread     14.0 -> 19.7 GMAC/s   1.37x
+    m=4096 k=2048  n=32, one thread    14.8 -> 20.2 GMAC/s   1.37x
+
+The error is what a coarser activation scale costs and not a defect: RMS 5.99
+against an output RMS of 994, so 6.0e-03 relative at k=14336 and 4.4e-03 at
+k=2048. (An earlier reading of "worst relative 604" was a near-zero denominator
+on random weights, which is why the metric is now against the RMS.)
+
+Two of the 1.37x are separable and both were needed: the integer-domain scale is
+worth about 1.20x, and keeping the float accumulator a vector across the whole
+row — one horizontal sum per (row, column) instead of one per block, 56 of them
+saved at k=14336 — is the rest.
+
+### What it would cost, and what it would not
+
+It is 1.37x of a 2.4x gap, so it does not close it; something else is worth the
+remaining 1.75x and is not yet identified.
+
+It changes numbers. Every Q4_K matmul would move by ~5e-3 relative, which means
+every model's output bits move. `test_qmatmul` compares batched against
+per-token and stays green if both change together. `test_reference` against
+llama.cpp is the real arbiter, and moving toward their layout should not hurt
+that — but that is a prediction and it would have to be measured on all three
+bodies before the change is worth anything.
+
+It does not touch the goldens. Resonance's file is F16, which the integer entry
+refuses, so it runs the exact path; Janus's gate builds with
+`JANUS_EXACT_MATVEC`, which forces the same. Restricting the change to Q4_K
+leaves Q8_0 — and therefore Janus's shipped path — alone as well.
+
+Nothing is changed in the shipped kernels. This is a measurement and a decision
+to put to the maintainer: 1.37x for 5e-3 of relative error on one dtype.
+
+---
+
+
+## 2026-09-12 — two quantizations looked like a broken kernel and the tokenizer had done it
+
+The reference gate re-anchors on the reference's own text, and text handed back as a prompt is
+tokenized again. That caveat was written into the file when the gate was built. It came true
+the same day, and it did not look like a tokenizer problem at all: `qwen05b_q4km` reported
+DIVERGED with the forced next token agreeing at only 1 of 3 points, and a probe at nine points
+along the same answer put it at 4 of 9 — while the same organism in Q4_0 sat at 9 of 9. That is
+a clean accusation against the Q4_K path, and it was wrong. Q5_0 of the same organism measured
+3 of 9 on that prompt, which no story about K-quants explains.
+
+What the two failing runs had in common was the character in the reference's answer. Ours and
+the reference split `" \u2460"` differently — 2858,239,254 here against 220,48312,254 there —
+while the same codepoint alone splits identically in both. The space is the whole difference.
+That codepoint is Unicode category No, a number; this tree's pre-tokenizer treats everything
+above 0x80 as a symbol, and the qwen2 alternative for a run of symbols may absorb a preceding
+space where the one for numbers may not. It is the `\p{L}` and `\p{N}` gap that PR #70 wrote
+down as the blocker for the last two qwen2 divergences, now with a two-character reproducer.
+
+So the gate checks it. Before asking whether two implementations compute the same thing, it
+asks whether they were handed the same thing: the anchor goes through both tokenizers and a
+mismatch reports TOKENIZER, which is neither colour and points at the real difference instead
+of accusing the kernel. The cross-check needs `llama-tokenize`; without it the gate still runs
+and says in its output that anchors are not cross-checked, because a gate that quietly drops a
+check is worse than one that never had it.
+
+With it, the same two files read 0 diverged and 2 inconclusive. Across five models and ten
+prompts: 28 identical, 19 tie-break, 0 diverged, 3 inconclusive, 53 of 57 forced points agreed.
+Not loading Qwen3's QK norm still turns all ten DIVERGED with 0 of 30 forced points, so the new
+verdict hides nothing.
+
+A first reading blamed the Q4_K changes that arrived from the other machine the same morning.
+Building this tree's previous revision and running the same case produced byte-identical output
+to the current one, which ended that theory before it reached a commit message.
+
+---
+
+## 2026-09-12 — correcting the 1.89x: per core it is 2.4x, and the bench was timing its own setup
+
+The entry below reports the kernel as 1.89x behind llama.cpp's and concludes
+that more than half the end-to-end gap lies outside the matmul. The first number
+is wall throughput at unequal core counts and I published it without checking
+the second axis. Corrected here.
+
+`bench_qmatmul` spent most of its life building weights — one `rand()` per byte,
+single threaded, 33 MB at the larger shapes — so `time -v` was reporting a CPU
+percentage that belonged to the setup rather than the kernel. It now probes one
+call and picks a repetition count that puts two seconds of work in the timed
+region, which makes the percentage mean something.
+
+    MUL_MAT q4_K, m=4096 k=14336 n=8, i5-8500T, same machine
+      llama.cpp   132 GMAC/s at 370% CPU   =  35.7 GMAC/s per core
+      notorch      70.7 GMAC/s at 475% CPU =  14.9 GMAC/s per core
+      1.85x on the wall, 2.4x per core
+
+Both numbers are true and they say different things. The wall figure is what a
+caller sees when the pool can have the machine; the per-core figure is the
+kernel's own efficiency, and that is the one that was 1.4x in the earlier reading
+because our CPU percentage was contaminated. Their figure does not move with
+`GGML_N_THREADS` or `OMP_NUM_THREADS` — 264 GFLOPS at 4 and at 6 alike — so it is
+whatever `test-backend-ops` sets internally, and the comparison is per core
+rather than per configuration.
+
+**What survives from the earlier conclusion, and what does not.** With matmul at
+roughly 85% of our prefill and a 2.4x kernel, a perfect thread engagement would
+put us near 27 t/s against llama.cpp's 49.63 — so there is still something
+outside the kernel, but it is smaller than "more than half" and I cannot split it
+cleanly without profiling their graph the way I profiled ours. The honest
+statement is: the kernel is 2.4x behind per core, that does not account for all
+of 3.58x, and the remainder is not yet measured.
+
+Also removed: `bench_qmatmul` the binary, which a `git add -A` had committed. The
+rule against generated binaries is in this repository's agent rules; the polygon
+found it as `Exec format error` on a checkout that had never built the file.
+
+---
+
+
+## 2026-09-12 — the kernel is 1.9x behind llama.cpp's, not 3.6x, and seven ideas about the difference were wrong
+
+The end-to-end gap on prefill is 3.6x and it had been standing in for the kernel's
+gap, which nobody had measured. `test-backend-ops perf` benchmarks one ggml
+operation at a time, so the comparison exists and only had to be run.
+
+    MUL_MAT q4_K, m=4096 k=14336 n=8, i5-8500T, same machine
+      llama.cpp   261.94 GFLOPS = 131 GMAC/s
+      notorch      69.2 GMAC/s
+      1.89x
+
+So **more than half the end-to-end gap is outside the matmul**. The profile puts
+62.3% of prefill in the FFN and that is where the attention has been, but a
+kernel 1.9x behind cannot account for a body 3.6x behind. The rest is in
+attention, the projections, the rope, and whatever else the graph does between
+them — none of which has been looked at.
+
+### Seven negative results, in order
+
+Everything below was built, measured on the polygon, and reverted. They are
+worth as much as the two that worked, because each one closes a direction.
+
+1. **Hoisting the nibble unpack** out of the column loop, eight vectors held
+   across the tile. 11.6 t/s before, 11.6 after.
+2. **A wider tile.** `NT_QMM_TILE` at 32, 64, 128 reads 11.6, 11.6, 11.3.
+3. **Dropping the bit-exact float tail** for an independent sum, which would have
+   cost `test_qmatmul` its memcmp. 11.6 t/s. There was no trade to offer.
+4. **Removing the hadd tree**, keeping sub-block sums in a float vector and
+   draining once per row. 0.81x, and the prototype was also wrong.
+5. **Converting SUM(qa) to float once per column** instead of once per row —
+   `perf` had put 23.7% of the kernel in two `vcvtsi2ssl`. 14.8 -> 13.8 GMAC/s.
+6. **Four accumulators in the tail**, breaking the FMA dependency chain that
+   `perf` put at 24.49%. 14.8 -> 12.4 GMAC/s.
+7. **Two rows through one activation load**, the textbook register-blocking move,
+   bit-exact against the shipped kernel and measured twice: 0.70x, and 0.60x
+   after the prototype's own scale unpack was hoisted where the shipped kernel
+   has it.
+
+Five and six are the interesting pair: `perf annotate` attributed 48% of the
+kernel to those instructions and removing either made it slower. On an
+out-of-order core a sample lands where the stall resolves, not where it started —
+the conversions were filling issue slots and the FMA chain was not the thing
+being waited on. I read the profile as a cause and it was a symptom, twice.
+
+Seven is the one that should have worked. Activations are two thirds of the loads
+in the inner loop and do not depend on the row; sharing them across a pair is the
+standard answer. It loses by a third, bit-exactly, at every shape tried.
+
+### What did work, and what is left
+
+The two wins today were both structural and both removed something rather than
+rearranged it: a software f16 conversion that was a function call on hardware
+with the instruction, and two arrays that lived on the stack because a variable
+index made them addressable. 12.1 -> 14.8 GMAC/s, 9.7% -> 13.2% of the ISA
+ceiling.
+
+`tests/bench_qmatmul.c` now takes `n` and `k` so any shape can be put beside
+`test-backend-ops`, and carries no prototypes — the two it held were measured and
+rejected, and a rejected prototype in the tree is a claim nobody re-checks.
+
+The next thing is not the kernel. It is the 62.3% figure: if the FFN matmul went
+to zero, prefill would go from 13.9 t/s to about 36, and llama.cpp is at 49.63.
+Whatever explains the rest is in the part of the graph nobody has profiled
+against a reference.
+
+---
+
+
+## 2026-09-12 — perf found in one pass what four guesses had missed: a software f16 and a spilled array
+
+`perf_event_paranoid` went to 1 on the polygon and the counters opened. IPC on
+the batched matmul is 1.98 on a four-wide core with 860k cache misses in a
+one-second run, so nothing is waiting on memory — it is instruction count, which
+is what callgrind had already said. What the counters and `perf annotate` added
+was *which* instructions.
+
+### Two findings, both the same shape as the AVX2 one
+
+**The f16 conversion was software, on hardware that has the instruction.**
+`nt_f16_to_f32` had an aarch64 arm using the FCVT the chip has had since armv8,
+and everything else fell to a twenty-instruction shift chain with a loop in it
+for subnormals. x86 has had `vcvtph2ps` since Ivy Bridge and every AVX2 part
+carries F16C, so that chain was running on machines that could do it in one
+instruction — and being *called*, not inlined, because a function that size is
+past the inliner's budget. The disassembly of `nt_q4_k_rows_i8n` had
+`call nt_f16_to_f32` in it twice per weight block: 65536 calls in one
+4096×2048 matmul that should have been 65536 instructions. `nt_get_scale_min_k4`
+was a call for the same reason, eight more per block.
+
+`-mf16c` joins `-mavx2 -mfma` in the host detection, both helpers are inline, and
+the kernel's disassembly has no calls left but the stack-protector check.
+
+**The eight sub-block sums were living on the stack.** `perf annotate` on the hot
+loop:
+
+    vmovdqa (%rsi), %ymm6
+    vpand   (%rsi), %ymm4, %ymm0      <- reloads what is already in ymm6
+    vpmaddubsw -0x20(%rax), %ymm0, %ymm0
+    vpmaddwd   %ymm3, %ymm0, %ymm0
+    vmovdqa %ymm0, -0x40(%rcx)        <- spills the sum
+    ...
+    vphaddd 0x2a0(%rsp), %ymm7, %ymm1 <- and the drain reads it back
+
+`__m256i s8[8]` and `__m256i qsv[4]` are arrays written through a variable index,
+so the compiler made them addressable and put them in memory — sixteen memory
+operations per (block, column) that exist only because of the index. Unrolled
+into named variables: eight live vectors plus temporaries fit sixteen registers,
+the arithmetic and its order are unchanged, and the disassembly now has zero
+spills and zero hadds reading the stack.
+
+### What it bought
+
+    kernel, one thread, i5-8500T at 3.5 GHz
+      12.1 -> 12.5 GMAC/s   f16c + inline
+      12.5 -> 14.8 GMAC/s   unrolled
+      9.7% -> 13.2% of the 112 GMAC/s ceiling
+
+    prefill / decode, 53-token prompt, six threads
+      Qwen3-4B Q4_K_M       12.4 / 6.2  ->  13.9 / 7.4
+      Ministral-3B Q4_K_M   15.5 / 7.4  ->  17.3 / 9.0
+      Qwen3-30B-A3B Q4_K_M   9.6 / 6.3  ->  10.6 / 6.9
+
+Decode gained more than prefill from the f16 change and nothing from the unroll:
+the per-token kernels have no column loop and the compiler was already keeping
+their arrays in registers — checked, zero spills in both `nt_q4_k_rows_i8` and
+`nt_q6_k_rows_i8`. That trick is spent.
+
+Against llama.cpp on the same machine and threads: prefill 3.6x behind where it
+was 4.3x, decode 1.5x where it was 1.6x. Where this session started, on the same
+file and machine, was 3.3 and 2.2 t/s.
+
+`test_qmatmul` 46/46 on both machines — the equality with the per-token kernel
+survived all of it, which is what says none of this changed the arithmetic.
+notorch_test 49/49 and 73/73, `NOTORCH_REFERENCE_OK` on Qwen3-4B and on the 30B,
+neo unmoved.
+
+---
+
+
 ## 2026-09-12 — the kernel is at ten percent of the instruction set, and four guesses about why were wrong
 
 End-to-end timings say prefill is 4.3x behind llama.cpp and cannot say where it
