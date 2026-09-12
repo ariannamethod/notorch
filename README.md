@@ -885,8 +885,7 @@ start here. these are the canonical builds: Karpathy ports to prove the pipeline
 - [**minimind-v-notorch**](https://github.com/ariannamethod/minimind-v-notorch) — 67M VLM trained from scratch, notorch + Chuck. reference VLM.
 - [**notorch-vlm**](https://github.com/ariannamethod/notorch-vlm) — 1.5M VLM on `notorch_vision.h` + stb_image, trained weights included.
 - [**notorch-vlm-2m**](https://github.com/ariannamethod/notorch-vlm-2m) — 2M multimodal VLM from scratch, GGUF output.
-- [**notorch-diffusion**](https://github.com/ariannamethod/notorch-diffusion) — discrete text diffusion + Hebrew VLM diffusion. reverse-mode autograd works fine when the net is a U-Net, not a transformer.
-- [**nanoagi**](https://github.com/ariannamethod/nanoagi) — a self-expanding BPE transformer that grows from conversation, Chuck/notorch self-training. eccentric, alive, and exactly the kind of thing this framework is for.
+- [**notorch-diffusion**](https://github.com/ariannamethod/notorch-diffusion) — discrete text diffusion + Hebrew VLM diffusion. reverse-mode autograd works fine when the net is a U-Net, not a transformer.  
 
 **BitNet reference (the algorithm, not a notorch build):** [**microgpt-1bit**](https://github.com/ariannamethod/microgpt-1bit) is a pure-Python BitNet b1.58 (ternary) reference — notorch's own `nt_bit_linear` / `nt_bit_seq_linear` were validated against it.
 
@@ -905,8 +904,6 @@ the appendix. these aren't notorch — they're larger Arianna Method engines tha
 - [**q**](https://github.com/ariannamethod/q) — PostGPT-Q resonant reasoning engine: triple attention + DoE parliament, 2M-param C inference.
 - [**caveLLMan**](https://github.com/ariannamethod/caveLLMan) — a colony of char-level LMs that talk, reproduce by weight-blending, and die under population pressure. notorch is the per-cave autograd + microtrain backend.
 - [**pitomadom.c**](https://github.com/ariannamethod/pitomadom.c) — Hebrew Root Resonance Engine, Janus architecture.
-- [**heart.c**](https://github.com/ariannamethod/heart.c) — field-coupled small-LM ecology running on a phone.
-- [**nanoarianna**](https://github.com/ariannamethod/nanoarianna) — a 4GB-phone (Galaxy A07, Termux) ecosystem: Janus/Resonance + AML field-physics + notorch micro-training.
 - [**molequla**](https://github.com/ariannamethod/molequla) — a live ecology of GPT organisms with conscience, immune rollback, DNA exchange; trains its low-rank-RRPRAM transformer on the notorch tape.
 - [**dario**](https://github.com/ariannamethod/dario) — resonance OS (7 forces, 6 Kuramoto chambers, SARTRE). notorch runs the 176M Janus at its center.
 - [**ariannamethod.cli**](https://github.com/ariannamethod/ariannamethod.cli) — the public, distilled edition of the metaharmonix terminal (the full native CLI, which bakes notorch in so the shell ships a tensor library, stays an internal Method tool).
@@ -916,8 +913,7 @@ the appendix. these aren't notorch — they're larger Arianna Method engines tha
 - [**nanodurov**](https://github.com/ariannamethod/nanodurov) — a 15.7M BPE LLaMA on notorch that also happens to be a Telegram client.
 - [**yent.yo**](https://github.com/ariannamethod/yent.yo) — an AI artist that argues back: two from-scratch nanollama Yents + a BK-SDM diffusion model paint an oppositional reaction to your prompt. **The first organism on notorch's image op set** — both the dual-Yent LLMs and the Stable-Diffusion CLIP→UNet→VAE run on notorch (`-tags notorch`), exercising `nt_conv2d`, `nt_group_norm`, `nt_attention` and `nt_upsample_nearest` (added in v4.0.0). The whole pipeline runs end-to-end, bit-identical to the in-repo accel.c kernels.
 - [**yent**](https://github.com/ariannamethod/yent) — Yent the digital persona, not a product: a Qwen2.5 inference engine in Go with a C notorch kernel (cgo `nt_qmatvec` packed matvec, no PyTorch). Delta Voice — the generation physics — is driven by AML. The umbrella inference repo for the Method's Yent line.
-- [**ariannamethod.cli**](https://github.com/ariannamethod/ariannamethod.cli) — the public, distilled edition of the metaharmonix terminal: an Arianna Method CLI that vendors notorch (`bake/notorch/`), so the shell ships a tensor library. The full native metaharmonix stays internal.
-
+  
 if you trained something on notorch and it's not here, open a PR.
 
 ---
