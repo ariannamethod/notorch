@@ -97,6 +97,17 @@ static void q4k_2row(float *out, int m, const uint8_t *W, const int8_t *qa,
                     float mB = _cvtsh_ss((uint16_t)(bB[2] | (bB[3] << 8)));
                     const uint8_t *scA = bA + 4, *qsA = bA + 16;
                     const uint8_t *scB = bB + 4, *qsB = bB + 16;
+                    /* Once per (row pair, block), the way the shipped kernel does it. The
+                     * first version of this prototype called it inside the sub-block loop
+                     * and read 0.70x for that reason alone. */
+                    float dlsA[8], dlmA[8], dlsB[8], dlmB[8];
+                    for (int s = 0; s < 8; s++) {
+                        uint8_t a, b2, c, d2;
+                        bench_scale_min(s, scA, &a, &b2);
+                        bench_scale_min(s, scB, &c, &d2);
+                        dlsA[s] = dA * (float)a; dlmA[s] = mA * (float)b2;
+                        dlsB[s] = dB * (float)c; dlmB[s] = mB * (float)d2;
+                    }
                     /* Half a block at a time: four sub-blocks, two rows. */
                     for (int h = 0; h < 2; h++) {
                         __m256i wA0 = _mm256_loadu_si256((const __m256i *)(qsA + h * 64));
@@ -124,14 +135,11 @@ static void q4k_2row(float *out, int m, const uint8_t *W, const int8_t *qa,
                             _mm_add_epi32(_mm256_castsi256_si128(B0), _mm256_extracti128_si256(B0, 1)));
                         for (int s = 0; s < 4; s++) {
                             int js = h * 4 + s, sub = blk * 8 + js;
-                            uint8_t lsA, lmA, lsB, lmB;
-                            bench_scale_min(js, scA, &lsA, &lmA);
-                            bench_scale_min(js, scB, &lsB, &lmB);
-                            accA = __builtin_fmaf(dac[sub], __builtin_fmaf(dA * (float)lsA,
-                                   (float)dA4[s], -(mA * (float)lmA * (float)asc[sub])), accA);
+                            accA = __builtin_fmaf(dac[sub], __builtin_fmaf(dlsA[js],
+                                   (float)dA4[s], -(dlmA[js] * (float)asc[sub])), accA);
                             if (pair)
-                                accB = __builtin_fmaf(dac[sub], __builtin_fmaf(dB * (float)lsB,
-                                       (float)dB4[s], -(mB * (float)lmB * (float)asc[sub])), accB);
+                                accB = __builtin_fmaf(dac[sub], __builtin_fmaf(dlsB[js],
+                                       (float)dB4[s], -(dlmB[js] * (float)asc[sub])), accB);
                         }
                     }
                 }
