@@ -18,6 +18,16 @@
 int main(int argc, char **argv) {
     if (argc < 3) { fprintf(stderr, "usage: %s model.gguf \"prompt\"\n", argv[0]); return 2; }
 
+    /* Architecture selection is part of the installed surface. A body must
+     * never discover support by executing the wrong family's arithmetic. */
+    if (nt_pick_arch("llama") != &nt_arch_llama ||
+        nt_pick_arch("qwen2") != &nt_arch_llama ||
+        nt_pick_arch("notorch-red-hand-unknown") != NULL ||
+        nt_pick_arch(NULL) != NULL) {
+        fprintf(stderr, "architecture registry contract failed\n");
+        return 1;
+    }
+
     gguf_file *gf = gguf_open(argv[1]);
     if (!gf) return 1;
 

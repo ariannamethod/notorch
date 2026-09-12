@@ -13,6 +13,13 @@ push the branch, let Oleg merge. Nobody pushes to `main` directly, including you
 four in the morning when the fix is obviously trivial. Two nodes landing on `main`
 from different machines is how a good afternoon becomes a bad evening.
 
+And a branch is not current merely because it was current when you opened it.
+**Immediately before finalizing every commit, fetch `origin` and integrate the
+current `origin/main` into your branch without destroying local work.** Then re-read
+the top of `NOTORCHLOG.md`: several machines write it, so its newest-first order must
+be resolved after the sync, not guessed before it. Check `origin/main` once more
+before push. Never use a blind pull or destructive reset to satisfy this rule.
+
 **Small changes go to `NOTORCHLOG.md`, large ones also get a section in `README.md`.**
 A bug fix, a kernel that got faster, a sync-discipline correction, a docstring — those
 are log entries, and the README never hears about them. A new backend, a new op family,
