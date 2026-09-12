@@ -13,6 +13,90 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the AVX2 kernels had never been compiled, and turning them on found a Q6_K that had never been run
+
+`notorch.c` carries an AVX2+FMA integer kernel for every quantized dtype, each
+guarded by `#if defined(__AVX2__) && defined(__FMA__)`. Neither macro is defined
+by default on x86-64, and the flags that define them appeared only in the SIMD
+test and bench targets — never in `CFLAGS`. So on every Linux machine this
+library has ever run on, it shipped its scalar fallback, and the kernels written
+for those machines were compiled out of the binary. The ARM side has detected
+its host's features since it was written (`Makefile:49`); x86 was never asked.
+
+Measured before anything was changed, Qwen3-4B Q4_K_M on the polygon, an
+i5-8500T with six cores and no AVX-512, two runs in one process so the first
+one's page faults are not in the number:
+
+    scalar     prefill 3.3 t/s   decode 2.2 t/s
+    -mavx2 -mfma   prefill 5.2       decode 6.9
+
+A profile of the scalar decode says why there was nowhere else to look: FFN
+matmul 59.9%, head 21.6%, qkv 10.9%, attention projection 5.9% — 98.3% of the
+wall clock inside the quantized matvec.
+
+The Makefile now detects AVX2 and FMA from the host and then from the compiler,
+the way the ARM block does, because `-mavx2` on a pre-Haswell machine produces a
+binary that dies on its first vector instruction. `X86_SIMD=0` skips it.
+
+### And it turned seven cases red
+
+With AVX2 on, `test_qmatmul` went to 39 of 46: every Q6_K case in the i8 pair,
+`nt_qmatvec_i8` against `nt_qmatmul_i8`, failing a `memcmp`. Reproduced on
+`origin/main` with the flags passed by hand, so it is latent and not new — it
+had simply never been possible to see, because nobody had built the library with
+AVX2.
+
+The cause is one expression. On x86 the batched Q6_K kernel is the scalar one,
+and the per-token kernel with AVX2 folded a pair of sub-blocks into a single
+add:
+
+    acc += d * dab[...] * (sc[j0] * t[g] + sc[j0+1] * t[g+4]);
+
+where the scalar walks sub-blocks one at a time through `nt_q6k_acc`. Same
+arithmetic, different order, different last bit. Measured on the test's own
+weights at m=128 k=512 n=32: 3138 of 4096 outputs differ, worst absolute
+7.32e-04 on values near 1294, worst relative 3.79e-04. That is ordering, not
+error — and equality remains the right bar precisely because it is reachable:
+without AVX2 the two agree exactly.
+
+Unfolded into two sequential `nt_q6k_acc` calls in the same ascending order. The
+activation scale is shared by both halves of a pair — `j0` is even, so `j0/2`
+and `(j0+1)/2` are both `n/32 + g`, which is the index `dab` already had. Red
+hand: putting the paired add back returns exactly seven failures, all dtype=14.
+
+It costs about three percent: decode 6.9 t/s with the fold, 6.7 without it. Paid.
+
+### Where the three bodies stand against llama.cpp
+
+Same machine, six threads on both sides, temperature 0. notorch is the second
+run in one process; `llama-bench` is its own repetitions.
+
+    Qwen3-4B Q4_K_M      notorch  prefill 5.3   decode 6.7    llama.cpp  49.63   11.10
+    Ministral-3B Q4_K_M  notorch  prefill 6.8   decode 7.9    llama.cpp  60.68   13.14
+    Qwen3-30B-A3B Q4_K_M notorch  prefill 4.3   decode 7.1    llama.cpp  31.99   13.12
+
+Decode is now 1.5x to 1.9x behind where it was 5x. Prefill is 7x to 9x behind and
+is the next thing: `qmm` reaches a batched kernel for f16 and for the ARM i8mm
+path, and on x86 it walks the per-token kernel once per position.
+
+The 30B holds 17.32 GiB resident of 28.70 available.
+
+One honest change in the output: Ministral read 3 identical against llama.cpp on
+the scalar build and reads 2 identical, 1 tie-break on the AVX2 one. Different
+last bits are enough for one prompt to part and agree again from the reference's
+own context. `NOTORCH_REFERENCE_OK` on all three either way.
+
+Gates: polygon `make test` all green including `test_qmatmul` 46/46 and
+`test_quantize` 3 of 3 — that last one fails on this laptop at Q8_0 2.081e-04
+over 2.067e-04 and passes on the polygon, which says the bound is tighter than
+one of the two BLAS backends and is not chased here. neo unmoved:
+`NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_REPEAT_OK (3 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`, `JANUS_OK`, `RESONANCE_OK`, notorch_test 49/49
+and 73/73, test_qmatmul 46/46.
+
+---
+
+
 ## 2026-09-12 — Qwen3-MoE: thirty billion parameters, byte-identical to llama.cpp
 
 `Qwen3-30B-A3B-Base.Q4_K_M` — 48 layers, 128 experts per layer, 8 used, 18.5 GB
