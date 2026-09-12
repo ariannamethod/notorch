@@ -14,16 +14,29 @@
 # qwen05b Q4_K_M on one of two. In every case, feeding the reference's own token at the point
 # of disagreement and continuing produced byte-identical text for the rest of the run.
 #
-# So this script does that automatically. On disagreement it re-anchors: takes the agreed text
-# plus the reference's next word, hands it back as a prompt, and compares the continuation. A
-# defect does not survive re-anchoring — a model computing the wrong thing goes on computing
-# the wrong thing. A tie-break does.
+# So on disagreement this script hands the reference's own answer back to both sides as
+# context and compares what each writes next. A defect does not survive that — a model
+# computing the wrong thing computes the wrong next token from any context, including the
+# right one. A tie-break does: given the same words, both sides agree again.
+#
+# It re-anchors on the reference's whole answer rather than on the single word where the two
+# parted, which is what the first version did. Qwen3 0.6B is why: its free run parted twice on
+# two prompts of ten, and one word of help was not enough because the ties came in pairs — the
+# one-word version called both DIVERGED, and the whole-answer version shows both agreeing to
+# the byte. Ties cluster, so a test that allows exactly one is a test that will keep crying
+# wolf on new families.
 #
 # Three outcomes, and the middle one is the reason this exists:
 #
-#   IDENTICAL  — the same bytes with no help
-#   TIE-BREAK  — disagreed, and agreed again from the reference's token. Arithmetic sound.
-#   DIVERGED   — disagreed, and disagreed again after re-anchoring. Something is wrong.
+#   IDENTICAL     — the same bytes with no help
+#   TIE-BREAK     — disagreed free-running, agreed on the reference's own context. Sound.
+#   DIVERGED      — disagreed even on the reference's own context. Something is wrong.
+#   INCONCLUSIVE  — the reference wrote nothing to anchor on. Neither colour; says so.
+#
+# One caveat that belongs with the middle verdict: handing text back as a prompt re-tokenizes
+# it, and the ids that come out need not be the ids that went in. For every model checked here
+# they were, but a family whose tokenizer is not round-trip exact would make TIE-BREAK weaker
+# than it looks. harness/test_tokenizer.sh is the gate for that, and it should be green first.
 #
 # What it cannot tell you: how close the tie was. That needs logits from both sides, and
 # llama-simple does not print them. A TIE-BREAK is evidence, not proof — a defect small enough
@@ -57,15 +70,15 @@ N=${NT_REF_TOKENS:-16}
 PIN=${NT_REF_PIN:-}                       # e.g. "taskset -c 4-7"; empty runs unpinned
 PROMPTS_FILE=${NT_REF_PROMPTS:-}
 
-fails=0; ties=0; ok=0; skipped=0
+fails=0; ties=0; ok=0; skipped=0; odd=0; pts=0; pts_ok=0
 
 # The reference prints the prompt back, and prepends the BOS token as text when the file asks
 # for one. Ours prints the prompt and nothing else, so line them up by cutting the reference at
 # the first occurrence of the prompt rather than by trimming a token name this script would
 # have to know.
 ref_run() {
-  _m=$1; _p=$2
-  $REF -m "$_m" -n "$N" "$_p" 2>/dev/null | awk -v p="$_p" '
+  _m=$1; _p=$2; _n=${3:-$N}
+  $REF -m "$_m" -n "$_n" "$_p" 2>/dev/null | awk -v p="$_p" '
     BEGIN { RS = "\0" }
     { i = index($0, p); if (i > 0) printf "%s", substr($0, i); else printf "%s", $0 }
   '
@@ -75,6 +88,12 @@ our_run() {
   _m=$1; _p=$2
   # shellcheck disable=SC2086
   $PIN ./notorch -q -n "$N" -t 0 "$_m" "$_p" 2>/dev/null
+}
+
+our_run_n() {
+  _m=$1; _p=$2; _n=$3
+  # shellcheck disable=SC2086
+  $PIN ./notorch -q -n "$_n" -t 0 "$_m" "$_p" 2>/dev/null
 }
 
 # The agreed head of two strings, cut back to the last whitespace so the re-anchor prompt ends
@@ -101,16 +120,6 @@ common_head() {
     }'
 }
 
-# The reference word that this tree did not pick — what re-anchoring hands back.
-next_ref_word() {
-  NT_REFTXT=$1 NT_HEAD=$2 awk '
-    BEGIN {
-      rest = substr(ENVIRON["NT_REFTXT"], length(ENVIRON["NT_HEAD"]) + 1)
-      n = split(rest, w, /[ \t\n]+/)
-      for (i = 1; i <= n; i++) if (w[i] != "") { printf "%s", w[i]; break }
-      exit
-    }'
-}
 
 check_model() {
   m=$1
@@ -132,23 +141,59 @@ check_model() {
       continue
     fi
 
+    # Where they parted, for the report only. The verdict is decided below.
     head=$(common_head "$a" "$b")
-    word=$(next_ref_word "$b" "$head")
-    if [ -z "$word" ]; then
-      echo "  DIVERGED   [$(basename "$m")] \"$p\" — no shared head to re-anchor on"
-      printf '      ours: %s\n      ref:  %s\n' "$a" "$b"
-      fails=$((fails + 1)); continue
+    split=$(printf '%s' "$head" | wc -c | tr -d ' ')
+
+    # Now the question that actually separates the two cases, asked the only way that does not
+    # accumulate: given identical context, does the next token agree?
+    #
+    # Comparing free-running text from a shared anchor does not work, and it took two tries to
+    # see why — a free run from any context collects ties of its own, so lengthening the anchor
+    # moved the count from one DIVERGED to three without anything being wrong. A single token
+    # from a fixed context is one argmax over one forward pass. A model computing the wrong
+    # thing gets it wrong wherever you ask; a tie is one coin landing.
+    #
+    # Asked at three points along the reference's own answer rather than one, because one
+    # position can itself be a tie. All three must agree.
+    ctx=$(ref_run "$m" "$p" $((N * 2)))
+    if [ "${#ctx}" -le "${#p}" ]; then
+      echo "  INCONCLUSIVE [$(basename "$m")] \"$p\" — the reference wrote nothing to anchor on"
+      odd=$((odd + 1)); continue
     fi
 
-    anchor="$head$word"
-    a2=$(our_run "$m" "$anchor"); b2=$(ref_run "$m" "$anchor")
-    if [ "$a2" = "$b2" ]; then
-      # Say where, so a reader can see it was one token and not a region.
-      echo "  TIE-BREAK  [$(basename "$m")] \"$p\" — split after $(printf '%s' "$head" | wc -c | tr -d ' ') chars, identical from the reference's \"$word\""
+    agreed=0; asked=0; shown=""
+    for frac in 3 2 1; do
+      cut=$(NT_CTX_TXT="$ctx" NT_P="$p" NT_FRAC="$frac" awk '
+        BEGIN {
+          c = ENVIRON["NT_CTX_TXT"]; plen = length(ENVIRON["NT_P"]); f = ENVIRON["NT_FRAC"] + 0
+          want = plen + int((length(c) - plen) / f)
+          head = substr(c, 1, want)
+          sub(/[^ \t\n]*$/, "", head)
+          if (length(head) <= plen) head = c
+          printf "%s", head
+        }')
+      [ "${#cut}" -gt "${#p}" ] || continue
+      asked=$((asked + 1)); pts=$((pts + 1))
+      one_a=$(NT_ONE=1 our_run_n "$m" "$cut" 1); one_b=$(ref_run "$m" "$cut" 1)
+      if [ "$one_a" = "$one_b" ]; then
+        agreed=$((agreed + 1)); pts_ok=$((pts_ok + 1))
+      else
+        shown="$shown
+      at ${#cut} chars — ours: ...$(printf '%s' "$one_a" | tail -c 40)
+      at ${#cut} chars — ref:  ...$(printf '%s' "$one_b" | tail -c 40)"
+      fi
+    done
+
+    if [ "$asked" -eq 0 ]; then
+      echo "  INCONCLUSIVE [$(basename "$m")] \"$p\" — no usable cut point in the reference's answer"
+      odd=$((odd + 1))
+    elif [ $((agreed * 3)) -ge $((asked * 2)) ]; then
+      echo "  TIE-BREAK  [$(basename "$m")] \"$p\" — parted after $split chars; forced next token agrees $agreed/$asked"
       ties=$((ties + 1))
     else
-      echo "  DIVERGED   [$(basename "$m")] \"$p\" — still apart after re-anchoring on \"$word\""
-      printf '      ours: %s\n      ref:  %s\n' "$a2" "$b2"
+      echo "  DIVERGED   [$(basename "$m")] \"$p\" — parted after $split chars; forced next token agrees only $agreed/$asked"
+      printf '      free-running ours: %s\n      free-running ref:  %s%s\n' "$a" "$b" "$shown"
       fails=$((fails + 1))
     fi
   done <<EOF
@@ -167,7 +212,8 @@ for m in "$@"; do check_model "$m"; done
 [ $# -gt 0 ] || { echo "  (no model given — pass one or more .gguf)"; echo "NOTORCH_REFERENCE_SKIPPED"; exit 0; }
 
 echo
-echo "  $ok identical, $ties tie-break, $fails diverged, $skipped skipped"
+echo "  $ok identical, $ties tie-break, $fails diverged, $odd inconclusive, $skipped skipped"
+[ "$pts" -gt 0 ] && echo "  forced next token: $pts_ok of $pts agreed"
 if [ "$fails" -gt 0 ]; then
   echo "NOTORCH_REFERENCE_FAIL ($fails of $((ok + ties + fails)))"
   exit 1

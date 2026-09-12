@@ -1,8 +1,20 @@
-/* arch_llama.c — the llama and qwen2 family.
+/* arch_llama.c — the llama, qwen2 and qwen3 family.
  *
- * SmolLM2, nanollama, Qwen2.5, LLaMA, Mistral: any GGUF whose blocks are
- * attn_norm / attn_{q,k,v,output} / ffn_norm / ffn_{gate,up,down}. GQA, bias
- * and tied embeddings are read off the file rather than configured.
+ * SmolLM2, nanollama, Qwen2.5, Qwen3, LLaMA, Mistral, and the distills of any of
+ * them: any GGUF whose blocks are attn_norm / attn_{q,k,v,output} / ffn_norm /
+ * ffn_{gate,up,down}. GQA, bias and tied embeddings are read off the file rather
+ * than configured.
+ *
+ * Qwen3 lives here rather than in a file of its own because it is this shape plus
+ * two tensors. It drops the qkv bias Qwen2 carries — already optional here, so it
+ * costs nothing — and adds an RMS norm over each head of q and of k before the
+ * rotation. Two optional weights and two lines in the rotation loop is not a
+ * family; a separate file would be 280 lines copied to hold them. arch.h asks
+ * whether a family can be added without editing runtime.c, and the question
+ * before that is whether it is a family at all.
+ *
+ * What is not here: qwen3moe, which routes its feed-forward to experts and
+ * belongs beside olmoe rather than beside this.
  *
  * Moved from examples/infer_llama.c with the arithmetic untouched. That file
  * stays put as the reference this is measured against.
@@ -30,7 +42,8 @@ typedef struct {
     struct {
         float *attn_norm;
         wt wq, wk, wv, wo;
-        float *q_bias, *k_bias, *v_bias;   /* Qwen has bias */
+        float *q_bias, *k_bias, *v_bias;   /* Qwen2 has bias; Qwen3 does not */
+        float *q_norm, *k_norm;            /* [head_dim] — Qwen3's QK norm, absent elsewhere */
         float *ffn_norm;
         wt wgate, wup, wdown;
     } layers[];
@@ -101,6 +114,8 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
         L(q_bias, "blk.%d.attn_q.bias");
         L(k_bias, "blk.%d.attn_k.bias");
         L(v_bias, "blk.%d.attn_v.bias");
+        L(q_norm, "blk.%d.attn_q_norm.weight");
+        L(k_norm, "blk.%d.attn_k_norm.weight");
         L(ffn_norm, "blk.%d.ffn_norm.weight");
         W(wgate, "blk.%d.ffn_gate.weight");
         W(wup, "blk.%d.ffn_up.weight");
@@ -135,6 +150,7 @@ static void llama_free(void *model) {
         free(m->layers[l].wq.f32); free(m->layers[l].wk.f32);
         free(m->layers[l].wv.f32); free(m->layers[l].wo.f32);
         free(m->layers[l].q_bias); free(m->layers[l].k_bias); free(m->layers[l].v_bias);
+        free(m->layers[l].q_norm); free(m->layers[l].k_norm);
         free(m->layers[l].ffn_norm);
         free(m->layers[l].wgate.f32); free(m->layers[l].wup.f32); free(m->layers[l].wdown.f32);
     }
@@ -199,10 +215,20 @@ static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
         for (int j = 0; j < n; j++) {
             int pos = pos0 + j;
             float *qj = q_all + (long)j * Q_DIM, *kj = k_new + (long)j * KVD;
-            for (int h = 0; h < H; h++)
+            /* Qwen3 normalises each head of q and k before rotating it, with the
+             * model's own epsilon. Before, not after: the rotation mixes lanes
+             * within a head, so a norm taken afterwards is a different function.
+             * Absent weights mean an older file and the loop is the old loop. */
+            for (int h = 0; h < H; h++) {
+                if (m->layers[l].q_norm)
+                    rmsnorm(qj + h*HD, qj + h*HD, m->layers[l].q_norm, HD, eps);
                 rope(qj + h*HD, pos, HD, m->rope_base, m->rope_neox);
-            for (int h = 0; h < KV; h++)
+            }
+            for (int h = 0; h < KV; h++) {
+                if (m->layers[l].k_norm)
+                    rmsnorm(kj + h*HD, kj + h*HD, m->layers[l].k_norm, HD, eps);
                 rope(kj + h*HD, pos, HD, m->rope_base, m->rope_neox);
+            }
             memcpy(kv->k + base + (long)pos * KVD, kj, KVD * sizeof(float));
             memcpy(kv->v + base + (long)pos * KVD, v_new + (long)j * KVD, KVD * sizeof(float));
         }
@@ -277,7 +303,7 @@ static void llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
     free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out);
 }
 
-static const char *const llama_names[] = { "llama", "qwen2", NULL };
+static const char *const llama_names[] = { "llama", "qwen2", "qwen3", NULL };
 
 const nt_arch nt_arch_llama = {
     .names = llama_names,

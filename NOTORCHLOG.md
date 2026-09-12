@@ -13,6 +13,78 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the coin-flip gate was wrong twice before it was right
+
+Yesterday's entry below describes a gate that re-anchors on the single word where this tree and
+the reference part, and calls agreement from there a tie-break. Qwen3 broke it within an hour
+of arriving, and the two repairs are worth more than the original.
+
+**One word of help is not enough, because ties cluster.** Qwen3 0.6B parted twice on two
+prompts of ten and stayed apart after one word, so the gate said DIVERGED for a model whose
+arithmetic is sound. **And a longer anchor is not the fix either.** Handing back the reference's
+whole answer and comparing what each writes next moved the count from one DIVERGED to three,
+because a free run from any context collects ties of its own. Lengthening the rope does not
+help when the rope is the problem.
+
+The question that separates the two cases has to be asked in a way that cannot accumulate:
+given identical context, does the **next token** agree? That is one argmax over one forward
+pass. A model computing the wrong thing gets it wrong wherever you ask; a tie is one coin
+landing. It is asked at three points along the reference's answer rather than one, since a
+single position can itself be a tie, and two of three must agree.
+
+The separation is not a matter of threshold. On Qwen3 0.6B with ten prompts:
+
+    sound build          6 identical, 4 tie-break, 0 diverged   —  11 of 12 forced points agreed
+    QK norm not loaded   0 identical, 0 tie-break, 10 diverged  —   0 of 30 forced points agreed
+
+Across six models and ten prompts: 38 identical, 22 tie-break, 0 diverged, 62 of 66 forced
+points agreed.
+
+**What it cannot see, stated because it was measured.** Dividing rmsnorm by n-1 instead of n —
+a 0.05 percent error at n=1024 — passes. Both builds report OK on SmolLM2, and the forced points
+agree 9 of 9 under the defect. The older, noisier version of the gate did flag it, so this is a
+trade and not an improvement in every direction: the new rule stops crying wolf and in exchange
+stops seeing perturbations below the tie threshold. Something that small only moves which
+near-ties fall which way, and catching it needs logits, which the reference does not print.
+
+One more shape it now names rather than fails on. A reference answer that is the prompt and a
+few newlines — OLMoE on a Cyrillic prompt — gives nothing to anchor on, and the gate says
+INCONCLUSIVE, which is neither colour.
+
+---
+
+## 2026-09-12 — Qwen3, which turned out not to be a family
+
+`general.architecture = qwen3` is Qwen2's shape plus two tensors. It drops the qkv bias Qwen2
+carries, which was already optional in this tree, and adds an RMS norm over each head of q and
+of k before the rotation — `attn_q_norm.weight` and `attn_k_norm.weight`, both `[head_dim]`,
+both applied with the model's own epsilon. Before the rotation, not after: RoPE mixes lanes
+within a head, so a norm taken afterwards is a different function.
+
+So it lives in `arch_llama.c` behind two optional weights and two lines in the rotation loop.
+`arch.h` asks whether a family can be added without editing `runtime.c`; the question before
+that is whether it is a family at all, and a separate file would have been 280 lines copied to
+hold two tensors. `qwen3moe` is a different answer — it routes its feed-forward to experts and
+belongs beside olmoe.
+
+One trap was already closed and worth recording as closed. Qwen3 0.6B has `head_count = 16` and
+`embedding_length = 1024`, which divide to 64, while the file's `key_length` is 128 and
+`attn_q.weight` is `[1024, 2048]`. Anything deriving head_dim as embed/n_heads gets this model
+wrong. This tree reads it off the q tensor, has since before Qwen3 arrived, and the same
+arithmetic is what makes Mistral Nemo work.
+
+Qwen3 0.6B Q8_0, ten prompts against llama.cpp: 6 identical, 4 tie-break, 0 diverged, with the
+forced next token agreeing at 11 of 12 points. Tokenizer identical on 8. Not loading the QK
+norm turns all ten DIVERGED and every one of 30 forced points wrong, which is how you can tell
+the two lines are doing the work and not decorating it.
+
+Speed on four big cores, Q8_0, 0.6B: prefill 79.6 t/s, decode 26.3.
+
+The same file now also takes SmolLM2 and DeepSeek-R1-Distill-Qwen-1.5B without a line of code —
+both are this shape already, and both were verified rather than assumed.
+
+---
+
 ## 2026-09-12 — telling a coin-flip from a defect, because the coin flips constantly
 
 `harness/test_parity.sh` compares this tree against its own example. That catches a harness
