@@ -122,6 +122,7 @@ SIMD_LIBS  = -lpthread
 
 # ── Targets ──
 
+.PHONY: bench_qmatmul
 .PHONY: all test test_qpool test_qmatvec_leak test_affinity test_plan_race test_tsan bench_claim test_wt_expert test_qgather test_f16_matvec test_reference test_js test_python test_tokenizer clean cpu gpu simd help lib shared install metal test_metal infer_gguf_metal
 
 all: notorch_test
@@ -486,6 +487,12 @@ check_requant: tests/check_requant.c gguf.c notorch.c gguf.h
 bench_dtype: tests/bench_dtype.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o bench_dtype tests/bench_dtype.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: bench_dtype (one matvec shape across every packed format)"
+
+# How much of the instruction set the batched packed matmul is using, with the ceiling
+# computed from the ISA rather than guessed. Pass cores and GHz to get the fraction.
+bench_qmatmul: tests/bench_qmatmul.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o bench_qmatmul tests/bench_qmatmul.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: bench_qmatmul (batched Q4_K against the ISA ceiling)"
 
 bench_claim: tests/bench_claim.c
 	$(CC) $(CFLAGS) -o bench_claim tests/bench_claim.c
