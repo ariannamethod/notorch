@@ -6,6 +6,26 @@
 # autoregressive path, not the batched one. These are the eight largest logits
 # of the last position, after the 15*tanh(l/15) cap.
 #
+# Re-derived 2026-09-12, because a golden nobody can reproduce is a number with
+# a story attached. A driver written from scratch against yent_read_cfg +
+# yent_load_gguf + forward_token reproduces all eight to the printed digit, and
+# reproduces them again when the whole substrate is swapped for arianna.c's own
+# vendored notorch (ariannamethod/notorch/, 3867 lines of notorch.c and 353 of
+# gguf.c different from this tree's): bit-identical on both.
+#
+# One thing the recipe above left out and did not survive re-running: this file
+# is Q8_0, dtype 8, and the reference's packed path takes F16 only — it exits
+# with "not F16 (packed path needs F16; use YENT_DENSE=1)". YENT_DENSE=1 is part
+# of the recipe. It also means the reference runs dense F32 here while the port
+# runs packed, so what the tolerance below measures is dequantization and the
+# exact integer matvec against dense arithmetic, not one packed path against
+# another.
+#
+# The delta sidecar the forward applies mid-block is absent: rank 8, alpha 0,
+# A and B allocated but never filled — weights/arianna.delta.r does not exist,
+# and the reference loads it by a path relative to the working directory, so a
+# driver run from the wrong place would silently fold in a different model.
+#
 # Why the per-token path and not the batched prefill: they are not the same
 # model. The batched one sums the low-rank RRPRAM state over every position of
 # the prompt and hands that to all of them, so row 0's scores carry tokens that
