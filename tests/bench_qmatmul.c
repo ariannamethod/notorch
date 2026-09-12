@@ -53,72 +53,95 @@ static void bench_scale_min(int j, const uint8_t *sc, uint8_t *s, uint8_t *mn) {
            *mn = (sc[j + 4] >> 4)  | ((sc[j]     >> 6) << 4); }
 }
 
-/* The variant the ceiling measurement points at.
+/* Two rows through one activation load.
  *
- * The shipped kernel drains eight sub-block dots to scalars through a hadd tree — six
- * dependent horizontal adds, two permutes and a store — and then adds them one at a time.
- * That drain is per (row, column, block) and it is latency, not throughput: nothing else
- * issues while it resolves.
+ * Six local variations on the shipped kernel measured to nothing or worse — the nibble
+ * unpack, the tile width, the tail's order, the hadd tree, hoisting the int-to-float of
+ * SUM(qa), and four accumulators to break the FMA chain. The two that worked were
+ * structural: removing function calls, and removing memory operations. This is the next
+ * structural one.
  *
- * It is avoidable because the scale is a scalar and the sum is distributive: sum(lanes) * c
- * is sum(lanes * c). So each sub-block's vector of partial sums is converted to float,
- * multiplied by its own coefficient, and accumulated into a float vector that is drained
- * once per row. Two accumulators, because one is a serial dependency eight deep per block.
+ * Per (row, column, half-block) the shipped kernel loads two weight vectors and four
+ * activation vectors. The activations are two thirds of the loads and they do not depend
+ * on the row, so a pair of rows can share them: same four loads, twice the work.
  *
- * The min term stays scalar — it multiplies SUM(qa), which is already a scalar — and gets
- * its own accumulator so it does not lengthen the other chain.
+ * The register budget is why it goes four sub-blocks at a time rather than eight. Two rows
+ * times four accumulators is eight, plus one weight vector per row, plus the two activation
+ * vectors in flight, plus the nibble mask and the ones — fourteen of sixteen. At eight
+ * sub-blocks it would be twenty-two and the array would go back to the stack, which is the
+ * thing the unroll just took out.
  *
- * This changes the order the floats are added in, so it is not bit-identical to the
- * per-token kernel and would cost tests/test_qmatmul its memcmp. That is the trade this
- * measures. */
-static void q4k_vecdrain(float *out, int m, const uint8_t *W, const int8_t *qa,
-                         const float *da, const int32_t *asum, int k, int n, int tile) {
+ * Odd row counts fall to the shipped kernel for the last row; the drain and the tail are
+ * the same expressions in the same order, so a pair and a single agree bit for bit.
+ */
+static void q4k_2row(float *out, int m, const uint8_t *W, const int8_t *qa,
+                     const float *da, const int32_t *asum, int k, int n, int tile) {
     int nb = k / 256, nsub = k / 32;
     const __m256i m4 = _mm256_set1_epi8(0x0F), ones = _mm256_set1_epi16(1);
     for (int j0 = 0; j0 < n; j0 += tile) {
         int jn = n - j0; if (jn > tile) jn = tile;
-        for (int row = 0; row < m; row++) {
+        for (int row = 0; row < m; row += 2) {
+            int pair = (row + 1 < m);
             for (int j = 0; j < jn; j++) {
-                const int8_t *ac0 = qa + (long)(j0 + j) * k;
+                const int8_t *acb = qa + (long)(j0 + j) * k;
                 const float *dac = da + (long)(j0 + j) * nsub;
                 const int32_t *asc = asum + (long)(j0 + j) * nsub;
-                __m256 f0 = _mm256_setzero_ps(), f1 = _mm256_setzero_ps();
-                float mins = 0.0f;
+                float accA = 0.0f, accB = 0.0f;
                 for (int blk = 0; blk < nb; blk++) {
-                    const uint8_t *b = W + (long)row * nb * 144 + (long)blk * 144;
-                    float d    = (float)(*(const _Float16 *)(const void *)b);
-                    float dmin = (float)(*(const _Float16 *)(const void *)(b + 2));
-                    const uint8_t *sc = b + 4, *qs = b + 16;
-                    const int8_t *ac = ac0 + (long)blk * 256;
-                    for (int p = 0; p < 4; p++) {
-                        __m256i qsv = _mm256_loadu_si256((const __m256i *)(qs + p * 32));
-                        __m256i lo  = _mm256_and_si256(qsv, m4);
-                        __m256i hi  = _mm256_and_si256(_mm256_srli_epi16(qsv, 4), m4);
-                        __m256i a0  = _mm256_loadu_si256((const __m256i *)(ac + (2*p)     * 32));
-                        __m256i a1  = _mm256_loadu_si256((const __m256i *)(ac + (2*p + 1) * 32));
-                        __m256i d0  = _mm256_madd_epi16(_mm256_maddubs_epi16(lo, a0), ones);
-                        __m256i d1  = _mm256_madd_epi16(_mm256_maddubs_epi16(hi, a1), ones);
-                        uint8_t ls0, lm0, ls1, lm1;
-                        bench_scale_min(2*p,     sc, &ls0, &lm0);
-                        bench_scale_min(2*p + 1, sc, &ls1, &lm1);
-                        int s0 = blk * 8 + 2*p, s1 = s0 + 1;
-                        f0 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(d0),
-                                             _mm256_set1_ps(d * (float)ls0 * dac[s0]), f0);
-                        f1 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(d1),
-                                             _mm256_set1_ps(d * (float)ls1 * dac[s1]), f1);
-                        mins += dac[s0] * dmin * (float)lm0 * (float)asc[s0]
-                              + dac[s1] * dmin * (float)lm1 * (float)asc[s1];
+                    const uint8_t *bA = W + (long)row * nb * 144 + (long)blk * 144;
+                    const uint8_t *bB = bA + (pair ? (long)nb * 144 : 0);
+                    const int8_t *ac = acb + (long)blk * 256;
+                    float dA = nt_f16_to_f32((uint16_t)(bA[0] | (bA[1] << 8)));
+                    float mA = nt_f16_to_f32((uint16_t)(bA[2] | (bA[3] << 8)));
+                    float dB = nt_f16_to_f32((uint16_t)(bB[0] | (bB[1] << 8)));
+                    float mB = nt_f16_to_f32((uint16_t)(bB[2] | (bB[3] << 8)));
+                    const uint8_t *scA = bA + 4, *qsA = bA + 16;
+                    const uint8_t *scB = bB + 4, *qsB = bB + 16;
+                    /* Half a block at a time: four sub-blocks, two rows. */
+                    for (int h = 0; h < 2; h++) {
+                        __m256i wA0 = _mm256_loadu_si256((const __m256i *)(qsA + h * 64));
+                        __m256i wA1 = _mm256_loadu_si256((const __m256i *)(qsA + h * 64 + 32));
+                        __m256i wB0 = _mm256_loadu_si256((const __m256i *)(qsB + h * 64));
+                        __m256i wB1 = _mm256_loadu_si256((const __m256i *)(qsB + h * 64 + 32));
+                        __m256i a0 = _mm256_loadu_si256((const __m256i *)(ac + (h*4 + 0) * 32));
+                        __m256i a1 = _mm256_loadu_si256((const __m256i *)(ac + (h*4 + 1) * 32));
+                        __m256i a2 = _mm256_loadu_si256((const __m256i *)(ac + (h*4 + 2) * 32));
+                        __m256i a3 = _mm256_loadu_si256((const __m256i *)(ac + (h*4 + 3) * 32));
+                        #define NT_DOT(w, sh, av) _mm256_madd_epi16(_mm256_maddubs_epi16(   \
+                            (sh) ? _mm256_and_si256(_mm256_srli_epi16((w), 4), m4)          \
+                                 : _mm256_and_si256((w), m4), (av)), ones)
+                        __m256i A0 = _mm256_hadd_epi32(
+                            _mm256_hadd_epi32(NT_DOT(wA0,0,a0), NT_DOT(wA0,1,a1)),
+                            _mm256_hadd_epi32(NT_DOT(wA1,0,a2), NT_DOT(wA1,1,a3)));
+                        __m256i B0 = _mm256_hadd_epi32(
+                            _mm256_hadd_epi32(NT_DOT(wB0,0,a0), NT_DOT(wB0,1,a1)),
+                            _mm256_hadd_epi32(NT_DOT(wB1,0,a2), NT_DOT(wB1,1,a3)));
+                        #undef NT_DOT
+                        int32_t dA4[4], dB4[4];
+                        _mm_storeu_si128((__m128i *)dA4,
+                            _mm_add_epi32(_mm256_castsi256_si128(A0), _mm256_extracti128_si256(A0, 1)));
+                        _mm_storeu_si128((__m128i *)dB4,
+                            _mm_add_epi32(_mm256_castsi256_si128(B0), _mm256_extracti128_si256(B0, 1)));
+                        for (int s = 0; s < 4; s++) {
+                            int js = h * 4 + s, sub = blk * 8 + js;
+                            uint8_t lsA, lmA, lsB, lmB;
+                            bench_scale_min(js, scA, &lsA, &lmA);
+                            bench_scale_min(js, scB, &lsB, &lmB);
+                            accA = __builtin_fmaf(dac[sub], __builtin_fmaf(dA * (float)lsA,
+                                   (float)dA4[s], -(mA * (float)lmA * (float)asc[sub])), accA);
+                            if (pair)
+                                accB = __builtin_fmaf(dac[sub], __builtin_fmaf(dB * (float)lsB,
+                                       (float)dB4[s], -(mB * (float)lmB * (float)asc[sub])), accB);
+                        }
                     }
                 }
-                __m256 f = _mm256_add_ps(f0, f1);
-                __m128 lo4 = _mm_add_ps(_mm256_castps256_ps128(f), _mm256_extractf128_ps(f, 1));
-                lo4 = _mm_hadd_ps(lo4, lo4);
-                lo4 = _mm_hadd_ps(lo4, lo4);
-                out[(long)(j0 + j) * m + row] = _mm_cvtss_f32(lo4) - mins;
+                out[(long)(j0 + j) * m + row] = accA;
+                if (pair) out[(long)(j0 + j) * m + row + 1] = accB;
             }
         }
     }
 }
+
 #endif
 
 int main(int argc, char **argv) {
@@ -173,9 +196,9 @@ int main(int argc, char **argv) {
         int32_t *as = (int32_t *)malloc((size_t)nsub * n * sizeof(int32_t));
         float *O2 = (float *)malloc(sizeof(float) * (size_t)m * n);
         if (qa && da && as && O2 && nt_quant_act_batch(X, k, n, qa, da, as) == 0) {
-            q4k_vecdrain(O2, m, W, qa, da, as, k, n, 32);
+            q4k_2row(O2, m, W, qa, da, as, k, n, 32);
             double t1 = now_s();
-            for (int r = 0; r < reps; r++) q4k_vecdrain(O2, m, W, qa, da, as, k, n, 32);
+            for (int r = 0; r < reps; r++) q4k_2row(O2, m, W, qa, da, as, k, n, 32);
             double dv = (now_s() - t1) / reps;
             double worst = 0;
             for (long i = 0; i < (long)m * n; i++) {
@@ -183,7 +206,7 @@ int main(int argc, char **argv) {
                 double rel = fabs(a) > 1e-6 ? fabs(a - b) / fabs(a) : fabs(a - b);
                 if (rel > worst) worst = rel;
             }
-            printf("q4_k vec-drain, 1 thread   %.2f ms   %.1f GMAC/s   %.2fx   worst rel %.3g\n",
+            printf("q4_k 2-row,     1 thread   %.2f ms   %.1f GMAC/s   %.2fx   worst rel %.3g\n",
                    dv * 1e3, macs / dv / 1e9, dt_1 / dv, worst);
         }
         free(qa); free(da); free(as); free(O2);
