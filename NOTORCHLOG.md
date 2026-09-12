@@ -13,6 +13,42 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — two quantizations looked like a broken kernel and the tokenizer had done it
+
+The reference gate re-anchors on the reference's own text, and text handed back as a prompt is
+tokenized again. That caveat was written into the file when the gate was built. It came true
+the same day, and it did not look like a tokenizer problem at all: `qwen05b_q4km` reported
+DIVERGED with the forced next token agreeing at only 1 of 3 points, and a probe at nine points
+along the same answer put it at 4 of 9 — while the same organism in Q4_0 sat at 9 of 9. That is
+a clean accusation against the Q4_K path, and it was wrong. Q5_0 of the same organism measured
+3 of 9 on that prompt, which no story about K-quants explains.
+
+What the two failing runs had in common was the character in the reference's answer. Ours and
+the reference split `" \u2460"` differently — 2858,239,254 here against 220,48312,254 there —
+while the same codepoint alone splits identically in both. The space is the whole difference.
+That codepoint is Unicode category No, a number; this tree's pre-tokenizer treats everything
+above 0x80 as a symbol, and the qwen2 alternative for a run of symbols may absorb a preceding
+space where the one for numbers may not. It is the `\p{L}` and `\p{N}` gap that PR #70 wrote
+down as the blocker for the last two qwen2 divergences, now with a two-character reproducer.
+
+So the gate checks it. Before asking whether two implementations compute the same thing, it
+asks whether they were handed the same thing: the anchor goes through both tokenizers and a
+mismatch reports TOKENIZER, which is neither colour and points at the real difference instead
+of accusing the kernel. The cross-check needs `llama-tokenize`; without it the gate still runs
+and says in its output that anchors are not cross-checked, because a gate that quietly drops a
+check is worse than one that never had it.
+
+With it, the same two files read 0 diverged and 2 inconclusive. Across five models and ten
+prompts: 28 identical, 19 tie-break, 0 diverged, 3 inconclusive, 53 of 57 forced points agreed.
+Not loading Qwen3's QK norm still turns all ten DIVERGED with 0 of 30 forced points, so the new
+verdict hides nothing.
+
+A first reading blamed the Q4_K changes that arrived from the other machine the same morning.
+Building this tree's previous revision and running the same case produced byte-identical output
+to the current one, which ended that theory before it reached a commit message.
+
+---
+
 ## 2026-09-12 — correcting the 1.89x: per core it is 2.4x, and the bench was timing its own setup
 
 The entry below reports the kernel as 1.89x behind llama.cpp's and concludes
