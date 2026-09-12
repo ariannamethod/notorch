@@ -9,37 +9,15 @@
  * timings, the profile. A run redirected to a file is text, not a transcript
  * of the tool.
  *
- * Architectures are a table. Adding a family is adding a file next to
- * arch_llama.c and one line to ARCHS. */
-#include "harness/arch.h"
+ * Architectures are a table, and the table lives in archs.c so that a body can
+ * link it without linking this file. Adding a family is adding a file next to
+ * arch_llama.c and one line to nt_archs. */
+#include "harness/archs.h"
 #include "harness/logo.h"
 #include "examples/bpe.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static const nt_arch *const ARCHS[] = {
-    &nt_arch_gemma4,
-    &nt_arch_olmoe,
-    &nt_arch_mamba,
-    &nt_arch_resonance,
-    &nt_arch_janus,
-    &nt_arch_llama,
-};
-
-/* Exact name first, the unnamed fallback second. The reference example ran any
- * architecture it had never heard of through the llama forward, and losing
- * that on the way here would have been a regression dressed as a refactor. */
-static const nt_arch *pick_arch(const char *arch) {
-    const nt_arch *fallback = NULL;
-    for (unsigned i = 0; i < sizeof(ARCHS) / sizeof(ARCHS[0]); i++) {
-        const nt_arch *a = ARCHS[i];
-        if (!a->names) { fallback = a; continue; }
-        for (const char *const *n = a->names; *n; n++)
-            if (strcmp(*n, arch) == 0) return a;
-    }
-    return fallback;
-}
 
 /* Everything a turn needs, so one-shot and chat run the same code. */
 typedef struct {
@@ -407,7 +385,7 @@ int main(int argc, char **argv) {
     gguf_file *gf = gguf_open(path);
     if (!gf) return 1;
 
-    const nt_arch *arch = pick_arch(gf->arch);
+    const nt_arch *arch = nt_pick_arch(gf->arch);
     if (!arch) {
         fprintf(stderr, "notorch: no architecture handles '%s'\n", gf->arch);
         gguf_close(gf);

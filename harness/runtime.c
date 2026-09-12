@@ -108,6 +108,12 @@ void qmv(float *out, const wt *w, const float *x) {
 void qmm(float *out, const wt *w, const float *X, int n) {
     if (n > 1 && w->use_i8 && w->q &&
         nt_qmatmul_i8(out, w->q, w->dtype, X, w->rows, w->cols, n) == 0) return;
+    /* An unpacked weight reaches neither the line above nor use_i8, and fell through to
+     * the loop — which re-reads the whole matrix per token and is why an f16 prefill ran
+     * at decode speed. Both entries refuse what they cannot take, so asking costs a
+     * comparison and the loop stays underneath as the answer for everything else. */
+    if (n > 1 && w->q &&
+        nt_qmatmul(out, w->q, w->dtype, X, w->rows, w->cols, n) == 0) return;
     for (int j = 0; j < n; j++)
         qmv(out + (long)j * w->rows, w, X + (long)j * w->cols);
 }
