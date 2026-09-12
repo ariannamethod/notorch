@@ -13,6 +13,48 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — the parity gate could not run, and said FAIL
+
+The agent rules in this tree carry "a gate that cannot run must report neither
+green nor red" as one of four things already paid for. `harness/test_parity.sh`
+had never been brought up to it, and it had all three failure directions at once.
+
+Against Janus Q8_0 the reference exits 1 with `llama: missing critical weights`
+and the gate printed **three FAILs** with an empty `example:` line under each —
+a red about the harness produced by a reference that never loaded the model. That
+is the same shape as the eight tokenizer "mismatches" from 09-10, in the script
+next to it.
+
+Against a truncated GGUF neither binary loads, `A=$(./notorch ...)` fails, `set -e`
+kills the script, and it printed **nothing at all**: no verdict line, rc=1. A
+wrapper reading stdout for `NOTORCH_PARITY_*` sees neither.
+
+And with both sides empty the comparison is `"" = ""`, which is **PASS**. Proved
+rather than argued: the same script with the two capture lines forced empty prints
+`NOTORCH_PARITY_OK (3 checks)` under the old condition and `NOTORCH_PARITY_FAIL (3)`
+under the new one.
+
+Each model is now offered to both binaries before anything is compared, and one
+that will not load is `SKIPPED` with the reason taken off stderr — the first line
+that reads like an error, since the first line is the shape banner, and the last
+line said before it gave up when nothing matches. `NOTORCH_PARITY_OK` now carries
+its check count and is unreachable at zero: every model skipped prints
+`NOTORCH_PARITY_SKIPPED`. An empty harness side is a failure even when the
+reference side is empty too.
+
+One thing this cost twice: `set -e` kills a function at `OUT=$(cmd)` when the
+command exits non-zero, so the first version of the reason lookup silently
+returned nothing at all — the truncated file reported `SKIPPED — ` with the reason
+missing. A pipeline hides it (the status is the last stage) and a bare assignment
+does not.
+
+Janus, the truncated file and a path that does not exist all skip with a real
+reason at rc=0. `make test_harness` unmoved: 6 PASS, `NOTORCH_PARITY_OK (6 checks)`.
+Mixed input skips Janus and still compares nano_arianna, 3 checks, rc=0.
+
+---
+
+
 ## 2026-09-12 — the wrapping moves into the file, and two guards that were never guarding
 
 `NT_CHAT` proved the mechanism and left the ids in the operator's hands, which is
