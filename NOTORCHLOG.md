@@ -13,6 +13,59 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 — Qwen3-MoE: thirty billion parameters, byte-identical to llama.cpp
+
+`Qwen3-30B-A3B-Base.Q4_K_M` — 48 layers, 128 experts per layer, 8 used, 18.5 GB
+on disk — now runs, and against `llama-simple` it reads **3 identical, 0
+tie-break, 0 diverged**. Tokenizer identical on all eight strings. 17.31 GiB
+resident of 29.43 available on the polygon, prefill 2.4 t/s and decode 2.7 t/s
+on an i5-8500T with no AVX-512.
+
+It lives in `arch_olmoe.c`, for the reason qwen3 lives in `arch_llama.c`: the
+tensor names are the same to the letter, and what differs is two switches read
+at load. Both of those turned out to be load-bearing, and neither is visible in
+the output.
+
+**The QK norm is per head, not per projection.** OLMoE normalises Q and K whole
+with a `[q_dim]` weight; Qwen3-MoE ships `[head_dim]` and normalises each head,
+the shape qwen3 already uses. That is read off the tensor's own length rather
+than off the name, and a length that is neither is a refused load. Red hand:
+forcing the whole-projection reading gives **3 diverged of 3**, forced next
+token 1 of 9.
+
+**The chosen weights are renormalised.** llama.cpp passes `norm_w = true` for
+this family at `src/models/qwen3moe.cpp:144` and `false` for OLMoE. Nothing in
+either GGUF records it, so the name decides and the reference line sits in the
+comment. Red hand: taking the probabilities as they stand gives 1 identical, 1
+tie-break, 1 diverged, forced next token 2 of 6 — which is exactly the shape of
+a defect that a single prompt would have called a pass.
+
+One more thing the file forced: `qwen3moe.feed_forward_length` is 6144, the
+dense-equivalent width, while an expert is 768
+(`ffn_gate_exps ne=[2048,768,128]`). The expert's own key wins where the file
+carries one. This would not have been silent — the stack-geometry check
+already in the loader would have caught 6144 × 128 against the real rows — but
+it would have blamed the expert count for a feed-forward mistake.
+
+The expert-count keys are now read as `<arch>.expert_count` rather than
+`olmoe.expert_count`, because this loader answers to two names and a hardcoded
+prefix reads as "no experts" on the other one.
+
+Gates: on the polygon `NOTORCH_REFERENCE_OK (3 identical, 0 tie-break)`,
+`NOTORCH_REPEAT_OK`, `NOTORCH_TOKENIZER_OK (8 checks)` on the 30B; on this
+laptop `NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_REPEAT_OK (3 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`, `JANUS_OK`, `RESONANCE_OK`,
+`NOTORCH_TOKENIZER_OK (8 checks)`, notorch_test 49/49 and 73/73, test_qmatmul
+46/46. `test_quantize` still FAILs Q8_0 at 2.081e-04 over 2.067e-04, unchanged
+since `cd659e8`.
+
+Not measured: llama.cpp's own throughput on the same file on the same machine.
+The numbers above say what this tree does on this box and nothing about how it
+compares.
+
+---
+
+
 ## 2026-09-12 — the polygon: parity with llama.cpp on qwen3 and mistral3, and three gates that had only ever run on a Mac
 
 First run on `polygon` — Ubuntu, i5-8500T, six cores at 2.1 GHz, no AVX-512, 31 GB
