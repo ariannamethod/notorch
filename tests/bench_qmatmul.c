@@ -225,14 +225,21 @@ int main(int argc, char **argv) {
             double t2 = now_s();
             for (int r = 0; r < reps; r++) q4k_q8k(O2, m, W, q2, ds, bs, k, n);
             double d2 = (now_s() - t2) / reps;
-            double worst = 0;
+            /* Per-element relative error is meaningless where an output lands near zero,
+             * and with random weights some do. Against the RMS of the reference it says
+             * what a different activation granularity actually costs. */
+            double se = 0, sr = 0, worst = 0;
             for (long i = 0; i < (long)m * n; i++) {
-                double a = O[i], b2 = O2[i];
-                double rel = fabs(a) > 1e-6 ? fabs(a - b2) / fabs(a) : fabs(a - b2);
-                if (rel > worst) worst = rel;
+                double a = O[i], b2 = O2[i], e = a - b2;
+                se += e * e; sr += a * a;
+                if (fabs(e) > worst) worst = fabs(e);
             }
-            printf("q4_k q8_K-style   %.2f ms   %.1f GMAC/s   %.2fx   worst rel %.3g\n",
-                   d2 * 1e3, macs / d2 / 1e9, dt / d2, worst);
+            double rms_ref = sqrt(sr / ((double)m * n));
+            printf("q4_k q8_K-style   %.2f ms   %.1f GMAC/s   %.2fx   rms err %.3g of rms %.3g"
+                   " (%.2e), worst abs %.3g\n",
+                   d2 * 1e3, macs / d2 / 1e9, dt / d2,
+                   sqrt(se / ((double)m * n)), rms_ref,
+                   sqrt(se / ((double)m * n)) / (rms_ref > 0 ? rms_ref : 1), worst);
         }
         free(q2); free(ds); free(bs); free(O2);
     }
