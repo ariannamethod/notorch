@@ -13,6 +13,73 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — the activation carries one scale per superblock, and the Q4_K kernel is 1.7x
+
+Adopted, after the prototype measured it: for Q4_K the quantized activation now
+carries one float scale per 256 values instead of one per 32, and the two x86
+kernels are rewritten in the shape that makes possible — the sub-block scale as
+an int16 inside `madd_epi16`, everything int32 to the end of the block, one
+`cvtepi32_ps` and one `fmadd`, and the float accumulator held as a vector across
+the whole row.
+
+`nt_quant_act_q8_super` writes the superblock's scale into all eight slots of
+`da`, so no signature and no other kernel had to learn anything. Q8_0, Q4_0,
+Q5_0 and Q6_K keep the per-32 scale, which is what leaves Janus's shipped path
+exactly where it was.
+
+    kernel, one thread, i5-8500T, m=4096 k=14336 n=8
+      14.0 -> 24.3 GMAC/s      13.2% -> 21.7% of the ISA ceiling
+
+    prefill / decode, 53-token prompt, six threads
+      Qwen3-4B Q4_K_M       13.9 / 7.4  ->  17.6 / 8.4
+      Ministral-3B Q4_K_M   17.3 / 9.0  ->  21.5 / 10.2
+      Qwen3-30B-A3B Q4_K_M  10.6 / 6.9  ->  11.8 / 7.7
+
+Against llama.cpp on the same machine: prefill was 3.6x behind and is 2.8x;
+decode was 1.5x and is 1.3x. On the kernel itself, six threads against their
+measured 132 GMAC/s on the same shape: 70.7 -> **111.1**, so 1.85x behind became
+1.19x.
+
+### The bit that nearly shipped wrong
+
+With both kernels rewritten, `test_qmatmul` went red on Q4_K: 72 of 3968 outputs
+differing, printed values identical to six digits. Not the layout — the layout is
+shared. The min term is `dmin * dsb * mt`, and the compiler contracted it into an
+FMA in the per-token arm and left it as two operations in the batched one. The
+comment above `nt_q4k_acc` has said for months that this exact thing is why the
+operations are spelled out; I wrote two new sites and did not spell them out.
+Both are `__builtin_fmaf` now and it is 46 of 46.
+
+That is the whole value of comparing bits rather than tolerances: a 1.8% sparse
+last-bit difference is invisible to any tolerance anyone would pick, and it was a
+real inconsistency between two kernels that are supposed to be the same function.
+
+### What it cost, measured on the thing that decides
+
+`harness/test_reference.sh` against llama.cpp, which is the arbiter for a change
+that moves every output bit:
+
+    Qwen3-4B Q4_K_M       2 identical, 1 tie-break, 0 diverged
+    Ministral-3B Q4_K_M   2 identical, 1 tie-break, 0 diverged
+    Qwen3-30B-A3B Q4_K_M  3 identical, 0 tie-break, 0 diverged
+
+Unchanged from before the change on all three. The coarser activation scale is
+worth 4.4e-03 to 6.0e-03 of relative RMS inside each matmul and does not move a
+single token of any of the three bodies.
+
+Goldens untouched, as predicted and now checked: `JANUS_OK`, `RESONANCE_OK`,
+`NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_REPEAT_OK (3 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`, notorch_test 49/49 and 73/73, test_qmatmul
+46/46 on both machines.
+
+Still owed: the NEON arms. They keep the per-32 code path and so take the
+accuracy change without the speedup, because the layout is chosen per dtype and
+not per machine — the alternative was two machines computing measurably different
+numbers from the same file, which is worse.
+
+---
+
+
 ## 2026-09-12 — the 2.4x is the activation layout, and a prototype of the reference's puts 1.37x of it on the table
 
 Seven attempts at the kernel measured to nothing or worse. Reading
