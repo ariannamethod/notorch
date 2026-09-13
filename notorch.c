@@ -7412,6 +7412,30 @@ int nt_qmatvec_i8_gather(float *out, const uint8_t *const *slices, int n_slices,
 // close ones — the test asserts equality, not a tolerance.
 #define NT_QMM_TILE 32   /* activations carried through one pass over the weights */
 
+/* How many activation columns one pass over the weights carries. The array above is sized
+ * for the maximum; this is the number actually used, and it is chosen so the slice the pass
+ * re-reads for every row — tile * k bytes of int8 — stays inside a core's L2.
+ *
+ * The tile loop is outside the row loop, so a row costs its own weights (k/2 bytes at Q4_K)
+ * plus a walk over the whole activation slice. At a tile of 32 and k=9728 that slice is
+ * 311 KB against 256 KB of L2 on the machine this was measured on, so every row streamed it
+ * from a shared L3 again: 4096 rows times 311 KB is 1.27 GB per matmul, and the matmul takes
+ * 14.8 ms — 86 GB/s through one L3 that six cores are sharing. That is why the pool scaled
+ * 4.09x of a 5.56x ceiling.
+ *
+ * Six threads, m=4096, n=32, three runs, median GMAC/s, tile against k:
+ *          k=9728  k=14336  k=2560  k=2048  k=768
+ *   8       132.2    131.7   131.1    62.9   78.9
+ *   16      144.9    128.2   141.6    63.6   87.2
+ *   32      121.4    113.8   140.9    64.6   90.3
+ * The threshold below picks 16, 8, 32, 32, 32 — the best column in every case. It is one
+ * number derived from the cache, not five tuned per shape. */
+static inline int nt_qmm_tile(int k) {
+    int t = NT_QMM_TILE;
+    while (t > 8 && (long)t * k > 200000) t >>= 1;
+    return t;
+}
+
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 /* One row range against one range of activations, SDOT. Split out because the i8mm path
  * below covers rows and activations two at a time and has to hand the odd one back. */
@@ -7527,8 +7551,9 @@ static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
     (void)asum;                                  /* Q4_0 has no min term to lift */
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
 #if defined(__ARM_FEATURE_MATMUL_INT8)
         if (jn >= 2 && (r1 - r0) >= 2) {
             nt_q4_0_rows_i8mm(out, m, W, qa, da, r0, r1, k, j0, jn);
@@ -7544,8 +7569,9 @@ static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                              int r0, int r1, int k, int n) {
     (void)asum;                                  /* Q4_0 has no min term to lift */
     int nb = k / 32;
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 18;
             float acc[NT_QMM_TILE];
@@ -7600,8 +7626,9 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                              int r0, int r1, int k, int n) {
     int nb = k / 256, nsub = k / 32;
     const __m256i m4 = _mm256_set1_epi8(0x0F), ones = _mm256_set1_epi16(1);
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 144;
             __m256 accv[NT_QMM_TILE];
@@ -7874,8 +7901,9 @@ static void nt_q4_k_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t 
 static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
 #if defined(__ARM_FEATURE_MATMUL_INT8)
         if (jn >= 2 && (r1 - r0) >= 2) {
             nt_q4_k_rows_i8mm(out, m, W, qa, da, asum, r0, r1, k, j0, jn);
@@ -7890,8 +7918,9 @@ static void nt_q4_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
     int nb = k / 256, nsub = k / 32;
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 144;
             float acc[NT_QMM_TILE];
@@ -8025,8 +8054,9 @@ static void nt_q5_0_rows_i8mm(float *out, int m, const uint8_t *W, const int8_t 
 static void nt_q5_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
 #if defined(__ARM_FEATURE_MATMUL_INT8)
         if (jn >= 2 && (r1 - r0) >= 2) {
             nt_q5_0_rows_i8mm(out, m, W, qa, da, asum, r0, r1, k, j0, jn);
@@ -8154,8 +8184,9 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
     int nb = k / 256;
     const uint8x16_t m4 = vdupq_n_u8(0x0F), m3 = vdupq_n_u8(3);
     const int8x16_t  b32 = vdupq_n_s8(32);
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
 #if defined(__ARM_FEATURE_MATMUL_INT8)
         int rp = r0 + ((r1 - r0) & ~1);
         if (jn >= 2 && rp > r0) {
@@ -8298,8 +8329,9 @@ static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
     (void)asum;
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
 #if defined(__ARM_FEATURE_MATMUL_INT8)
         if (jn >= 2 && (r1 - r0) >= 2) {
             nt_q8_0_rows_i8mm(out, m, W, qa, da, r0, r1, k, j0, jn);
@@ -8314,8 +8346,9 @@ static void nt_q5_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
     int nb = k / 32;
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 22;
             float acc[NT_QMM_TILE];
@@ -8349,8 +8382,9 @@ static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                              int r0, int r1, int k, int n) {
     (void)asum;
     int nb = k / 32;
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 34;
             float acc[NT_QMM_TILE];
@@ -8394,8 +8428,9 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
     int nb = k / 256;
     const __m256i m4 = _mm256_set1_epi8(0x0F), m3 = _mm256_set1_epi8(3),
                   b32 = _mm256_set1_epi8(32), ones = _mm256_set1_epi16(1);
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 210;
             __m256 accv[NT_QMM_TILE];
@@ -8444,8 +8479,9 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                              int r0, int r1, int k, int n) {
     (void)asum;
     int nb = k / 256;
-    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE) {
-        int jn = n - j0; if (jn > NT_QMM_TILE) jn = NT_QMM_TILE;
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
         for (int row = r0; row < r1; row++) {
             const uint8_t *rb = W + (long)row * nb * 210;
             float acc[NT_QMM_TILE];
