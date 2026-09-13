@@ -469,6 +469,14 @@ test_qmatmul: tests/test_qmatmul.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qmatmul tests/test_qmatmul.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qmatmul (batched packed matmul vs per-token, $(BLAS_NAME))"
 
+test_conv1d: tests/test_conv1d.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_conv1d tests/test_conv1d.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: test_conv1d (1-D convolution against the definition, $(BLAS_NAME))"
+
+test_logmel: tests/test_logmel.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_logmel tests/test_logmel.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: test_logmel (STFT against a direct DFT, log-mel end to end, $(BLAS_NAME))"
+
 test_f16_matvec: tests/test_f16_matvec.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o test_f16_matvec tests/test_f16_matvec.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_f16_matvec (unpacked matvec against a double accumulation, $(BLAS_NAME))"
@@ -523,9 +531,12 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec
+test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_conv1d test_logmel
 	./notorch_test
 	./test_vision
+	./test_conv1d
+	./test_logmel
+	NT_LOGMEL_THREADS=1 ./test_logmel
 	./test_qpool
 	NT_QMV_CHUNKS=1 ./test_qpool
 	NT_QMV_CHUNKS=64 ./test_qpool

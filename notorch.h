@@ -629,6 +629,24 @@ void nt_im2col(float *col, const float *in, int Cin, int Hin, int Win,
 // out[Cout,Hout,Wout] = weight[Cout,Cin*kH*kW] @ im2col(in) + bias. bias may be NULL.
 int nt_conv2d(float *out, const float *in, const float *weight, const float *bias,
               int Cin, int Hin, int Win, int Cout, int kH, int kW, int stride, int padding);
+// Unfold [Cin,Lin] into columns [Cin*K, Lout] — the 1-D im2col, same tap order as
+// nt_im2col with kH collapsed to 1: row (c*K + k). Out-of-range taps are zero.
+void nt_im2col_1d(float *col, const float *in, int Cin, int Lin,
+                  int K, int stride, int padding);
+// out[Cout,Lout] = weight[Cout,Cin*K] @ im2col_1d(in) + bias. bias may be NULL.
+// The 1-D companion to nt_conv2d and its argument order: sizes in, sizes out,
+// kernel, stride, padding. Audio front ends are the caller — a mel spectrogram
+// is [n_mel, n_frames] and the two stem convolutions of a whisper-shaped encoder
+// run over it at stride 1 then stride 2.
+int nt_conv1d(float *out, const float *in, const float *weight, const float *bias,
+              int Cin, int Lin, int Cout, int K, int stride, int pad);
+// The same convolution with every im2col column rounded to f16 before the GEMM.
+// Not an approximation of nt_conv1d but a different, intentional arithmetic: ggml
+// stores the unfolded columns as f16, so an engine reproducing a ggml graph bit for
+// bit has to round where ggml rounds. The weights are untouched and the
+// accumulation stays f32 — only the columns move.
+int nt_conv1d_f16cols(float *out, const float *in, const float *weight, const float *bias,
+                      int Cin, int Lin, int Cout, int K, int stride, int pad);
 // GroupNorm over [C,H,W] with num_groups; per-channel affine (gamma/beta may be NULL).
 int nt_group_norm(float *out, const float *in, const float *gamma, const float *beta,
                   int C, int H, int W, int num_groups, float eps);
@@ -636,6 +654,54 @@ int nt_group_norm(float *out, const float *in, const float *gamma, const float *
 void nt_upsample_nearest(float *out, const float *in, int C, int H, int W, int scale);
 // Scaled dot-product attention (single head): Q[T,d], K[S,d], V[S,d] -> out[T,d]. Self/cross.
 int nt_attention(float *out, const float *Q, const float *K, const float *V, int T, int S, int d);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUDIO OPS — window, STFT, log-mel — the front end of a speech model
+// ═══════════════════════════════════════════════════════════════════════════════
+// Everything a waveform passes through before it is a tensor. Forward-only, no
+// tape, pre-trained filters supplied by the caller, in the manner of the image ops
+// above. The mel filter bank is NOT generated here: a speech model ships its own
+// bank inside the weight file and generating a nominally equivalent one is how a
+// port stops matching the model it is porting.
+
+// Periodic Hann window of length n: w[i] = 0.5 * (1 - cos(2*pi*i/n)).
+// Periodic, so the divisor is n and not n-1 — the symmetric window is a different
+// window and puts every later stage off by a smooth envelope.
+void nt_hann_window(float *w, int n);
+
+// Short-time Fourier transform of a real signal, magnitude squared.
+// power is [n_frames][n_fft/2 + 1], frame f reading signal[f*hop .. f*hop+n_fft),
+// zero past n_signal. window is n_fft values, or NULL for a rectangular window.
+// The transform is a real-input Cooley-Tukey recursion that splits while the length
+// is even and finishes an odd length with a direct DFT, so any n_fft is accepted
+// and a power of two costs the least. n_threads splits the frame loop; the result
+// does not depend on it. Returns 0, or -1 on bad geometry / allocation failure.
+int nt_stft(float *power, const float *signal, int n_signal,
+            int n_fft, int hop, int n_frames, const float *window, int n_threads);
+
+// A log-mel spectrogram, mel-major: data[j * n_len + i] for bin j and frame i, the
+// layout a speech encoder reads so that one bin is contiguous across time.
+typedef struct {
+    int    n_mel;      // filter bank rows
+    int    n_len;      // frames over the padded signal
+    int    n_len_org;  // frames that carry real audio
+    float *data;       // [n_mel][n_len]
+} nt_mel;
+
+// The whisper-shaped front end, end to end: reflect-pad, window, transform, power,
+// filter bank, log10 with a 1e-10 floor, clamp to (global max - 8), then (x+4)/4.
+//
+// pcm is n_samples mono f32 at any rate the filters were built for; filters is
+// [n_mel][n_fft/2 + 1] from the model file. pad_tail is the silence appended before
+// the frame count is taken (whisper pads to a fixed 30 s window: 16000*30); pass 0
+// for none. n_threads splits the frame loop and does not change the result.
+//
+// Returns 0 and fills out — caller calls nt_mel_free — or -1 on bad args or
+// allocation failure.
+int nt_logmel(nt_mel *out, const float *pcm, int n_samples,
+              const float *filters, int n_mel, int n_fft_bins,
+              int n_fft, int hop, int pad_tail, int n_threads);
+void nt_mel_free(nt_mel *m);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROFILER — op timing + memory tracking

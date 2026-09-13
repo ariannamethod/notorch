@@ -13,6 +13,136 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — the audio front end comes home: conv1d, STFT and log-mel, and the compiler flag that decides whether a port is exact
+
+A whisper port written on phone-1 (`ears`, commit `c8e711f`) found two holes in this
+library and had to fill them itself. There is no 1-D convolution here — `nt_conv2d`
+and `nt_im2col` cover images and nothing covers a signal — and there is no fft,
+stft, hann or mel symbol anywhere, so the whole log-mel front end was written from
+scratch in that repo. Both are now notorch's.
+
+### nt_conv1d, nt_conv1d_f16cols, nt_im2col_1d
+
+`nt_conv1d` is `nt_conv2d` one dimension down and takes its arguments in the same
+order: `out, in, weight, bias, Cin, Lin, Cout, K, stride, pad`. Columns are
+`[Cin*K, Lout]` with row `(c*K + k)`, which is `nt_im2col`'s tap order with `kH`
+collapsed to 1, and the product is the same single `nt_blas_mm` — so the output
+lands as `[Cout, Lout]` with no transpose, where the hand-written version in `ears`
+had built `[Lout, Cin*K]` columns, called `nt_blas_mmT` and transposed the result
+back. That change of GEMM was the risk in this move and it cost nothing: measured
+below, the encoder's post-convolution activations are byte-identical across it.
+
+`nt_conv1d_f16cols` is the same op with every unfolded column rounded to f16
+before the GEMM. Not an approximation — ggml builds its im2col tensor as
+`GGML_TYPE_F16` (`ggml_conv_1d`), so an engine reproducing a ggml graph has to
+round where ggml rounds. Weights and accumulation stay f32.
+
+`tests/test_conv1d.c`, 20 assertions, against a triple loop written from the
+definition in double precision. The tolerance is `Cin*K * 1e-7` rather than a flat
+constant, because the gap between an f32 GEMM and a double reference IS the f32
+accumulation of `Cin*K` products: at the whisper stem's second convolution that is
+1152 terms, `1152 * FLT_EPSILON` is 6.9e-5 on its own, and a flat 1e-5 would fail
+the real shape for being arithmetic. Measured worst cases: `Cin=80 K=3` (240 terms)
+1.335e-05 against a 2.4e-05 budget, `Cin=384 K=3` (1152 terms) 2.289e-05 against
+1.152e-04. The f16 entry is checked against a triple loop that rounds in the same
+place, and separately against `nt_conv1d` for *in*equality — 8.320e-04, since a
+half-precision path that quietly did nothing would pass every tolerance in the file.
+
+### nt_stft, nt_logmel, nt_hann_window
+
+The transform is a real-input Cooley-Tukey recursion that splits while the length
+is even and finishes an odd length with a direct DFT, indexing one table of
+`2*pi*i/n_fft` sines and cosines at a stride. That shape is not a preference. At
+whisper's `n_fft` 400 — which is `2^4 * 25` — it runs 400 → 200 → 100 → 50 → 25 and
+transforms the 25 directly, and that is the arithmetic ggml performs. A tidier
+radix-2 that zero-padded 400 up to 512 would be a correct FFT of a different signal
+and would move every number downstream; the padding is not what whisper.cpp does.
+
+`nt_logmel` is the whole front end: reflect-pad, periodic Hann, transform, power,
+caller-supplied filter bank, log10 with a 1e-10 floor, clamp to eight decades under
+the global peak, then `(x+4)/4`. The bank is deliberately not generated here — a
+speech model ships its own inside the weight file, and generating a nominally
+equivalent one is how a port stops matching the model it is porting. Frames are
+striped across pthreads (`i += n_threads`), so the result does not depend on the
+fan-out; `tests/test_logmel.c` asserts that at 1 and 6 threads, bit for bit.
+
+The frame loop does not use `nt_qpool`. That pool dispatches row ranges of packed
+weights (`nt_qjob`, `r0`/`r1`, a dtype kernel) and is not a general parallel-for;
+bending it around a frame index would have been a larger change than the twenty
+lines of pthreads it would replace.
+
+`tests/test_logmel.c`, 25 assertions, run twice at different thread counts. The
+STFT is checked against a direct O(n²) DFT computed in double from the definition,
+sharing no code and no table with the recursion — worst relative error 3.319e-07 at
+`n_fft` 400 against a 1e-5 limit. Lengths cover both paths: 400 and 480 fall through
+to the odd-length DFT, 512, 256 and 64 stay radix-2 the whole way. That coverage
+earned itself immediately — flipping the sign of the twiddle's imaginary part
+leaves 512, 256 and 64 *passing*, because conjugating a real signal's transform
+preserves `|X_k|²`, and is caught only at 400 and 480 where the odd-length DFT keeps
+the original sign and the two disagree.
+
+The log-mel is gated on an invariant of its own arithmetic rather than a number
+copied out of a run: the clamp sets the floor exactly eight decades under the peak
+and the affine divides by four, so the output range is exactly 2.0 whenever any
+frame reaches the floor — measured 2.0000000.
+
+### The flag that decides whether any of this is exact
+
+The port was byte-for-byte faithful and still did not reproduce `ears`' mel: 1.550e-05
+on `jfk.wav`, 2.646e-05 on `ambient_8s`, 1.395e-05 on `speech_air_14s`. Neither the
+`-march=armv8.2-a+dotprod+i8mm` this library builds with nor the code was the cause.
+Compiling `ears`' *original, unmodified* `mel.c` under `-std=gnu11` instead of
+`-std=c11` reproduced the notorch output exactly:
+
+    original mel.c, -std=c11   vs  -std=gnu11        DIFFER
+    original mel.c, -std=gnu11 vs  nt_logmel         IDENTICAL
+
+GCC 13.3 contracts multiply-add pairs into FMAs under `-std=gnu11` and does not
+under `-std=c11`, and an FMA does not round to the same bits as a multiply and an
+add. That is enough, through the butterflies and the mel dot, to move a log-mel by
+1.5e-05 and to land an encoder activation an f16 ulp off the oracle — 1.953e-03 on
+a value of 1.04.
+
+Contraction is therefore off on the four functions where it changes the answer —
+`nt_dft_real`, `nt_fft_rec`, `nt_stft_frame`, `nt_stft_worker` — per function, not
+per library. Every other kernel in `notorch.c` keeps its FMAs. Worth stating plainly
+because the downstream gate would not have caught this on its own: `ears`'
+`gate_mel` compares against whisper.cpp at a 1e-4 tolerance, and 1.5e-05 passes it.
+The evidence that the front end is exact is the printed `max|d| = 0`, not the PASS.
+
+### Measured, phone-1, cores 4-7
+
+`ears` switched to these symbols on its own branch and re-run against the same
+oracle. Its `mel.c` is now a call and its `conv1d` is a weight dequantisation
+around one:
+
+    log-mel, all 80 x n_len values, vs the pre-switch mel.c
+      jfk.wav             byte-identical
+      ambient_8s.wav      byte-identical
+      speech_air_14s.wav  byte-identical
+    encoder post-convolution activations [1500 384], jfk/tiny
+      vs the pre-switch conv1d            byte-identical
+
+    gate_mel       328000 values  max|d| = 0.000e+00   (unchanged)
+    gate_encoder   576000 values  max|d| = 4.861e-02   (unchanged)
+    gate_transcript  6 of 6 rows equal token for token (unchanged)
+
+`nt_logmel` on `jfk.wav`, 176000 samples, n_len 4100, best of 10, `taskset -c 4-7`:
+45.6 ms at one thread, 21.3 ms at four — 2.14x on four big cores. End-to-end wall is
+unmoved, as it should be for a front end that is under 1% of the run: jfk/tiny
+0:02.73 before, 0:02.74 after.
+
+Gates shown red on purpose, each with the `cc` line confirmed to have run and the
+binary deleted first so a stale link could not answer for the source: im2col tap
+offset `-pad` → `+pad` (7 shapes fail, max|d| up to 1.772e+01); the f16 rounding
+removed (4 fail, including max|d| = 0.000e+00 against the f32 path); the twiddle's
+imaginary sign flipped (4 STFT lengths fail); the clamp moved from 8 decades to 9
+(range 2.25 against 2.0); the Hann divisor `n` → `n-1` (2 fail, w[399] = 0).
+
+`make test` 280 assertions over 20 binary runs before, 350 over 23 after.
+
+---
+
 ## 2026-09-13 — a 512-row projection is six times slower on six threads, and neither fix helps the body
 
 Decode is where the mixture is furthest behind — 9.5 t/s against llama.cpp's 13.54

@@ -71,6 +71,8 @@ check_requant
 test_wt_expert
 test_qgather
 test_f16_matvec
+test_conv1d
+test_logmel
 test_plan_race_tsan
 
 gguf_quantize
