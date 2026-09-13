@@ -238,6 +238,30 @@ typedef struct {
     float scale;
 } attn_ctx;
 
+typedef struct {
+    float *q_all, *k_new, *v_new;
+    kv_cache *kv;
+    int pos0, H, KV, HD, KVD, Q_DIM;
+    long base;
+    float rope_base;
+} moe_rope_ctx;
+
+/* One token per item, same as arch_llama.c. Simpler here: this arch normalises q and
+ * k as whole vectors before the rotation, so the fanned-out loop is only the rotation
+ * and the two copies into the cache, each token touching its own slice. */
+static void moe_rope_tokens(void *vctx, int j0, int j1) {
+    const moe_rope_ctx *r = (const moe_rope_ctx *)vctx;
+    for (int j = j0; j < j1; j++) {
+        int pos = r->pos0 + j;
+        float *qj = r->q_all + (long)j * r->Q_DIM, *kj = r->k_new + (long)j * r->KVD;
+        for (int h = 0; h < r->H; h++)  rope(qj + h*r->HD, pos, r->HD, r->rope_base, 1);
+        for (int h = 0; h < r->KV; h++) rope(kj + h*r->HD, pos, r->HD, r->rope_base, 1);
+        memcpy(r->kv->k + r->base + (long)pos * r->KVD, kj, r->KVD * sizeof(float));
+        memcpy(r->kv->v + r->base + (long)pos * r->KVD,
+               r->v_new + (long)j * r->KVD, r->KVD * sizeof(float));
+    }
+}
+
 static void attn_heads(void *vctx, int h0, int h1) {
     const attn_ctx *a = (const attn_ctx *)vctx;
     for (int h = h0; h < h1; h++) {
@@ -406,13 +430,11 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
         pft = pf_mark();
         long base = (long)l * kv->max_seq * KVD;
-        for (int j = 0; j < n; j++) {
-            int pos = pos0 + j;
-            float *qj = q_all + (long)j * Q_DIM, *kj = k_new + (long)j * KVD;
-            for (int h = 0; h < H; h++) rope(qj + h*HD, pos, HD, m->rope_base, 1);
-            for (int h = 0; h < KV; h++) rope(kj + h*HD, pos, HD, m->rope_base, 1);
-            memcpy(kv->k + base + (long)pos * KVD, kj, KVD * sizeof(float));
-            memcpy(kv->v + base + (long)pos * KVD, v_new + (long)j * KVD, KVD * sizeof(float));
+        {
+            moe_rope_ctx rc = { q_all, k_new, v_new, kv,
+                                pos0, H, KV, HD, KVD, Q_DIM, base, m->rope_base };
+            if ((long)n * (H + KV) * HD >= 65536) nt_par_for(moe_rope_tokens, &rc, n, 2);
+            else                                  moe_rope_tokens(&rc, 0, n);
         }
         pf_add(PF_ROPE, pft);
 
