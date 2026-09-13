@@ -13,6 +13,49 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — a frozen parameter took a slot it never had, and the step loops counted it
+
+`nt_tape_param_frozen()` registers a parameter with `is_param = 1`, no grad and, by
+design, no optimizer slot: `n_params` is not advanced and `adam[]` is not touched
+(`notorch.c`, the INTENTIONAL comment in that function). The five loops that walk the
+tape and address optimizer state — the two diagonal steps, `nt_tape_chuck_step`,
+`nt_tape_accum_grads`, `nt_tape_apply_accum` — walked it with a running counter and
+advanced that counter on every param without a grad ("keep slot alignment"), frozen or
+not. So a frozen entry pushed every trainable parameter registered after it one slot to
+the right: the first of them read the moments of its neighbour, the last one fell past
+`n_params` and was never updated. molequla freezes two RRPRAM gates per layer through
+this API, which means its low-rank factors after each gate were trained on foreign
+moments from the child stage up, and the deepest ones not at all. The CUDA norm batch
+in the Chuck step counted with its own, dense counter and disagreed with the update
+loop by the same amount whenever a param had no grad.
+
+Fix: the entry now carries its slot. `nt_tape_entry.slot` is the index into `adam[]` /
+`chuck_params[]`, set by `nt_tape_param()` to the slot it allocates, `-1` by
+`nt_tape_param_frozen()`, by every `nt_tape_record*` site and by `nt_tape_clear()`. All
+five loops read `e->slot` and skip anything without one; the CUDA norm batch is indexed
+by slot with NULL/0 for slots that have no grad this step (`gpu_nrm2_batch` already
+skips those). `nt_tape_freeze_param(idx)` keeps taking the tape index and finds the
+per-slot frozen flag through `e->slot` instead of reusing the tape index as a slot
+index, which was only ever right when the parameter was the first entry on the tape.
+
+Gate: `tests/test_notorch.c`, `frozen_param_keeps_chuck_slots` — W1 (slot 0), G frozen
+(no slot), W2 (slot 1), gradient only to W2. On the unfixed tree it reads
+`FAIL: W2 after a frozen param is updated (line 269)`, 49 passed, 1 failed; on the
+fixed tree 50 passed, 0 failed, and W2's step counter advances in slot 1 while slot 0
+does not move. `tests/test_rrpram_broadcast.c`, the one in-tree user of
+`nt_tape_freeze_param`, passes with 0 fails. Strict `-Wall -Wextra -Werror` build of
+`notorch.c` is clean. Measured on phone-1 (Galaxy A56, aarch64, OpenBLAS). The CUDA
+path is edited for the same indexing and not compiled here; no CUDA host on this node.
+
+Not changed in this entry, recorded for the next: optimizer slots outlive
+`nt_tape_clear()` on purpose (a re-registration of the same shape inherits moments and
+step count), so a test that compares `adam[i].t` must compare deltas; and
+`nt_tape_destroy()` frees moments in a loop bounded by `n_params`, which a preceding
+`nt_tape_clear()` has already zeroed, so a clear-then-destroy sequence abandons every
+moment tensor.
+
+---
+
 ## 2026-09-13 — rope and silu join the machine, and the chunk that looked right in the bench was wrong in the body
 
 Went and read what Gerganov actually does, which was the right instinct. Two

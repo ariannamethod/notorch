@@ -237,6 +237,51 @@ static void test_chuck_step(void) {
     PASS("chuck_step");
 }
 
+// A parameter registered through nt_tape_param_frozen() takes no optimizer
+// slot. The step loops must therefore not advance the slot index when they
+// meet it, or every trainable parameter registered after it reads a
+// neighbour's moments and the last ones are never updated. Layout here:
+// W1 (slot 0) · G frozen (no slot) · W2 (slot 1); only W2 receives a gradient.
+static void test_frozen_param_keeps_chuck_slots(void) {
+    nt_tape_start();
+
+    nt_tensor* W1 = nt_tensor_new(4);
+    nt_tensor* G  = nt_tensor_new(4);
+    nt_tensor* W2 = nt_tensor_new(4);
+    for (int i = 0; i < 4; i++) { W1->data[i] = (float)(i + 1); G->data[i] = 0.5f; W2->data[i] = (float)(i + 1); }
+    int w1_idx = nt_tape_param(W1);
+    int g_idx  = nt_tape_param_frozen(G);
+    int w2_idx = nt_tape_param(W2);
+    ASSERT(w1_idx >= 0 && g_idx >= 0 && w2_idx >= 0, "three params registered");
+    ASSERT(nt_tape_get()->n_params == 2, "frozen param took no optimizer slot");
+
+    int loss_idx = nt_cross_entropy(w2_idx, 2);   // gradient flows to W2 only
+    nt_tape_entry* el = &nt_tape_get()->entries[loss_idx];
+    float loss_val = el->output->data[0];
+    nt_tape_backward(loss_idx);
+    ASSERT(nt_tape_get()->entries[w1_idx].grad == NULL, "W1 has no grad this step");
+    ASSERT(nt_tape_get()->entries[g_idx].grad == NULL,  "frozen G has no grad");
+    ASSERT(nt_tape_get()->entries[w2_idx].grad != NULL, "W2 has grad");
+
+    float w1_before = W1->data[0], g_before = G->data[0], w2_before = W2->data[0];
+    // Optimizer slots outlive nt_tape_clear() on purpose (moments survive a
+    // re-registration of the same shape), so compare step counters by delta.
+    int t0_before = nt_tape_get()->adam[0].t, t1_before = nt_tape_get()->adam[1].t;
+    nt_tape_chuck_step(0.01f, loss_val);
+
+    ASSERT(fabsf(W2->data[0] - w2_before) > 1e-6f, "W2 after a frozen param is updated");
+    ASSERT(fabsf(W1->data[0] - w1_before) < 1e-9f, "W1 without grad is untouched");
+    ASSERT(fabsf(G->data[0]  - g_before)  < 1e-9f, "frozen G is untouched");
+    ASSERT(nt_tape_get()->adam[1].t == t1_before + 1, "W2's moments live in slot 1");
+    ASSERT(nt_tape_get()->adam[0].t == t0_before,     "slot 0 (W1) saw no step");
+
+    nt_tape_clear();
+    nt_tensor_free(W1);
+    nt_tensor_free(G);
+    nt_tensor_free(W2);
+    PASS("frozen_param_keeps_chuck_slots");
+}
+
 static void test_grad_clip(void) {
     nt_tape_start();
 
@@ -1403,6 +1448,7 @@ int main(void) {
     test_adam_step();
     test_adamw_step();
     test_chuck_step();
+    test_frozen_param_keeps_chuck_slots();
     test_grad_clip();
 
     printf("\n[Hebbian]\n");

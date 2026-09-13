@@ -308,6 +308,7 @@ void nt_tape_clear(void) {
         /* Reset frozen flag — defense-in-depth so reused slots can't leak
          * frozen=1 from prior session into ops that don't init it explicitly. */
         g_tape.entries[i].frozen = 0;
+        g_tape.entries[i].slot = -1;
     }
     g_tape.count = 0;
     g_tape.active = 0;
@@ -353,6 +354,7 @@ int nt_tape_record(nt_tensor* output, int op, int p1, int p2, float aux) {
     e->is_param = 0;
     e->no_decay = 0;
     e->frozen = 0;  /* clear leftover from prior tape session sharing this slot */
+    e->slot = -1;
     g_tape.count++;
     return idx;
 }
@@ -373,6 +375,7 @@ int nt_tape_record3(nt_tensor* output, int op, int p1, int p2, int p3, float aux
     e->is_param = 0;
     e->no_decay = 0;
     e->frozen = 0;  /* clear leftover from prior tape session sharing this slot */
+    e->slot = -1;
     g_tape.count++;
     return idx;
 }
@@ -395,6 +398,7 @@ int nt_tape_record4(nt_tensor* output, int op, int p1, int p2, int p3, float aux
     e->is_param = 0;
     e->no_decay = 0;
     e->frozen = 0;  /* clear leftover from prior tape session sharing this slot */
+    e->slot = -1;
     g_tape.count++;
     return idx;
 }
@@ -414,6 +418,7 @@ int nt_tape_param(nt_tensor* param) {
     e->aux2 = 0;
     e->is_param = 1;
     e->frozen = 0;  /* clear leftover from prior tape session sharing this slot */
+    e->slot = -1;
     e->no_decay = 0;
     e->frozen = 0;       // explicit reset — prevents sticky frozen flag from
                          // a previous nt_tape_param_frozen() that reused this slot.
@@ -421,6 +426,7 @@ int nt_tape_param(nt_tensor* param) {
 
     if (g_tape.n_params < NT_TAPE_MAX_PARAMS) {
         int pi = g_tape.n_params;
+        e->slot = pi;   // the optimizer slot this entry owns; step loops read it
         if (!g_tape.adam[pi].m) {
             g_tape.adam[pi].m = nt_tensor_new(param->len);
             g_tape.adam[pi].v = nt_tensor_new(param->len);
@@ -448,13 +454,15 @@ void nt_tape_no_decay(int idx) {
         g_tape.entries[idx].no_decay = 1;
 }
 
-void nt_tape_freeze_param(int param_idx) {
-    if (param_idx >= 0 && param_idx < g_tape.n_params)
-        g_tape.chuck_params[param_idx].frozen = 1;
-    // Also set the per-entry frozen flag so backward can skip computation.
-    // Note: param_idx in this API is the *tape entry index*, returned by nt_tape_param().
-    if (param_idx >= 0 && param_idx < g_tape.count)
-        g_tape.entries[param_idx].frozen = 1;
+void nt_tape_freeze_param(int idx) {
+    // idx is the *tape entry index* returned by nt_tape_param(). The entry keeps
+    // its optimizer slot; the per-slot frozen flag is looked up through e->slot
+    // rather than by reusing the tape index as a slot index.
+    if (idx < 0 || idx >= g_tape.count) return;
+    nt_tape_entry* e = &g_tape.entries[idx];
+    e->frozen = 1;   // backward skips computation
+    if (e->slot >= 0 && e->slot < g_tape.n_params)
+        g_tape.chuck_params[e->slot].frozen = 1;
 }
 
 int nt_tape_param_frozen(nt_tensor* param) {
@@ -475,6 +483,8 @@ int nt_tape_param_frozen(nt_tensor* param) {
     e->is_param = 1;
     e->no_decay = 0;
     e->frozen = 1;            // backward skips dw via this flag (notorch.c:845 path)
+    e->slot = -1;             // no optimizer slot; step loops skip this entry without
+                              // advancing anything, so later params keep their own moments
     // INTENTIONAL: do NOT increment g_tape.n_params, do NOT touch g_tape.adam[].
     // Chuck slots stay 1:1 with truly trainable params registered via nt_tape_param().
     g_tape.count++;
@@ -2427,13 +2437,12 @@ void nt_tape_backward(int loss_idx) {
 
 void nt_tape_adam_step(float lr) {
     float beta1 = 0.9f, beta2 = 0.999f, eps = 1e-8f;
-    int param_idx = 0;
-    for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
+    for (int i = 0; i < g_tape.count; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param) continue;
-        if (!e->grad) { param_idx++; continue; }   // registered param w/o grad this step: keep slot alignment, skip update
-        nt_adam_state* as = &g_tape.adam[param_idx];
-        if (!as->m || !as->v) { param_idx++; continue; }
+        if (!e->is_param || e->slot < 0 || e->slot >= g_tape.n_params) continue;
+        if (!e->grad) continue;                    // registered param w/o grad this step: nothing to apply
+        nt_adam_state* as = &g_tape.adam[e->slot];
+        if (!as->m || !as->v) continue;
         as->t++;
         int n = e->output->len;
         if (as->m->len < n) n = as->m->len;
@@ -2448,7 +2457,6 @@ void nt_tape_adam_step(float lr) {
 #ifdef USE_CUDA
         nt_tensor_mark_cpu_dirty(e->output);
 #endif
-        param_idx++;
     }
 #ifdef USE_CUDA
     if (g_use_gpu) gpu_mark_all_dirty();
@@ -2457,13 +2465,12 @@ void nt_tape_adam_step(float lr) {
 
 void nt_tape_adamw_step(float lr, float weight_decay, float beta1, float beta2) {
     float eps = 1e-8f;
-    int param_idx = 0;
-    for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
+    for (int i = 0; i < g_tape.count; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param) continue;
-        if (!e->grad) { param_idx++; continue; }   // registered param w/o grad this step: keep slot alignment, skip update
-        nt_adam_state* as = &g_tape.adam[param_idx];
-        if (!as->m || !as->v) { param_idx++; continue; }
+        if (!e->is_param || e->slot < 0 || e->slot >= g_tape.n_params) continue;
+        if (!e->grad) continue;                    // registered param w/o grad this step: nothing to apply
+        nt_adam_state* as = &g_tape.adam[e->slot];
+        if (!as->m || !as->v) continue;
         as->t++;
         int n = e->output->len;
         if (as->m->len < n) n = as->m->len;
@@ -2483,7 +2490,6 @@ void nt_tape_adamw_step(float lr, float weight_decay, float beta1, float beta2) 
 #ifdef USE_CUDA
         nt_tensor_mark_cpu_dirty(e->output);
 #endif
-        param_idx++;
     }
 #ifdef USE_CUDA
     if (g_use_gpu) gpu_mark_all_dirty();
@@ -2596,37 +2602,38 @@ void nt_tape_chuck_step(float lr, float loss_val) {
      * readback (DEVICE pointer-mode, no per-call stall) instead of a blocking
      * cublasSnrm2-to-host per param in the loop below — the teen 0%-util sync
      * storm. Indexed by the same is_param+grad counter the update loop uses, so
-     * chuck_gnorms[param_idx] aligns. n matches the loop's min(output,m) for the
+     * chuck_gnorms[e->slot] aligns. n matches the loop's min(output,m) for the
      * params that use it → bit-identical norms. */
     float chuck_gnorms[NT_TAPE_MAX_PARAMS]; int chuck_gn_have = 0;
     if (g_use_gpu) {
         extern void gpu_nrm2_batch(const float**, const int*, int, float*);
         const float* d_gs[NT_TAPE_MAX_PARAMS]; int ns_arr[NT_TAPE_MAX_PARAMS];
-        int pj = 0;
-        for (int i = 0; i < g_tape.count && pj < g_tape.n_params; i++) {
+        /* Indexed by optimizer slot, exactly as the update loop below reads
+         * chuck_gnorms[e->slot]; slots without a grad this step stay NULL/0 and
+         * gpu_nrm2_batch skips them. */
+        for (int s = 0; s < g_tape.n_params; s++) { d_gs[s] = NULL; ns_arr[s] = 0; }
+        for (int i = 0; i < g_tape.count; i++) {
             nt_tape_entry* e = &g_tape.entries[i];
-            if (!e->is_param || !e->grad) continue;
+            if (!e->is_param || e->slot < 0 || e->slot >= g_tape.n_params || !e->grad) continue;
             int n = e->output->len;
-            nt_adam_state* as = &g_tape.adam[pj];
+            nt_adam_state* as = &g_tape.adam[e->slot];
             if (as->m && as->m->len < n) n = as->m->len;
             float* d_g = nt_tensor_ensure_gpu(e->grad);
-            d_gs[pj] = d_g; ns_arr[pj] = d_g ? n : 0;
-            pj++;
+            d_gs[e->slot] = d_g; ns_arr[e->slot] = d_g ? n : 0;
         }
-        gpu_nrm2_batch(d_gs, ns_arr, pj, chuck_gnorms);
+        gpu_nrm2_batch(d_gs, ns_arr, g_tape.n_params, chuck_gnorms);
         chuck_gn_have = 1;
     }
 #endif
-    int param_idx = 0;
-    for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
+    for (int i = 0; i < g_tape.count; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param) continue;
-        if (!e->grad) { param_idx++; continue; }   // registered param w/o grad this step: keep slot alignment, skip update
-        nt_adam_state* as = &g_tape.adam[param_idx];
-        nt_chuck_param_state* cp = &g_tape.chuck_params[param_idx];
+        if (!e->is_param || e->slot < 0 || e->slot >= g_tape.n_params) continue;
+        if (!e->grad) continue;                    // registered param w/o grad this step: nothing to apply
+        nt_adam_state* as = &g_tape.adam[e->slot];
+        nt_chuck_param_state* cp = &g_tape.chuck_params[e->slot];
         if (cp->dampen == 0.0f) cp->dampen = 1.0f;
-        if (cp->frozen) { param_idx++; continue; }
-        if (!as->m || !as->v) { param_idx++; continue; }
+        if (cp->frozen) continue;
+        if (!as->m || !as->v) continue;
 
         int n = e->output->len;
         if (as->m->len < n) n = as->m->len;
@@ -2635,7 +2642,7 @@ void nt_tape_chuck_step(float lr, float loss_val) {
         if (g_use_gpu) {
             float* d_g = nt_tensor_ensure_gpu(e->grad);
             if (d_g) {
-                gnorm = chuck_gn_have ? chuck_gnorms[param_idx] : gpu_nrm2(d_g, n); /* L1 batched readback */
+                gnorm = chuck_gn_have ? chuck_gnorms[e->slot] : gpu_nrm2(d_g, n); /* L1 batched readback */
             } else {
                 nt_tensor_ensure_cpu(e->grad);
                 for (int j = 0; j < n; j++) gnorm += e->grad->data[j] * e->grad->data[j];
@@ -2720,7 +2727,6 @@ void nt_tape_chuck_step(float lr, float loss_val) {
             nt_tensor_mark_cpu_dirty(e->output);
 #endif
         }
-        param_idx++;
     }
 #ifdef USE_CUDA
     /* Conservative belt-and-braces: mark global weight cache dirty too.
@@ -2808,12 +2814,11 @@ float nt_tape_clip_grads(float max_norm) {
 }
 
 void nt_tape_accum_grads(void) {
-    int param_idx = 0;
-    for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
+    for (int i = 0; i < g_tape.count; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param) continue;
-        if (!e->grad) { param_idx++; continue; }   // registered param w/o grad this step: keep slot alignment, skip update
-        nt_adam_state* as = &g_tape.adam[param_idx];
+        if (!e->is_param || e->slot < 0 || e->slot >= g_tape.n_params) continue;
+        if (!e->grad) continue;                    // registered param w/o grad this step: nothing to accumulate
+        nt_adam_state* as = &g_tape.adam[e->slot];
         int n = e->output->len;
         if (!as->acc_grad) {
             as->acc_grad = nt_tensor_new(n);
@@ -2823,17 +2828,15 @@ void nt_tape_accum_grads(void) {
         }
         for (int j = 0; j < n && j < as->acc_grad->len; j++)
             as->acc_grad->data[j] += e->grad->data[j];
-        param_idx++;
     }
 }
 
 void nt_tape_apply_accum(int n_accum) {
     float scale = (n_accum > 1) ? 1.0f / (float)n_accum : 1.0f;
-    int param_idx = 0;
-    for (int i = 0; i < g_tape.count && param_idx < g_tape.n_params; i++) {
+    for (int i = 0; i < g_tape.count; i++) {
         nt_tape_entry* e = &g_tape.entries[i];
-        if (!e->is_param) continue;
-        nt_adam_state* as = &g_tape.adam[param_idx];
+        if (!e->is_param || e->slot < 0 || e->slot >= g_tape.n_params) continue;
+        nt_adam_state* as = &g_tape.adam[e->slot];
         if (as->acc_grad) {
             int n = e->output->len;
             if (as->acc_grad->len < n) n = as->acc_grad->len;
@@ -2843,7 +2846,6 @@ void nt_tape_apply_accum(int n_accum) {
                 as->acc_grad->data[j] = 0.0f;
             }
         }
-        param_idx++;
     }
 }
 

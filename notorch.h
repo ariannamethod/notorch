@@ -140,6 +140,10 @@ typedef struct {
     int        is_param;        // 1 = trainable parameter
     int        no_decay;        // 1 = skip weight decay (embeddings)
     int        frozen;          // 1 = skip backward computation (frozen base in LoRA)
+    int        slot;            // index into the optimizer arrays (adam[], chuck_params[]);
+                                // -1 = no slot: not a param, or registered through
+                                // nt_tape_param_frozen(). Step loops address moments by
+                                // this field, never by counting params on the tape.
 } nt_tape_entry;
 
 // Adam optimizer state per parameter
