@@ -13,6 +13,67 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — the activation tile is chosen from L2, and the bench overpromises by four
+
+The tile loop is outside the row loop, so a pass over a row range costs each row's
+own weights plus a walk over the whole activation slice. At `NT_QMM_TILE` 32 and
+k=9728 that slice is 311 KB against 256 KB of L2 on the i5-8500T, so every row
+fetched it from a shared L3 again — 4096 rows times 311 KB is 1.27 GB per matmul,
+and the matmul takes 14.8 ms. 86 GB/s through one L3 that six cores share, which
+is the shape of the 4.09x-of-5.56x pool scaling recorded yesterday.
+
+`nt_qmm_tile(k)` halves the tile until `tile * k` fits under 200 KB. One threshold
+from the cache, not a table. Six threads, m=4096, n=32, median of three:
+
+           k=9728  k=14336  k=2560  k=2048  k=768
+      8     132.2    131.7   131.1    62.9   78.9
+      16    144.9    128.2   141.6    63.6   87.2
+      32    121.4    113.8   140.9    64.6   90.3
+    picks     16        8      32      32     32
+
+Every pick is the best column. The tile stayed a compile-time array bound — only
+the loop bound moved, at twelve sites, one line each.
+
+Alternating builds, medians of three:
+
+    k=9728   125.1 -> 141.2   1.13x
+    k=14336  111.1 -> 129.1   1.16x
+    k=2560, k=2048, k=768: unchanged, as the rule intends
+
+### And the body gets a quarter of it
+
+    Qwen3-4B       prefill 25.3 -> 25.5    decode 8.4 -> 8.4
+    Ministral-3B   prefill 30.45 -> 30.7   decode 10.2 -> 10.2
+    Qwen3-30B-A3B  prefill 13.0 -> 12.95   decode noisy, 6.6-7.8 either side
+
+Section timings say where it went: `ffn matmul` 1557 -> 1499 ms, -3.7%, while
+`qkv+bias` (369 -> 368) and `attn proj` (198 -> 196) do not move, which is correct
+— their k is 2560 and the rule leaves their tile at 32.
+
+3.7% where the bench said 13%, and the reason is the half of the trade the bench
+cannot see: a tile of 16 against n=32 reads each row range's weights twice. In the
+bench those 22 MB are hot from the previous repetition; in the body they are a
+cold layer, read once per prefill and never again. The L3 saving is real and the
+doubled DRAM read eats three quarters of it.
+
+That is the third time this week a per-MAC benchmark pointed further than the body
+would go — first m=4096 mistaken for an expert shape, then `NT_PREFILL_CHUNK`,
+now this. The pattern is the same each time: the bench holds weights still and
+measures arithmetic, the body streams weights and measures memory. It is still the
+right instrument for choosing between two kernels on one shape; it is not an
+instrument for predicting a body.
+
+Nothing regressed and the gates hold: notorch_test 50/50 and 73/73, test_qmatmul
+46/46 on both machines, `NOTORCH_REFERENCE_OK` with 0 diverged on all three bodies,
+`NOTORCH_REPEAT_OK`, `JANUS_OK`, `RESONANCE_OK`, `NOTORCH_PARITY_OK (6 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`.
+
+Left where it is: `NT_QMM_TILE_F`, the f16 path's own tile, is a fixed 8 and its
+activation is four bytes a value, so at k=9728 its slice is the same 311 KB this
+entry is about. Same rule would apply; not measured, not touched.
+
+---
+
 ## 2026-09-13 — a frozen parameter took a slot it never had, and the step loops counted it
 
 `nt_tape_param_frozen()` registers a parameter with `is_param = 1`, no grad and, by
