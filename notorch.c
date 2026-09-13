@@ -6827,6 +6827,12 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
  * kernel lost to the f32 one it was meant to replace. */
 typedef void (*nt_qrows_i8_fn)(float *, const uint8_t *, const int8_t *, const float *,
                                const int32_t *, int, int, int);
+/* The batched kernel's shape, declared here so one pool serves both. Prefill used to make
+ * its own threads for every matmul — 3610 clone3() for a 61-token prompt on Qwen3-4B,
+ * measured with strace — while decode had had a persistent pool for months. Same rows, same
+ * activation, same cursor; only the kernel signature differed. */
+typedef void (*nt_qmmrows_i8_fn)(float *, int, const uint8_t *, const int8_t *, const float *,
+                                 const int32_t *, int, int, int, int);
 typedef struct {
     nt_qrows_i8_fn fn; float *out; const uint8_t *Wq;
     const int8_t *qa; const float *da; const int32_t *asum; int r0, r1, k;
@@ -6835,6 +6841,11 @@ typedef struct {
      * experts out of sixty-four and cannot make them adjacent without copying them, so this
      * is how eight separate matrices become one fan-out. NULL for an ordinary dispatch. */
     const uint8_t *const *slices; int rows_each;
+    /* Last, and set by name only: every other field is filled positionally at the gathered
+     * dispatch below, so anything inserted above it silently lands in the wrong slot. When
+     * fnn is set the dispatch is a batched matmul — fnn runs instead of fn, m and n are its
+     * two extra dimensions, and slices stays NULL. */
+    nt_qmmrows_i8_fn fnn; int m, n;
 } nt_qjob_i8;
 
 #ifndef _OPENMP   /* only the pthread fan-out uses a worker entry point */
@@ -6872,6 +6883,14 @@ typedef struct {
     int ready;
     nt_qjob_i8 shared;     /* published before the bump; read-only for the dispatch */
     int hi, chunk;
+    /* Published with the job, because one budget cannot serve both callers. A matvec
+     * dispatch is microseconds and the spin is there to catch the next one without a futex;
+     * a batched matmul dispatch is milliseconds, and then five workers spinning at full
+     * clock are taking package power from the one still computing. Qwen3-4B prefill against
+     * the batched budget: 25.8 at 0, 26.1 at 100, 26.5 at 1000, 26.1 at 10000, 24.1 at the
+     * matvec's 500000. Decode reads 8.4 at every one of them, which is the point — it is on
+     * the other budget. */
+    int spin;
     _Alignas(NT_CACHELINE) int generation;  /* bumped once per dispatch, spun on by everyone */
     int shutdown;                           /* written once ever, read beside generation */
     _Alignas(NT_CACHELINE) int busy;        /* one decrement per worker per dispatch */
@@ -6892,6 +6911,11 @@ static nt_qpool_i8 g_nt_qpool_i8 = {
 #endif
 
 static int nt_qmv_spin(void) { return nt_qmv_get_plan()->spin; }
+static int nt_qmm_spin(void) {
+    long v = 1000;
+    nt_env_long("NT_QMM_SPIN", 0, INT_MAX, &v);
+    return (int)v;
+}
 static pthread_once_t g_nt_qpool_i8_once = PTHREAD_ONCE_INIT;
 static pthread_mutex_t g_nt_qpool_i8_dispatch_mu = PTHREAD_MUTEX_INITIALIZER;
 
@@ -6905,6 +6929,7 @@ static void nt_qpool_i8_drain(void) {
         int r0 = __atomic_fetch_add(&g_nt_qpool_i8.next, ch, __ATOMIC_RELAXED);
         if (r0 >= hi) return;
         int r1 = r0 + ch; if (r1 > hi) r1 = hi;
+        if (j.fnn) { j.fnn(j.out, j.m, j.Wq, j.qa, j.da, j.asum, r0, r1, j.k, j.n); continue; }
         if (!j.slices) { j.fn(j.out, j.Wq, j.qa, j.da, j.asum, r0, r1, j.k); continue; }
         /* Rows are global across the whole gather; the kernel wants them local to one slice,
          * and a chunk may straddle a boundary. Each piece writes into its own stretch of out,
@@ -6926,9 +6951,11 @@ static void *nt_qpool_i8_loop(void *p) {
     /* Read once per thread, not once per spin. The plan lives behind a pthread_once, and a
      * call into that from inside the innermost wait loop is a libc round trip per iteration
      * — measured as roughly a tenth of decode before it was hoisted out. */
-    const int spin_budget = nt_qmv_spin();
     for (;;) {
         int spins = 0;
+        /* One load of a field published before the generation bump, not the pthread_once
+         * round trip that used to be here and cost a tenth of decode. */
+        const int spin_budget = __atomic_load_n(&g_nt_qpool_i8.spin, __ATOMIC_RELAXED);
         for (;;) {
             if (__atomic_load_n(&g_nt_qpool_i8.shutdown, __ATOMIC_RELAXED)) return NULL;
             if (__atomic_load_n(&g_nt_qpool_i8.generation, __ATOMIC_ACQUIRE) != seen) break;
@@ -6988,6 +7015,7 @@ static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
     pthread_mutex_lock(&g_nt_qpool_i8_dispatch_mu);   /* one dispatch in flight at a time */
     g_nt_qpool_i8.shared = jobs[0];
     g_nt_qpool_i8.hi = hi; g_nt_qpool_i8.chunk = chunk;
+    g_nt_qpool_i8.spin = jobs[0].fnn ? nt_qmm_spin() : nt_qmv_spin();
     __atomic_store_n(&g_nt_qpool_i8.next, lo, __ATOMIC_RELAXED);
     /* Every pool thread answers a dispatch, so every pool thread decrements — counting only
      * the ones this call asked for leaves the extras subtracting from the NEXT dispatch's
@@ -7002,7 +7030,7 @@ static int nt_qpool_i8_run(const nt_qjob_i8 *jobs, int nt) {
 
     nt_qpool_i8_drain();                              /* the caller is a worker too */
 
-    int spins = 0, spin_budget = nt_qmv_spin();      /* hoisted: see nt_qpool_i8_loop */
+    int spins = 0, spin_budget = g_nt_qpool_i8.spin;  /* hoisted: see nt_qpool_i8_loop */
     while (__atomic_load_n(&g_nt_qpool_i8.busy, __ATOMIC_ACQUIRE) > 0) {
         if (++spins < spin_budget) { NT_QMV_PAUSE(); continue; }
         sched_yield(); spins = 0;
@@ -8524,9 +8552,7 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
 #endif
 #endif
 
-typedef void (*nt_qmmrows_fn)(float *out, int m, const uint8_t *W, const int8_t *qa,
-                              const float *da, const int32_t *asum,
-                              int r0, int r1, int k, int n);
+typedef nt_qmmrows_i8_fn nt_qmmrows_fn;
 
 /* Row chunks are pulled, not dealt out: on big.LITTLE a static split makes every matmul
  * wait for the slow cluster's share, and the pool above learned that the same way. */
@@ -8599,6 +8625,19 @@ int nt_qmatmul_i8_pre(float *out, const uint8_t *Wq, int dtype,
     if (nt <= 1 || (long)m * k * (long)n < nt_qmv_thread_floor()) {
         fn(out, m, Wq, qa, da, asum, 0, m, k, n);
         return 0;
+    }
+    /* The pool decode already uses, if it will take the job: same row cursor, same spin
+     * budget, and no thread created per matmul. It refuses when disabled or not yet up, and
+     * the fan-out below is then exactly what it was. */
+    {
+        nt_qjob_i8 pj[NT_QMV_MAX_THREADS];
+        memset(pj, 0, sizeof(pj));
+        for (int t = 0; t < nt && t < NT_QMV_MAX_THREADS; t++) {
+            pj[t].fnn = fn; pj[t].out = out; pj[t].Wq = Wq;
+            pj[t].qa = qa; pj[t].da = da; pj[t].asum = asum;
+            pj[t].r0 = 0; pj[t].r1 = m; pj[t].k = k; pj[t].m = m; pj[t].n = n;
+        }
+        if (nt <= NT_QMV_MAX_THREADS && nt_qpool_i8_run(pj, nt) == 0) return 0;
     }
     nt_qmm_job job = { fn, out, Wq, qa, da, asum, m, k, n, m, 0, 0 };
     job.chunk = m / (nt * 8); if (job.chunk < 1) job.chunk = 1;

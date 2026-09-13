@@ -13,6 +13,75 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — prefill made its own threads for every matmul; the MoE was paying 864 times a token
+
+Went back to `ggml/src/ggml-cpu/ggml-cpu.c` to see what else is different.
+`chunk_size = 16` in **both** dimensions there — `nchunk0` over rows, `nchunk1`
+over columns, claimed out of one atomic `threadpool->current_chunk` — against our
+rows-only split. But the thing underneath it is bigger: their pool is created once
+for the graph. `nt_qmatmul_i8_pre` called `pthread_create` on every invocation.
+
+    strace -f -c -e trace=clone3, Qwen3-4B, 61-token prefill
+      3610 clone3, 20047 voluntary context switches
+
+Decode has had a persistent pool for months — `nt_qpool_i8_run`, generation
+counter, pulled row chunks, spin then park. Prefill never used it, because the
+job struct carried the matvec kernel's signature and nothing else. It now carries
+the batched one too, in two fields at the end of the struct, and
+`nt_qmatmul_i8_pre` offers the job to the pool before falling back to what it did
+before. clone3 drops to 1090, all of it `nt_par_for` for rope, silu and attention.
+
+### Which made it slower, and why
+
+    Qwen3-4B 25.5 -> 23.65    Ministral 30.85 -> 29.2    Qwen3-30B 12.95 -> 12.15
+
+Removing 2520 thread creations cost 7%. The pool's spin budget is 500000
+iterations, chosen for matvecs: between two matvecs of one token the gap is
+microseconds and the spin catches the next dispatch without a futex. A batched
+matmul dispatch is 14.8 ms, and for most of it five workers that have run out of
+chunks are spinning at full clock, taking package power from the one still
+computing on a 35 W part. Qwen3-4B prefill against the budget: 24.1 at 500000,
+26.1 at 100, 26.5 at 1000, 25.8 at 0.
+
+One budget cannot serve both, so the pool publishes the budget with the job:
+`nt_qmm_spin()` for a batched dispatch, `nt_qmv_spin()` for a matvec. Both wait
+loops read it as one relaxed load of a field published before the generation bump,
+which is not the `pthread_once` round trip the hoisting comment was about.
+
+    Qwen3-4B       prefill 26.2 -> 26.5    decode 8.4 -> 8.4
+    Ministral-3B   prefill 30.65 -> 31.8   decode 10.3 -> 10.25
+    Qwen3-30B-A3B  prefill 13.0 -> 22.35   decode 7.0 -> 7.45
+
+**1.72x on the mixture.** Its feed-forward dispatches eight experts times three
+matrices times thirty-six layers, so it was paying the thread creation 864 times
+per forward where a dense body pays it 252. Decode is untouched on all three,
+which is the separate budget doing its job.
+
+Same continuation from both binaries on the 30B at 24 tokens, checked because a
+1.72x jump is the shape of work being skipped. Gates: notorch_test 50/50 and
+73/73, test_qmatmul 46/46 both machines, `NOTORCH_REFERENCE_OK` 0 diverged on all
+three bodies, `NOTORCH_REPEAT_OK` on Qwen3-4B, Ministral and the 30B separately,
+`JANUS_OK`, `RESONANCE_OK`, `NOTORCH_PARITY_OK (6 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`.
+
+Caught before it shipped: the two new fields went in the middle of `nt_qjob_i8`
+first, and the gathered-expert dispatch initialises that struct positionally, so
+`slices` landed in `fnn`. Both test suites passed anyway — 46/46 and 50/50 — and
+only a compiler warning about incompatible pointer types said anything. The fields
+are last now, with a comment saying why they have to be.
+
+Where the machine stands against llama.cpp on the polygon, 61-token prompt, six
+threads:
+
+                       notorch      llama.cpp
+      Qwen3-4B         26.5 / 8.4   47.32 / 11.26
+      Qwen3-30B-A3B    22.35 / 7.45 42.70 / 13.54
+
+Still rows-only on the split. Their 16x16 two-dimensional chunking is the next
+thing this entry did not do.
+
+---
+
 ## 2026-09-13 — the activation tile is chosen from L2, and the bench overpromises by four
 
 The tile loop is outside the row loop, so a pass over a row range costs each row's
