@@ -13,6 +13,53 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — two ways to make attention faster, both measured, both worse
+
+The x86 arm took attention from 32.6% of a single-threaded prefill to 9.6%, and
+left it at 1.15 MAC per cycle against the eight the machine issues. Two obvious
+directions from there. Neither survives, and the reasons are worth more than the
+attempts.
+
+**Blocking four queries against one loaded key row.** The queries of a prefill
+chunk all walk the same K and V rows, so reading each row once for four of them
+should divide the traffic by four. It divides the section by 1.24 and multiplies
+the prefill by 1.04.
+
+    469-token prefill, six threads, three runs each
+      attention   1797 1826 1849  ->  1473 1464 1519
+      wall       18992 18739 19630 -> 19722 19769 19910
+
+The section is genuinely faster and the body is genuinely slower. Four score rows
+per head instead of one takes the scratch from 256 KB to 1 MB, and that MB is
+resident in a 9 MB L3 that the FFN matmul is streaming 22 MB of weights through.
+Attention wins 350 ms and the matmuls lose more than that. A section timer cannot
+see this; only the wall can.
+
+**Software prefetch on the row walk.** A key row is KVD floats from the next —
+4096 bytes for this model, exactly a page — and the L2 streamer does not prefetch
+across a page boundary, so in principle every one of the eight lines a head
+occupies is a demand miss with nothing fetching ahead of it. Naming the next row
+should fix that:
+
+    prefetch distance   1     2     4     8     16    (none)
+    attention (ms)      1747  1723  1753  1759  1778   1794
+
+Flat. The page-boundary story is either wrong or not the binding constraint, and
+one instruction per row of `__builtin_prefetch` buys nothing at any distance.
+
+What the two together do say: the loads are about a third of what attention costs,
+since removing three quarters of them bought 1.24x. The other two thirds are not
+prefetch-shaped and not bandwidth-shaped. 127 million calls each of `dot_f32` and
+`axpy_f32` per prefill, 128 elements apiece, is the remaining shape — a real
+tiled kernel that keeps a block of queries and a block of keys in registers and
+never returns between them, which is what `flash_attn_ext_tiled` is and what this
+would have to become. Not a loop change.
+
+No code in this entry. Both attempts are reverted; the tree is `9d4aa1a` plus this
+log.
+
+---
+
 ## 2026-09-13 — attention had no x86 arm at all, and two entries below this one are wrong
 
 Two corrections first, both from `perf record` on `llama-cli` rather than from
