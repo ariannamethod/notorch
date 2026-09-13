@@ -174,10 +174,14 @@ int main(int argc, char **argv) {
     int k = argc > 4 ? atoi(argv[4]) : 2048;
     int m = argc > 5 ? atoi(argv[5]) : 4096;
     uint8_t *W = make_q4_k(m, k, 7u);
-    float *X = (float *)malloc(sizeof(float) * (size_t)k * n);
-    float *O = (float *)malloc(sizeof(float) * (size_t)m * n);
+    /* Two columns minimum: the probe below asks the batched entry a question that only
+     * makes sense at n >= 2, and at n = 1 it used to read a column that was never
+     * allocated. ASAN caught it the first time anyone ran this at n = 1. */
+    int xcols = n < 2 ? 2 : n;
+    float *X = (float *)malloc(sizeof(float) * (size_t)k * xcols);
+    float *O = (float *)malloc(sizeof(float) * (size_t)m * xcols);
     if (!W || !X || !O) return 1;
-    for (long i = 0; i < (long)k * n; i++) X[i] = (float)((double)rand() / RAND_MAX * 2.0 - 1.0);
+    for (long i = 0; i < (long)k * xcols; i++) X[i] = (float)((double)rand() / RAND_MAX * 2.0 - 1.0);
 
     if (nt_qmatmul_i8(O, W, dtype, X, m, k, 2) != 0) {
         printf("bench_qmatmul: the batched entry refused Q4_K at k=%d\n", k);
