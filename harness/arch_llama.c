@@ -190,6 +190,50 @@ typedef struct {
     float scale;
 } attn_ctx;
 
+typedef struct {
+    float *q_all, *k_new, *v_new;
+    const float *q_norm, *k_norm;
+    kv_cache *kv;
+    int pos0, H, KV, HD, KVD, Q_DIM, neox;
+    long base;
+    float rope_base, eps;
+} rope_ctx;
+
+/* One token per item. Token j writes its own slice of q_all and k_new and its own
+ * slot in the cache, so nothing here is shared. It was 147 ms of a 2540 ms prefill
+ * on one core while the matmuls beside it used six — the same shape of waste the
+ * attention loop had, and the same fix. */
+static void rope_tokens(void *vctx, int j0, int j1) {
+    const rope_ctx *r = (const rope_ctx *)vctx;
+    for (int j = j0; j < j1; j++) {
+        int pos = r->pos0 + j;
+        float *qj = r->q_all + (long)j * r->Q_DIM, *kj = r->k_new + (long)j * r->KVD;
+        for (int h = 0; h < r->H; h++) {
+            if (r->q_norm) rmsnorm(qj + h*r->HD, qj + h*r->HD, r->q_norm, r->HD, r->eps);
+            rope(qj + h*r->HD, pos, r->HD, r->rope_base, r->neox);
+        }
+        for (int h = 0; h < r->KV; h++) {
+            if (r->k_norm) rmsnorm(kj + h*r->HD, kj + h*r->HD, r->k_norm, r->HD, r->eps);
+            rope(kj + h*r->HD, pos, r->HD, r->rope_base, r->neox);
+        }
+        memcpy(r->kv->k + r->base + (long)pos * r->KVD, kj, r->KVD * sizeof(float));
+        memcpy(r->kv->v + r->base + (long)pos * r->KVD,
+               r->v_new + (long)j * r->KVD, r->KVD * sizeof(float));
+    }
+}
+
+typedef struct { float *gate; const float *up; int ffn; } silu_ctx;
+
+/* Per token, not per element: nt_par_for hands out one item at a time, so the item
+ * has to be worth an atomic. A token's row is FFN wide and carries FFN expf calls. */
+static void silu_tokens(void *vctx, int j0, int j1) {
+    const silu_ctx *c = (const silu_ctx *)vctx;
+    for (long i = (long)j0 * c->ffn; i < (long)j1 * c->ffn; i++) {
+        float g = c->gate[i];
+        c->gate[i] = (g / (1.0f + expf(-g))) * c->up[i];
+    }
+}
+
 static void attn_heads(void *vctx, int h0, int h1) {
     const attn_ctx *a = (const attn_ctx *)vctx;
     for (int h = h0; h < h1; h++) {
@@ -282,25 +326,17 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
         pft = pf_mark();
         long base = (long)l * kv->max_seq * KVD;
-        for (int j = 0; j < n; j++) {
-            int pos = pos0 + j;
-            float *qj = q_all + (long)j * Q_DIM, *kj = k_new + (long)j * KVD;
+        {
             /* Qwen3 normalises each head of q and k before rotating it, with the
              * model's own epsilon. Before, not after: the rotation mixes lanes
              * within a head, so a norm taken afterwards is a different function.
              * Absent weights mean an older file and the loop is the old loop. */
-            for (int h = 0; h < H; h++) {
-                if (m->layers[l].q_norm)
-                    rmsnorm(qj + h*HD, qj + h*HD, m->layers[l].q_norm, HD, eps);
-                rope(qj + h*HD, pos, HD, m->rope_base, m->rope_neox);
-            }
-            for (int h = 0; h < KV; h++) {
-                if (m->layers[l].k_norm)
-                    rmsnorm(kj + h*HD, kj + h*HD, m->layers[l].k_norm, HD, eps);
-                rope(kj + h*HD, pos, HD, m->rope_base, m->rope_neox);
-            }
-            memcpy(kv->k + base + (long)pos * KVD, kj, KVD * sizeof(float));
-            memcpy(kv->v + base + (long)pos * KVD, v_new + (long)j * KVD, KVD * sizeof(float));
+            rope_ctx rc = { q_all, k_new, v_new,
+                            m->layers[l].q_norm, m->layers[l].k_norm, kv,
+                            pos0, H, KV, HD, KVD, Q_DIM, m->rope_neox, base,
+                            m->rope_base, eps };
+            if ((long)n * (H + KV) * HD >= 65536) nt_par_for(rope_tokens, &rc, n, 2);
+            else                                  rope_tokens(&rc, 0, n);
         }
         pf_add(PF_ROPE, pft);
 
@@ -344,9 +380,10 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
         qmm(ffn_up, &m->layers[l].wup, xn, n);
         pf_add(PF_FFN, pft);
         pft = pf_mark();
-        for (long i = 0; i < (long)n * FFN; i++) {
-            float g = ffn_gate[i];
-            ffn_gate[i] = (g / (1.0f + expf(-g))) * ffn_up[i];
+        {
+            silu_ctx sc = { ffn_gate, ffn_up, FFN };
+            if ((long)n * FFN >= 65536) nt_par_for(silu_tokens, &sc, n, 2);
+            else                        silu_tokens(&sc, 0, n);
         }
         pf_add(PF_SILU, pft);
         pft = pf_mark();

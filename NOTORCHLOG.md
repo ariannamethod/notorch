@@ -13,6 +13,86 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — rope and silu join the machine, and the chunk that looked right in the bench was wrong in the body
+
+Went and read what Gerganov actually does, which was the right instinct. Two
+things came back. `ggml/src/ggml-cpu/repack.cpp` carries `block_q4_Kx8` and
+`ggml_gemm_q4_K_8x8_q8_K`: eight rows of weights interleaved into one block so a
+single pass produces eight rows against one activation load. That is negative
+result #7 from 09-12 — "two rows through one activation load", which lost by 30%
+— done the way it has to be done. It lost because row-major weights make
+multi-row blocking a strided-load problem; they changed the layout, not the loop.
+Second thing: on this machine it does not matter. `GGML_CPU_REPACK=0` reads
+47.56 t/s against 47.07 with it on, so their prefill here is the plain
+`vec_dot_q4_K_q8_K` path, called per (row, column).
+
+Which made the real comparison possible, thread by thread, Qwen3-4B Q4_K_M,
+61-token prompt:
+
+    threads    llama.cpp    notorch
+      1           9.54        6.2
+      2          18.83       11.1
+      4          36.09       18.8
+      6          47.67       23.7
+    scaling      5.00x       3.82x
+
+Two deficits, and they multiply to 2.01x, which is exactly the measured gap.
+
+### The serial sections, closed
+
+Amdahl on 3.82x gives a serial fraction of 11.4%; the single-threaded sections of
+the profile — rope+kv 147 ms, silu 97 ms, rmsnorm 21, residual 7, of a 2540 ms
+prefill — are 10.7%. Close enough to act on. Both loops are per token and touch
+nothing shared, so both go through `nt_par_for` behind the same work gate
+attention uses.
+
+    rope+kv    147 -> 42 ms    silu    97 -> 36 ms
+
+Qwen3-4B prefill 23.6 -> 24.65, Ministral 28.5 -> 29.5, both alternating runs.
+Decode unchanged at 8.4 and 10.2 — the gate keeps n=1 on one core. The same rope
+fan-out in `arch_olmoe.c` takes Qwen3-30B-A3B from 12.7 to 12.9 and its rope from
+146 to 47 ms. Its silu is left alone deliberately: the grouped path calls it with
+`cnt * FFN` around 3072 elements, 24 us a call, 4608 calls a prefill — six
+`pthread_create`s would cost more than the work.
+
+### And the negative result that matters more than the win
+
+The bench says the column count decides the kernel's rate. Six threads,
+m=4096, three runs, medians:
+
+    k=9728    n=16  148.4    n=32  122.8      1.21x
+    k=14336   n=16  129.1    n=32  113.3      1.14x
+    k=2560    n=16  130.5    n=32  142.7
+
+So a smaller column chunk should be worth a fifth of the FFN. `NT_PREFILL_CHUNK`
+swept end to end says the opposite, monotonically:
+
+    32 -> 25.0 t/s    20 -> 24.3    16 -> 23.0    12 -> 21.5    8 -> 18.0
+
+The bench normalises by MACs and hides what the body pays: 61 tokens in chunks of
+16 is four passes over 2.3 GB of weights instead of two. The rate per MAC went up
+and the weight traffic went up faster. A per-MAC benchmark cannot answer a
+question about a whole pass, and this is the second time this week a bench number
+pointed the wrong way — the first was measuring m=4096 while believing it was
+measuring an expert.
+
+What the bench numbers do say is that the loss is cache blocking on one dimension.
+The pool splits rows only, so a worker holds 42 rows of weights (230 KB) and the
+whole activation slice (304 KB at n=32, k=9728) against 256 KB of L2 per core.
+Blocking both dimensions — a row chunk small enough that its weights stay in L2
+while the columns loop inside it — is the fix, and it is a change to the kernel's
+loop nest rather than a constant. Named, not done.
+
+Where the machine stands after this: pool scaling on a pure matmul is 4.09x of a
+5.56x ceiling (the clock drops 3.44 -> 3.19 GHz from one thread to six), against
+llama.cpp's 5.00x on the whole body.
+
+Gates: notorch_test 49/49 and 73/73, `NOTORCH_REPEAT_OK` on both machines,
+`NOTORCH_REFERENCE_OK` with 0 diverged on all three bodies, `JANUS_OK`,
+`RESONANCE_OK`, `NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_CONSUMER_OK (3 checks)`.
+
+---
+
 ## 2026-09-13 — the Q4_K min term is a vector now: a fifth of every instruction gone, and one body that got slower for it
 
 The two AVX2 Q4_K arms computed the min term as eight scalar multiplies, eight
