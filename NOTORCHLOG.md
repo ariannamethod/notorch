@@ -13,6 +13,73 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — a 512-row projection is six times slower on six threads, and neither fix helps the body
+
+Decode is where the mixture is furthest behind — 9.5 t/s against llama.cpp's 13.54
+— so the profile of its decode, 24 tokens of Qwen3-30B-A3B:
+
+    qkv+bias   738 ms  32.1%      ffn matmul  975 ms  42.4%
+    attn proj  206 ms   9.0%      rope+kv      56 ms   2.4%
+
+Per layer-token that is 10.49 M multiply-adds of qkv in 641 us — 16.4 GMAC/s —
+against 8.39 M of attn proj in 179 us, 46.9 GMAC/s, through the same kernel at the
+same k. The difference is that qkv is three calls and two of them have m=512: this
+model has four KV heads, so its k and v projections are 512 rows.
+
+`tests/bench_qmatmul` now takes m, so the shape is measurable on its own. It is
+not subtle:
+
+    Q4_K matvec, k=2048, GMAC/s
+      m=512   t1 12.2  t2  4.8  t6  2.1
+      m=768   t1 12.7  t2  7.4  t6  6.5
+      m=1024  t1 12.9  t2  8.6  t6 22.3
+      m=2048  t1 13.3  t2 14.7  t6 44.0
+      m=4096  t1 13.3  t2 22.6  t6 59.8
+
+**Six threads make a 512-row matvec six times slower than one.** `perf` puts
+60.57% of that run in `nt_qpool_i8_loop` — the worker's wait loop — against 2.31%
+in the kernel. A worker that has run out of chunks decrements `busy` and then
+spins 500000 iterations on the generation counter, and on a 35 W part five of
+those take turbo headroom from the one still computing.
+
+### Two fixes, both right in the bench, both wrong in the body
+
+**Yield while a dispatch is in flight.** While `busy` is non-zero the next
+generation cannot arrive — the dispatcher holds a mutex until this one drains — so
+the spin has nothing to catch. Replacing it with `sched_yield` reads m=4096 t6
+31.8 -> 36-43 GMAC/s and m=512 t6 2.3 -> 18.5 in the bench. On the 30B's decode it
+reads 2294 -> 2365-2455 ms. Worse.
+
+**Cap the threads by work per thread.** The floor asks whether the whole matvec is
+big enough; per thread a 512-row projection at k=2048 hands each worker 175k of
+multiply-add, and the turn measured above is at 700k. Capping fixes the bench
+exactly — m=512 t6 goes 2.1 -> 12.2, everything above 2048 unchanged — and takes
+the 30B's decode to 2497-2533 ms. Worse again, and worse than the yield alone.
+
+Both reverted. Fourth time this week a per-MAC bench has pointed further than the
+body would go, and the first time it has pointed the wrong way outright: in the
+bench the same matvec runs back to back with nothing else alive, and in the body
+the pool's idle workers are competing with the harness's own fan-outs for rope,
+silu and attention. `sched_yield` costs more there than the spin it replaces.
+
+The finding stands even though the fixes do not: two 512-row projections a layer,
+forty-eight layers, are running at a sixth of the rate one thread would give them,
+and that is a third of the mixture's decode. What it needs is not a knob.
+
+### What does survive: two out-of-bounds reads in the bench
+
+`bench_qmatmul` at n=1 died with "double free or corruption". AddressSanitizer put
+it in `nt_quant_act_q8_super`, which looked like a library bug and was not: the
+probe that asks whether the batched entry accepts Q4_K hardcodes n=2 while `X` and
+`O` were allocated for n columns. At the default n=32 it is in bounds; at n=1 it
+reads and writes a column that does not exist. Nobody had run this at n=1 before
+today. Both buffers are sized for at least two columns now, and ASAN is clean at
+n=1, 2 and 32.
+
+Gates on the reverted tree: notorch_test 50/50, test_qmatmul 46/46.
+
+---
+
 ## 2026-09-13 — Q6_K rebuilt its weights once per column because a minus thirty-two was in the way
 
 The profiles say where to look. Same 469-token prefill, one thread, symbol shares
