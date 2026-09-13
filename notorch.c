@@ -8455,7 +8455,7 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
     (void)asum;
     int nb = k / 256;
     const __m256i m4 = _mm256_set1_epi8(0x0F), m3 = _mm256_set1_epi8(3),
-                  b32 = _mm256_set1_epi8(32), ones = _mm256_set1_epi16(1);
+                  one8 = _mm256_set1_epi8(1);
     int tile = nt_qmm_tile(k);
     for (int j0 = 0; j0 < n; j0 += tile) {
         int jn = n - j0; if (jn > tile) jn = tile;
@@ -8467,27 +8467,50 @@ static void nt_q6_k_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
                 const uint8_t *b = rb + (long)blk * 210, *ql = b, *qh = b + 128;
                 const int8_t *sc = (const int8_t *)(b + 192);
                 float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
+                /* The six-bit quant is stored unsigned in [0,63] and means the value minus
+                 * 32. Subtracting the 32 here is what forced the two sign_epi8 per group —
+                 * maddubs wants its left operand unsigned — and it also made the weight
+                 * depend on nothing but the block while sitting inside the column loop,
+                 * where the compiler could not hoist it: eight 32-byte vectors plus the two
+                 * signs do not fit sixteen registers.
+                 *
+                 * Left unsigned it fits, and the offset comes out as its own term:
+                 * SUM sc[s]*(w-32)*x  ==  SUM sc[s]*w*x  -  32 * SUM sc[s]*(SUM x). The
+                 * second sum is one maddubs against a vector of ones and one madd with the
+                 * same scale vector, in the same lane structure, so it costs two operations
+                 * per group and buys back three. Everything stays int32 until the single
+                 * fmadd, so this is the same number bit for bit, not a near one.
+                 *
+                 * Per (block, column) that is roughly 104 operations against 48, with the
+                 * eight-vector reconstruction now paid once per block instead of once per
+                 * block per column. */
+                __m256i wv[8];
+                for (int nn = 0; nn < 256; nn += 128) {
+                    const uint8_t *qlh = ql + (nn / 128) * 64, *qhh = qh + (nn / 128) * 32;
+                    __m256i qhv = _mm256_loadu_si256((const __m256i *)qhh);
+                    for (int g = 0; g < 4; g++) {
+                        __m256i qlv = _mm256_loadu_si256((const __m256i *)(qlh + (g & 1) * 32));
+                        __m256i lo  = (g < 2) ? _mm256_and_si256(qlv, m4)
+                                              : _mm256_and_si256(_mm256_srli_epi16(qlv, 4), m4);
+                        __m256i hi2 = _mm256_and_si256(_mm256_srli_epi16(qhv, 2 * g), m3);
+                        wv[(nn / 128) * 4 + g] = _mm256_or_si256(lo, _mm256_slli_epi16(hi2, 4));
+                    }
+                }
                 for (int j = 0; j < jn; j++) {
                     const int8_t *qab = qa + (long)(j0 + j) * k + (long)blk * 256;
                     const float  *dab = da + (long)(j0 + j) * (k / 32) + (long)blk * 8;
-                    __m256i sumi = _mm256_setzero_si256();
-                    for (int nn = 0; nn < 256; nn += 128) {
-                        const uint8_t *qlh = ql + (nn / 128) * 64, *qhh = qh + (nn / 128) * 32;
-                        __m256i qhv = _mm256_loadu_si256((const __m256i *)qhh);
-                        for (int g = 0; g < 4; g++) {
-                            __m256i qlv = _mm256_loadu_si256((const __m256i *)(qlh + (g & 1) * 32));
-                            __m256i lo  = (g < 2) ? _mm256_and_si256(qlv, m4)
-                                                  : _mm256_and_si256(_mm256_srli_epi16(qlv, 4), m4);
-                            __m256i hi2 = _mm256_and_si256(_mm256_srli_epi16(qhv, 2 * g), m3);
-                            __m256i w   = _mm256_sub_epi8(_mm256_or_si256(lo, _mm256_slli_epi16(hi2, 4)), b32);
-                            __m256i xv  = _mm256_loadu_si256((const __m256i *)(qab + nn + g * 32));
-                            int js = nn / 16 + g * 2;
-                            __m256i sv = _mm256_inserti128_si256(_mm256_set1_epi16((short)sc[js]),
-                                                                 _mm_set1_epi16((short)sc[js + 1]), 1);
-                            sumi = _mm256_add_epi32(sumi, _mm256_madd_epi16(sv,
-                                _mm256_maddubs_epi16(_mm256_sign_epi8(w, w), _mm256_sign_epi8(xv, w))));
-                        }
+                    __m256i sumi = _mm256_setzero_si256(), sumx = _mm256_setzero_si256();
+                    for (int gg = 0; gg < 8; gg++) {
+                        __m256i xv = _mm256_loadu_si256((const __m256i *)(qab + gg * 32));
+                        int js = gg * 2;
+                        __m256i sv = _mm256_inserti128_si256(_mm256_set1_epi16((short)sc[js]),
+                                                             _mm_set1_epi16((short)sc[js + 1]), 1);
+                        sumi = _mm256_add_epi32(sumi, _mm256_madd_epi16(sv,
+                                   _mm256_maddubs_epi16(wv[gg], xv)));
+                        sumx = _mm256_add_epi32(sumx, _mm256_madd_epi16(sv,
+                                   _mm256_maddubs_epi16(one8, xv)));
                     }
+                    sumi = _mm256_sub_epi32(sumi, _mm256_slli_epi32(sumx, 5));
                     accv[j] = _mm256_fmadd_ps(_mm256_set1_ps(d * dab[0]),
                                               _mm256_cvtepi32_ps(sumi), accv[j]);
                 }

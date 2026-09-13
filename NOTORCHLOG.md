@@ -13,6 +13,72 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — Q6_K rebuilt its weights once per column because a minus thirty-two was in the way
+
+The profiles say where to look. Same 469-token prefill, one thread, symbol shares
+against each run's own instruction count:
+
+                       notorch            llama.cpp
+      Q4_K matmul   57.69% = 499.7 G    65.51% = 337.8 G    1.48x
+      Q6_K matmul   27.57% = 238.8 G    16.37% =  84.4 G    2.83x
+
+Q6_K is the worse ratio and a quarter of our time, and `test_qmatmul` had been
+printing the symptom for a while: batched against per-token at n=32, Q4_K reads
+1.96x and Q6_K read **1.09x**. The batched path was barely beating thirty-two
+matvecs.
+
+The cause is one subtraction. A Q6_K quant is stored unsigned in [0,63] and means
+the value minus 32. Subtracting the 32 during reconstruction makes the weight
+signed, `maddubs` wants its left operand unsigned, so every group paid two
+`sign_epi8` — and, worse, the eight reconstructed vectors plus those two signs do
+not fit sixteen registers, so the whole reconstruction stayed inside the column
+loop where the compiler could not lift it. 104 operations per (block, column)
+against sixteen that do arithmetic.
+
+Left unsigned it fits, and the offset becomes its own term:
+
+    SUM sc[s]*(w-32)*x  ==  SUM sc[s]*w*x  -  32 * SUM sc[s]*(SUM x)
+
+The second sum is one `maddubs` against a vector of ones and one `madd` with the
+same scale vector, in the same lane structure — two operations per group bought
+for three, and the eight-vector reconstruction now happens once per block instead
+of once per block per column. Roughly 48 operations per (block, column) instead
+of 104.
+
+Everything stays int32 until the single `fmadd`, so this is **the same number bit
+for bit**. `test_qmatmul` says so directly: every Q6_K case reads "outputs
+identical", not "within tolerance".
+
+    test_qmatmul, m=2048 k=4096 n=32
+      dtype=14 batched against per-token   1.09x -> 1.63x
+
+    469-token prefill, six threads
+      Qwen3-4B   25.75 -> 28.1 t/s
+
+    61-token prompt, six threads, alternating runs
+      Qwen3-4B       prefill 28.05 -> 30.6   decode 10.1 -> 10.05
+      Ministral-3B   prefill 33.7  -> 34.6   decode 11.9 -> 11.8
+      Qwen3-30B-A3B  prefill 23.95 -> 25.35  decode unchanged within noise
+
+Decode is untouched because n=1 goes to the matvec arm, which still carries the
+old shape. That arm is the obvious next thing and it is not done here.
+
+Q6_K's share of the single-threaded profile falls 27.57% -> 20.51%. Against
+llama.cpp it was 2.83x on instructions and is now roughly 2.1x; their
+`ggml_vec_dot_q6_K_q8_K` is still ahead and the remaining difference has not been
+read.
+
+Gates: notorch_test 50/50 and 73/73, test_qmatmul 46/46 on both machines,
+`NOTORCH_REFERENCE_OK` 0 diverged on all three bodies, `NOTORCH_REPEAT_OK` on each
+of the three and on neo, `JANUS_OK`, `RESONANCE_OK`, `NOTORCH_PARITY_OK (6 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`.
+
+Where the machine stands, 61-token prompt, six threads, against llama.cpp on the
+same polygon: Qwen3-4B 30.6 / 10.1 against 47.32 / 11.26, Qwen3-30B-A3B
+25.35 / 9.5 against 42.70 / 13.54.
+
+---
+
 ## 2026-09-13 — two ways to make attention faster, both measured, both worse
 
 The x86 arm took attention from 32.6% of a single-threaded prefill to 9.6%, and
