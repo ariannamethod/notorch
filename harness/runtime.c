@@ -12,6 +12,8 @@
 #include <time.h>
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
+#elif defined(__AVX2__) && defined(__FMA__)
+#include <immintrin.h>
 #endif
 
 #ifdef USE_BLAS
@@ -144,13 +146,35 @@ void qmm(float *out, const wt *w, const float *X, int n) {
  * model here and always a multiple of four, so four lanes cover them with a
  * scalar tail for anything odd. The four partial sums make this a different
  * summation order from the scalar loop, hence a different last bit; that is a
- * change to attention's arithmetic, not to its meaning. */
+ * change to attention's arithmetic, not to its meaning.
+ *
+ * x86 had no arm at all until now, and these two are the whole of attention's arithmetic —
+ * called once per (head, query, key), which is 127 million times each for a 469-token
+ * prefill of a 36-layer model. The scalar tail ran 128 multiply-adds down one dependency
+ * chain at four cycles of FMA latency apiece: attention took 32.6% of a single-threaded
+ * prefill to do 1.9% of its arithmetic, 0.27 MAC per cycle where the machine issues eight.
+ * Four accumulators break the chain. */
 float dot_f32(const float *a, const float *b, int n) {
     int i = 0; float s = 0.0f;
 #if defined(__ARM_NEON)
     float32x4_t acc = vdupq_n_f32(0.0f);
     for (; i + 4 <= n; i += 4) acc = vfmaq_f32(acc, vld1q_f32(a + i), vld1q_f32(b + i));
     s = vaddvq_f32(acc);
+#elif defined(__AVX2__) && defined(__FMA__)
+    __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps();
+    __m256 a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();
+    for (; i + 32 <= n; i += 32) {
+        a0 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i),      _mm256_loadu_ps(b + i),      a0);
+        a1 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i + 8),  _mm256_loadu_ps(b + i + 8),  a1);
+        a2 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i + 16), _mm256_loadu_ps(b + i + 16), a2);
+        a3 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i + 24), _mm256_loadu_ps(b + i + 24), a3);
+    }
+    for (; i + 8 <= n; i += 8)
+        a0 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i), _mm256_loadu_ps(b + i), a0);
+    __m256 v = _mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3));
+    __m128 h = _mm_add_ps(_mm256_castps256_ps128(v), _mm256_extractf128_ps(v, 1));
+    h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+    s = _mm_cvtss_f32(h);
 #endif
     for (; i < n; i++) s += a[i] * b[i];
     return s;
@@ -162,6 +186,18 @@ void axpy_f32(float *y, float alpha, const float *x, int n) {
     float32x4_t va = vdupq_n_f32(alpha);
     for (; i + 4 <= n; i += 4)
         vst1q_f32(y + i, vfmaq_f32(vld1q_f32(y + i), va, vld1q_f32(x + i)));
+#elif defined(__AVX2__) && defined(__FMA__)
+    /* No chain to break here — the lanes are independent — so this is only width and
+     * enough unrolling to keep the load and store ports busy. */
+    const __m256 va = _mm256_set1_ps(alpha);
+    for (; i + 32 <= n; i += 32) {
+        _mm256_storeu_ps(y + i,      _mm256_fmadd_ps(va, _mm256_loadu_ps(x + i),      _mm256_loadu_ps(y + i)));
+        _mm256_storeu_ps(y + i + 8,  _mm256_fmadd_ps(va, _mm256_loadu_ps(x + i + 8),  _mm256_loadu_ps(y + i + 8)));
+        _mm256_storeu_ps(y + i + 16, _mm256_fmadd_ps(va, _mm256_loadu_ps(x + i + 16), _mm256_loadu_ps(y + i + 16)));
+        _mm256_storeu_ps(y + i + 24, _mm256_fmadd_ps(va, _mm256_loadu_ps(x + i + 24), _mm256_loadu_ps(y + i + 24)));
+    }
+    for (; i + 8 <= n; i += 8)
+        _mm256_storeu_ps(y + i, _mm256_fmadd_ps(va, _mm256_loadu_ps(x + i), _mm256_loadu_ps(y + i)));
 #endif
     for (; i < n; i++) y[i] += alpha * x[i];
 }

@@ -13,6 +13,80 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 — attention had no x86 arm at all, and two entries below this one are wrong
+
+Two corrections first, both from `perf record` on `llama-cli` rather than from
+reasoning:
+
+**The repack IS what pays for their prefill.** The entry two below says
+`GGML_CPU_REPACK=0` reads the same speed as with it on, and concludes their path
+here is the plain per-(row,column) `vec_dot`. The profile says otherwise:
+`ggml_gemm_q4_K_8x8_q8_K` is **65.51%** of a 469-token single-threaded run, with
+`repack_q4_K_to_q4_K_8_bl` at 1.65% beside it. The environment variable is not the
+switch; the eight-row interleaved GEMM runs. That is what their per-core rate is
+made of, and the 09-12 "two rows through one activation load" negative result
+stands corrected too — the idea was right and the layout was wrong.
+
+**My attention MAC count was off by a thousand.** Earlier today I wrote that
+attention is 902 G MACs of a 469-token prefill and therefore "near f32 peak at 21
+GMAC/s". It is 32.5 G MACs — 8192 per token per layer times the triangle, times
+36 layers — which is **1.9% of the prefill's arithmetic**. It was taking 32.6% of
+the time.
+
+### What that turned out to be
+
+`dot_f32` and `axpy_f32` in `harness/runtime.c` had a NEON arm and nothing else.
+On x86 they ran the scalar tail: 128 multiply-adds down one dependency chain at
+four cycles of FMA latency each. 0.27 MAC per cycle measured, against the eight
+the machine issues. Same class as the AVX2 kernels that were never compiled on
+this machine until 09-12 — an arm that was simply never written.
+
+Four accumulators for the dot, width and unrolling for the axpy, both behind
+`__AVX2__ && __FMA__`:
+
+    469-token prefill, six threads
+      attention section   7091 -> 1794 ms      3.95x
+      prefill             19.8 -> 25.8 t/s
+
+    61-token prompt, six threads, alternating runs
+      Qwen3-4B       prefill 26.0 -> 27.6    decode  8.4 -> 10.1
+      Ministral-3B   prefill 31.85 -> 33.05  decode 10.25 -> 11.95
+      Qwen3-30B-A3B  prefill 22.55 -> 24.1   decode  7.5 -> 9.8
+
+Decode gains more than prefill, which is what should happen: decoding a token is
+one narrow matvec per weight plus a full walk of the KV cache, so attention is a
+much larger share of it. It was 20% of Qwen3-4B's decode and 31% of the mixture's,
+sitting in a function with no arm for the machine it was running on.
+
+Not finished. 1794 ms for 32.5 G MACs on six threads is 3.0 GMAC/s per core, 0.87
+MAC per cycle — still an eighth of what the machine issues. Two reasons left: a K
+row is strided by KVD, so each 128-float dot touches eight cache lines four
+kilobytes apart, and there are still 127 million calls of each function per
+prefill. Blocking the queries so a loaded K row serves more than one of them is
+the next thing, and their `flash_attn_ext_tiled` — 3.56% of their profile — is
+what it looks like done properly.
+
+Gates: notorch_test 50/50 and 73/73, `NOTORCH_REFERENCE_OK` with 0 diverged on all
+three bodies, `NOTORCH_REPEAT_OK` on each of the three separately and on neo,
+`JANUS_OK`, `RESONANCE_OK`, `NOTORCH_PARITY_OK (6 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`.
+
+### One more negative result, and why it was never going to work
+
+Hoisting the Q4_K nibble unpack out of the column loop, with `sv[8]` dropped to
+free the registers it needed — the pairing that 09-12's negative result #1 lacked.
+One pinned core, medians of three: k=9728 30.2 -> 28.7, k=2560 37.2 -> 34.4,
+k=768 33.0 -> 32.7. Worse or flat everywhere.
+
+The reason is in the disassembly: `objdump --disassemble=nt_q4_k_rows_i8n` counts
+**twelve** `vpand`/`vpsrlw` before the change and twelve after. The compiler had
+been hoisting it all along — the unpack is loop-invariant in `j` and it saw that.
+Whole-run instruction count moved 96.73 G to 96.37 G, four tenths of a percent.
+Reverted. Worth the hour: "the compiler already did it" is a fact that closes the
+direction, where "measured to nothing" would have left it open a third time.
+
+---
+
 ## 2026-09-13 — prefill made its own threads for every matmul; the MoE was paying 864 times a token
 
 Went back to `ggml/src/ggml-cpu/ggml-cpu.c` to see what else is different.
