@@ -27,6 +27,7 @@
 - [SPA — Sentence Phonon Attention](#spa--sentence-phonon-attention)
 - [LoRA / adapter training](#lora--adapter-training)
 - [BLAS inference API](#blas-inference-api)
+- [audio front end — conv1d, STFT, log-mel](#audio-front-end--conv1d-stft-log-mel)
 - [inference — notorch runs models](#inference--notorch-runs-models-it-doesnt-just-train-them)
 - [alignment training — DPO / GRPO / distillation](#alignment-training--dpo--grpo--distillation)
 - [autograd](#autograd)
@@ -475,6 +476,58 @@ int  nt_qmatvec(float *out, const uint8_t *Wq, int dtype, const float *x, int m,
 ```
 
 under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on macOS, OpenBLAS on Linux). without BLAS they fall back to the naive C loops — correct, just slower. the example engines reach the same BLAS path directly through their own local wrappers in their hot paths: `infer_gemma.c` / `infer_llama.c` / `infer_janus.c` call `cblas_sgemm`, and `infer_llama3_bpe.c` calls `cblas_sgemv` (scalar fallback without `USE_BLAS`).
+
+---
+
+## audio front end — conv1d, STFT, log-mel
+
+speech models need two things this library did not have: a 1-D convolution, and everything that turns a waveform into a spectrogram. forward-only, no tape, pre-trained weights — the same shape of API as the image ops.
+
+```c
+// out[Cout,Lout] = weight[Cout,Cin*K] @ im2col_1d(in) + bias   — nt_conv2d, one dimension down
+int  nt_conv1d(float *out, const float *in, const float *weight, const float *bias,
+               int Cin, int Lin, int Cout, int K, int stride, int pad);
+
+// the same with every unfolded column rounded to f16 before the GEMM
+int  nt_conv1d_f16cols(float *out, const float *in, const float *weight, const float *bias,
+                       int Cin, int Lin, int Cout, int K, int stride, int pad);
+
+// unfold [Cin,Lin] -> columns [Cin*K, Lout], row (c*K + k)
+void nt_im2col_1d(float *col, const float *in, int Cin, int Lin, int K, int stride, int padding);
+
+// periodic Hann: w[i] = 0.5 * (1 - cos(2*pi*i/n))
+void nt_hann_window(float *w, int n);
+
+// power spectrum [n_frames][n_fft/2+1]; window may be NULL for rectangular
+int  nt_stft(float *power, const float *signal, int n_signal,
+             int n_fft, int hop, int n_frames, const float *window, int n_threads);
+
+// the whisper-shaped front end, end to end
+typedef struct { int n_mel, n_len, n_len_org; float *data; } nt_mel;   // [n_mel][n_len], mel-major
+int  nt_logmel(nt_mel *out, const float *pcm, int n_samples,
+               const float *filters, int n_mel, int n_fft_bins,
+               int n_fft, int hop, int pad_tail, int n_threads);
+void nt_mel_free(nt_mel *m);
+```
+
+`nt_conv1d_f16cols` is not an approximation of `nt_conv1d`. ggml builds its im2col tensor as `GGML_TYPE_F16` (`ggml_conv_1d`), so an engine reproducing a ggml graph bit for bit has to round where ggml rounds; the weights and the accumulation stay f32 and only the columns move.
+
+the transform is a real-input Cooley-Tukey recursion that splits while the length is even and drops to a direct DFT at the first odd length, indexing one table of `2*pi*i/n_fft` sines and cosines at a stride. whisper's `n_fft` 400 is `2^4 * 25`, so it runs 400 → 200 → 100 → 50 → 25 and transforms the 25 directly — that is what ggml does, and zero-padding 400 up to 512 for a tidier radix-2 would be a correct FFT of a different signal. the mel filter bank is supplied by the caller and never generated here: a speech model ships its own inside the weight file, and a nominally equivalent one is a different model.
+
+**precision.** this op family exists to reproduce a reference graph exactly, so floating-point contraction is disabled per-function on the four that would otherwise fuse (`nt_dft_real`, `nt_fft_rec`, `nt_stft_frame`, `nt_stft_worker`). every other kernel in the library keeps its FMAs. the reason is measured, not theoretical: the same log-mel source compiled `-std=gnu11` rather than `-std=c11` differs by 1.5e-05 on `jfk.wav`, because GCC contracts multiply-adds into FMAs under one and not the other, and that lands an encoder activation an f16 ulp off the oracle.
+
+**measured**, phone-1 (Galaxy A56, Exynos 1580, Ubuntu 24.04 chroot, aarch64, OpenBLAS), cores 4-7. `ears` — the whisper port these ops came out of — switched to them and re-run against whisper.cpp's own `whisper_pcm_to_mel` and encoder:
+
+| check | result |
+|---|---|
+| log-mel vs the hand-written original, 3 wavs | byte-identical |
+| encoder post-conv activations `[1500 384]`, jfk/tiny | byte-identical |
+| `gate_mel`, 328000 values vs whisper.cpp | max\|d\| = 0.000e+00 |
+| `gate_encoder`, 576000 values | max\|d\| = 4.861e-02 |
+| `gate_transcript`, tiny + base, 3 wavs | 6 of 6 token for token |
+| `nt_logmel` on jfk.wav (176000 samples, n_len 4100) | 45.6 ms 1 thread, 21.3 ms 4 threads |
+
+tests: `make test_conv1d` (20 assertions, against a triple loop written from the definition in double, at shapes up to the whisper stem's `Cin=384 K=3`) and `make test_logmel` (25 assertions, STFT against a direct O(n²) DFT, run at 1 and 6 threads and asserted bit-identical between them). both are in `make test`.
 
 ---
 

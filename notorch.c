@@ -8878,6 +8878,72 @@ int nt_conv2d(float *out, const float *in, const float *weight, const float *bia
     return 0;
 }
 
+// nt_im2col_1d — the 1-D unfold: [Cin,Lin] -> columns [Cin*K, Lout]. Tap order is
+// nt_im2col's with kH collapsed to 1, so row (c*K + k) holds tap k of channel c for
+// every output position, contiguous across positions. Out-of-range taps are zero.
+void nt_im2col_1d(float *col, const float *in, int Cin, int Lin,
+                  int K, int stride, int padding) {
+    int Lout = (Lin + 2 * padding - K) / stride + 1;
+    for (int c = 0; c < Cin; c++)
+        for (int k = 0; k < K; k++) {
+            int row = c * K + k;
+            float *dst = col + (size_t)row * Lout;
+            const float *src = in + (size_t)c * Lin;
+            for (int o = 0; o < Lout; o++) {
+                int t = o * stride - padding + k;
+                dst[o] = (t >= 0 && t < Lin) ? src[t] : 0.0f;
+            }
+        }
+}
+
+// nt_conv1d / nt_conv1d_f16cols — out[Cout,Lout] = weight[Cout,Cin*K] @ im2col_1d(in)
+// + bias, one GEMM through the BLAS path, exactly as nt_conv2d does it one dimension
+// up. weight is the standard [Cout,Cin,K] tensor row-major (== [Cout, Cin*K]).
+//
+// f16cols rounds every unfolded column to f16 before the GEMM and nothing else —
+// not the weights, not the accumulation. That is where ggml's conv rounds, and an
+// engine reproducing a ggml graph has to round in the same place or it is computing
+// a slightly different model and calling the difference a tolerance.
+static int nt_conv1d_impl(float *out, const float *in, const float *weight, const float *bias,
+                          int Cin, int Lin, int Cout, int K, int stride, int pad, int f16cols) {
+    if (Cin <= 0 || Lin <= 0 || Cout <= 0 || K <= 0 || stride <= 0 || pad < 0) return -1;
+    if (!out || !in || !weight) return -1;
+    int Lout = (Lin + 2 * pad - K) / stride + 1;
+    if (Lout <= 0) return -1;
+    /* Same widening guard as nt_conv2d: the GEMM dims must stay int, so reject a
+     * geometry whose products would wrap before it can mis-size the buffer. */
+    long K_l = (long)Cin * K;
+    if (K_l > INT_MAX) return -1;
+    int Ktot = (int)K_l;
+    float *col = (float *)malloc((size_t)Ktot * Lout * sizeof(float));
+    if (!col) return -1;
+    nt_im2col_1d(col, in, Cin, Lin, K, stride, pad);
+    if (f16cols) {
+        size_t n = (size_t)Ktot * Lout;
+        for (size_t i = 0; i < n; i++) { uint16_t h; col[i] = nt_f32_to_f16_round(col[i], &h); }
+    }
+    nt_blas_mm(out, weight, col, Cout, Ktot, Lout);  /* [Cout,Ktot] @ [Ktot,Lout] */
+    if (bias) {
+        for (int co = 0; co < Cout; co++) {
+            float b = bias[co];
+            float *op = out + (size_t)co * Lout;
+            for (int o = 0; o < Lout; o++) op[o] += b;
+        }
+    }
+    free(col);
+    return 0;
+}
+
+int nt_conv1d(float *out, const float *in, const float *weight, const float *bias,
+              int Cin, int Lin, int Cout, int K, int stride, int pad) {
+    return nt_conv1d_impl(out, in, weight, bias, Cin, Lin, Cout, K, stride, pad, 0);
+}
+
+int nt_conv1d_f16cols(float *out, const float *in, const float *weight, const float *bias,
+                      int Cin, int Lin, int Cout, int K, int stride, int pad) {
+    return nt_conv1d_impl(out, in, weight, bias, Cin, Lin, Cout, K, stride, pad, 1);
+}
+
 // nt_group_norm — GroupNorm over [C,H,W]: split C into num_groups, normalize each
 // group over (C/num_groups)*H*W, then per-channel affine (gamma/beta may be NULL).
 // out may alias in. Returns 0, or -1 on bad args.
@@ -8944,6 +9010,340 @@ int nt_attention(float *out, const float *Q, const float *K, const float *V, int
     }
     nt_blas_mm(out, scores, V, T, S, d);          /* out[T,d] = scores[T,S] @ V[S,d] */
     free(scores);
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUDIO OPS — window, STFT, log-mel — the front end of a speech model
+// ═══════════════════════════════════════════════════════════════════════════════
+// The stage before the tensors: a waveform becomes [n_mel, n_frames] and every
+// later layer inherits whatever this gets wrong. Which is why the transform here
+// is not "an FFT" but a specific one — the real-input Cooley-Tukey recursion that
+// splits while the length is even and drops to a direct DFT at the first odd
+// length, indexing ONE table of 2*pi*i/n_fft sines and cosines at a stride.
+//
+// That shape is not an implementation preference, it is the arithmetic ggml uses,
+// and a speech port is judged on reproducing a reference transcript. n_fft 400 is
+// 2^4 * 25, so the recursion runs 400 -> 200 -> 100 -> 50 -> 25 and finishes the
+// 25 directly; a cleaner radix-2 that zero-padded 400 up to 512 would be a correct
+// FFT of a different signal and would move every number downstream.
+
+#ifndef NT_PI
+#define NT_PI 3.14159265358979323846
+#endif
+
+/* This op family exists to reproduce a reference graph exactly, and a fused
+ * multiply-add does not round to the same bits as a multiply followed by an add.
+ * The compiler decides that by default: GCC contracts under -std=gnu11, which is
+ * what this library builds with, and does not under -std=c11. The difference is
+ * not academic — the same log-mel source built both ways differs by 1.5e-5 on
+ * jfk.wav, and that lands an encoder activation an f16 ulp off the oracle.
+ *
+ * So contraction is turned off exactly where it changes the answer, one function
+ * at a time, instead of for the whole library: every other kernel in this file
+ * keeps its FMAs and its speed. */
+#if defined(__clang__)
+#  define NT_FP_EXACT     _Pragma("clang fp contract(off)")
+#  define NT_FP_EXACT_FN
+#elif defined(__GNUC__)
+#  define NT_FP_EXACT
+#  define NT_FP_EXACT_FN  __attribute__((optimize("-ffp-contract=off")))
+#else
+#  define NT_FP_EXACT
+#  define NT_FP_EXACT_FN
+#endif
+
+/* Sines and cosines of 2*pi*i/n for one top-level transform length. Every
+ * sub-transform indexes this same table at stride n/N, which is exact because the
+ * recursion only ever visits lengths that divide n. */
+typedef struct { int n; float *sinv, *cosv; } nt_fft_tab;
+
+static void nt_fft_tab_free(nt_fft_tab *t) { free(t->sinv); t->sinv = t->cosv = NULL; t->n = 0; }
+
+static int nt_fft_tab_init(nt_fft_tab *t, int n) {
+    t->n = n;
+    t->sinv = (float *)malloc((size_t)n * 2 * sizeof(float));
+    if (!t->sinv) { t->cosv = NULL; return -1; }
+    t->cosv = t->sinv + n;
+    for (int i = 0; i < n; i++) {
+        double theta = (2.0 * NT_PI * i) / n;
+        t->sinv[i] = sinf((float)theta);
+        t->cosv[i] = cosf((float)theta);
+    }
+    return 0;
+}
+
+void nt_hann_window(float *w, int n) {
+    if (!w || n <= 0) return;
+    for (int i = 0; i < n; i++)
+        w[i] = (float)(0.5 * (1.0 - cosf((float)((2.0 * NT_PI * i) / n))));
+}
+
+/* Direct DFT of a real input, for the odd length the recursion bottoms out on.
+ * Output is interleaved re/im. */
+NT_FP_EXACT_FN
+static void nt_dft_real(const float *in, int N, float *out, const nt_fft_tab *t) {
+    NT_FP_EXACT
+    const int step = t->n / N;
+    for (int k = 0; k < N; k++) {
+        float re = 0, im = 0;
+        for (int n = 0; n < N; n++) {
+            int idx = (int)(((long)k * n * step) % t->n);
+            re += in[n] * t->cosv[idx];
+            im -= in[n] * t->sinv[idx];
+        }
+        out[k * 2 + 0] = re;
+        out[k * 2 + 1] = im;
+    }
+}
+
+/* Radix-2 Cooley-Tukey over a real input. Scratch is taken from the tail of `in`
+ * (sized 2*n by the caller) and of `out` (sized 8*n): the even half's working
+ * region is the odd half's result region, which is safe only because the odd
+ * recursion runs after the even one has finished with it. */
+NT_FP_EXACT_FN
+static void nt_fft_rec(float *in, int N, float *out, const nt_fft_tab *t) {
+    NT_FP_EXACT
+    if (N == 1) { out[0] = in[0]; out[1] = 0; return; }
+    const int half = N / 2;
+    if (N - half * 2 == 1) { nt_dft_real(in, N, out, t); return; }
+
+    float *even = in + N;
+    for (int i = 0; i < half; i++) even[i] = in[2 * i];
+    float *even_fft = out + 2 * N;
+    nt_fft_rec(even, half, even_fft, t);
+
+    float *odd = even;
+    for (int i = 0; i < half; i++) odd[i] = in[2 * i + 1];
+    float *odd_fft = even_fft + N;
+    nt_fft_rec(odd, half, odd_fft, t);
+
+    const int step = t->n / N;
+    for (int k = 0; k < half; k++) {
+        int idx = k * step;
+        float re = t->cosv[idx], im = -t->sinv[idx];
+        float re_odd = odd_fft[2 * k + 0], im_odd = odd_fft[2 * k + 1];
+        out[2 * k + 0] = even_fft[2 * k + 0] + re * re_odd - im * im_odd;
+        out[2 * k + 1] = even_fft[2 * k + 1] + re * im_odd + im * re_odd;
+        out[2 * (k + half) + 0] = even_fft[2 * k + 0] - re * re_odd + im * im_odd;
+        out[2 * (k + half) + 1] = even_fft[2 * k + 1] - re * im_odd - im * re_odd;
+    }
+}
+
+/* One frame: window it, transform it, and leave |X_k|^2 in the first n_bins floats
+ * of fft_out, written in place over the interleaved result. n_copy samples are read
+ * from src and the rest of the window is zero. */
+NT_FP_EXACT_FN
+static void nt_stft_frame(float *fft_in, float *fft_out, const float *signal, int offset,
+                          int n_copy, int n_fft, int n_bins, const float *window,
+                          const nt_fft_tab *t) {
+    NT_FP_EXACT
+    if (n_copy < 0) n_copy = 0;
+    if (n_copy > n_fft) n_copy = n_fft;
+    const float *src = signal + (n_copy > 0 ? offset : 0);
+    if (window) for (int i = 0; i < n_copy; i++) fft_in[i] = window[i] * src[i];
+    else        for (int i = 0; i < n_copy; i++) fft_in[i] = src[i];
+    for (int i = n_copy; i < n_fft; i++) fft_in[i] = 0.0f;
+
+    nt_fft_rec(fft_in, n_fft, fft_out, t);
+
+    for (int k = 0; k < n_bins; k++)
+        fft_out[k] = fft_out[2 * k + 0] * fft_out[2 * k + 0]
+                   + fft_out[2 * k + 1] * fft_out[2 * k + 1];
+}
+
+/* The frame loop, striped across threads. One job does frames ith, ith+n_threads,
+ * ... so which thread takes which frame cannot move a bit of the result. `mel` is
+ * NULL for a plain STFT and non-NULL for the fused log-mel, which never
+ * materialises the whole power spectrogram. */
+typedef struct {
+    int          ith, n_threads;
+    const float *signal;      /* frame f starts at signal + f*hop */
+    int          n_valid;     /* samples that may be non-zero */
+    int          n_fft, hop, n_bins, n_frames;
+    const float *window;
+    const nt_fft_tab *tab;
+    float       *power;       /* [n_frames][n_bins], or NULL */
+    const float *filters;     /* [n_mel][n_bins], or NULL */
+    int          n_mel;
+    float       *mel;         /* [n_mel][n_frames], or NULL */
+    int          rc;
+} nt_stft_job;
+
+NT_FP_EXACT_FN
+static void *nt_stft_worker(void *arg) {
+    NT_FP_EXACT
+    nt_stft_job *j = (nt_stft_job *)arg;
+    const int n_fft = j->n_fft, n_bins = j->n_bins;
+
+    float *fft_in  = (float *)calloc((size_t)n_fft * 2, sizeof(float));
+    float *fft_out = (float *)calloc((size_t)n_fft * 8, sizeof(float));
+    if (!fft_in || !fft_out) { free(fft_in); free(fft_out); j->rc = -1; return NULL; }
+
+    int i = j->ith;
+    /* Frames that start past the last non-zero sample are all-zero input, and their
+     * answer is known without a transform. */
+    int last = j->n_frames;
+    if (j->mel) {
+        last = j->n_valid / j->hop + 1;
+        if (last > j->n_frames) last = j->n_frames;
+    }
+
+    for (; i < last; i += j->n_threads) {
+        const int offset = i * j->hop;
+        int n = n_fft;
+        if (j->n_valid - offset < n) n = j->n_valid - offset;
+        nt_stft_frame(fft_in, fft_out, j->signal, offset, n, n_fft, n_bins, j->window, j->tab);
+
+        if (j->power)
+            memcpy(j->power + (size_t)i * n_bins, fft_out, (size_t)n_bins * sizeof(float));
+
+        if (!j->mel) continue;
+        for (int b = 0; b < j->n_mel; b++) {
+            const float *fr = j->filters + (size_t)b * n_bins;
+            double sum = 0.0;
+            int k = 0;
+            for (; k < n_bins - 3; k += 4)
+                sum += fft_out[k + 0] * fr[k + 0] + fft_out[k + 1] * fr[k + 1]
+                     + fft_out[k + 2] * fr[k + 2] + fft_out[k + 3] * fr[k + 3];
+            for (; k < n_bins; k++) sum += fft_out[k] * fr[k];
+            if (sum < 1e-10) sum = 1e-10;
+            j->mel[(size_t)b * j->n_frames + i] = (float)log10(sum);
+        }
+    }
+
+    if (j->mel) {
+        const float floor_v = (float)log10(1e-10);
+        for (; i < j->n_frames; i += j->n_threads)
+            for (int b = 0; b < j->n_mel; b++)
+                j->mel[(size_t)b * j->n_frames + i] = floor_v;
+    }
+
+    free(fft_in);
+    free(fft_out);
+    return NULL;
+}
+
+/* Run the stripes. A stripe whose thread refuses to start is run on this thread
+ * rather than dropped: every stripe must be written or the output has holes. */
+static int nt_stft_run(nt_stft_job *jobs, int n_threads) {
+    pthread_t *th = (pthread_t *)calloc((size_t)n_threads, sizeof(pthread_t));
+    if (!th) return -1;
+    int launched = 0;
+    for (int t = 1; t < n_threads; t++) {
+        if (pthread_create(&th[t], NULL, nt_stft_worker, &jobs[t]) != 0) break;
+        launched = t;
+    }
+    nt_stft_worker(&jobs[0]);
+    for (int t = 1; t <= launched; t++) pthread_join(th[t], NULL);
+    for (int t = launched + 1; t < n_threads; t++) nt_stft_worker(&jobs[t]);
+    free(th);
+    int rc = 0;
+    for (int t = 0; t < n_threads; t++) if (jobs[t].rc) rc = -1;
+    return rc;
+}
+
+int nt_stft(float *power, const float *signal, int n_signal,
+            int n_fft, int hop, int n_frames, const float *window, int n_threads) {
+    if (!power || !signal || n_fft <= 0 || hop <= 0 || n_frames <= 0 || n_signal < 0) return -1;
+    if (n_threads < 1) n_threads = 1;
+    const int n_bins = 1 + n_fft / 2;
+
+    nt_fft_tab tab;
+    if (nt_fft_tab_init(&tab, n_fft) != 0) return -1;
+
+    nt_stft_job *jobs = (nt_stft_job *)calloc((size_t)n_threads, sizeof(nt_stft_job));
+    if (!jobs) { nt_fft_tab_free(&tab); return -1; }
+    for (int t = 0; t < n_threads; t++) {
+        jobs[t].ith = t; jobs[t].n_threads = n_threads;
+        jobs[t].signal = signal; jobs[t].n_valid = n_signal;
+        jobs[t].n_fft = n_fft; jobs[t].hop = hop; jobs[t].n_bins = n_bins;
+        jobs[t].n_frames = n_frames; jobs[t].window = window; jobs[t].tab = &tab;
+        jobs[t].power = power;
+    }
+    int rc = nt_stft_run(jobs, n_threads);
+    free(jobs);
+    nt_fft_tab_free(&tab);
+    return rc;
+}
+
+void nt_mel_free(nt_mel *m) {
+    if (!m) return;
+    free(m->data);
+    m->data = NULL;
+    m->n_mel = m->n_len = m->n_len_org = 0;
+}
+
+int nt_logmel(nt_mel *out, const float *pcm, int n_samples,
+              const float *filters, int n_mel, int n_fft_bins,
+              int n_fft, int hop, int pad_tail, int n_threads) {
+    if (!pcm || !filters || !out || n_samples < 0 || n_mel <= 0) return -1;
+    if (n_fft <= 0 || hop <= 0 || pad_tail < 0) return -1;
+    if (n_fft_bins != 1 + n_fft / 2) return -1;   /* filters must be bin_0..nyquist */
+    if (n_threads < 1) n_threads = 1;
+
+    /* Padding, in the order whisper applies it: n_fft/2 zeros, the signal, the
+     * silence tail, then n_fft/2 more — and the leading pad is then overwritten by
+     * a reflection of the signal's start. The reflection count is clamped to
+     * n_samples-1 so a clip shorter than the pad does not read past its own end. */
+    const int pad_half = n_fft / 2;
+    const size_t n_padded = (size_t)n_samples + (size_t)pad_tail + 2 * (size_t)pad_half;
+    if (n_padded < (size_t)n_fft) return -1;
+
+    float *padded = (float *)calloc(n_padded, sizeof(float));
+    if (!padded) return -1;
+    memcpy(padded + pad_half, pcm, (size_t)n_samples * sizeof(float));
+
+    int n_reflect = n_samples - 1;
+    if (n_reflect > pad_half) n_reflect = pad_half;
+    if (n_reflect < 0) n_reflect = 0;
+    for (int i = 0; i < n_reflect; i++)
+        padded[pad_half - n_reflect + i] = pcm[n_reflect - i];
+
+    memset(out, 0, sizeof(*out));
+    out->n_mel     = n_mel;
+    out->n_len     = (int)((n_padded - (size_t)n_fft) / (size_t)hop);
+    out->n_len_org = 1 + (n_samples + pad_half - n_fft) / hop;
+    if (out->n_len <= 0) { free(padded); return -1; }
+    out->data = (float *)malloc((size_t)n_mel * out->n_len * sizeof(float));
+    if (!out->data) { free(padded); return -1; }
+
+    float *window = (float *)malloc((size_t)n_fft * sizeof(float));
+    nt_fft_tab tab;
+    if (!window || nt_fft_tab_init(&tab, n_fft) != 0) {
+        free(window); free(padded); nt_mel_free(out); return -1;
+    }
+    nt_hann_window(window, n_fft);
+
+    nt_stft_job *jobs = (nt_stft_job *)calloc((size_t)n_threads, sizeof(nt_stft_job));
+    if (!jobs) {
+        free(window); nt_fft_tab_free(&tab); free(padded); nt_mel_free(out); return -1;
+    }
+    for (int t = 0; t < n_threads; t++) {
+        jobs[t].ith = t; jobs[t].n_threads = n_threads;
+        jobs[t].signal = padded; jobs[t].n_valid = n_samples + pad_half;
+        jobs[t].n_fft = n_fft; jobs[t].hop = hop; jobs[t].n_bins = n_fft_bins;
+        jobs[t].n_frames = out->n_len; jobs[t].window = window; jobs[t].tab = &tab;
+        jobs[t].filters = filters; jobs[t].n_mel = n_mel; jobs[t].mel = out->data;
+    }
+    int rc = nt_stft_run(jobs, n_threads);
+    free(jobs);
+    free(window);
+    nt_fft_tab_free(&tab);
+    free(padded);
+    if (rc != 0) { nt_mel_free(out); return -1; }
+
+    /* Clamp and normalise against the global maximum, taken over every frame
+     * including the silence tail — those sit at log10(1e-10) and never win. */
+    const size_t n = (size_t)n_mel * out->n_len;
+    double mmax = -1e20;
+    for (size_t i = 0; i < n; i++) if (out->data[i] > mmax) mmax = out->data[i];
+    mmax -= 8.0;
+    for (size_t i = 0; i < n; i++) {
+        double v = out->data[i];
+        if (v < mmax) v = mmax;
+        out->data[i] = (float)((v + 4.0) / 4.0);
+    }
     return 0;
 }
 
