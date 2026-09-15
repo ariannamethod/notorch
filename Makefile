@@ -461,6 +461,10 @@ test_quantize: tests/test_quantize.c notorch.c gguf.c notorch.h gguf.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_quantize tests/test_quantize.c notorch.c gguf.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_quantize (quantizer against a llama-quantize reference, $(BLAS_NAME))"
 
+test_gguf_write: tests/test_gguf_write.c gguf.c notorch.c gguf.h notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_gguf_write tests/test_gguf_write.c gguf.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: test_gguf_write (GGUF writer round-tripped through the reader, $(BLAS_NAME))"
+
 gguf_quantize: tools/gguf_quantize.c gguf.c notorch.c gguf.h notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o gguf_quantize tools/gguf_quantize.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: gguf_quantize (f32/f16 GGUF -> packed GGUF, $(BLAS_NAME))"
@@ -531,7 +535,7 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_conv1d test_logmel
+test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_conv1d test_logmel
 	./notorch_test
 	./test_vision
 	./test_conv1d
@@ -543,6 +547,9 @@ test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_qmatve
 	NT_QMV_SPIN=0 ./test_qpool
 	./test_qmatmul
 	./test_quantize
+	./test_gguf_write
+	./test_gguf_write rss19
+	./test_gguf_write rss91
 	./test_qmatvec_leak
 	./test_affinity
 	NT_QMV_BIG_ONLY=0 ./test_affinity off
@@ -598,7 +605,7 @@ clean:
 		notorch_test notorch_test_gpu notorch.o gguf.o libnotorch.a notorch_cuda.o \
 		infer_janus_nt infer_gemma infer_llama \
 		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \
-		train_dpo train_grpo train_distillation test_vision test_gguf \
+		train_dpo train_grpo train_distillation test_vision test_gguf test_gguf_write \
 		tests/test_simd_correctness tests/test_simd_loss tests/test_rrpram_lr \
 		bench/bench_simd bench/bench_blas
 

@@ -780,3 +780,434 @@ void gguf_print_info(const gguf_file* gf) {
     }
     printf("  total: %llu elements\n", total_params);
 }
+
+// ── Writing ──────────────────────────────────────────────────────────────────
+/* A GGUF puts its entire tensor directory — name, shape, dtype, and the offset of the
+ * bytes — in front of the bytes, so no offset is known until every tensor has been
+ * declared. That is the whole reason this is two phases rather than one call: declare,
+ * then deliver in declaration order. See gguf.h for the contract.
+ *
+ * Nothing holds tensor data. The metadata and the directory are buffered because they
+ * have to be written before offsets are known and they are kilobytes; the tensor bytes
+ * go from the caller's pointer into fwrite. A 91 MB file therefore costs whatever the
+ * caller's own chunk costs and nothing else, which on a phone is the difference between
+ * a checkpoint that writes and one that wakes the low-memory killer. */
+
+#define GGUF_WRITE_ALIGN   32
+#define GGUF_WRITE_VERSION 3
+
+typedef struct {
+    char     name[GGUF_MAX_NAME];
+    uint32_t ndim;
+    uint64_t shape[4];
+    uint32_t dtype;
+    uint64_t offset;      /* from the start of the data section */
+    uint64_t nbytes;      /* packed size on disk */
+} gguf_wtensor;
+
+struct gguf_writer {
+    FILE*         f;
+    char*         path;
+    uint8_t*      kv;            /* metadata bytes, appended as they arrive */
+    size_t        kv_len, kv_cap;
+    uint64_t      n_kv;
+    gguf_wtensor* t;
+    uint64_t      n_t, t_cap;
+    uint64_t      dcursor;       /* next free offset inside the data section */
+    int           phase;         /* 0 declaring, 1 past the header */
+    int           failed;
+    int           in_tensor;
+    uint64_t      data_start;    /* absolute file offset of the data section */
+    uint64_t      next;          /* index of the tensor expected next */
+    uint64_t      cur_written;   /* bytes of the open tensor written so far */
+    uint64_t      pos;           /* absolute file position, tracked rather than asked */
+};
+
+static uint64_t gguf_walign(uint64_t v) {
+    return (v + (GGUF_WRITE_ALIGN - 1)) & ~(uint64_t)(GGUF_WRITE_ALIGN - 1);
+}
+
+/* Every refusal goes through here, so a writer that has said no once stays no: the file
+ * is going to be removed at close, and continuing to append to it only makes the wreck
+ * bigger. The message names the tensor or key, because "gguf write failed" on a file with
+ * three hundred tensors is not a diagnosis. */
+static int gw_fail(gguf_writer* w, const char* what, const char* detail) {
+    if (w) w->failed = 1;
+    fprintf(stderr, "gguf write: %s%s%s\n", what, detail ? ": " : "", detail ? detail : "");
+    return -1;
+}
+
+/* f32 -> f16, round to nearest even — the inverse of f16_to_f32 above, and the same
+ * rounding llama.cpp applies, so a tensor written here and one written there from the
+ * same floats are the same bytes. Overflow goes to infinity rather than to the largest
+ * finite value: a weight that large is a bug upstream and clamping would hide it. */
+static uint16_t f32_to_f16(float f) {
+    uint32_t x;
+    memcpy(&x, &f, 4);
+    uint32_t sign = (x >> 16) & 0x8000u;
+    uint32_t e32  = (x >> 23) & 0xFFu;
+    uint32_t mant = x & 0x7FFFFFu;
+    if (e32 == 0xFF)                                   /* inf, or a NaN kept noisy */
+        return (uint16_t)(sign | 0x7C00u | (mant ? (0x200u | (mant >> 13)) : 0u));
+    int32_t exp = (int32_t)e32 - 127 + 15;
+    if (exp >= 0x1F) return (uint16_t)(sign | 0x7C00u);
+    if (exp <= 0) {                                    /* subnormal half, or under it */
+        if (exp < -10) return (uint16_t)sign;
+        mant |= 0x800000u;                             /* the implicit one */
+        uint32_t shift = (uint32_t)(14 - exp);         /* 14..24 */
+        uint32_t half  = 1u << (shift - 1);
+        uint32_t r     = mant >> shift;
+        uint32_t rem   = mant & ((1u << shift) - 1u);
+        if (rem > half || (rem == half && (r & 1u))) r++;
+        return (uint16_t)(sign | r);
+    }
+    uint32_t r = mant >> 13, rem = mant & 0x1FFFu;
+    if (rem > 0x1000u || (rem == 0x1000u && (r & 1u))) {
+        r++;
+        if (r == 0x400u) { r = 0; exp++; if (exp >= 0x1F) return (uint16_t)(sign | 0x7C00u); }
+    }
+    return (uint16_t)(sign | ((uint32_t)exp << 10) | r);
+}
+
+// ── Metadata buffer ──────────────────────────────────────────────────────────
+
+static int kvbuf(gguf_writer* w, const void* p, size_t n) {
+    if (n == 0) return 0;
+    if (w->kv_len + n > w->kv_cap) {
+        size_t cap = w->kv_cap ? w->kv_cap : 1024;
+        while (cap < w->kv_len + n) cap *= 2;
+        uint8_t* nb = (uint8_t*)realloc(w->kv, cap);
+        if (!nb) return gw_fail(w, "out of memory for metadata", NULL);
+        w->kv = nb;
+        w->kv_cap = cap;
+    }
+    memcpy(w->kv + w->kv_len, p, n);
+    w->kv_len += n;
+    return 0;
+}
+
+static int kvb_u32(gguf_writer* w, uint32_t v) { return kvbuf(w, &v, 4); }
+static int kvb_u64(gguf_writer* w, uint64_t v) { return kvbuf(w, &v, 8); }
+
+static int kvb_str(gguf_writer* w, const char* s) {
+    uint64_t n = strlen(s);
+    if (kvb_u64(w, n)) return -1;
+    return kvbuf(w, s, (size_t)n);
+}
+
+/* A key longer than GGUF_MAX_NAME is refused rather than written, because gguf_open
+ * strncpy's it into a 128-byte field: the file would be valid and the key would come
+ * back a different key. Same argument as the duplicate tensor name below. */
+static int kv_begin(gguf_writer* w, const char* key, uint32_t type) {
+    if (!w || w->failed) return -1;
+    if (w->phase != 0)   return gw_fail(w, "metadata added after the first tensor byte", key);
+    if (!key || !*key)   return gw_fail(w, "empty metadata key", NULL);
+    if (strlen(key) >= GGUF_MAX_NAME)
+        return gw_fail(w, "metadata key longer than GGUF_MAX_NAME, which the reader truncates", key);
+    if (kvb_str(w, key) || kvb_u32(w, type)) return -1;
+    w->n_kv++;
+    return 0;
+}
+
+static int kv_array_begin(gguf_writer* w, const char* key, uint32_t etype, uint64_t n) {
+    if (kv_begin(w, key, 9)) return -1;
+    if (kvb_u32(w, etype) || kvb_u64(w, n)) return -1;
+    return 0;
+}
+
+int gguf_write_kv_u32(gguf_writer* w, const char* key, uint32_t v) {
+    if (kv_begin(w, key, 4)) return -1;
+    return kvb_u32(w, v);
+}
+
+int gguf_write_kv_i32(gguf_writer* w, const char* key, int32_t v) {
+    if (kv_begin(w, key, 5)) return -1;
+    return kvbuf(w, &v, 4);
+}
+
+int gguf_write_kv_f32(gguf_writer* w, const char* key, float v) {
+    if (kv_begin(w, key, 6)) return -1;
+    return kvbuf(w, &v, 4);
+}
+
+int gguf_write_kv_bool(gguf_writer* w, const char* key, int v) {
+    uint8_t b = v ? 1 : 0;
+    if (kv_begin(w, key, 7)) return -1;
+    return kvbuf(w, &b, 1);
+}
+
+int gguf_write_kv_str(gguf_writer* w, const char* key, const char* val) {
+    if (!val) return gw_fail(w, "null string value", key);
+    if (kv_begin(w, key, 8)) return -1;
+    return kvb_str(w, val);
+}
+
+int gguf_write_kv_u64(gguf_writer* w, const char* key, uint64_t v) {
+    if (kv_begin(w, key, 10)) return -1;
+    return kvb_u64(w, v);
+}
+
+int gguf_write_kv_str_array(gguf_writer* w, const char* key, const char* const* vals, uint64_t n) {
+    if (n && !vals) return gw_fail(w, "null string array", key);
+    if (kv_array_begin(w, key, 8, n)) return -1;
+    for (uint64_t i = 0; i < n; i++) {
+        if (!vals[i]) return gw_fail(w, "null string in array", key);
+        if (kvb_str(w, vals[i])) return -1;
+    }
+    return 0;
+}
+
+int gguf_write_kv_i32_array(gguf_writer* w, const char* key, const int32_t* vals, uint64_t n) {
+    if (n && !vals) return gw_fail(w, "null int32 array", key);
+    if (kv_array_begin(w, key, 5, n)) return -1;
+    return kvbuf(w, vals, (size_t)n * sizeof(int32_t));
+}
+
+int gguf_write_kv_f32_array(gguf_writer* w, const char* key, const float* vals, uint64_t n) {
+    if (n && !vals) return gw_fail(w, "null float array", key);
+    if (kv_array_begin(w, key, 6, n)) return -1;
+    return kvbuf(w, vals, (size_t)n * sizeof(float));
+}
+
+// ── File primitives ──────────────────────────────────────────────────────────
+
+static int gw_raw(gguf_writer* w, const void* p, uint64_t n) {
+    if (n == 0) return 0;
+    if (fwrite(p, 1, (size_t)n, w->f) != (size_t)n)
+        return gw_fail(w, "short write", w->path);
+    w->pos += n;
+    return 0;
+}
+
+static int gw_u32(gguf_writer* w, uint32_t v) { return gw_raw(w, &v, 4); }
+static int gw_u64(gguf_writer* w, uint64_t v) { return gw_raw(w, &v, 8); }
+
+static int gw_str(gguf_writer* w, const char* s) {
+    uint64_t n = strlen(s);
+    if (gw_u64(w, n)) return -1;
+    return gw_raw(w, s, n);
+}
+
+static int gw_pad_to(gguf_writer* w, uint64_t target) {
+    static const uint8_t zeros[GGUF_WRITE_ALIGN] = {0};
+    if (w->pos > target) return gw_fail(w, "internal: file past its own alignment target", w->path);
+    while (w->pos < target) {
+        uint64_t want = target - w->pos;
+        if (want > sizeof(zeros)) want = sizeof(zeros);
+        if (gw_raw(w, zeros, want)) return -1;
+    }
+    return 0;
+}
+
+/* Header, metadata and directory, written once, at the moment the first tensor byte is
+ * asked for or at close if there never is one. After this the metadata buffer is freed:
+ * it is the only thing in the writer with any size, and nothing can add to it now. */
+static int gw_flush_header(gguf_writer* w) {
+    uint32_t magic = GGUF_MAGIC;
+    if (gw_raw(w, &magic, 4) || gw_u32(w, GGUF_WRITE_VERSION) ||
+        gw_u64(w, w->n_t) || gw_u64(w, w->n_kv)) return -1;
+    if (gw_raw(w, w->kv, w->kv_len)) return -1;
+    free(w->kv);
+    w->kv = NULL;
+    w->kv_len = w->kv_cap = 0;
+
+    for (uint64_t i = 0; i < w->n_t; i++) {
+        const gguf_wtensor* t = &w->t[i];
+        if (gw_str(w, t->name) || gw_u32(w, t->ndim)) return -1;
+        for (uint32_t d = 0; d < t->ndim; d++)
+            if (gw_u64(w, t->shape[d])) return -1;
+        if (gw_u32(w, t->dtype) || gw_u64(w, t->offset)) return -1;
+    }
+
+    w->data_start = gguf_walign(w->pos);
+    if (gw_pad_to(w, w->data_start)) return -1;
+    w->phase = 1;
+    return 0;
+}
+
+// ── Open, declare, deliver, close ────────────────────────────────────────────
+
+gguf_writer* gguf_write_open(const char* path) {
+    if (!path || !*path) return NULL;
+    gguf_writer* w = (gguf_writer*)calloc(1, sizeof(gguf_writer));
+    if (!w) return NULL;
+    w->path = strdup(path);
+    if (!w->path) { free(w); return NULL; }
+    w->f = fopen(path, "wb");
+    if (!w->f) {
+        fprintf(stderr, "gguf write: cannot create %s\n", path);
+        free(w->path); free(w);
+        return NULL;
+    }
+    return w;
+}
+
+int gguf_write_tensor_decl(gguf_writer* w, const char* name, uint32_t ndim,
+                           const uint64_t* shape, uint32_t dtype) {
+    if (!w || w->failed) return -1;
+    if (w->phase != 0) return gw_fail(w, "tensor declared after the first tensor byte", name);
+    if (!name || !*name) return gw_fail(w, "empty tensor name", NULL);
+    if (strlen(name) >= GGUF_MAX_NAME)
+        return gw_fail(w, "tensor name longer than GGUF_MAX_NAME, which the reader drops", name);
+    if (ndim < 1 || ndim > 4 || !shape)
+        return gw_fail(w, "tensor needs 1 to 4 dimensions", name);
+    if (w->n_t >= GGUF_MAX_TENSORS)
+        return gw_fail(w, "more tensors than GGUF_MAX_TENSORS, which gguf_open refuses to load", name);
+
+    /* Linear, because the reader resolves names linearly too and a file it cannot
+     * unambiguously index is not worth writing. */
+    for (uint64_t i = 0; i < w->n_t; i++)
+        if (strcmp(w->t[i].name, name) == 0)
+            return gw_fail(w, "duplicate tensor name", name);
+
+    uint64_t n = 1;
+    for (uint32_t d = 0; d < ndim; d++) {
+        if (shape[d] == 0) return gw_fail(w, "tensor dimension of zero", name);
+        if (shape[d] > UINT64_MAX / n) return gw_fail(w, "tensor element count overflows", name);
+        n *= shape[d];
+    }
+    uint64_t blk = gguf_dtype_block(dtype);
+    if (blk > 1 && (n % blk) != 0)
+        return gw_fail(w, "packed tensor whose element count is not a whole number of blocks", name);
+    uint64_t nbytes = gguf_dtype_nbytes(dtype, n);
+    if (nbytes == 0) return gw_fail(w, "dtype this library cannot size", name);
+
+    if (w->n_t == w->t_cap) {
+        uint64_t cap = w->t_cap ? w->t_cap * 2 : 64;
+        gguf_wtensor* nt = (gguf_wtensor*)realloc(w->t, (size_t)cap * sizeof(gguf_wtensor));
+        if (!nt) return gw_fail(w, "out of memory for the tensor directory", name);
+        w->t = nt;
+        w->t_cap = cap;
+    }
+    gguf_wtensor* t = &w->t[w->n_t++];
+    memset(t, 0, sizeof(*t));
+    snprintf(t->name, sizeof(t->name), "%s", name);
+    t->ndim  = ndim;
+    for (uint32_t d = 0; d < ndim; d++) t->shape[d] = shape[d];
+    t->dtype  = dtype;
+    t->nbytes = nbytes;
+    t->offset = w->dcursor;
+    w->dcursor = gguf_walign(w->dcursor + nbytes);
+    return 0;
+}
+
+int gguf_write_tensor_begin(gguf_writer* w, const char* name) {
+    if (!w || w->failed) return -1;
+    if (w->in_tensor)
+        return gw_fail(w, "a tensor is already open", w->t[w->next].name);
+    if (w->phase == 0 && gw_flush_header(w)) return -1;
+    if (w->next >= w->n_t)
+        return gw_fail(w, "tensor data for a tensor that was never declared", name);
+    const gguf_wtensor* t = &w->t[w->next];
+    if (!name || strcmp(name, t->name) != 0) {
+        char msg[2 * GGUF_MAX_NAME + 32];
+        snprintf(msg, sizeof(msg), "expected '%s', got '%s'", t->name, name ? name : "(null)");
+        return gw_fail(w, "tensor data out of declaration order", msg);
+    }
+    if (gw_pad_to(w, w->data_start + t->offset)) return -1;
+    w->in_tensor   = 1;
+    w->cur_written = 0;
+    return 0;
+}
+
+int gguf_write_tensor_chunk(gguf_writer* w, const void* bytes, uint64_t nbytes) {
+    if (!w || w->failed) return -1;
+    if (!w->in_tensor) return gw_fail(w, "tensor chunk outside begin/end", NULL);
+    const gguf_wtensor* t = &w->t[w->next];
+    if (nbytes > t->nbytes - w->cur_written) {
+        char msg[GGUF_MAX_NAME + 96];
+        snprintf(msg, sizeof(msg), "%s: %llu bytes past the declared %llu", t->name,
+                 (unsigned long long)(w->cur_written + nbytes), (unsigned long long)t->nbytes);
+        return gw_fail(w, "tensor data longer than declared", msg);
+    }
+    if (nbytes && !bytes) return gw_fail(w, "null tensor chunk", t->name);
+    if (gw_raw(w, bytes, nbytes)) return -1;
+    w->cur_written += nbytes;
+    return 0;
+}
+
+/* f32 in, whatever the tensor was declared as out. F32 goes straight through with no
+ * intermediate buffer at all; F16 rounds through a fixed window, so converting a tensor
+ * costs 8 KB rather than half the tensor. */
+int gguf_write_tensor_chunk_f32(gguf_writer* w, const float* src, uint64_t n) {
+    if (!w || w->failed) return -1;
+    if (!w->in_tensor) return gw_fail(w, "tensor chunk outside begin/end", NULL);
+    if (n && !src) return gw_fail(w, "null float chunk", w->t[w->next].name);
+    uint32_t dtype = w->t[w->next].dtype;
+    if (dtype == GGUF_TYPE_F32)
+        return gguf_write_tensor_chunk(w, src, n * 4);
+    if (dtype != GGUF_TYPE_F16)
+        return gw_fail(w, "float source for a tensor that is neither F32 nor F16 — quantize it first",
+                       w->t[w->next].name);
+    uint16_t half[4096];
+    uint64_t done = 0;
+    while (done < n) {
+        uint64_t take = n - done;
+        if (take > 4096) take = 4096;
+        for (uint64_t i = 0; i < take; i++) half[i] = f32_to_f16(src[done + i]);
+        if (gguf_write_tensor_chunk(w, half, take * 2)) return -1;
+        done += take;
+    }
+    return 0;
+}
+
+int gguf_write_tensor_end(gguf_writer* w) {
+    if (!w || w->failed) return -1;
+    if (!w->in_tensor) return gw_fail(w, "tensor end without a begin", NULL);
+    const gguf_wtensor* t = &w->t[w->next];
+    if (w->cur_written != t->nbytes) {
+        char msg[GGUF_MAX_NAME + 96];
+        snprintf(msg, sizeof(msg), "%s: %llu bytes of a declared %llu", t->name,
+                 (unsigned long long)w->cur_written, (unsigned long long)t->nbytes);
+        return gw_fail(w, "tensor short of its declared size", msg);
+    }
+    w->in_tensor = 0;
+    w->next++;
+    return 0;
+}
+
+int gguf_write_tensor(gguf_writer* w, const char* name, const void* bytes, uint64_t nbytes) {
+    if (gguf_write_tensor_begin(w, name)) return -1;
+    if (gguf_write_tensor_chunk(w, bytes, nbytes)) return -1;
+    return gguf_write_tensor_end(w);
+}
+
+int gguf_write_tensor_f32(gguf_writer* w, const char* name, const float* src, uint64_t n) {
+    if (gguf_write_tensor_begin(w, name)) return -1;
+    if (gguf_write_tensor_chunk_f32(w, src, n)) return -1;
+    return gguf_write_tensor_end(w);
+}
+
+int gguf_write_close(gguf_writer* w) {
+    if (!w) return -1;
+    int rc = w->failed ? -1 : 0;
+    if (!rc && w->in_tensor) rc = gw_fail(w, "file closed with a tensor open", w->t[w->next].name);
+    if (!rc && w->phase == 0 && gw_flush_header(w)) rc = -1;
+    if (!rc && w->next != w->n_t) {
+        char msg[GGUF_MAX_NAME + 64];
+        snprintf(msg, sizeof(msg), "%llu of %llu delivered, next is '%s'",
+                 (unsigned long long)w->next, (unsigned long long)w->n_t, w->t[w->next].name);
+        rc = gw_fail(w, "declared tensors never written", msg);
+    }
+    /* The tail of the last tensor is padded like every other, which is what ggml's writer
+     * does; a reader that trusts the directory never looks at those bytes, and one that
+     * measures the data section against the alignment finds what it expects. */
+    if (!rc && gw_pad_to(w, gguf_walign(w->pos))) rc = -1;
+    if (fclose(w->f) != 0 && !rc) rc = gw_fail(w, "close failed", w->path);
+    if (rc) remove(w->path);
+    free(w->kv);
+    free(w->t);
+    free(w->path);
+    free(w);
+    return rc;
+}
+
+void gguf_write_abort(gguf_writer* w) {
+    if (!w) return;
+    fclose(w->f);
+    remove(w->path);
+    free(w->kv);
+    free(w->t);
+    free(w->path);
+    free(w);
+}
