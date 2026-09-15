@@ -13,6 +13,120 @@ Newest entries on top.
 
 ---
 
+## 2026-09-15 — the other direction: notorch writes GGUF, and a checkpoint stops being 110 MB of JSON
+
+This library could read GGUF and not produce it. `gguf.c` parses llama.cpp's format down to
+Q6_K and maps the tensor block instead of copying it; `tools/gguf_quantize.c` rewrites a file
+it was handed. Neither makes a GGUF out of weights that were never in one, and `nt_save`
+writes notorch's own `[magic][n][ndim, shape, data]`, which nothing else reads and which
+cannot be mapped tensor by tensor. So an organism that trains here and wants a mappable
+checkpoint had nowhere to put it.
+
+`gguf_write_*` in `gguf.c`, declared in `gguf.h`, is that. It went in beside the reader
+rather than in a file of its own so every target that already compiles `gguf.c` — the
+archive, the shared library, the harness, the example binaries and the tools — gets it
+without a Makefile change.
+
+### The shape of it, and why it is two phases
+
+A GGUF puts its whole tensor directory in front of the tensor bytes, so no offset is known
+until every tensor has been declared. Hence: declare everything, then deliver the data in
+declaration order. The first tensor-data call writes the header, the metadata and the
+directory and pads to the data section; a `gguf_write_kv_*` after that is refused.
+
+    gguf_writer *w = gguf_write_open(path);
+    gguf_write_kv_str(w, "general.architecture", "molequla");        /* also u32 i32 u64 f32 */
+    gguf_write_kv_str_array(w, "tokenizer.ggml.tokens", toks, n);    /* bool, i32[], f32[] */
+    gguf_write_tensor_decl(w, "token_embd.weight", 2, shape, GGUF_TYPE_F32);
+    gguf_write_tensor_f32(w, "token_embd.weight", src, 750 * 224);   /* or _begin/_chunk/_end */
+    gguf_write_close(w);
+
+Nothing holds tensor data. The metadata buffer and the directory are kilobytes; tensor bytes
+go from the caller's pointer into `fwrite`, and `gguf_write_tensor_chunk` lets a tensor be
+produced a window at a time. Measured on phone-1 (Exynos 1580, Ubuntu chroot, `VmHWM` from
+`/proc/self/status`, files on f2fs rather than tmpfs so the page cache is not doing the
+work): writing the 19 337 632-byte stage-4 set a tensor at a time peaks at **3 984 kB**
+against **2 432 kB** before the write — the increment is the 1.34 MB `ffn_up` buffer the
+test itself holds, not the file. Writing 91 201 344 bytes through `_begin/_chunk/_end` with
+a 256 kB window peaks at **2 816 kB**, an increment of 384 kB. The bigger file costs less
+resident memory than the smaller one, which is the whole point of the chunked entries.
+
+F32 goes through untouched. F16 rounds to nearest even through an 8 kB window, so a tensor
+converts for 8 kB rather than for half of itself. Packed dtypes are declared and written as
+opaque blocks of the size `gguf_type_size` gives them — quantize with `nt_quantize_row` and
+hand the blocks over, which is what `gguf_quantize` already does.
+
+Alignment is 32 and is deliberately not an option. `gguf_open` computes the data offset as
+`(pos + 31) & ~31` without consulting `general.alignment`, so a writer here that honoured
+any other alignment would produce files this library cannot read. 32 is also the GGUF
+default, so the key is left unwritten. That the reader ignores `general.alignment` at all is
+a separate gap and is not fixed here.
+
+### The gates, and the seven ways they were made to go red
+
+`tests/test_gguf_write.c`, 66 assertions, plus one in each of two RSS modes. Every gate is a
+round trip: what the writer put in the file is read back through `gguf_open`, `gguf_dequant`,
+`gguf_dequant_row`, `gguf_get_kv` and the `gguf_read_*_array` family. Byte equality where the
+format is exact — every F32 tensor, every scalar key, every array — and a half-ULP budget
+where it is not, which is F16 and nothing else. The budget is `2^(e-12)` at magnitude
+`2^(e-1)` and half of `2^-24` below the normal range, because a flat relative tolerance
+calls a correctly rounded subnormal a bug.
+
+A round trip alone can be passed by a writer and a reader wrong in the same direction, so
+three things are checked against something other than the reader. Alignment is checked
+against the format's rule at element counts of 1, 3, 7, 13, 17, 31, 33 and 255, where a
+padding bug cannot hide behind a shape that divides. Eighteen f16 edge cases are checked
+against the half the format would choose — both zeros, both smallest normals and subnormals,
+65504, a tie that rounds to even, a mantissa that rounds up in the normal range and one that
+rounds up among the subnormals, and an overflow to infinity. And the F16 path is checked for
+*in*equality against its own input, since a conversion that quietly copied f32 would satisfy
+every tolerance in the file.
+
+Seven deliberate breaks, each rebuilt and run:
+
+| break | red |
+|---|---|
+| `gguf_walign` returns `v` — no padding at all | 8 gates, `gguf_open` first |
+| `f32_to_f16` truncates instead of rounding | 4, including `f16[16]: 1.000732421875 -> 1` |
+| the duplicate-name scan never matches | 1 |
+| tensor data accepted under any name | 1 |
+| a short tensor accepted at `_end` | 1 |
+| `close` stops checking that every tensor arrived | 2, including the file not being removed |
+| one tensor written at another's offset (the recipe the resonator design names) | 6 |
+
+The refusals are gates in their own right and each is also checked for leaving no file:
+duplicate tensor name, data out of declaration order, a tensor short of or longer than its
+declared size, metadata after the header, a close with a declared tensor undelivered, 48
+values of Q8_0 (not a whole number of blocks), an unsizable dtype, a zero dimension, a fifth
+dimension, and a name or key long enough that the reader would truncate it. A refused writer
+stays refused, so a caller may ignore every return value and still be told at `close` — and
+`close` removes the file rather than leaving a partial GGUF behind, because a partial GGUF is
+worse than none: it loads.
+
+### Read by the other implementation
+
+The test's own fake stage-4 set is the resonator design's numbers exactly: 53 tensors,
+4 834 408 parameters, 19 337 632 bytes of f32, at D=224, V=750, L=5 and an MLP width of 1495
+chosen both to close that sum and because it is not a multiple of 32, so the padding is
+exercised by the largest tensors in the file rather than only by the toy ones. The file comes
+out at 19 341 056 bytes — 3 424 of header, metadata and directory over the tensor data.
+
+`llama-gguf … r` (llama.cpp, Termux, aarch64) on that file reports `version: 3`,
+`alignment: 32`, `data offset: 3424`, 7 metadata keys and 53 tensors, resolves every name to
+the offset we wrote, and loads all 53 into a ggml context. Its printed floats are the values
+the test generated: `output.weight data[:10]` reads `0.976779 0.723837 -0.007674 …`, which is
+this test's `gen(51, 0..9)` term for term, and `blk.4.rrpram_b.weight` and
+`molequla.growth_gate` match `gen(50, …)` and `gen(52, …)` the same way. On the twelve-key
+metadata file it lists all twelve, the string, int32 and float32 arrays among them.
+
+`make test` on phone-1: **350 assertions before, 418 after**, 0 failed, in this tree's own
+accounting — 242 counted by the suites that print a total plus 108 `PASS` lines from the
+ones that print `Results: all passed`, against 310 plus the same 108. Twenty-one binary
+runs before, twenty-four after: the three new ones are `./test_gguf_write`, `rss19` and
+`rss91`, and nothing else in the suite changed.
+
+---
+
 ## 2026-09-13 — the audio front end comes home: conv1d, STFT and log-mel, and the compiler flag that decides whether a port is exact
 
 A whisper port written on phone-1 (`ears`, commit `c8e711f`) found two holes in this

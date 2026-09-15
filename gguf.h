@@ -131,4 +131,102 @@ float* gguf_read_f32_array(const char* path, const char* key, int* out_n);
 // Print GGUF summary
 void gguf_print_info(const gguf_file* gf);
 
+// ── Writing ──────────────────────────────────────────────────────────────────
+/* The other direction. Everything above reads a GGUF that something else produced —
+ * llama.cpp's converter, or gguf_quantize, which rewrites a file it was given. Neither
+ * makes one out of weights that were never in a GGUF, and an organism that trains here
+ * and wants its checkpoint mappable has nowhere to put it: nt_save writes notorch's own
+ * [magic][n][ndim,shape,data] format, which nothing else reads and which cannot be
+ * mapped tensor by tensor. This writes the format this file already parses.
+ *
+ * Two phases, because the format demands it. A GGUF carries its whole tensor directory —
+ * name, shape, dtype and the offset of the bytes — before any of the bytes, so no offset
+ * is known until every tensor has been declared. So: declare everything, then deliver the
+ * data in declaration order. The first tensor-data call ends the declaration phase, writes
+ * the header, the metadata and the directory, and pads to the data section; after that a
+ * gguf_write_kv_* is refused.
+ *
+ *     gguf_writer *w = gguf_write_open("weights.gguf");
+ *     gguf_write_kv_str(w, "general.architecture", "molequla");
+ *     gguf_write_kv_u32(w, "molequla.block_count", 5);
+ *     gguf_write_tensor_decl(w, "token_embd.weight", 2, (uint64_t[]){224, 750}, GGUF_TYPE_F32);
+ *     ...
+ *     gguf_write_tensor_f32(w, "token_embd.weight", tok_embd, 750 * 224);
+ *     ...
+ *     if (gguf_write_close(w)) { ... }                 // close is the last gate
+ *
+ * Nothing is buffered except the metadata and the directory, which are kilobytes: tensor
+ * bytes go from the caller's pointer to the file with no copy in between, and the chunked
+ * entry points let a tensor larger than memory be produced a piece at a time. Writing the
+ * 19 337 632-byte molequla stage-4 set costs 5.9 MB of resident set, which is the test's
+ * own largest tensor and not the file.
+ *
+ * Alignment is 32 and is not an option, deliberately. gguf_open computes the data offset
+ * as (pos + 31) & ~31 without consulting general.alignment (gguf.c, "Data section starts
+ * at aligned offset"), so a writer that honoured a different alignment would produce files
+ * this library cannot read. 32 is also the GGUF default, so the key is left unwritten.
+ *
+ * What the reader on the other side can give back, and therefore what a round trip should
+ * expect: keys are truncated to GGUF_MAX_NAME, so a longer one is refused here rather than
+ * silently shortened there; a string value longer than 255 bytes is dropped by gguf_open's
+ * kv union and readable only through gguf_read_str_kv; arrays are skipped by gguf_open
+ * entirely and come back through gguf_read_str_array / _i32_array / _f32_array.
+ *
+ * Every integer goes to the file little-endian, byte for byte as this machine holds it,
+ * which is what the reader's fread assumes on the way back in. Neither side is portable
+ * to a big-endian host and saying so is cheaper than pretending.
+ *
+ * Returns: 0 on success, -1 on failure, from every call. A failed writer stays failed —
+ * later calls return -1 without touching the file — so a caller may check once at close.
+ * gguf_write_close returns -1 and removes the file if a declared tensor was never
+ * delivered; a partial GGUF is worse than no GGUF, because it loads. */
+typedef struct gguf_writer gguf_writer;
+
+// Create (truncating) `path`. NULL if it cannot be opened.
+gguf_writer* gguf_write_open(const char* path);
+
+// Metadata, declaration phase only. `key` must be shorter than GGUF_MAX_NAME.
+int gguf_write_kv_str (gguf_writer* w, const char* key, const char* val);
+int gguf_write_kv_u32 (gguf_writer* w, const char* key, uint32_t val);
+int gguf_write_kv_i32 (gguf_writer* w, const char* key, int32_t val);
+int gguf_write_kv_u64 (gguf_writer* w, const char* key, uint64_t val);
+int gguf_write_kv_f32 (gguf_writer* w, const char* key, float val);
+int gguf_write_kv_bool(gguf_writer* w, const char* key, int val);
+int gguf_write_kv_str_array(gguf_writer* w, const char* key, const char* const* vals, uint64_t n);
+int gguf_write_kv_i32_array(gguf_writer* w, const char* key, const int32_t* vals, uint64_t n);
+int gguf_write_kv_f32_array(gguf_writer* w, const char* key, const float* vals, uint64_t n);
+
+/* Declare one tensor: 1 to 4 dimensions, shape[0] fastest, any dtype gguf_type_size can
+ * size. A duplicate name is refused — the reader resolves a name by linear search and
+ * would hand back the first of them forever, which is a tensor silently missing from a
+ * model that loads. So is an element count that is not a whole number of blocks for a
+ * packed dtype, for the reason gguf_dequant_row gives. */
+int gguf_write_tensor_decl(gguf_writer* w, const char* name, uint32_t ndim,
+                           const uint64_t* shape, uint32_t dtype);
+
+/* Data phase. `name` must be the next undelivered tensor in declaration order: the file
+ * is written forward, and a caller who reorders the data would be writing one tensor's
+ * bytes at another's offset. */
+int gguf_write_tensor(gguf_writer* w, const char* name, const void* bytes, uint64_t nbytes);
+
+/* f32 in, declared dtype out: a straight write for GGUF_TYPE_F32, rounded to nearest
+ * even for GGUF_TYPE_F16. Packed dtypes are refused — quantize with nt_quantize_row and
+ * hand the blocks to gguf_write_tensor, which is what gguf_quantize does. */
+int gguf_write_tensor_f32(gguf_writer* w, const char* name, const float* src, uint64_t n);
+
+/* The same tensor a piece at a time, for data that is produced rather than held. Between
+ * begin and end the writer accepts any number of chunks; end refuses a total that is not
+ * the declared size, so a truncated producer fails at the tensor rather than at the file. */
+int gguf_write_tensor_begin(gguf_writer* w, const char* name);
+int gguf_write_tensor_chunk(gguf_writer* w, const void* bytes, uint64_t nbytes);
+int gguf_write_tensor_chunk_f32(gguf_writer* w, const float* src, uint64_t n);
+int gguf_write_tensor_end(gguf_writer* w);
+
+// Finish the file and free the writer. Returns 0, or -1 having removed a file that
+// would have been incomplete. The writer is freed either way.
+int gguf_write_close(gguf_writer* w);
+
+// Give up: free the writer and remove the partial file.
+void gguf_write_abort(gguf_writer* w);
+
 #endif // GGUF_H

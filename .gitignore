@@ -78,6 +78,7 @@ test_plan_race_tsan
 gguf_quantize
 gguf_add_tokenizer
 test_quantize
+test_gguf_write
 check_requant
 
 # machine-local, not the project’s history
