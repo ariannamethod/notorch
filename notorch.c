@@ -9204,9 +9204,9 @@ static void *nt_stft_worker(void *arg) {
             double sum = 0.0;
             int k = 0;
             for (; k < n_bins - 3; k += 4)
-                sum += fft_out[k + 0] * fr[k + 0] + fft_out[k + 1] * fr[k + 1]
-                     + fft_out[k + 2] * fr[k + 2] + fft_out[k + 3] * fr[k + 3];
-            for (; k < n_bins; k++) sum += fft_out[k] * fr[k];
+                sum += (double)fft_out[k + 0] * fr[k + 0] + (double)fft_out[k + 1] * fr[k + 1]
+                     + (double)fft_out[k + 2] * fr[k + 2] + (double)fft_out[k + 3] * fr[k + 3];
+            for (; k < n_bins; k++) sum += (double)fft_out[k] * fr[k];
             if (sum < 1e-10) sum = 1e-10;
             j->mel[(size_t)b * j->n_frames + i] = (float)log10(sum);
         }

@@ -13,6 +13,22 @@ Newest entries on top.
 
 ---
 
+## 2026-09-15 — CodeQL #65: the mel sum adds in the width it already declared
+
+`nt_stft_worker` accumulates the mel filterbank into a `double sum`, but each product
+`fft_out[k] * fr[k]` was `float * float` — computed and rounded in `float`, then widened to
+`double` only at the `+=`. CodeQL #65 (`cpp/integer-multiplication-cast-to-long`, high) flagged
+`notorch.c:9209`: the multiply can overflow or lose precision in `float` before the conversion.
+Fix: cast each `fft_out[k]` to `double` before the multiply, so every product and the whole
+accumulation run in `double` — the width `sum` was already declared in. Applied to the 4-wide
+unrolled body and the tail alike (same bug class), so a later scan finds neither.
+
+Proof: `make test_logmel` → **25/25 PASS** — `nt_stft` vs a direct DFT worst 3.4e-07 (limit
+1e-5), log-mel end to end, no NaN/inf, 1-vs-6-thread bit-identical; `libnotorch.a` rebuilds
+clean. Closes CodeQL #65. Branch `claude/mel-double-accum`.
+
+---
+
 ## 2026-09-15 — the other direction: notorch writes GGUF, and a checkpoint stops being 110 MB of JSON
 
 This library could read GGUF and not produce it. `gguf.c` parses llama.cpp's format down to
