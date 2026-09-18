@@ -13,6 +13,65 @@ Newest entries on top.
 
 ---
 
+## 2026-09-19 — eight weight rows in eight lanes: the layout is free, the kernel is 0.90x
+
+`ggml_gemm_q4_K_8x8_q8_K` is 65.51% of llama.cpp's 469-token single-threaded prefill
+against `nt_q4_k_rows_i8n` at 57.69% of ours — 337.8 G instructions against 499.7 G
+for the same arithmetic. Their AVX2 branch holds `acc_rows[16]`, sixteen ymm
+accumulators, because eight weight rows sit in the eight lanes of one register and
+never touch the stack, where ours holds `accv[NT_QMM_TILE]` on the stack and walks
+it twice per (block, column). That looked like the whole of the 1.48x, so it was
+prototyped in `tests/bench_qmatmul.c` before anything in the loader was touched.
+
+**The layout works and costs nothing.** A group of eight rows holds `d[8]` and
+`dmin[8]` as f16, the eight rows' twelve-byte 6-bit packs, and 1024 bytes of
+quants: 1152 bytes, exactly 8 x 144, so the weights do not grow. The round trip —
+every nibble of every row of every block, against the source — reads **identical**.
+The lane structure is forced by `madd_epi16`: int32 lane L is the sum of bytes
+4L..4L+3, so those four bytes are row L's and the activation is the same four
+values broadcast eight times.
+
+**It is slower.** One pinned core, m=4096 k=9728 n=32, against the shipped kernel
+in the same binary and the same run:
+
+    first cut                          9.6 GMAC/s   0.32x
+    scales hoisted out of the columns 24.3          0.80x
+    activation interleaved four deep  27.0          0.90x   (27.0, 27.1, 27.0)
+
+RMS error 1.72e-07 of the output RMS, so the arithmetic is right and this is a
+speed result, not a correctness one. The first cut unpacked the eight rows' 6-bit
+scales inside the column loop — 240 scalar operations per (superblock, column)
+against 64 vector ones — which is a prototype defect and worth 2.5x on its own. The
+activation interleave, `block_q8_Kx4`'s idea, is worth another 1.11x: one weight
+load and its two unpacks serve four columns instead of one.
+
+**Why it still loses, which is the part worth keeping.** With a row per lane the
+sub-block scale cannot ride inside `madd_epi16` — the scales differ per row and the
+lanes are rows — so it becomes a separate `_mm256_mullo_epi32`, ten cycles of
+latency and two uops, eight times per (superblock, column). The shipped kernel gets
+that multiply for free because its lanes are value groups and one scale covers all
+of them. llama.cpp keeps **both**: eight rows interleaved *and* the scale in the
+int16 domain, and reorders the lanes with shuffles afterwards. That reordering is
+most of the several hundred lines of their kernel, and it is the part this prototype
+did not reproduce.
+
+So the interleave alone is not their advantage. My estimate before building said
+1.28x for this shape; it measured 0.90x, wrong by 1.4x, which is the second time
+this week an instruction count I derived by hand pointed the wrong way.
+
+Direction closed in this form. The prototype is not left in the tree: a rejected
+prototype is a claim nobody re-checks. What would reopen it is the int16 scale path,
+and that is a bigger piece than the eight-row layout it sits on.
+
+Not measured, and the reason: `perf_event_paranoid` is back to 4 after the polygon
+rebooted three days ago, so the per-symbol instruction split that would have said
+where the prototype's extra instructions went was not taken. The wall-clock ratio
+above is what decided.
+
+Gates on the reverted tree: notorch_test 50/50, test_qmatmul 46/46.
+
+---
+
 ## 2026-09-19 — this tree's prefill measurement has a floor of about 1.3%, and it is code layout
 
 Two controls, run for two different reasons on the same day, agree.
