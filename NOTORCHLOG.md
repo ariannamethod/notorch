@@ -323,6 +323,65 @@ imaginary sign flipped (4 STFT lengths fail); the clamp moved from 8 decades to 
 
 ---
 
+## 2026-09-13 — fusing q, k and v into one dispatch works, and costs more than it earns
+
+The finding from the entry below stands: two 512-row projections a layer, running
+at a sixth of what one thread would give them, are a third of the mixture's
+decode. The structural answer to a dispatch too small to fill six workers is not a
+knob — it is to stop making it a dispatch of its own. q, k and v read the same
+vector and run back to back, so one row cursor should walk all 5120 of their rows.
+
+`nt_qmatvec_i8_multi` does that. The three disagree on rows and on dtype — 4096,
+512, 512 and Q4_K, Q4_K, Q6_K in Qwen3-30B-A3B, read out of the file rather than
+assumed — so the job carries a kernel and a row range per slice and the drain maps
+a global row to a slice by a scan over at most eight. They must agree on the
+activation layout, which for k divisible by 256 means Q4_K and Q6_K together,
+because those two are what `nt_quant_act_for` gives the superblock scale to.
+Rows stay disjoint, so it is bit for bit the three calls it replaces.
+
+The premise measured true. Q4_K matvec at k=2048, six threads: m=512 reads 2.0-2.3
+GMAC/s and m=5120 reads 40-51.
+
+    Qwen3-30B-A3B decode, 24 tokens
+      qkv+bias   772 -> 721 ms      wall  2338 -> 2293 ms
+
+Two percent. The fused dispatch is 10.5 M multiply-adds a layer-token and takes
+626 us — 16.8 GMAC/s, where the bench gives 40-51 for the same 5120x2048 shape.
+Same 2.7x between bench and body that killed the last three attempts, and the
+pathology only moved: qkv against threads inside the model reads 709, 407, 255,
+357 ms at 1, 2, 4 and 6, so it still turns over at four while the FFN beside it
+goes 2023, 1082, 611, 489 monotonically.
+
+### And it costs prefill
+
+    Qwen3-4B, 61-token prefill, alternating runs
+      main                    31.0  31.2  30.9
+      library change only     30.3  30.3
+      library and harness     29.2  29.3  29.6
+
+Six percent, from a change whose only new path is `n == 1`. Split in half it is
+2.6% for the library and another 2% for the harness. Moving the new job field
+behind the ones the gathered dispatch fills positionally — the placement the
+struct's own comment says was measured against the pool's cache lines — changes
+nothing, so it is not that.
+
+Part of the 2.6% may be code layout rather than the change: adding a function to a
+nine-thousand-line file moves everything after it, and separating that from the
+change costs more than the two percent of decode it would rescue. Which is itself
+the answer — reverted, all of it.
+
+Nineteenth negative result of the week, and the fourth on this one pathology after
+the spin budget, the thread cap and the yield. It is real, it is named, and every
+fix so far pays for it somewhere else. What it wants is for q, k and v to be one
+tensor at load time rather than one dispatch at call time, and that is a loader
+change, not a kernel change.
+
+Tree unchanged: notorch_test 50/50, test_qmatmul 46/46, Qwen3-4B prefill back at
+30.9 t/s.
+
+
+---
+
 ## 2026-09-13 — a 512-row projection is six times slower on six threads, and neither fix helps the body
 
 Decode is where the mixture is furthest behind — 9.5 t/s against llama.cpp's 13.54
