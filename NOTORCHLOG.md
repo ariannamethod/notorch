@@ -13,6 +13,56 @@ Newest entries on top.
 
 ---
 
+## 2026-09-19 — this tree's prefill measurement has a floor of about 1.3%, and it is code layout
+
+Two controls, run for two different reasons on the same day, agree.
+
+**Control one: a function nobody calls.** On 09-13 adding `nt_qmatvec_i8_multi` to
+`notorch.c` cost 2.6% of Qwen3-4B's prefill with the harness still calling nothing
+new, which was written up as the change's own cost. A deliberately dead function
+of comparable size — same signature, same validation, same allocations, no callers
+— reads 30.2, 30.3, 30.2 t/s against a base of 30.3, 30.6, 30.6. About one
+percent, for code that cannot execute.
+
+**Control two: a branch nobody takes.** Wiring `qmv3` into the two archs and then
+stubbing its body so it never reaches the library reads 2012, 2014, 2066 ms
+against a base of 1988, 1987, 2007 — 1.3%. The full version reads 2035, 2013,
+2046. So of the harness's 2.4%, 1.3% is the branch and the symbol in a hot
+function, not the call.
+
+**What that means for everything measured here below about two percent on
+prefill.** Adding code to `notorch.c` or to an arch moves everything after it, and
+this machine's prefill is sensitive to that at about 1.3%. Yesterday's entry
+reports the q/k/v fusion costing 6% and splits it 2.6% library and 2% harness;
+about half of that split is this floor. The finding it rests on — a 512-row matvec
+six times slower on six threads than on one — is a 6x measurement and stands
+untouched. The 6% does not.
+
+From here: a prefill claim under two percent in this tree needs a layout control
+beside it or it is not a claim.
+
+### What was real in the fusion, and what it now measures
+
+The 1.6% that was not layout had a cause and a fix. `nt_qjob_i8` is copied whole
+at every worker's entry to the drain, and the multi dispatch added a pointer to
+it. `slices`, `multi` and `fnn` cannot be live together, so the first two go in one
+union with `rows_each` as the discriminator — non-zero is the expert gather, zero
+is the multi dispatch — and the struct does not grow. With that, the library half
+costs nothing measurable: 30.6, 30.1, 30.4 against 30.2, 30.7, 30.2.
+
+Measured again on that footing, the fusion is **neutral**, not positive and not
+negative. Qwen3-30B-A3B decode, three runs each: `qkv+bias` 744, 730, 783 ms
+against 817, 709, 712; wall 2282, 2265, 2267 against 2258, 2296, 2252. Every one
+of those differences is inside the floor above.
+
+So it is reverted, again, and for a better reason than yesterday's. An API with no
+caller that pays for itself is dead code; the pathology it was built for is still
+open and still named.
+
+Tree unchanged: notorch_test 50/50, test_qmatmul 46/46, Qwen3-4B prefill 30.0 t/s.
+
+---
+
 ## 2026-09-15 — CodeQL #65: the mel sum adds in the width it already declared
 
 `nt_stft_worker` accumulates the mel filterbank into a `double sum`, but each product
