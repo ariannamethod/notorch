@@ -13,6 +13,85 @@ Newest entries on top.
 
 ---
 
+## 2026-09-19 — instructions are at parity with llama.cpp; the gap is stalls, and cutting k does not close it
+
+`perf` came back on the polygon, and the first thing worth spending it on was the
+same comparison that found Q6_K a week ago. Both at one thread on the same
+469-token prompt, whole run:
+
+                              notorch     llama.cpp    ratio
+      instructions            555.3 G      515.9 G      1.08
+      cycles                  249.5 G      192.0 G      1.30
+      resource_stalls.any      77.2 G       39.2 G      1.97
+      cycle_activity.stalls_mem_any  16.0 G  9.5 G      1.69
+      uops port 0 / port 1  115.9/115.7  89.6/89.7      1.29
+      uops port 5             123.0 G      121.4 G      1.01
+      loads                   218.9 G      180.9 G      1.21
+
+On 09-13 the instruction ratio was 1.68 and the prefill was 106.85 s; it is now
+1.08 and 69.49 s. **Work is no longer the gap.** Ports 0 and 1 carry 1.29x more
+uops while port 5 is level, and none of the three is saturated — 1.42 uops per
+cycle against their 1.57, of three. What is different is the backend filling up:
+`resource_stalls.any` is 31% of our cycles against 20% of theirs, with 21% more
+loads behind it.
+
+Those loads have one address. The tile loop is outside the row loop, so every row
+walks the whole activation slice again — `tile * k` bytes, and `nt_qmm_tile`
+already narrows the tile to keep that inside L2. Cutting k instead keeps the slice
+small without narrowing the tile, and a narrow tile is the more expensive of the
+two, because the weights are read once per tile either way.
+
+### The prototype said 1.16x and 1.24x
+
+`tests/bench_qmatmul.c`, one pinned core, m=4096, n=32, against the shipped kernel
+in the same binary. RMS error 0.00e+00 at `kc = k` — one piece means the same
+summation order, so the same bits — and 1.5e-07 relative when k is cut, which is
+the float re-association and nothing else.
+
+      k=9728    shipped 29.5   tile 32, kc 2048 -> 34.1   1.16x
+      k=14336   shipped 26.7   tile 32, kc 2048 -> 33.1   1.24x
+      k=2560    shipped 36.8   tile 32, no cut  -> 37.0   1.01x
+
+### The kernel said otherwise
+
+Built into `nt_q4_k_rows_i8n` and `nt_q4_k_rows_i8` — both, and only both, because
+`tests/test_qmatmul` compares them bit for bit and a drain per k piece is a
+different summation order from one drain per row. It stayed 46/46 and every Q4_K
+case still reads "outputs identical", which is the one thing that went right.
+
+Three runs each, one pinned core:
+
+      k=9728    base 29.5    wide tile only 28.7    wide tile + cut 29.4    cut only 29.0
+      k=14336   base 26.7    wide tile only 25.4    wide tile + cut 28.0    cut only 28.0
+      k=2560    base 36.8                                                   cut only 37.2
+
+The wide tile alone is **-5%** on both large shapes, which says the 09-13 tile rule
+was right and should stay. The cut with the old tile is flat at k=9728 and +4.9% at
+k=14336. Nothing else moves.
+
+So the whole direction is worth 4.9% on one shape — and k=14336 is the feed-forward
+of Llama-3-8B and Mistral-7B, neither of which is on this machine. On the three
+bodies that are, it is zero. Reverted.
+
+### The prototype was wrong about itself
+
+Not merely wrong against the shipped kernel: wrong against its own baseline. Inside
+the prototype, `kc = k` to `kc = 2048` at tile 32 reads 31.6 to 34.1, +8%. Inside
+the real kernel the same pair reads 28.7 to 29.4, +2.4%. Same arithmetic, same
+shape, same machine, one in `tests/bench_qmatmul.c` and one in `notorch.c`, and the
+delta differs by three times.
+
+I cannot name the cause. What I can name is the pattern, now four for four this
+week: a bench prototype has pointed further than the body every single time, and
+this is the tightest version of it yet — the comparison was against the same
+kernel, not against an end-to-end run. The rule from 09-19 stands and gets harder:
+a prototype's ratio is a reason to build the real thing and measure it, never a
+number to report.
+
+Tree unchanged: notorch_test 50/50, test_qmatmul 46/46, Qwen3-4B prefill 31.0 t/s.
+
+---
+
 ## 2026-09-19 — eight weight rows in eight lanes: the layout is free, the kernel is 0.90x
 
 `ggml_gemm_q4_K_8x8_q8_K` is 65.51% of llama.cpp's 469-token single-threaded prefill
