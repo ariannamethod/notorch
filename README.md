@@ -94,16 +94,33 @@ do not tokenize the prompt identically, and says so with the id counts.
 
 all of the below is one machine — the polygon, an i5-8500T, six cores, no AVX-512 —
 six threads on both sides, a 61-token prompt and 24 generated, `llama-bench -p 61 -n 24`
-against `./notorch -q -n 24`. measured 2026-09-25.
+against `./notorch -q -r 3 -n 24`. **three passes in one process, median reported, and
+the resident set beside every row**, because the same binary on the same file has read
+6.7 and 18.8 t/s in one afternoon and the only difference was how much memory happened
+to be free. every run below saw 30.1 GiB available. measured 2026-09-25.
 
-| file | reference gate | notorch prefill | llama.cpp | notorch decode | llama.cpp |
-|---|---|---|---|---|---|
-| Qwen3-4B Q4_K_M | 1 identical, 2 tie-break | 29.9 t/s | 47.72 | 10.0 t/s | 11.12 |
-| Ministral-3B Q4_K_M | 2 identical, 1 tie-break | 35.5 | 57.88 | 11.8 | 13.22 |
-| Qwen3-30B-A3B Q4_K_M | 3 identical | 23.6 | 30.66 | 9.0 | 10.78 |
-| gemma-4-E4B Q4_0 | **1 diverged** of 3 | 18.1 | 38.45 | 8.1 | 8.90 |
-| gemma-4-E4B Q8_0 | 2 identical, 1 tie-break | 8.4 | 34.35 | 5.1 | 5.80 |
-| mamba-130m Q4_K_M | 3 tie-break | 140.4 | 604.26 | 50.9 | 191.43 |
+| file | reference gate | prefill | llama.cpp | decode | llama.cpp | resident |
+|---|---|---|---|---|---|---|
+| Qwen3-4B Q4_K_M | 1 identical, 2 tie-break | 30.1 t/s | 47.72 | 10.0 t/s | 11.12 | 2.38 GiB |
+| Ministral-3B Q4_K_M | 2 identical, 1 tie-break | 34.9 | 57.88 | 11.8 | 13.22 | 2.05 |
+| Qwen3-30B-A3B Q4_K_M | 3 identical | 24.6 | 30.66 | 9.7 | 10.78 | 17.32 |
+| gemma-4-E4B Q4_0 | **1 diverged** of 3 | 19.2 | 38.45 | 8.2 | 8.90 | 4.37 |
+| gemma-4-E4B Q8_0 | 2 identical, 1 tie-break | 8.9 | 34.35 | 5.1 | 5.80 | 7.57 |
+| mamba-130m Q4_K_M | 3 tie-break | 140.5 | 604.26 | 51.8* | 191.43 | 0.10 |
+
+*mamba's decode is measured on a five-token prompt and swings 42.2 / 51.8 / 81.6 across
+the three passes: a 130M body finishes a token in twenty milliseconds and the figure is
+mostly noise. on the 61-token prompt it greedily emits its stop token immediately —
+`<|endoftext|>` is id 0 in that file, and is also its BOS — and decodes nothing at all,
+three times out of three. that is the model's own choice and not a defect; `make
+test_repeat` reads `NOTORCH_REPEAT_OK` for it and three greedy passes in one process
+produce byte-identical ids.
+
+the same table a month ago said 11.6 t/s for the first row. that figure was taken on a
+53-token prompt, so it is not this row's baseline; rebuilt at `30651c9` and rerun here
+on the same 61-token prompt it reads 11.2, 11.3, 11.1 with 5.9, 5.9, 5.7 of decode at
+the same 2.38 GiB resident. **2.67x on prefill and 1.71x on decode**, measured rather
+than inferred from two numbers taken under different conditions.
 
 zero diverged on five of the six. the exception is named rather than hidden: gemma-4 at
 Q4_0 emits one token where the reference emits `<turn|>` and stops, on one prompt of
@@ -111,10 +128,11 @@ three, while the same model at Q8_0 matches. nine hypotheses are refuted with th
 evidence in `NOTORCHLOG.md` — the Q4_0 matmul is not the cause, and neither is the
 tokenizer, the stop set, the layer geometry or the dequantiser.
 
-decode is within 1.10x to 1.20x of the reference everywhere except mamba. prefill is
-not: 1.30x on the mixture, 1.63x and 1.65x on the dense Q4_K bodies, and 4.09x on Q8_0
-and 4.32x on mamba, which are the two worst numbers in the table and therefore the two
-that matter next.
+decode is within 1.09x to 1.14x of the reference everywhere except mamba, whose own
+figure is noise. prefill is not one number: 1.25x on the mixture, 1.59x and 1.66x on
+the dense Q4_K bodies, 2.00x on Q4_0, and **3.86x on Q8_0** and **4.30x on mamba** —
+the two worst in the table and therefore the two that matter next. Q8_0 has an AVX2
+arm, so its distance is not the missing-arm class that Q4_0 turned out to be.
 
 what the table does and does not cover. the six files above exercise `arch_llama.c`
 through **qwen3** and **mistral3**, `arch_olmoe.c` through **qwen3moe**,
