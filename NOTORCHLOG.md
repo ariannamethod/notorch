@@ -13,6 +13,57 @@ Newest entries on top.
 
 ---
 
+## 2026-09-25 — the reference gate asked a marker and skipped a model that agreed
+
+`test_reference.sh` refused to judge mamba-130m, and its reason was that the file
+declares no `add_bos_token` while the reference prepends one anyway. The reason is
+real — it was written after nano_arianna Q8_0, where a forced BOS makes the model
+answer `: With::::::::` and the gate called a documented difference a defect.
+
+But the check was not the reason. It read `./notorch -T` for the string
+`bos: undeclared` — a **marker** — where the property it meant to establish is
+whether the two sides read the same prompt. On mamba-130m those are different
+answers. `llama-tokenize` gives `[510, 5347, 273, 6181, 310]` and this tree gives
+`510,5347,273,6181,310`: five ids each, no BOS on either side, and
+`NOTORCH_TOKENIZER_OK (8 checks)` for the file besides. The gate was skipping a
+model it agreed with.
+
+It asks the property now. Where the marker fires and `llama-tokenize` is present, the
+two id sequences are compared for the same prompt; where they match, the gate runs;
+where they do not, it skips and prints the counts instead of a category. With no
+`llama-tokenize` on the machine there is nothing to ask, so the marker is all that is
+left and the skip stands — a gate that cannot establish its precondition skips rather
+than guesses.
+
+    mamba-130m-hf Q4_K_M    0 identical, 3 tie-break, 0 diverged
+                            forced next token 8 of 9        NOTORCH_REFERENCE_OK
+
+**Checked from the other side, because a loosened gate looks exactly like a fixed
+one.** nano_arianna Q4_K_M still skips: ours is five ids, the reference's is six —
+`[1, 338, 3228, 282, 4135, 313]`, BOS id 1 in front — and the skip now says so with
+the numbers. The repair does not let anything through that the marker was holding
+back; it lets through the one thing the marker was holding back **wrongly**.
+
+Second dead gate turned live today, after `test_qmatmul` for dtype 2. Both were the
+same shape: a check that could not fail, passing.
+
+Five bodies against llama.cpp on the polygon, zero diverged:
+
+    mamba-130m       Q4_K_M   0 identical, 3 tie-break
+    gemma-4-E4B      Q8_0     2 identical, 1 tie-break
+    Qwen3-4B         Q4_K_M   1 identical, 2 tie-break
+    Ministral-3-3B   Q4_K_M   2 identical, 1 tie-break
+    Qwen3-30B-A3B    Q4_K_M   3 identical, 0 tie-break
+
+Gates on both machines: notorch_test 50/50 and 73/73, test_qmatmul 46/46, `JANUS_OK`,
+`RESONANCE_OK`, `NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_REPEAT_OK (3 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`.
+
+Still open, unchanged: gemma-4 at Q4_0 emits id 108 where the reference emits 106,
+with nine hypotheses refuted in the entry below.
+
+---
+
 ## 2026-09-25 — two architectures nobody had ever run, and Q4_0 had no x86 arm at all
 
 `arch_gemma4.c` and `arch_mamba.c` — 880 lines between them — were compiled, named in

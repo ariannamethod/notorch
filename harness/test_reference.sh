@@ -140,17 +140,41 @@ check_model() {
   if ! $REF -m "$m" -n 1 "x" >/dev/null 2>&1; then
     echo "  SKIP $(basename "$m") — the reference does not load it"; skipped=$((skipped + 1)); return 0
   fi
-  # Where the file does not declare add_bos_token, the reference prepends one
-  # anyway and this tree does not — so the two are not answering the same
-  # prompt and no verdict below means anything. This is not a hypothesis: on
-  # nano_arianna Q8_0 the reference echoes `<s> def fibonacci(n):` and writes
-  # `: With::::::::`, and the same model degenerates the same way here the
-  # moment a BOS is forced in front. See the 09-10 entry; that default is what
-  # cost this model its voice in the first place. Three prompts read DIVERGED
-  # for it, which is the gate calling a documented difference a defect.
+  # Where the two sides do not read the same prompt, no verdict below means anything.
+  # That is not a hypothesis: on nano_arianna Q8_0 the reference echoes
+  # `<s> def fibonacci(n):` and writes `: With::::::::`, and the same model degenerates
+  # the same way here the moment a BOS is forced in front. See the 09-10 entry.
+  #
+  # But "the file declares no add_bos_token" is a MARKER, not the property. It was what
+  # this check tested until 2026-09-25, and on mamba-130m it skipped a model whose ids
+  # match the reference's exactly — five for "The capital of France is", no BOS on either
+  # side, 8 of 8 in test_tokenizer. The property is whether the id sequences agree, so
+  # that is what is asked now, of llama-tokenize, on this file, for this prompt.
+  #
+  # With no llama-tokenize there is nothing to ask, and the marker is all that is left;
+  # a gate that cannot establish its precondition skips rather than guesses.
+  TOKREF=""
+  for c in llama-tokenize /data/data/com.termux/files/usr/bin/llama-tokenize; do
+    command -v "$c" >/dev/null 2>&1 && TOKREF="$c" && break
+    [ -x "$c" ] && TOKREF="$c" && break
+  done
   if ./notorch -T "$m" "x" 2>&1 >/dev/null | grep -q "bos: undeclared"; then
-    echo "  SKIP $(basename "$m") — the file declares no add_bos_token and the reference prepends one anyway; the two are not reading the same prompt"
-    skipped=$((skipped + 1)); return 0
+    if [ -z "$TOKREF" ]; then
+      echo "  SKIP $(basename "$m") — the file declares no add_bos_token, and with no llama-tokenize here there is no way to check whether the two read the same prompt"
+      skipped=$((skipped + 1)); return 0
+    fi
+    # -T prints "510,5347,273,6181,310"; llama-tokenize --ids prints "[510, 5347, ...]".
+    # Commas become separators before anything is stripped — deleting them instead glues
+    # the ids into one number, which is how this comparison first reported "1 id".
+    _ours=$(./notorch -T "$m" "The capital of France is" 2>/dev/null |
+            tr ',' ' ' | tr -cd '0-9 \n' | tr -s ' \n' ' ')
+    _theirs=$($TOKREF -m "$m" -p "The capital of France is" --ids 2>/dev/null |
+              tr ',' ' ' | tr -cd '0-9 \n' | tr -s ' \n' ' ')
+    if [ "$(echo $_ours)" != "$(echo $_theirs)" ]; then
+      _no=$(echo $_ours | wc -w | tr -d ' '); _nt=$(echo $_theirs | wc -w | tr -d ' ')
+      echo "  SKIP $(basename "$m") — the file declares no add_bos_token and the two tokenize the prompt differently ($_no ids against $_nt); they are not reading the same prompt"
+      skipped=$((skipped + 1)); return 0
+    fi
   fi
 
   while IFS= read -r p; do
