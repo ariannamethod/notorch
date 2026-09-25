@@ -13,6 +13,61 @@ Newest entries on top.
 
 ---
 
+## 2026-09-25 — the review was right three times, and the repair found two things the first pass missed
+
+The Codex connector raised three P2 findings on PR #130. All three hold against the
+tree, and all three cite rules this repository wrote for itself:
+
+1. **`AGENTS.md:41-43`, compare like with like.** The 11.6 t/s the README carried was
+   taken on a 53-token prompt (`NOTORCHLOG.md:1341, 1628`); the new figure is a
+   61-token one. Calling that the same command and deriving 2.6x compares unlike
+   workloads.
+2. **`AGENTS.md:107-112`, no throughput number without the memory state beside it.**
+   That rule exists because a published figure and three explanations built on it had
+   to be withdrawn when the difference turned out to be 1.2 GB of free memory. Six
+   figures went out with no residency at all.
+3. **`AGENTS.md:38-40`, repeated measurements are part of a number's coordinates.**
+   Four of the six rows were single samples, and a 1.10x conclusion was drawn from
+   them.
+
+`./notorch -r N` has printed residency before every run since it was written
+(`harness/main.c:465`) — exactly what the third and second findings ask for. The
+command was there; it was not used.
+
+### Redone
+
+Three passes in one process, median reported, residency on every row, both sides on
+the same 61-token prompt. And the baseline rebuilt rather than quoted: `git archive
+30651c9`, the commit whose README carried the 11.6, run here on the 61-token prompt:
+
+    30651c9   prefill 11.2, 11.3, 11.1    decode 5.9, 5.9, 5.7    resident 2.38 GiB
+    main      prefill 30.1, 30.1, 30.1    decode 10.0, 10.0, 10.0 resident 2.38 GiB
+
+**2.67x on prefill, 1.71x on decode**, measured against the same binary on the same
+prompt. The old 53-token figure was worth 11.6 against this 11.2, so the prompt length
+was worth three percent rather than an order — but that is a thing discovered by
+checking, not a reason the check was unnecessary.
+
+### Two things the single-sample pass had hidden
+
+**mamba decodes nothing on the long prompt.** Greedy, three passes out of three, it
+emits its stop token immediately: `<|endoftext|>` is id 0 in that file and is also its
+BOS. The 50.9 t/s published yesterday came from temperature 0.8 runs that happened not
+to hit it. Not a defect — three greedy passes in one process produce byte-identical
+ids and `test_repeat` reads `NOTORCH_REPEAT_OK` — but the number was an accident, and
+the table now says so and measures the decode on a five-token prompt instead, with its
+42.2 / 51.8 / 81.6 swing printed rather than averaged away.
+
+**The ratios moved.** With medians instead of single samples: decode 1.09x to 1.14x
+rather than 1.10x to 1.20x; prefill 1.25x on the mixture, 1.59x and 1.66x on the dense
+Q4_K bodies, 2.00x on Q4_0, 3.86x on Q8_0 and 4.30x on mamba. The headline survives —
+Q8_0 and mamba are the two worst and the two that matter next — but not one of the six
+numbers it was built on was the same.
+
+No code. `README.md` and this entry.
+
+---
+
 ## 2026-09-25 — the README table was half the truth and two years old in dog years
 
 `## run a model` claimed Qwen3-4B Q4_K_M at 11.6 t/s of prefill against llama.cpp's
