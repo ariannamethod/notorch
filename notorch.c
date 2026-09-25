@@ -6382,7 +6382,50 @@ static void nt_quant_act_for(int dtype, const float *x, int k, int8_t *qa, float
 // Block layout (per dequant_q4_0): byte i holds elem i (low nibble) and elem i+16
 // (high nibble), each value = nibble - 8. So lo nibbles pair with qa[0..15], hi with
 // qa[16..31]. Integer accumulation; per-block result scaled by d_w * d_a.
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+//
+// The x86 arm below was missing until 2026-09-25 — Q4_0 was the last packed format with no
+// AVX2 path at all, per-token or batched, so on this machine both fell to the scalar loop
+// and tests/test_qmatmul compared one scalar implementation against another. That is the
+// third instance of the same class this month, after the batched kernels that were never
+// compiled and dot_f32, which had only NEON.
+//
+// The -8 comes out of the dot the way Q6_K's -32 does: SUM (q-8)*a == SUM q*a - 8*SUM a,
+// and SUM a per 32 is the asum the caller already computes. So the weight stays unsigned,
+// maddubs takes it directly, and none of the sign choreography is needed.
+#if defined(__AVX2__) && defined(__FMA__)
+static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    int nb = k / 32;
+    const __m128i m4 = _mm_set1_epi8(0x0F);
+    const __m256i ones = _mm256_set1_epi16(1);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 18;
+        __m256 accv = _mm256_setzero_ps();
+        float accm = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 18;
+            float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            /* Sixteen packed bytes hold elements 0..15 in the low nibbles and 16..31 in the
+             * high ones, so the two halves go into the two lanes in that order and the ymm
+             * reads straight against the activation. */
+            __m128i v  = _mm_loadu_si128((const __m128i *)(blk + 2));
+            __m256i w  = _mm256_set_m128i(_mm_and_si128(_mm_srli_epi16(v, 4), m4),
+                                          _mm_and_si128(v, m4));
+            __m256i a  = _mm256_loadu_si256((const __m256i *)(qa + (long)b * 32));
+            __m256i si = _mm256_madd_epi16(ones, _mm256_maddubs_epi16(w, a));
+            float dd = d_w * da[b];
+            accv = _mm256_fmadd_ps(_mm256_set1_ps(dd), _mm256_cvtepi32_ps(si), accv);
+            accm = __builtin_fmaf(dd, (float)asum[b], accm);
+        }
+        {
+            __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv), _mm256_extractf128_ps(accv, 1));
+            h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+            out[row] = _mm_cvtss_f32(h) - 8.0f * accm;
+        }
+    }
+}
+#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 #include <arm_neon.h>
 static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                             const float *da, const int32_t *asum,
@@ -7464,7 +7507,51 @@ static inline int nt_qmm_tile(int k) {
     return t;
 }
 
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+#if defined(__AVX2__) && defined(__FMA__)
+/* The batched twin of the per-token arm above, written in the same shape so the two agree
+ * bit for bit — which is what tests/test_qmatmul asserts, and which on this machine it
+ * could not assert before, because both sides were the same scalar loop. */
+static void nt_q4_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
+                             const float *da, const int32_t *asum,
+                             int r0, int r1, int k, int n) {
+    int nb = k / 32;
+    const __m128i m4 = _mm_set1_epi8(0x0F);
+    const __m256i ones = _mm256_set1_epi16(1);
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 18;
+            __m256 accv[NT_QMM_TILE];
+            float accm[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) { accv[j] = _mm256_setzero_ps(); accm[j] = 0.0f; }
+            for (int b = 0; b < nb; b++) {
+                const uint8_t *blk = rb + (long)b * 18;
+                float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+                __m128i v = _mm_loadu_si128((const __m128i *)(blk + 2));
+                __m256i w = _mm256_set_m128i(_mm_and_si128(_mm_srli_epi16(v, 4), m4),
+                                             _mm_and_si128(v, m4));
+                for (int j = 0; j < jn; j++) {
+                    const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
+                    __m256i a  = _mm256_loadu_si256((const __m256i *)qab);
+                    __m256i si = _mm256_madd_epi16(ones, _mm256_maddubs_epi16(w, a));
+                    float dd = d_w * da[(long)(j0 + j) * nb + b];
+                    accv[j] = _mm256_fmadd_ps(_mm256_set1_ps(dd),
+                                              _mm256_cvtepi32_ps(si), accv[j]);
+                    accm[j] = __builtin_fmaf(dd, (float)asum[(long)(j0 + j) * nb + b],
+                                             accm[j]);
+                }
+            }
+            for (int j = 0; j < jn; j++) {
+                __m128 h = _mm_add_ps(_mm256_castps256_ps128(accv[j]),
+                                      _mm256_extractf128_ps(accv[j], 1));
+                h = _mm_hadd_ps(h, h); h = _mm_hadd_ps(h, h);
+                out[(long)(j0 + j) * m + row] = _mm_cvtss_f32(h) - 8.0f * accm[j];
+            }
+        }
+    }
+}
+#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 /* One row range against one range of activations, SDOT. Split out because the i8mm path
  * below covers rows and activations two at a time and has to hand the odd one back. */
 static void nt_q4_0_sdot_range(float *out, int m, const uint8_t *W, const int8_t *qa,
@@ -8634,7 +8721,9 @@ int nt_qmatmul_i8_pre(float *out, const uint8_t *Wq, int dtype,
     if (!out || !Wq || !qa || !da || m <= 0 || k <= 0 || n <= 0) return -1;
     if (k % 32) return -1;
     if ((dtype == 12 || dtype == 14) && (k % 256)) return -1;
-    if ((dtype == 12 || dtype == 6) && !asum) return -1;   /* these lift a bias out of the dot */
+    /* Q4_0's -8 lifts out of the dot the way Q4_K's minimum and Q5_0's -16 do, so it needs
+     * the per-block activation sum too. */
+    if ((dtype == 2 || dtype == 12 || dtype == 6) && !asum) return -1;
     nt_qmmrows_fn fn;
     switch (dtype) {
     case 2:  fn = nt_q4_0_rows_i8n; break;
@@ -8689,9 +8778,9 @@ int nt_qmatmul_i8(float *out, const uint8_t *Wq, int dtype,
     /* Q4_K's affine minimum and Q5_0's -16 bias both lift out of the integer dot as a
      * multiple of SUM(qa) per block. It depends on the activation alone, so every row
      * range and every tile reads the same numbers — computed once, here. */
-    int32_t *asum = (dtype == 12 || dtype == 6)
+    int32_t *asum = (dtype == 2 || dtype == 12 || dtype == 6)
                   ? (int32_t *)malloc((size_t)nsub * (size_t)n * sizeof(int32_t)) : NULL;
-    if (!qa || !da || ((dtype == 12 || dtype == 6) && !asum)) {
+    if (!qa || !da || ((dtype == 2 || dtype == 12 || dtype == 6) && !asum)) {
         free(qa); free(da); free(asum); return -1;
     }
     nt_quant_act_batch(X, dtype, k, n, qa, da, asum);
