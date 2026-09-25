@@ -13,6 +13,84 @@ Newest entries on top.
 
 ---
 
+## 2026-09-25 — Q8_0's batched arm, and the two ULP that were an accumulation order all along
+
+Q8_0 and Q5_0 were the last two formats with no AVX2 kernel anywhere — neither arm,
+on either machine. `grep q8_0 notorch.c | grep -i 'avx\|mm256'` returned nothing. The
+cost was visible in the table published this morning: gemma-4-E4B at Q8_0 was 3.86x
+behind llama.cpp on prefill, the worst number there, and its feed-forward ran at
+**6.4 GMAC/s per core against Q4_K's 18** — three times slower for arithmetic that is
+strictly simpler, no nibble unpack and no sub-block scales.
+
+### The first attempt, and nine roads closed
+
+Writing both arms at once produced a pair that disagreed by two ULP, and
+`test_qmatmul` failed 42 of 46 — correctly. An exact f64 reference sat **between**
+them: per-token off by +8.55e-06, batched by -6.71e-06, both arithmetically sound.
+Nine hypotheses went down with evidence:
+
+    sign_epi8 on a weight of -128     exact, standalone probe
+    quantised activation and da       byte-identical in both paths
+    per-block integer sums si         identical in all eight blocks
+    the thread pool                   fails the same at 1 thread and pool off
+    a one-element array accumulator   does not change the bits
+    forbidding FMA contraction        changed nothing, not one bit
+    hoisting sign(w,w) out of the tile no change, verified in isolation
+    the NT_QMV_ASUM_MAX ceiling       128 blocks against a limit of 2048
+    llama.cpp's own shape             arithmetically identical to mine
+
+That last one is worth keeping. `ggml_vec_dot_q8_0_q8_0`
+(`ggml/src/ggml-cpu/arch/x86/quants.c:1308`) uses the same |w| against a*sign(w)
+identity, the same `madd_epi16(ones, ...)` reduction, and even `_mm256_add_ps` of an
+`_mm256_mul_ps` rather than an fmadd. It also asserts `nrc == 1`: **there is no batched
+Q8_0 in their AVX2 at all**, so they never have two arms to reconcile. That gate is
+ours, not theirs.
+
+### What it actually was
+
+`notorch.c:8514`, the scalar batched arm: `acc[j] += d * da[...] * (float)s`. A scalar
+running sum, block by block, left to right. My vector accumulator drained once per row
+summed the same contributions in a different order — and Q8_0's block covers 32 values
+where the Q*_K family covers 256, so k=4096 is **128 accumulation steps rather than
+16**. The order matters four times as much here as anywhere the pattern had been used
+before. No amount of forcing or forbidding contraction could have reached it.
+
+So the new arm reduces `si` to a scalar inside the block and leaves the float add
+exactly where the scalar arm puts it.
+
+### One arm at a time
+
+Only the batched arm is vectorised. The per-token one stays scalar on purpose: with
+both sides new, a disagreement says nothing about which is wrong — which is precisely
+how the first attempt burned a day. Now the gate compares something new against
+something proven, and a failure names one function.
+
+    test_qmatmul, m=2048 k=4096 n=32
+      batched against per-token   8.8 -> 4.7 ms    2.07x, outputs identical
+
+    gemma-4-E4B Q8_0, six threads, three passes in one process, 7.57 GiB resident
+      prefill  8.4, 8.9, 8.9  ->  12.9, 14.3, 14.3 t/s      1.61x
+      decode   5.0, 5.0, 5.1  ->   5.1,  5.1,  5.1          unchanged
+
+Decode is untouched because n=1 goes to the per-token arm, which is still the scalar
+loop. That is the next piece, and it now has a proven partner to be checked against.
+
+**The gate is alive, and that was checked.** Changing `sign(a, w)` to `sign(a, a)` in
+the new arm reads 42 passed, 4 failed; restoring it reads 46 of 46. Third dead gate
+turned live in two days, after `test_qmatmul` for dtype 2 and `test_reference` for
+mamba.
+
+Gates: notorch_test 50/50 and 73/73, test_qmatmul 46/46 on both machines and falsified,
+`NOTORCH_REFERENCE_OK` 0 diverged on gemma-4 Q8_0, Qwen3-4B, Qwen3-30B-A3B and
+mamba-130m, `JANUS_OK` — Janus ships in Q8_0 and this is its path — `RESONANCE_OK`,
+`NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_REPEAT_OK (3 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`.
+
+Still open: Q5_0 has no arm either, the Q8_0 per-token arm is still scalar, and
+gemma-4 at Q4_0 still emits id 108 where the reference emits 106.
+
+---
+
 ## 2026-09-25 — the review was right three times, and the repair found two things the first pass missed
 
 The Codex connector raised three P2 findings on PR #130. All three hold against the

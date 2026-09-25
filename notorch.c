@@ -8492,6 +8492,68 @@ static void nt_q5_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
     }
 }
 
+/* The x86 batched arm. Q8_0 and Q5_0 were the last two formats with no AVX2 kernel at
+ * all, and on this machine gemma-4's feed-forward ran at 6.4 GMAC/s per core against
+ * Q4_K's 18 — three times slower for arithmetic that is strictly simpler.
+ *
+ * Only this arm is vectorised. The per-token one below stays scalar on purpose: with both
+ * sides new, a disagreement says nothing about which is wrong, and a first attempt at the
+ * pair did disagree by two ULP for exactly that reason.
+ *
+ * The accumulation order is the scalar arm's, to the letter. Q8_0's block is 32 values,
+ * so k=4096 is 128 accumulation steps rather than the Q*_K family's 16, and a vector
+ * accumulator drained once per row sums those 128 contributions in a different order than
+ * `acc[j] += d * da * (float)s` does. That is where the two ULP came from, and no amount
+ * of forcing or forbidding FMA contraction could have fixed it. So `si` is reduced to a
+ * scalar inside the block, and the float add stays exactly where the scalar arm puts it.
+ *
+ * maddubs wants its left operand unsigned and both sides here are signed, so the dot goes
+ * through |w| against a*sign(w) — the identity ggml_vec_dot_q8_0_q8_0 uses
+ * (llama.cpp ggml/src/ggml-cpu/arch/x86/quants.c:1308). |w| depends on the weight alone
+ * and is built once per block rather than once per block per column. */
+#if defined(__AVX2__) && defined(__FMA__)
+static inline float nt_q8_0_dot32(const int8_t *wq, const int8_t *qab, __m256i aw,
+                                  __m256i w, __m256i ones) {
+    (void)wq;
+    __m256i a  = _mm256_loadu_si256((const __m256i *)qab);
+    __m256i si = _mm256_madd_epi16(ones, _mm256_maddubs_epi16(aw, _mm256_sign_epi8(a, w)));
+    __m128i h  = _mm_add_epi32(_mm256_castsi256_si128(si),
+                               _mm256_extracti128_si256(si, 1));
+    h = _mm_add_epi32(h, _mm_shuffle_epi32(h, 0x4E));
+    h = _mm_add_epi32(h, _mm_shuffle_epi32(h, 0xB1));
+    return (float)_mm_cvtsi128_si32(h);
+}
+
+static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
+                             const float *da, const int32_t *asum,
+                             int r0, int r1, int k, int n) {
+    (void)asum;
+    int nb = k / 32;
+    const __m256i ones = _mm256_set1_epi16(1);
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 34;
+            float acc[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            for (int b = 0; b < nb; b++) {
+                const uint8_t *blk = rb + (long)b * 34;
+                float d = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+                const int8_t *wq = (const int8_t *)(blk + 2);
+                __m256i w  = _mm256_loadu_si256((const __m256i *)wq);
+                __m256i aw = _mm256_sign_epi8(w, w);
+                for (int j = 0; j < jn; j++) {
+                    const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
+                    float s = nt_q8_0_dot32(wq, qab, aw, w, ones);
+                    acc[j] += d * da[(long)(j0 + j) * nb + b] * s;
+                }
+            }
+            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+        }
+    }
+}
+#else
 static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
@@ -8519,6 +8581,7 @@ static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
         }
     }
 }
+#endif
 
 #if defined(__AVX2__) && defined(__FMA__)
 /* The x86 arm, missing for the same reason the Q4_K one was: every batched kernel here was
