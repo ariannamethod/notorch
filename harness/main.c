@@ -237,6 +237,7 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
     int pos = pos0 + n_tok, gen = 0;
     for (int step = 0; step < max_tokens; step++) {
         int next = sample(s->logits, s->vocab, temp);
+        if (getenv("NT_ECHO_IDS")) fprintf(stderr, "[id %d]", next);
         if (chat_is_stop(next)) break;
         if (s->tok ? (next == s->eos || bpe_is_eog(s->tok, next)) : (!g_chat.active && next <= 2)) break;
         emit(s, next);

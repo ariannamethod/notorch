@@ -32,7 +32,8 @@ static void wt_probe(wt *w) {
     float *x = (float*)calloc(w->cols, sizeof(float));
     float out = 0.0f;
     if (x) {
-        w->use_i8 = (nt_qmatvec_i8(&out, w->q, w->dtype, x, 1, w->cols) == 0);
+        w->use_i8 = !getenv("NT_NO_I8") &&
+                    (nt_qmatvec_i8(&out, w->q, w->dtype, x, 1, w->cols) == 0);
         if (!w->use_i8 && nt_qmatvec(&out, w->q, w->dtype, x, 1, w->cols) != 0) {
             w->q = NULL;   /* no packed path — the loader will expand it */
         }

@@ -13,6 +13,100 @@ Newest entries on top.
 
 ---
 
+## 2026-09-25 — two architectures nobody had ever run, and Q4_0 had no x86 arm at all
+
+`arch_gemma4.c` and `arch_mamba.c` — 880 lines between them — were compiled, named in
+the family table, and had never seen a file. Not in `test_reference`, not in
+`test_repeat`, not anywhere. In a tree whose rule is that a claim is a measurement,
+that is a claim standing on nothing, and it was made publicly in the README.
+
+So: `ggml-org/gemma-4-E4B-it-GGUF` at Q4_0 and Q8_0, and
+`mradermacher/mamba-130m-hf-GGUF` at Q4_K_M, onto the polygon.
+
+**Both ran on first contact.** Mamba printed its own geometry — E=768 L=24 d_state=16,
+2.67 MiB of state, no KV cache — at 96.1 t/s prefill and 39.7 decode. Gemma 4 E4B
+printed a banner matching what its own source comment claims (PLE=256, KV on 24 of 42,
+softcap 30, 512-wide heads on full layers and 256 on sliding) and answered "The capital
+of France is Paris." That is 880 lines of never-executed code turning out to be right.
+
+Then the gates, which is where it gets useful.
+
+### Q4_0 had no AVX2 arm, per-token or batched
+
+`grep q4_0 notorch.c | grep -i 'avx\|mm256'` returned nothing. Both arms fell to the
+scalar `#else` on x86 — which also means `tests/test_qmatmul` was comparing one scalar
+implementation against another for dtype 2 and could not fail. Third instance of this
+class in a month, after the batched kernels that were never compiled (09-12) and
+`dot_f32`, which had only NEON (09-19).
+
+The `-8` comes out of the dot the way Q6_K's `-32` does: `SUM (q-8)*a == SUM q*a -
+8*SUM a`, and `SUM a` per 32 is the `asum` the caller already computes and this format
+was throwing away with `(void)asum`. So the weight stays unsigned, `maddubs` takes it
+directly, and none of the sign choreography is needed. Sixteen packed bytes hold
+elements 0..15 in the low nibbles and 16..31 in the high ones, so the two halves go
+into the two lanes of one ymm in that order.
+
+    test_qmatmul, m=2048 k=4096 n=32
+      per-token  14.1 -> 4.2 ms    3.36x
+      batched     9.1 -> 3.2 ms    2.84x
+
+    gemma-4-E4B-it Q4_0, six threads, alternating runs
+      prefill  7.0, 7.1  ->  16.1, 18.0 t/s
+      decode   3.2, 3.1  ->   6.5,  8.3
+
+**The gate is alive now, and that was checked rather than assumed.** Changing the `-8`
+to `-7` in one arm takes `test_qmatmul` to 38 passed, 8 failed; restoring it returns
+46 of 46 with every dtype 2 case reading "outputs identical". Before this change that
+break was invisible on x86.
+
+### The divergence that is still open
+
+`gemma-4-E4B-it-Q4_0` fails the reference gate on one of three prompts. At the third
+position we emit id 108 where llama.cpp emits 106 (`<turn|>`) and stops; our own Q8_0
+run of the same model emits 106 and matches. The AVX2 arm did not change it — the new
+kernel is bit-identical to the scalar one it replaced, which `test_qmatmul` asserts, so
+the Q4_0 matmul is not the cause.
+
+Nine hypotheses refuted, each with its evidence, so nobody has to try them again:
+
+1. **Layer classification.** Our `is_swa` is inferred from tensor shapes, not from the
+   file's `sliding_window_pattern` array. Dumped both: q is 4096 wide on layers 5, 11,
+   17, 23, 29, 35, 41 and 2048 elsewhere, which is exactly the array, **including** the
+   eighteen layers that own no k or v. The inference is correct.
+2. **Tokenization.** `test_tokenizer.sh` with `llama-tokenize` built: 8 of 8 identical,
+   emoji and Cyrillic included. The gate exists because gemma-4 once tokenized to nine
+   ids where llama.cpp made six; that is fixed and stays fixed.
+3. **Stop tokens.** The vocab has `<eos>` at 1 and `<turn|>` at 106; `bpe_is_eog` covers
+   both, and `spm_bpe` — which gates that function — is set for
+   `tokenizer.ggml.model == "gemma4"`.
+4. **Softcapping.** `tanh` is monotonic; it cannot reorder an argmax.
+5. **Dtype coverage.** `gguf_dequant_row` handles Q4_0, so the per-layer embedding table
+   is read rather than silently zeroed by the `memset` fallback beside it.
+6. **Integer versus float path.** `NT_NO_I8=1` forces the dequantised path; it produces
+   the same ids. So this is not the int8 activation.
+7. **Borrowed KV.** The Q8_0 file carries `attn_k`, `attn_v` and `attn_k_norm` for
+   layers 24..41 and the Q4_0 file does not — 54 tensors, 666 against 720, which is
+   18 + 18x2 and exactly `shared_kv_layers = 18`. We ignore them in both: `owns_kv` is
+   `l < n_kv_layers`, so a borrowing layer never computes or writes k and v.
+8. **The extra tensors themselves.** Follows from 7 — they change nothing for us.
+9. **`dequant_q4_0`.** Byte for byte `d * (nibble - 8)` with the low nibbles as the
+   first half, identical to `dequantize_row_q4_0`.
+
+Two probes left in place because they earned their keep: `NT_NO_I8` forces the float
+path, and `NT_ECHO_IDS` prints each generated id to stderr. The second is what turned
+"our text is longer" into "108 where they have 106".
+
+Not yet gated: mamba. `test_reference` skips it because the file declares no
+`add_bos_token` and the reference prepends one anyway, so the two do not read the same
+prompt. The model works; the gate cannot see it.
+
+Gates: notorch_test 50/50 and 73/73, test_qmatmul 46/46 on both machines and falsified,
+`NOTORCH_REFERENCE_OK` with 0 diverged on Qwen3-4B, Ministral-3B and Qwen3-30B-A3B,
+`NOTORCH_TOKENIZER_OK (8 checks)` on gemma-4, `JANUS_OK`, `RESONANCE_OK`,
+`NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_REPEAT_OK`, `NOTORCH_CONSUMER_OK (3 checks)`.
+
+---
+
 ## 2026-09-19 — instructions are at parity with llama.cpp; the gap is stalls, and cutting k does not close it
 
 `perf` came back on the polygon, and the first thing worth spending it on was the
