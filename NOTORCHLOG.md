@@ -13,6 +13,50 @@ Newest entries on top.
 
 ---
 
+## 2026-09-25 — Q8_0's other arm, and a decode that turns out to be finished
+
+The per-token Q8_0 arm was the last scalar one for this format. Written against its
+batched twin rather than beside it, which is the whole point of having done them one at
+a time: the gate compared something new to something proven, and it passed first try.
+
+Both arms now reduce the block to a scalar and then do `acc += d_w * da[b] * s`, which
+is character for character what the scalar loop below them does. `nt_q8_0_dot32` moved
+up to sit above its first use and is shared, so the two cannot drift.
+
+    test_qmatmul, m=2048 k=4096 n=32
+      per-token   9.6 -> 5.7 ms    1.68x
+      batched                4.7   (unchanged)
+      dtype 8 outputs identical
+
+    gemma-4-E4B Q8_0, six threads, three passes, 7.57 GiB resident
+      prefill  12.9, 14.3, 14.3  ->  13.1, 14.6, 14.6
+      decode    5.0,  5.0,  5.0  ->   5.3,  5.3,  5.3     1.06x
+
+**The gate is alive:** perturbing the scale by 1.0000001f in the new arm reads 42
+passed, 4 failed; restoring it reads 46 of 46.
+
+### A 1.68x kernel bought 6% of decode, and that is the finding
+
+Not a disappointment — an answer. Q8_0 decode reads every weight once per token: 7.57
+GiB resident at 5.3 t/s is **40 GB/s**, which is above what this machine's DRAM
+delivers. The format is two bytes per value where Q4_K is half of one, so decode here
+is bound by the memory bus and not by the kernel, and no further arithmetic will move
+it. llama.cpp reads 5.80 on the same file — 1.09x — and that is not a gap, it is the
+same wall seen from the other side.
+
+Prefill is where the arm paid: 8.9 to 14.6 t/s across the two commits, 1.64x, against
+the reference's 34.35. Still 2.35x behind, down from 3.86x this morning.
+
+Gates: notorch_test 50/50 and 73/73, test_qmatmul 46/46 on both machines and falsified,
+`NOTORCH_REFERENCE_OK` 0 diverged on gemma-4 Q8_0, Qwen3-4B, Qwen3-30B-A3B and
+mamba-130m, `JANUS_OK`, `RESONANCE_OK`, `NOTORCH_PARITY_OK (6 checks)`,
+`NOTORCH_REPEAT_OK (3 checks)`, `NOTORCH_CONSUMER_OK (3 checks)`.
+
+Still open: Q5_0 has no x86 arm at all, and gemma-4 at Q4_0 still emits id 108 where
+the reference emits 106.
+
+---
+
 ## 2026-09-25 — Q8_0's batched arm, and the two ULP that were an accumulation order all along
 
 Q8_0 and Q5_0 were the last two formats with no AVX2 kernel anywhere — neither arm,

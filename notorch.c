@@ -6481,11 +6481,58 @@ static void nt_q4_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
 }
 #endif
 
+#if defined(__AVX2__) && defined(__FMA__)
+/* One 32-value block, reduced to a scalar before it leaves the block — which is
+ * what keeps both Q8_0 arms summing in the order the scalar loop does. maddubs
+ * wants its left operand unsigned and both sides are signed, so this is |w|
+ * against a*sign(w), the identity ggml_vec_dot_q8_0_q8_0 uses. */
+static inline float nt_q8_0_dot32(const int8_t *wq, const int8_t *qab, __m256i aw,
+                                  __m256i w, __m256i ones) {
+    (void)wq;
+    __m256i a  = _mm256_loadu_si256((const __m256i *)qab);
+    __m256i si = _mm256_madd_epi16(ones, _mm256_maddubs_epi16(aw, _mm256_sign_epi8(a, w)));
+    __m128i h  = _mm_add_epi32(_mm256_castsi256_si128(si),
+                               _mm256_extracti128_si256(si, 1));
+    h = _mm_add_epi32(h, _mm_shuffle_epi32(h, 0x4E));
+    h = _mm_add_epi32(h, _mm_shuffle_epi32(h, 0xB1));
+    return (float)_mm_cvtsi128_si32(h);
+}
+#endif
+
 // Q8_0 int8-dot rows: packed weights (34 B/32) × pre-quantized int8 activation.
 // Block layout (per dequant_q8_0): 2 B f16 scale, then 32 raw int8 weights — the
 // weights are already integers, so unlike Q4_0 there is nothing to unpack: the
 // dot is int8 x int8 straight through, per-block result scaled by d_w * d_a.
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+//
+// The x86 per-token arm, written after its batched twin and against it. Both reduce the
+// block to a scalar and then do `acc += d_w * da[b] * s`, character for character what the
+// scalar loop at the bottom of this #if chain does — Q8_0's block is 32 values, so k=4096
+// is 128 accumulation steps rather than the Q*_K family's 16, and a vector accumulator
+// drained once per row sums them in a different order. That cost two ULP and a day.
+#if defined(__AVX2__) && defined(__FMA__)
+static void nt_q8_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    (void)asum;                                  /* no bias term to lift for this format */
+    int nb = k / 32;
+    const __m256i ones = _mm256_set1_epi16(1);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 34;
+        float acc = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 34;
+            float d_w = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            const int8_t *wq  = (const int8_t *)(blk + 2);
+            const int8_t *qab = qa + (long)b * 32;
+            __m256i w  = _mm256_loadu_si256((const __m256i *)wq);
+            __m256i aw = _mm256_sign_epi8(w, w);
+            float s = nt_q8_0_dot32(wq, qab, aw, w, ones);
+            acc += d_w * da[b] * s;
+        }
+        out[row] = acc;
+    }
+}
+#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 static void nt_q8_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                             const float *da, const int32_t *asum,
                             int r0, int r1, int k) {
@@ -8512,17 +8559,6 @@ static void nt_q5_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
  * (llama.cpp ggml/src/ggml-cpu/arch/x86/quants.c:1308). |w| depends on the weight alone
  * and is built once per block rather than once per block per column. */
 #if defined(__AVX2__) && defined(__FMA__)
-static inline float nt_q8_0_dot32(const int8_t *wq, const int8_t *qab, __m256i aw,
-                                  __m256i w, __m256i ones) {
-    (void)wq;
-    __m256i a  = _mm256_loadu_si256((const __m256i *)qab);
-    __m256i si = _mm256_madd_epi16(ones, _mm256_maddubs_epi16(aw, _mm256_sign_epi8(a, w)));
-    __m128i h  = _mm_add_epi32(_mm256_castsi256_si128(si),
-                               _mm256_extracti128_si256(si, 1));
-    h = _mm_add_epi32(h, _mm_shuffle_epi32(h, 0x4E));
-    h = _mm_add_epi32(h, _mm_shuffle_epi32(h, 0xB1));
-    return (float)_mm_cvtsi128_si32(h);
-}
 
 static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
