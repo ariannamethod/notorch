@@ -79,21 +79,52 @@ own **resonance** and **janus**. an architecture no family claims is refused by 
 rather than quietly pushed through the llama forward — a file the harness has never
 seen is a file it has never been tested on.
 
-it is measured against llama.cpp rather than against itself. `make test_reference`
-runs both on the same weights at temperature 0 and compares the bytes; where the two
-part on a coin-flip it hands the reference's own answer back to both and requires them
-to agree again. on the polygon — an i5-8500T, six cores, no AVX-512 — Qwen3-4B Q4_K_M
-reads 2 identical and 1 tie-break of 3, Ministral-3B reads 3 identical, and
-Qwen3-30B-A3B Q4_K_M, a mixture of 128 experts, reads 3 identical of 3 at 17.3 GiB
-resident. speed on that machine, six threads on both sides, against `llama-bench`:
+that last sentence used to be aspirational. on 2026-09-25 `arch_gemma4.c` and
+`arch_mamba.c` — 880 lines between them — were compiled, named in that list, and had
+never had a file put through them. both worked on first contact, which is luck and not
+evidence, so the list below says which families have actually been run and which are
+still only code.
 
-| | notorch prefill | llama.cpp | notorch decode | llama.cpp |
-|---|---|---|---|---|
-| Qwen3-4B Q4_K_M | 11.6 t/s | 49.63 | 6.1 t/s | 11.10 |
-| Ministral-3B Q4_K_M | 14.1 | 60.68 | 7.2 | 13.14 |
-| Qwen3-30B-A3B Q4_K_M | 9.4 | 31.99 | 6.3 | 13.12 |
+### measured against llama.cpp, not against itself
 
-wait for the fucking parity
+`make test_reference` runs both on the same weights at temperature 0 and compares the
+bytes; where the two part on a coin-flip it hands the reference's own answer back to
+both and requires them to agree again. it refuses to judge a file where the two sides
+do not tokenize the prompt identically, and says so with the id counts.
+
+all of the below is one machine — the polygon, an i5-8500T, six cores, no AVX-512 —
+six threads on both sides, a 61-token prompt and 24 generated, `llama-bench -p 61 -n 24`
+against `./notorch -q -n 24`. measured 2026-09-25.
+
+| file | reference gate | notorch prefill | llama.cpp | notorch decode | llama.cpp |
+|---|---|---|---|---|---|
+| Qwen3-4B Q4_K_M | 1 identical, 2 tie-break | 29.9 t/s | 47.72 | 10.0 t/s | 11.12 |
+| Ministral-3B Q4_K_M | 2 identical, 1 tie-break | 35.5 | 57.88 | 11.8 | 13.22 |
+| Qwen3-30B-A3B Q4_K_M | 3 identical | 23.6 | 30.66 | 9.0 | 10.78 |
+| gemma-4-E4B Q4_0 | **1 diverged** of 3 | 18.1 | 38.45 | 8.1 | 8.90 |
+| gemma-4-E4B Q8_0 | 2 identical, 1 tie-break | 8.4 | 34.35 | 5.1 | 5.80 |
+| mamba-130m Q4_K_M | 3 tie-break | 140.4 | 604.26 | 50.9 | 191.43 |
+
+zero diverged on five of the six. the exception is named rather than hidden: gemma-4 at
+Q4_0 emits one token where the reference emits `<turn|>` and stops, on one prompt of
+three, while the same model at Q8_0 matches. nine hypotheses are refuted with their
+evidence in `NOTORCHLOG.md` — the Q4_0 matmul is not the cause, and neither is the
+tokenizer, the stop set, the layer geometry or the dequantiser.
+
+decode is within 1.10x to 1.20x of the reference everywhere except mamba. prefill is
+not: 1.30x on the mixture, 1.63x and 1.65x on the dense Q4_K bodies, and 4.09x on Q8_0
+and 4.32x on mamba, which are the two worst numbers in the table and therefore the two
+that matter next.
+
+what the table does and does not cover. the six files above exercise `arch_llama.c`
+through **qwen3** and **mistral3**, `arch_olmoe.c` through **qwen3moe**,
+`arch_gemma4.c` and `arch_mamba.c` entirely. **resonance** and **janus** are the
+Method's own bodies and have their own gates — `RESONANCE_OK` and `JANUS_OK` run on
+every commit, on neo rather than here. that leaves **llama**, **qwen2** and **olmoe**
+claimed by the table and covered by nothing: the code is there, no file on either
+machine carries those arch strings, and until one does they are three more names on a
+list rather than three families that work.
+
 
 the harness is also a library. a body should link it rather than fork it:
 
