@@ -13,6 +13,59 @@ Newest entries on top.
 
 ---
 
+## 2026-09-25 — the README table was half the truth and two years old in dog years
+
+`## run a model` claimed Qwen3-4B Q4_K_M at 11.6 t/s of prefill against llama.cpp's
+49.63. Both numbers were honest when written. Today the same machine, the same file
+and the same command read **29.9** against **47.72** — so the README was understating
+its own work by 2.6x while overstating the reference, and "wait for the fucking
+parity" was sitting under a table that no longer said what the gap was.
+
+Rewritten from measurements taken today, all six files, both sides, six threads, a
+61-token prompt and 24 generated, `llama-bench -p 61 -n 24` against `./notorch -q -n
+24`, on the polygon:
+
+    file                    gate                      ours      llama.cpp
+    Qwen3-4B      Q4_K_M    1 identical, 2 tie-break  29.9/10.0  47.72/11.12
+    Ministral-3B  Q4_K_M    2 identical, 1 tie-break  35.5/11.8  57.88/13.22
+    Qwen3-30B-A3B Q4_K_M    3 identical               23.6/ 9.0  30.66/10.78
+    gemma-4-E4B   Q4_0      1 DIVERGED of 3           18.1/ 8.1  38.45/ 8.90
+    gemma-4-E4B   Q8_0      2 identical, 1 tie-break   8.4/ 5.1  34.35/ 5.80
+    mamba-130m    Q4_K_M    3 tie-break              140.4/50.9 604.26/191.43
+
+Qwen3-4B was read three times because one earlier sample said 31.1 and the rest say
+29.4, 30.0, 29.9; the outlier is not in the table. mamba's decode swings 45 to 74
+across three runs — a 130M model finishes a token in under twenty milliseconds and the
+measurement is mostly noise — so its median is what is printed, with the swing said
+here rather than smoothed away.
+
+### Which is itself the finding
+
+**Decode is within 1.10x to 1.20x of the reference on everything except mamba.** That
+is close, and it has been close for a week without anybody writing it down in a place
+a reader would find.
+
+**Prefill is not one number.** 1.30x on the mixture, 1.63x and 1.65x on the dense Q4_K
+bodies — and **4.09x on Q8_0** and **4.32x on mamba**. Those last two are worse than
+anything chased this month: the 8-row interleave, the k-cut, the q/k/v fusion and the
+attention work were all aimed at the 1.6x, while a 4x sat unmeasured in two corners
+nobody had put a file through. Q8_0 has an AVX2 arm, so its 4x is not the missing-arm
+class that Q4_0 turned out to be; it has not been looked at.
+
+### And the list now says what it covers
+
+The README named ten families as "what runs today". Six files exercise four of them —
+`arch_llama.c` through qwen3 and mistral3, `arch_olmoe.c` through qwen3moe,
+`arch_gemma4.c` and `arch_mamba.c` entirely — and resonance and janus have their own
+gates on neo. That leaves **llama**, **qwen2** and **olmoe** claimed and covered by
+nothing at all: no file on either machine carries those arch strings. The README says
+so now, in those words, because three names on a list are not three families that
+work, and this tree found out the hard way this morning what an unrun family is worth.
+
+No code in this entry. `README.md` only.
+
+---
+
 ## 2026-09-25 — the reference gate asked a marker and skipped a model that agreed
 
 `test_reference.sh` refused to judge mamba-130m, and its reason was that the file
