@@ -13,6 +13,19 @@ Newest entries on top.
 
 ---
 
+## 2026-09-26 — Widen the residual fixture element count before multiplication
+
+CodeQL on PR #136 reported "Multiplication result converted to larger type" at the
+fixture's call to `gguf_write_tensor_f32`: two `int` dimensions were multiplied
+before conversion to the writer's `uint64_t` count. Both operands are now widened
+before multiplication. This is confined to `tests/test_residual.c`.
+
+On merged main `942540e`, `make check_residual BLAS_FLAGS= BLAS_LIBS=` passes all
+19 checks and `make test BLAS_FLAGS= BLAS_LIBS=` passes the full suite. GitHub's
+CodeQL result is checked on the follow-up PR after publication.
+
+---
+
 ## 2026-09-26 — Optional residual observation and intervention for the llama/Qwen family
 
 `nt_arch.forward_residual` adds a call-scoped callback after each complete decoder
