@@ -62,14 +62,16 @@ static const float golden[6][20] = {
 static const float golden_logits[5] = {0.30526997f, 0.33703298f, -0.33768609f, 0.20574287f, -0.65428814f};
 static void tokenizer_checks(const char *path) {
     for (int prefix=0; prefix<=1; prefix++) {
-        const char *tokens[]={"<unk>","<bos>","▁","a","b","▁a","ab"};
-        float scores[]={-10,-10,-5,-4,-4,-2,-1};
+        const char *tokens[]={"<unk>","<bos>","▁","a","b","▁a","ab","  ","    ","\n"};
+        float scores[]={-10,-10,-5,-4,-4,-2,-1,-1000,-1000,-1000};
+        int32_t types[]={2,3,1,1,1,1,1,4,4,4};
         gguf_writer *w=gguf_write_open(path);
         if(!w){CHECK(0,"open tokenizer fixture");return;}
         gguf_write_kv_str(w,"general.architecture","gemma3");
         gguf_write_kv_str(w,"tokenizer.ggml.model","llama");
-        gguf_write_kv_str_array(w,"tokenizer.ggml.tokens",tokens,7);
-        gguf_write_kv_f32_array(w,"tokenizer.ggml.scores",scores,7);
+        gguf_write_kv_str_array(w,"tokenizer.ggml.tokens",tokens,10);
+        gguf_write_kv_f32_array(w,"tokenizer.ggml.scores",scores,10);
+        gguf_write_kv_i32_array(w,"tokenizer.ggml.token_type",types,10);
         gguf_write_kv_u32(w,"tokenizer.ggml.add_bos_token",1);
         gguf_write_kv_u32(w,"tokenizer.ggml.bos_token_id",1);
         gguf_write_kv_u32(w,"tokenizer.ggml.add_space_prefix",prefix);
@@ -81,6 +83,10 @@ static void tokenizer_checks(const char *path) {
         CHECK(bpe_encode(t,"",ids,16)==1&&ids[0]==1,"empty sequence returns only requested BOS");
         CHECK(bpe_encode_raw(t,"",ids,16)==0,"empty raw span produces no tokens");
         CHECK(bpe_encode(t,"a",ids,16)==2&&ids[0]==1&&ids[1]==(prefix?5:3),"raw span does not mutate tokenizer");
+        CHECK(bpe_encode_raw(t,"a    b\n  a",ids,16)==6&&ids[0]==3&&ids[1]==8&&ids[2]==4&&ids[3]==9&&ids[4]==7&&ids[5]==3,
+              "raw SPM preserves longest literal whitespace tokens");
+        if(!prefix) CHECK(bpe_encode(t,"a    b",ids,16)==4&&ids[0]==1&&ids[1]==3&&ids[2]==8&&ids[3]==4,
+              "SPM matches USER_DEFINED whitespace before escaping");
         bpe_free(t);
     }
 }

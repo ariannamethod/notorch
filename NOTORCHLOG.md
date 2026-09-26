@@ -13,6 +13,34 @@ Newest entries on top.
 
 ---
 
+## 2026-09-26 — Preserve SentencePiece USER_DEFINED whitespace before escaping
+
+The real Gemma tokenizer oracle found a concrete defect after the decoder gates:
+three of six ordinary-text cases diverged on repeated spaces, code indentation
+and Unicode text containing space runs. Gemma stores these runs as literal
+USER_DEFINED tokens (for example IDs 139/140 are three/four spaces, type 4).
+The old SentencePiece early return skipped the added-token splitter, escaped
+spaces to `▁`, and consequently could not produce those IDs.
+
+All tokenizer schemes now pass through the existing longest-first USER_DEFINED
+split before their own encoding. SentencePiece fragments retain their declared
+prefix policy, and the outer sequence adds BOS once. `bpe_encode_raw` uses the
+same literal-token handling with BOS and dummy prefix disabled. Byte-level BPE
+still uses its existing fragment encoder.
+
+Proof: **6/6** real-model tokenizer cases match the unchanged pinned llama.cpp
+oracle exactly (empty, repeated spaces, code indentation, Russian/Hebrew/French,
+Unicode spaces and punctuation). The two chat-template probes remain identical:
+development **19/19 IDs**, Unicode **28/28 IDs**. The independent comparison is
+recorded in `SUBLITERATUS/runs/gemma3-tokenizer-validation.json`. The generated
+Gemma gate now passes **42 checks**; linking those tests with the previous
+`bpe.c` fails all **3** new whitespace assertions. ASan/UBSan on the architecture,
+tokenizer and tests passes 42 checks with LSAN disabled. Residual remains 19/19.
+After the fix, `make test harness BLAS_FLAGS= BLAS_LIBS=` passes the full C suite
+and rebuilds every registered architecture.
+
+---
+
 ## 2026-09-26 — Gemma 3 decoder and literal tokenizer spans
 
 `nt_arch_gemma3` implements the text decoder in a separate packed-weight family.

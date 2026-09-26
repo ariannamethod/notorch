@@ -193,7 +193,9 @@ logit difference is 0.0503492; full comparison conditions are in NOTORCHLOG.
 The tokenizer reads `tokenizer.ggml.add_space_prefix`. A caller constructing chat
 from explicit special-token IDs can use `bpe_encode_raw` for intervening text: it
 adds neither BOS nor a synthetic SentencePiece prefix and does not change tokenizer
-state. Normal `bpe_encode` retains the file's BOS and prefix policy.
+state. Normal `bpe_encode` retains the file's BOS and prefix policy. Literal
+USER_DEFINED tokens, including Gemma's whitespace runs, are matched before space
+escaping in both modes.
 
 `make test_consumer_link` proves that from outside the tree, and then builds the same
 program *without* the archive and requires it to fail. details in

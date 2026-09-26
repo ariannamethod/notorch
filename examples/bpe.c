@@ -481,17 +481,33 @@ static int spm_bpe_encode(const bpe_tokenizer *t, const char *text, int *out, in
 /* Byte-level BPE over one stretch of text with no added token in it. */
 static int bpe_encode_span(const bpe_tokenizer *t, const char *text, int len, int *out, int cap);
 
+/* Added tokens are literal before space escaping in every tokenizer scheme.
+ * The SentencePiece reference also reapplies its declared dummy prefix to each
+ * ordinary fragment following a special token. Gemma declares that prefix off. */
+static int scheme_encode_span(const bpe_tokenizer *t, const char *text, int len,
+                              int *out, int cap) {
+    if (!t->spm && !t->spm_bpe) return bpe_encode_span(t, text, len, out, cap);
+    if (len <= 0 || cap <= 0) return 0;
+    char *span = (char*)malloc((size_t)len + 1);
+    if (!span) return 0;
+    memcpy(span, text, (size_t)len); span[len] = 0;
+    bpe_tokenizer raw = *t;
+    raw.add_bos = 0; /* The outer sequence owns its one BOS. */
+    int n = t->spm ? spm_encode(&raw, span, out, cap)
+                   : spm_bpe_encode(&raw, span, out, cap);
+    free(span);
+    return n;
+}
+
 int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
     if (!t || !text || !out || cap <= 0) return 0;
-    if (t && t->spm_bpe) return spm_bpe_encode(t, text, out, cap);
-    if (t && t->spm) return spm_encode(t, text, out, cap);
     if (!t) return 0;               /* the span path reads t->byte_cp on its first line */
     /* Byte-level vocabularies usually say add_bos_token = false and this is a no-op; the
      * ones that ask for it get it here, once, before any span is merged. */
     int bos = (t->add_bos && cap > 0) ? 1 : 0;
     if (bos) out[0] = t->bos_id;
     if (t->n_added <= 0)
-        return bos + bpe_encode_span(t, text, (int)strlen(text), out + bos, cap - bos);
+        return bos + scheme_encode_span(t, text, (int)strlen(text), out + bos, cap - bos);
 
     /* Added tokens are matched against the raw text first, longest at each position, and the
      * merge path only ever sees what lies between them. Doing it the other way round cannot
@@ -508,12 +524,12 @@ int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
             }
         }
         if (hit < 0) { i++; continue; }
-        if (i > gap) no += bpe_encode_span(t, text + gap, i - gap, out + no, cap - no);
+        if (i > gap) no += scheme_encode_span(t, text + gap, i - gap, out + no, cap - no);
         if (no < cap) out[no++] = hit;
         i += hlen;
         gap = i;
     }
-    if (L > gap) no += bpe_encode_span(t, text + gap, L - gap, out + no, cap - no);
+    if (L > gap) no += scheme_encode_span(t, text + gap, L - gap, out + no, cap - no);
     return no;
 }
 
