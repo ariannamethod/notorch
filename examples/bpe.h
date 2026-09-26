@@ -28,6 +28,10 @@ int bpe_n_vocab(const bpe_tokenizer *t);
  * returns the number written (may be < needed if cap is hit). */
 int bpe_encode(const bpe_tokenizer *t, const char *text, int *out_ids, int cap);
 
+/* Encode a literal span between caller-inserted special-token IDs. No BOS or
+ * synthetic SentencePiece space prefix; no tokenizer state is changed. */
+int bpe_encode_raw(const bpe_tokenizer *t, const char *text, int *out_ids, int cap);
+
 /* Decode one token id -> its UTF-8 bytes, appended to buf (cap incl. NUL).
  * Returns bytes appended. */
 int bpe_decode_token(const bpe_tokenizer *t, int id, char *buf, int cap);

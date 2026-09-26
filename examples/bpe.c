@@ -106,6 +106,7 @@ struct bpe_tokenizer {
     int *added_id;      /* ids, longest string first */
     int n_added;
     int add_bos, bos_id, bos_declared;
+    int add_space_prefix;
 };
 
 /* U+2581 LOWER ONE EIGHTH BLOCK — SentencePiece's space. */
@@ -260,6 +261,11 @@ bpe_tokenizer *bpe_load(const char *path) {
             t->add_bos = 0;
         }
     }
+    /* SentencePiece defaults to a dummy prefix; Gemma 3 explicitly disables it. */
+    uint64_t prefix = 1;
+    if (gguf_read_uint_kv(path, "tokenizer.ggml.add_space_prefix", &prefix) != 0)
+        prefix = 1;
+    t->add_space_prefix = prefix != 0;
     return t;
 }
 
@@ -303,10 +309,14 @@ static void warn_dropped(const char *what) {
  * at the length of a chat line that walk is cheaper than a heap. */
 static int spm_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
     size_t L = strlen(text);
+    if (!L) {
+        if (t->add_bos && cap > 0) { out[0] = t->bos_id; return 1; }
+        return 0;
+    }
     char *buf = (char*)malloc((L + 1) * 3 + 1);
     if (!buf) return 0;
     size_t bl = 0;
-    memcpy(buf + bl, SPM_SPACE, 3); bl += 3;            /* add_dummy_prefix */
+    if (t->add_space_prefix && L) { memcpy(buf + bl, SPM_SPACE, 3); bl += 3; }
     for (size_t i = 0; i < L; i++) {
         if (text[i] == ' ') { memcpy(buf + bl, SPM_SPACE, 3); bl += 3; }
         else buf[bl++] = text[i];
@@ -472,6 +482,7 @@ static int spm_bpe_encode(const bpe_tokenizer *t, const char *text, int *out, in
 static int bpe_encode_span(const bpe_tokenizer *t, const char *text, int len, int *out, int cap);
 
 int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
+    if (!t || !text || !out || cap <= 0) return 0;
     if (t && t->spm_bpe) return spm_bpe_encode(t, text, out, cap);
     if (t && t->spm) return spm_encode(t, text, out, cap);
     if (!t) return 0;               /* the span path reads t->byte_cp on its first line */
@@ -504,6 +515,15 @@ int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
     }
     if (L > gap) no += bpe_encode_span(t, text + gap, L - gap, out + no, cap - no);
     return no;
+}
+
+int bpe_encode_raw(const bpe_tokenizer *t, const char *text, int *out, int cap) {
+    if (!t) return 0;
+    /* Per-call view: token tables remain shared and immutable; no tokenizer state changes. */
+    bpe_tokenizer raw = *t;
+    raw.add_bos = 0;
+    raw.add_space_prefix = 0;
+    return bpe_encode(&raw, text, out, cap);
 }
 
 static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int *out, int cap) {

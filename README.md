@@ -74,7 +74,7 @@ make harness
 
 `harness/` is deliberately small — GGUF in, text out — and a model family is one file
 behind one interface (`harness/arch.h`). what runs today: **llama**, **mistral3**,
-**qwen2**, **qwen3**, **gemma4**, **olmoe**, **qwen3moe**, **mamba**, and the Method's
+**qwen2**, **qwen3**, **gemma3**, **gemma4**, **olmoe**, **qwen3moe**, **mamba**, and the Method's
 own **resonance** and **janus**. an architecture no family claims is refused by name
 rather than quietly pushed through the llama forward — a file the harness has never
 seen is a file it has never been tested on.
@@ -159,14 +159,41 @@ void *model = arch->load(gf, &dims);
 int rc = arch->forward(model, kv, ids, n, 0, logits);  /* NT_OK, or a refusal */
 ```
 
-The llama/Qwen family also exposes `arch->forward_residual(..., callback, user)`.
+The llama/Qwen and Gemma 3 families also expose `arch->forward_residual(..., callback, user)`.
 After each complete decoder layer the callback receives a writable `[n, width]`
 residual view plus its layer and absolute token positions. It can collect
 activations or apply a direction in place; a NULL callback preserves ordinary
-inference. Other families leave this optional entry NULL. A constant layer shift
+inference. Other families leave this optional entry NULL. For llama/Qwen, a constant layer shift
 can be stored as `blk.L.ffn_down.bias` in a new GGUF and runs without a callback
 in this family. `make check_residual` checks observation, intervention, error
 propagation and saved-bias equivalence using a tiny generated Qwen2 fixture.
+
+Gemma 3 has its own packed-weight decoder in `harness/arch_gemma3.c`: embedding
+scaling, independent head width, per-head QK normalization, NEOX rotation with
+local/global frequencies, sliding-window attention, GELU and both post-sublayer
+normalizations. `nt_arch_gemma3.forward_residual` observes or changes the residual
+**after** the complete block. A saved `ffn_down.bias` cannot reproduce this shift
+through the post-FFN normalization; this family rejects that tensor. Scalar
+sliding patterns and unscaled/linear global RoPE are supported; array patterns,
+partial rotary dimensions and other scaling methods are rejected. The initial
+real-model target is Gemma 3 270M IT Q8_0; it is not one of the older benchmark
+rows above. `make check_gemma3` runs deterministic six-layer equations across a
+window boundary, prefill/decode and callback contracts without downloading weights.
+
+For Gemma 3 numerical experiments, set `NT_NO_I8=1` explicitly to keep activations
+in float while reading the packed Q8_0 weights. The normal shared runtime default
+still quantizes activations to int8. On the initial 32-step development prompt,
+that default differed from llama.cpp's packed path at two teacher-forced argmax
+positions and produced a different free greedy continuation. The float-activation
+path is checked against llama.cpp running an exact F32 dequantization of the same
+stored weights: 86/86 teacher-forced argmax and free greedy tokens agree over
+development, Unicode and 511/512/513-token window probes. The maximum absolute
+logit difference is 0.0503492; full comparison conditions are in NOTORCHLOG.
+
+The tokenizer reads `tokenizer.ggml.add_space_prefix`. A caller constructing chat
+from explicit special-token IDs can use `bpe_encode_raw` for intervening text: it
+adds neither BOS nor a synthetic SentencePiece prefix and does not change tokenizer
+state. Normal `bpe_encode` retains the file's BOS and prefix policy.
 
 `make test_consumer_link` proves that from outside the tree, and then builds the same
 program *without* the archive and requires it to fail. details in

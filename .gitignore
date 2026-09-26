@@ -85,3 +85,5 @@ check_requant
 # machine-local, not the project’s history
 LOCAL_STATE.md
 bench_qmatmul
+
+/test_gemma3

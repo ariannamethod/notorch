@@ -107,7 +107,8 @@ float* gguf_dequant(const gguf_file* gf, int tensor_idx);
 // no decoder.
 int gguf_dequant_row(const gguf_file* gf, int tensor_idx, uint64_t row, float* dst);
 
-// Get metadata value by key. Returns NULL if not found.
+// Get cached metadata by key. Array entries retain type 9 only (not values);
+// use the path-based array readers below for their contents. NULL if not found.
 const gguf_kv* gguf_get_kv(const gguf_file* gf, const char* key);
 
 // Read a GGUF type-9 string array (e.g. "tokenizer.ggml.tokens" / ".merges") by key.

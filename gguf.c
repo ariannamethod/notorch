@@ -122,7 +122,7 @@ gguf_file* gguf_open(const char* path) {
         read_u32(f, &vtype);
 
         // Store simple types, skip arrays
-        if (gf->n_kv_parsed < GGUF_MAX_KV && vtype != 9) {
+        if (gf->n_kv_parsed < GGUF_MAX_KV) {
             gguf_kv* kv = &gf->kv[gf->n_kv_parsed];
             strncpy(kv->key, key, GGUF_MAX_NAME - 1);
             kv->type = vtype;
@@ -133,6 +133,9 @@ gguf_file* gguf_open(const char* path) {
                 case 7: { uint8_t v; fread(&v, 1, 1, f); kv->val.b = v; break; }
                 case 8: read_string(f, kv->val.str, sizeof(kv->val.str)); break;
                 case 10: case 12: read_u64(f, &kv->val.u64); break;
+                /* Retain array presence/type even though its values are read separately.
+                 * An architecture must distinguish an unsupported array from an absent key. */
+                case 9: skip_value(f, vtype); break;
                 default: skip_value(f, vtype); break;
             }
             gf->n_kv_parsed++;
