@@ -56,7 +56,8 @@ static int fixture(const char *path, int bias_width) {
         gguf_write_tensor_decl(w, ts[i].name, ts[i].ndim, shape, GGUF_TYPE_F32);
     }
     for (int i = 0; i < n; i++)
-        gguf_write_tensor_f32(w, ts[i].name, ts[i].data, ts[i].rows * ts[i].cols);
+        gguf_write_tensor_f32(w, ts[i].name, ts[i].data,
+                             (uint64_t)ts[i].rows * (uint64_t)ts[i].cols);
     return gguf_write_close(w);
 }
 
