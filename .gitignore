@@ -79,6 +79,7 @@ gguf_quantize
 gguf_add_tokenizer
 test_quantize
 test_gguf_write
+test_residual
 check_requant
 
 # machine-local, not the project’s history

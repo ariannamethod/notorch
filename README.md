@@ -159,6 +159,15 @@ void *model = arch->load(gf, &dims);
 int rc = arch->forward(model, kv, ids, n, 0, logits);  /* NT_OK, or a refusal */
 ```
 
+The llama/Qwen family also exposes `arch->forward_residual(..., callback, user)`.
+After each complete decoder layer the callback receives a writable `[n, width]`
+residual view plus its layer and absolute token positions. It can collect
+activations or apply a direction in place; a NULL callback preserves ordinary
+inference. Other families leave this optional entry NULL. A constant layer shift
+can be stored as `blk.L.ffn_down.bias` in a new GGUF and runs without a callback
+in this family. `make check_residual` checks observation, intervention, error
+propagation and saved-bias equivalence using a tiny generated Qwen2 fixture.
+
 `make test_consumer_link` proves that from outside the tree, and then builds the same
 program *without* the archive and requires it to fail. details in
 [inference](#inference--notorch-runs-models-it-doesnt-just-train-them).
