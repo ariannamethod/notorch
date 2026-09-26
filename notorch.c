@@ -6664,7 +6664,64 @@ static const uint64_t nt_q5_hi[256] = {
 };
 #endif
 
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+//
+// The x86 per-token arm, written after its batched twin and against it. Both spread the
+// fifth bit the same way — each mask byte broadcast across eight lanes, an and against a
+// per-lane bit selector, a compare — and both reduce the block to a scalar before the
+// float add, which is character for character what the scalar loop below does. Q5_0's
+// block is 32 values, so a vector accumulator drained once per row would sum k/32
+// contributions in a different order; that cost two ULP on Q8_0 and a day with it.
+//
+// This guard wraps only these two functions (checked: the block runs to the #endif with
+// nothing else inside), so an #elif here is safe. The batched arm's guard was not, and
+// hanging one off it took Q5_0, Q8_0 and Q6_K off x86 at once.
+#if defined(__AVX2__) && defined(__FMA__)
+static void nt_q5_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
+                            const float *da, const int32_t *asum,
+                            int r0, int r1, int k) {
+    int nb = k / 32;
+    const __m128i m4 = _mm_set1_epi8(0x0F);
+    const __m256i ones = _mm256_set1_epi16(1);
+    const __m256i bitsel = _mm256_setr_epi8(
+        1,2,4,8,16,32,64,(char)128, 1,2,4,8,16,32,64,(char)128,
+        1,2,4,8,16,32,64,(char)128, 1,2,4,8,16,32,64,(char)128);
+    for (int row = r0; row < r1; row++) {
+        const uint8_t *rb = W + (long)row * nb * 22;
+        float acc = 0.0f;
+        for (int b = 0; b < nb; b++) {
+            const uint8_t *blk = rb + (long)b * 22;
+            float d = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+            uint32_t qh = (uint32_t)blk[2] | ((uint32_t)blk[3] << 8)
+                        | ((uint32_t)blk[4] << 16) | ((uint32_t)blk[5] << 24);
+            __m128i v = _mm_loadu_si128((const __m128i *)(blk + 6));
+            __m256i nib = _mm256_set_m128i(_mm_and_si128(_mm_srli_epi16(v, 4), m4),
+                                           _mm_and_si128(v, m4));
+            __m256i mb = _mm256_setr_epi8(
+                (char)(qh      ), (char)(qh      ), (char)(qh      ), (char)(qh      ),
+                (char)(qh      ), (char)(qh      ), (char)(qh      ), (char)(qh      ),
+                (char)(qh >>  8), (char)(qh >>  8), (char)(qh >>  8), (char)(qh >>  8),
+                (char)(qh >>  8), (char)(qh >>  8), (char)(qh >>  8), (char)(qh >>  8),
+                (char)(qh >> 16), (char)(qh >> 16), (char)(qh >> 16), (char)(qh >> 16),
+                (char)(qh >> 16), (char)(qh >> 16), (char)(qh >> 16), (char)(qh >> 16),
+                (char)(qh >> 24), (char)(qh >> 24), (char)(qh >> 24), (char)(qh >> 24),
+                (char)(qh >> 24), (char)(qh >> 24), (char)(qh >> 24), (char)(qh >> 24));
+            __m256i hi = _mm256_and_si256(
+                _mm256_cmpeq_epi8(_mm256_and_si256(mb, bitsel), bitsel),
+                _mm256_set1_epi8(16));
+            __m256i w = _mm256_or_si256(nib, hi);
+            __m256i a  = _mm256_loadu_si256((const __m256i *)(qa + (long)b * 32));
+            __m256i si = _mm256_madd_epi16(ones, _mm256_maddubs_epi16(w, a));
+            __m128i h  = _mm_add_epi32(_mm256_castsi256_si128(si),
+                                       _mm256_extracti128_si256(si, 1));
+            h = _mm_add_epi32(h, _mm_shuffle_epi32(h, 0x4E));
+            h = _mm_add_epi32(h, _mm_shuffle_epi32(h, 0xB1));
+            int32_t sdot = _mm_cvtsi128_si32(h);
+            acc += d * da[b] * (float)(sdot - 16 * asum[b]);
+        }
+        out[row] = acc;
+    }
+}
+#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 static void nt_q5_0_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                             const float *da, const int32_t *asum,
                             int r0, int r1, int k) {
