@@ -13,6 +13,63 @@ Newest entries on top.
 
 ---
 
+## 2026-09-26 — Q5_0, the last format with no x86 kernel, and an #elif that took three off at once
+
+Q5_0 was the last packed format with no AVX2 arm anywhere. Its block is 22 bytes: an
+f16 scale, a 32-bit mask carrying every value's fifth bit, and sixteen nibble bytes.
+The value is `d * (q - 16)` with q in [0,31], so the weight stays unsigned and maddubs
+takes it directly — and the -16 lifts out against the per-block activation sum the same
+way Q4_0's -8 does, which the scalar arm already relied on.
+
+The mask's low sixteen bits belong to elements 0..15 and the high sixteen to 16..31,
+which is exactly how the nibbles split, so both halves go into the two lanes of one ymm
+in that order. Spreading one bit per byte is each mask byte broadcast across eight
+lanes, an and against a per-lane bit selector, and a compare — against thirty-two
+shifts in the scalar loop.
+
+    test_qmatmul, m=2048 k=4096 n=32
+      batched against per-token   8.9 -> 5.2 ms    2.30x -> 3.90x
+      dtype 6 outputs identical
+
+**The gate is alive:** changing the -16 to -15 reads 40 passed, 6 failed; restoring it
+reads 46 of 46. Fourth dead gate turned live in three days, after test_qmatmul for
+dtype 2 and dtype 8 and test_reference for mamba.
+
+### The mistake worth recording
+
+The first attempt hung the new arm off the outer guard as
+`#elif defined(__ARM_NEON)`. That guard opens at what is now `notorch.c:8122` and does
+not close until 8762, and inside it live the NEON **and** scalar implementations of
+Q5_0, Q8_0 **and** Q6_K. Turning it into an `#elif` took all three off x86 in one
+stroke; the polygon said so immediately —
+`error: 'nt_q8_0_rows_i8n' undeclared`, `'nt_q6_k_rows_i8n' undeclared`. Neo had
+compiled it clean, because neo never enters that branch at all.
+
+So the arm sits **inside** the non-NEON branch, in front of the scalar Q5_0 it replaces,
+with its own local `#if`. And the edit that places it now checks the directive balance
+before it writes the file — three attempts were lost to a `#endif` that closed the
+wrong scope while an earlier substitution had silently not applied.
+
+### What is not claimed
+
+There is no Q5_0 GGUF on either machine. The kernel figure above is from
+`test_qmatmul`; **no end-to-end number is claimed for this format, because none was
+measured.** When a Q5_0 body arrives it goes in the README table with the rest.
+
+Gates: notorch_test 50/50 and 73/73, test_qmatmul 46/46 on both machines and falsified,
+`NOTORCH_REFERENCE_OK` 0 diverged on gemma-4 Q8_0, Qwen3-4B, Qwen3-30B-A3B and
+mamba-130m, `JANUS_OK`, `RESONANCE_OK`, `NOTORCH_PARITY_OK (6 checks)`,
+`NOTORCH_REPEAT_OK (3 checks)`, `NOTORCH_CONSUMER_OK (3 checks)`.
+
+**Every packed format now has an x86 arm.** Q4_0, Q4_K, Q6_K and Q8_0 have both;
+Q5_0 has the batched one and keeps the scalar per-token, which is the shape the
+one-arm-at-a-time rule leaves behind and the next thing to finish.
+
+Still open: gemma-4 at Q4_0 emits id 108 where the reference emits 106, nine
+hypotheses down.
+
+---
+
 ## 2026-09-25 — Q8_0's other arm, and a decode that turns out to be finished
 
 The per-token Q8_0 arm was the last scalar one for this format. Written against its

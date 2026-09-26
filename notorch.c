@@ -8504,6 +8504,78 @@ static void nt_q8_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
     }
 }
 #else
+#if defined(__AVX2__) && defined(__FMA__)
+/* Q5_0 was the last packed format with no x86 kernel of any kind. Its block is 22 bytes:
+ * an f16 scale, a 32-bit mask holding every value's fifth bit, and sixteen nibble bytes.
+ * The value is d * (q - 16) with q in [0,31], so the weight stays unsigned, maddubs takes
+ * it directly, and the -16 lifts out against the per-block activation sum exactly the way
+ * Q4_0's -8 does — which the scalar arm just below already relies on.
+ *
+ * The mask's low sixteen bits belong to elements 0..15 and the high sixteen to 16..31,
+ * matching how the nibbles split, so both halves go into the two lanes of one ymm in that
+ * order. Spreading one bit per byte is each mask byte broadcast across eight lanes, an and
+ * against a per-lane bit selector, and a compare, against thirty-two shifts in the scalar
+ * loop.
+ *
+ * It sits INSIDE the non-NEON branch rather than as an #elif on the outer guard: Q5_0,
+ * Q8_0 and Q6_K share one #if/#else here, and hanging an #elif off it took all three off
+ * x86 at once. Only the batched arm is vectorised, so the gate compares something new
+ * against something proven, and the accumulation is the scalar arm's to the letter. */
+static void nt_q5_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
+                             const float *da, const int32_t *asum,
+                             int r0, int r1, int k, int n) {
+    int nb = k / 32;
+    const __m128i m4 = _mm_set1_epi8(0x0F);
+    const __m256i ones = _mm256_set1_epi16(1);
+    const __m256i bitsel = _mm256_setr_epi8(
+        1,2,4,8,16,32,64,(char)128, 1,2,4,8,16,32,64,(char)128,
+        1,2,4,8,16,32,64,(char)128, 1,2,4,8,16,32,64,(char)128);
+    int tile = nt_qmm_tile(k);
+    for (int j0 = 0; j0 < n; j0 += tile) {
+        int jn = n - j0; if (jn > tile) jn = tile;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 22;
+            float acc[NT_QMM_TILE];
+            for (int j = 0; j < jn; j++) acc[j] = 0.0f;
+            for (int b = 0; b < nb; b++) {
+                const uint8_t *blk = rb + (long)b * 22;
+                float d = nt_f16_to_f32((uint16_t)(blk[0] | (blk[1] << 8)));
+                uint32_t qh = (uint32_t)blk[2] | ((uint32_t)blk[3] << 8)
+                            | ((uint32_t)blk[4] << 16) | ((uint32_t)blk[5] << 24);
+                __m128i v = _mm_loadu_si128((const __m128i *)(blk + 6));
+                __m256i nib = _mm256_set_m128i(_mm_and_si128(_mm_srli_epi16(v, 4), m4),
+                                               _mm_and_si128(v, m4));
+                __m256i mb = _mm256_setr_epi8(
+                    (char)(qh      ), (char)(qh      ), (char)(qh      ), (char)(qh      ),
+                    (char)(qh      ), (char)(qh      ), (char)(qh      ), (char)(qh      ),
+                    (char)(qh >>  8), (char)(qh >>  8), (char)(qh >>  8), (char)(qh >>  8),
+                    (char)(qh >>  8), (char)(qh >>  8), (char)(qh >>  8), (char)(qh >>  8),
+                    (char)(qh >> 16), (char)(qh >> 16), (char)(qh >> 16), (char)(qh >> 16),
+                    (char)(qh >> 16), (char)(qh >> 16), (char)(qh >> 16), (char)(qh >> 16),
+                    (char)(qh >> 24), (char)(qh >> 24), (char)(qh >> 24), (char)(qh >> 24),
+                    (char)(qh >> 24), (char)(qh >> 24), (char)(qh >> 24), (char)(qh >> 24));
+                __m256i hi = _mm256_and_si256(
+                    _mm256_cmpeq_epi8(_mm256_and_si256(mb, bitsel), bitsel),
+                    _mm256_set1_epi8(16));
+                __m256i w = _mm256_or_si256(nib, hi);
+                for (int j = 0; j < jn; j++) {
+                    const int8_t *qab = qa + (long)(j0 + j) * k + (long)b * 32;
+                    __m256i a  = _mm256_loadu_si256((const __m256i *)qab);
+                    __m256i si = _mm256_madd_epi16(ones, _mm256_maddubs_epi16(w, a));
+                    __m128i h  = _mm_add_epi32(_mm256_castsi256_si128(si),
+                                               _mm256_extracti128_si256(si, 1));
+                    h = _mm_add_epi32(h, _mm_shuffle_epi32(h, 0x4E));
+                    h = _mm_add_epi32(h, _mm_shuffle_epi32(h, 0xB1));
+                    int32_t sdot = _mm_cvtsi128_si32(h);
+                    acc[j] += d * da[(long)(j0 + j) * nb + b]
+                            * (float)(sdot - 16 * asum[(long)(j0 + j) * nb + b]);
+                }
+            }
+            for (int j = 0; j < jn; j++) out[(long)(j0 + j) * m + row] = acc[j];
+        }
+    }
+}
+#else
 static void nt_q5_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *qa,
                              const float *da, const int32_t *asum,
                              int r0, int r1, int k, int n) {
@@ -8538,6 +8610,7 @@ static void nt_q5_0_rows_i8n(float *out, int m, const uint8_t *W, const int8_t *
         }
     }
 }
+#endif
 
 /* The x86 batched arm. Q8_0 and Q5_0 were the last two formats with no AVX2 kernel at
  * all, and on this machine gemma-4's feed-forward ran at 6.4 GMAC/s per core against
