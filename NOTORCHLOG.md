@@ -13,6 +13,61 @@ Newest entries on top.
 
 ---
 
+## 2026-09-26 — Q5_0's per-token arm, a ratio that was not one, and a polygon five commits behind
+
+The last scalar arm in the tree. Written against its batched twin: the block reduces to
+a scalar and the float add lands where the scalar loop puts it. Its guard wraps only
+these two functions — checked before touching it, after yesterday's `#elif` took three
+formats off x86 at once — so an `#elif` is safe here and nowhere near the other one.
+
+    test_qmatmul, m=2048 k=4096 n=32
+      per-token   20.4 -> 14.6 ms    1.40x
+      dtype 6 outputs identical
+
+Perturbing the -16 to -15 reads 40 passed, 6 failed; restoring it reads 46 of 46.
+
+### Yesterday's ratio was wrong, and the correction is the point
+
+The 09-26 Q5_0 entry reports the batched arm at "8.9 -> 5.2 ms, 2.30x -> 3.90x". The
+5.2 was one sample and an outlier — three consecutive runs read 9.1, 9.1, 9.6. Worse,
+2.30x and 3.90x compare the batched arm against the **per-token** arm inside a single
+run. That ratio moves whenever either side moves, and the per-token side had not been
+written yet, so most of the "improvement" was the denominator getting slower relative
+to nothing at all.
+
+Both commits built and measured back to back, which is what should have happened first:
+
+    before both Q5_0 arms    per-token 20.4 ms    batched 10.0 ms
+    after                              14.6                 8.7
+                                       1.40x                1.15x
+
+The batched arm is worth **1.15x**. The earlier entry is corrected in place rather than
+left to be read as a win. Same error the 09-19 measurement-floor entry warns about,
+wearing a different coat: a number that moved for a reason other than the change.
+
+### The polygon was five commits behind
+
+`test_reference` on mamba came back SKIPPED with the marker text the 09-25 repair had
+replaced. The repair was in main and on neo; the polygon never got it, because every
+sync this week was `scp notorch.c` and nothing else. It sat on `7ea4dc6` while main was
+at `62ecdcc` — the gate repair, both Q8_0 arms and Q5_0's batched arm all absent.
+
+So every gate result reported from that machine since 09-25 was taken against a stale
+harness. Re-run on a synced tree they all hold — 46/46, 50/50, mamba 0 identical /
+3 tie-break / 0 diverged, gemma-4 Q8_0 2/1/0, Qwen3-4B 1/2/0, Qwen3-30B-A3B 3/0/0 —
+but they held by luck. One file copied is not a sync. The polygon gets
+`git merge --ff-only` before anything is measured on it from here.
+
+Gates, on a synced polygon: notorch_test 50/50 and 73/73, test_qmatmul 46/46 on both
+machines and falsified, `NOTORCH_REFERENCE_OK` 0 diverged on four bodies, `JANUS_OK`,
+`RESONANCE_OK`, `NOTORCH_PARITY_OK (6 checks)`, `NOTORCH_REPEAT_OK (3 checks)`,
+`NOTORCH_CONSUMER_OK (3 checks)`.
+
+**Every packed format now has both x86 arms** — Q4_0, Q4_K, Q5_0, Q6_K, Q8_0, each pair
+bit-identical and each gate falsified. Ten kernels, five gates proven able to fail.
+
+---
+
 ## 2026-09-26 — Q5_0, the last format with no x86 kernel, and an #elif that took three off at once
 
 Q5_0 was the last packed format with no AVX2 arm anywhere. Its block is 22 bytes: an
@@ -30,6 +85,12 @@ shifts in the scalar loop.
     test_qmatmul, m=2048 k=4096 n=32
       batched against per-token   8.9 -> 5.2 ms    2.30x -> 3.90x
       dtype 6 outputs identical
+
+**Corrected 2026-09-26: the 5.2 ms was an outlier and the 3.90x is not a speedup.**
+Three consecutive runs of the same binary read 9.1, 9.1, 9.6. And the ratio compares
+the batched arm against the per-token one inside one run, which moves whenever either
+side moves — the honest figure is batched against batched, before and after, and it is
+1.15x. See the entry above.
 
 **The gate is alive:** changing the -16 to -15 reads 40 passed, 6 failed; restoring it
 reads 46 of 46. Fourth dead gate turned live in three days, after test_qmatmul for
