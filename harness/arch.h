@@ -1,7 +1,7 @@
 /* arch.h — the one interface a model family implements.
  *
  * Adding a family is adding a file next to arch_llama.c and one line to the
- * table in main.c. If a family cannot be added without also editing runtime.c
+ * table in archs.c. If a family cannot be added without also editing runtime.c
  * or the forward of another family, this interface is lying and it is the
  * interface that gets fixed, not the family.
  *
@@ -89,6 +89,7 @@ int nt_check_call(const kv_cache *kv, const int *tokens, int n, int pos0,
                   int vocab, int n_layers, int kv_dim);
 
 extern const nt_arch nt_arch_llama;
+extern const nt_arch nt_arch_gemma3;
 extern const nt_arch nt_arch_gemma4;
 extern const nt_arch nt_arch_olmoe;
 extern const nt_arch nt_arch_mamba;

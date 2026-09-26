@@ -13,6 +13,107 @@ Newest entries on top.
 
 ---
 
+## 2026-09-26 — Preserve SentencePiece USER_DEFINED whitespace before escaping
+
+The real Gemma tokenizer oracle found a concrete defect after the decoder gates:
+three of six ordinary-text cases diverged on repeated spaces, code indentation
+and Unicode text containing space runs. Gemma stores these runs as literal
+USER_DEFINED tokens (for example IDs 139/140 are three/four spaces, type 4).
+The old SentencePiece early return skipped the added-token splitter, escaped
+spaces to `▁`, and consequently could not produce those IDs.
+
+All tokenizer schemes now pass through the existing longest-first USER_DEFINED
+split before their own encoding. SentencePiece fragments retain their declared
+prefix policy, and the outer sequence adds BOS once. `bpe_encode_raw` uses the
+same literal-token handling with BOS and dummy prefix disabled. Byte-level BPE
+still uses its existing fragment encoder.
+
+Proof: **6/6** real-model tokenizer cases match the unchanged pinned llama.cpp
+oracle exactly (empty, repeated spaces, code indentation, Russian/Hebrew/French,
+Unicode spaces and punctuation). The two chat-template probes remain identical:
+development **19/19 IDs**, Unicode **28/28 IDs**. The independent comparison is
+recorded in `SUBLITERATUS/runs/gemma3-tokenizer-validation.json`. The generated
+Gemma gate now passes **42 checks**; linking those tests with the previous
+`bpe.c` fails all **3** new whitespace assertions. ASan/UBSan on the architecture,
+tokenizer and tests passes 42 checks with LSAN disabled. Residual remains 19/19.
+After the fix, `make test harness BLAS_FLAGS= BLAS_LIBS=` passes the full C suite
+and rebuilds every registered architecture.
+
+---
+
+## 2026-09-26 — Gemma 3 decoder and literal tokenizer spans
+
+`nt_arch_gemma3` implements the text decoder in a separate packed-weight family.
+It follows `llama.cpp` revision `2145525a4081d66ff1a87cf43ef809f95a85ac0c`,
+`src/models/gemma3.cpp`, and the converter's norm shift in `conversion/gemma.py`:
+scaled embeddings, independent head width, QK norms, local/global NEOX RoPE,
+sliding attention, GELU, post-attention and post-FFN norms, and tied/untied output.
+The residual callback runs after the complete block and propagates errors before
+writing logits. Llama-style saved FFN-down residual biases are refused because
+Gemma's post-FFN norm makes them a different operation. Tensor shapes, partial
+rotary dimensions and unsupported scaling/pattern metadata are checked at load.
+The GGUF metadata cache retains array type markers so an array pattern cannot
+masquerade as an absent scalar key.
+
+`bpe_encode` now honors `tokenizer.ggml.add_space_prefix`; `bpe_encode_raw` handles
+literal spans with no BOS or dummy prefix, using an immutable per-call view. An
+empty SentencePiece span is handled before its merge loop. This is needed for
+Gemma chat assembled from special-token IDs with exactly one BOS.
+
+Proof on Linux x86_64: `make check_gemma3 BLAS_FLAGS= BLAS_LIBS=` passes **39 checks**.
+Its generated F32 fixture has width 4, two heads of width 4, KV 1, FFN 8, vocabulary
+5, six layers and five positions with a two-token window. Independent scalar-double
+golden residuals at every layer cover the window boundary and the sixth global
+layer. The gate also checks prefill/decode, plain/NULL/observation equality,
+mutation, error propagation, untouched logits, restart, malformed norms and
+metadata, unsupported saved bias, explicit RoPE scaling `none`, and raw/normal
+SentencePiece BOS/prefix/empty-input behavior. A temporary source with the local
+window shifted by one token fails **4 checks**; the restored code passes.
+AddressSanitizer/UBSan on the architecture, tokenizer and test pass all 39 checks
+against the ordinary core archive (`detect_leaks=0`, the workspace's LSAN limit).
+`make test BLAS_FLAGS= BLAS_LIBS=` passes the full suite including residual's 19
+checks; `make harness BLAS_FLAGS= BLAS_LIBS=` compiles every registered family.
+The existing tokenizer script reports **SKIPPED** because its `llama-tokenize`
+executable is not installed; the independent model oracle is recorded below.
+
+Real-model numerical boundary: `ggml-org/gemma-3-270m-it-GGUF`, revision
+`e7647be17ae1108f2f605ed061ca0608b171afff`, Q8_0 file SHA-256
+`0ef57d2c838458a1952664260dcba38e5bdda37494f3af732f06e4add24068e3`
+(291,545,600 bytes). The CPU reference is the llama.cpp revision above, two
+threads, F32 KV, flash attention disabled, prefill chunks 128, vocabulary 262144.
+To isolate decoder arithmetic from activation quantization, the reference reads
+an exact F32 dequantization of those Q8_0 tensors (SHA-256
+`0ea31103405fd1bf2e1ca430661dd2fa133c4eeef18b4ff46bea490511bc44cc`). Notorch
+keeps the original packed Q8_0 file and uses explicit `NT_NO_I8=1`; no default
+kernel behavior has changed. Each logit comparison consumes the reference's
+previous token, while the separate free greedy run restarts KV and chooses its
+own tokens. All prompt token IDs match. The independent helpers are
+`SUBLITERATUS/runs/gemma3_reference.cpp` and `gemma3_notorch_dump.c`; commands,
+source hashes and per-case results are in that project's
+`runs/gemma3-numerical-comparison.json`.
+
+| case | compared steps | max absolute logit error | logit RMSE | minimum cosine |
+|---|---:|---:|---:|---:|
+| development | 32 | 0.0394268 | 0.00609485 | 0.999998707 |
+| Unicode | 30 | 0.0324211 | 0.00548215 | 0.999999852 |
+| prompt prefix 511 | 8 | 0.0491867 | 0.00976201 | 0.999999596 |
+| prompt prefix 512 | 8 | 0.0503492 | 0.00979952 | 0.999999625 |
+| prompt prefix 513 | 8 | 0.0503492 | 0.00827250 | 0.999999625 |
+
+Teacher-forced argmax and free greedy continuation both agree on **86/86 tokens**.
+The window probes cross Gemma's real 512-token local-attention boundary. This is
+numerical agreement under the stated activation mode, not bit-identical logits.
+The default int8-activation path was also measured against llama.cpp's packed
+Q8_0 path on the development case: max error **2.48464**, RMSE **0.424155**,
+minimum cosine **0.994569**, teacher-forced argmax **30/32**, and a different
+free greedy continuation. Disabling notorch int8 activations while retaining a
+packed reference still gives max error 1.8334 and 29/32 argmax; the comparison
+must name both activation modes. The F32/F32 isolation also yields 32/32 greedy
+agreement. Research runs therefore declare `NT_NO_I8=1` explicitly and use the
+float-activation parity boundary above.
+
+---
+
 ## 2026-09-26 — Widen the residual fixture element count before multiplication
 
 CodeQL on PR #136 reported "Multiplication result converted to larger type" at the

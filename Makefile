@@ -212,7 +212,7 @@ libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h
 # substrate anything can use, libnotorch_harness is model-family code that only
 # means something to a caller that runs models. Link both, harness first.
 HARNESS_LIB_OBJ = harness/archs.o harness/runtime.o harness/arch_llama.o \
-                  harness/arch_gemma4.o harness/arch_olmoe.o harness/arch_mamba.o \
+                  harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_olmoe.o harness/arch_mamba.o \
                   harness/arch_resonance.o harness/arch_janus.o examples/bpe.o
 
 lib_harness: libnotorch_harness.a
@@ -285,7 +285,7 @@ llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorc
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
-HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c examples/bpe.c gguf.c notorch.c
+HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c examples/bpe.c gguf.c notorch.c
 HARNESS_HDR = harness/arch.h harness/archs.h harness/runtime.h harness/logo.h examples/bpe.h gguf.h notorch.h
 
 # `harness` is phony because a directory of that name sits right there, and
@@ -315,7 +315,13 @@ test_residual: tests/test_residual.c libnotorch_harness.a libnotorch.a
 check_residual: test_residual
 	./test_residual
 
-.PHONY: check_residual
+test_gemma3: tests/test_gemma3.c libnotorch_harness.a libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+
+check_gemma3: test_gemma3
+	./test_gemma3
+
+.PHONY: check_residual check_gemma3
 
 # A family that keeps state outside the KV cache must clear it when a sequence
 # starts. Exact equality between two identical runs, because greedy sampling
@@ -543,7 +549,7 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_conv1d test_logmel test_residual
+test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_conv1d test_logmel test_residual test_gemma3
 	./notorch_test
 	./test_vision
 	./test_conv1d
@@ -566,6 +572,7 @@ test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_w
 	./test_plan_race
 	./test_wt_expert
 	./test_residual
+	./test_gemma3
 	./test_qgather
 	NT_QMV_CHUNKS=1 ./test_qgather
 	./test_f16_matvec
@@ -610,7 +617,7 @@ bench: bench/bench_simd bench/bench_blas
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
-		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual \
+		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual test_gemma3 \
 		notorch_test notorch_test_gpu notorch.o gguf.o libnotorch.a notorch_cuda.o \
 		infer_janus_nt infer_gemma infer_llama \
 		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \
