@@ -13,6 +13,46 @@ Newest entries on top.
 
 ---
 
+## 2026-09-26 — Optional residual observation and intervention for the llama/Qwen family
+
+`nt_arch.forward_residual` adds a call-scoped callback after each complete decoder
+layer. It receives the layer, absolute token positions and writable `[n,width]`
+residual; it may observe or mutate in place. NULL preserves ordinary inference,
+and a callback error propagates unchanged before logits are written. No callback
+state is stored in the model. The remaining families leave this entry NULL;
+Gemma4's initializer is now designated to make that optional field explicit.
+Consumers must rebuild with the updated `nt_arch` header and archive.
+
+The same family loads an optional `blk.L.ffn_down.bias` with exactly `embed`
+elements. It adds the bias after the FFN residual sum and before the callback,
+preserving the addition order of a live constant shift when exported to GGUF.
+Existing files without this tensor retain their arithmetic.
+
+Proof on the Linux x86_64 workspace: `make check_residual BLAS_FLAGS= BLAS_LIBS=`
+reports **RESIDUAL_OK (19 checks)**. The generated F32 Qwen2 fixture has two
+layers, width 4, FFN 8, vocabulary 5, GQA 2:1, QKV biases and tied embeddings.
+Checks cover NULL/observation byte parity, callback ordering and coordinates,
+final residual-to-logit agreement, downstream mutation, live shift vs saved bias
+byte equality, selected absolute positions across prefill/decode, error propagation
+with untouched logits, ordinary restart, collection without logits and malformed
+bias rejection. `make test` includes this gate. The normal build autodetected BLAS
+but this workspace lacks `cblas.h`; the overrides use the existing C fallback.
+
+Red hand: compiling a temporary copy of `arch_llama.c` with the callback invocation
+replaced by `rc = NT_OK` makes **8 checks fail**. The working source remains intact
+and the restored gate passes. AddressSanitizer/UBSan on the changed architecture
+and test also pass all 19 checks, linking the ordinary core archive. LeakSanitizer
+cannot inspect `/proc` in this workspace and was disabled for that second run.
+
+Integrated `origin/main` at `7ff7046` before committing: both Q5_0 AVX2 additions
+and their measurement corrections remain intact. After integration,
+`make check_residual harness BLAS_FLAGS= BLAS_LIBS=` rebuilt the library and full
+multi-architecture harness and passed all 19 residual checks; rebuilt
+`test_qmatmul` passed **46/46**, including the incoming Q5_0 kernels. The full
+`make test BLAS_FLAGS= BLAS_LIBS=` suite also passed before this integration.
+
+---
+
 ## 2026-09-26 — Q5_0's per-token arm, a ratio that was not one, and a polygon five commits behind
 
 The last scalar arm in the tree. Written against its batched twin: the block reduces to

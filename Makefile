@@ -309,6 +309,14 @@ test_harness: notorch llama
 test_consumer_link:
 	./harness/test_consumer_link.sh $(MODEL)
 
+test_residual: tests/test_residual.c libnotorch_harness.a libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+
+check_residual: test_residual
+	./test_residual
+
+.PHONY: check_residual
+
 # A family that keeps state outside the KV cache must clear it when a sequence
 # starts. Exact equality between two identical runs, because greedy sampling
 # hid a 0.49 drift on the logits and every other gate stayed green.
@@ -535,7 +543,7 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_conv1d test_logmel
+test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_conv1d test_logmel test_residual
 	./notorch_test
 	./test_vision
 	./test_conv1d
@@ -557,6 +565,7 @@ test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_w
 	NT_QMV_PIN=0 ./test_affinity nopin
 	./test_plan_race
 	./test_wt_expert
+	./test_residual
 	./test_qgather
 	NT_QMV_CHUNKS=1 ./test_qgather
 	./test_f16_matvec
@@ -601,7 +610,7 @@ bench: bench/bench_simd bench/bench_blas
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
-		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul \
+		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual \
 		notorch_test notorch_test_gpu notorch.o gguf.o libnotorch.a notorch_cuda.o \
 		infer_janus_nt infer_gemma infer_llama \
 		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \

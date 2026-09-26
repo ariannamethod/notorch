@@ -505,8 +505,8 @@ static int gemma4_forward(void *model, kv_cache *kv, const int *tokens, int n,
 static const char *const gemma4_names[] = { "gemma4", NULL };
 
 const nt_arch nt_arch_gemma4 = {
-    gemma4_names,
-    gemma4_load,
-    gemma4_free,
-    gemma4_forward,
+    .names = gemma4_names,
+    .load = gemma4_load,
+    .free = gemma4_free,
+    .forward = gemma4_forward,
 };

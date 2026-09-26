@@ -45,6 +45,7 @@ typedef struct {
         float *q_bias, *k_bias, *v_bias;   /* Qwen2 has bias; Qwen3 does not */
         float *q_norm, *k_norm;            /* [head_dim] — Qwen3's QK norm, absent elsewhere */
         float *ffn_norm;
+        float *ffn_down_bias;             /* [embed], optional residual shift */
         wt wgate, wup, wdown;
     } layers[];
 } llama_model;
@@ -135,6 +136,16 @@ static void *llama_load(gguf_file *gf, nt_dims *dims) {
         W(wgate, "blk.%d.ffn_gate.weight");
         W(wup, "blk.%d.ffn_up.weight");
         W(wdown, "blk.%d.ffn_down.weight");
+        snprintf(name, sizeof(name), "blk.%d.ffn_down.bias", l);
+        ti = gguf_find_tensor(gf, name);
+        if (ti >= 0) {
+            if (gf->tensors[ti].ndim != 1 ||
+                gf->tensors[ti].shape[0] != (uint64_t)m->embed ||
+                !(m->layers[l].ffn_down_bias = gguf_dequant(gf, ti))) {
+                fprintf(stderr, "llama: invalid FFN down bias '%s'\n", name);
+                missing = 1;
+            }
+        }
         #undef L
         #undef W
     }
@@ -171,6 +182,7 @@ static void llama_free(void *model) {
         free(m->layers[l].q_bias); free(m->layers[l].k_bias); free(m->layers[l].v_bias);
         free(m->layers[l].q_norm); free(m->layers[l].k_norm);
         free(m->layers[l].ffn_norm);
+        free(m->layers[l].ffn_down_bias);
         free(m->layers[l].wgate.f32); free(m->layers[l].wup.f32); free(m->layers[l].wdown.f32);
     }
     free(m);
@@ -262,8 +274,9 @@ static void attn_heads(void *vctx, int h0, int h1) {
  * difference between a prompt that costs the same as generating it and one
  * that does not. Attention still runs per row — it reads the KV cache rather
  * than the weights, so batching it buys little and costs a mask. */
-static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                         int pos0, float *logits) {
+static int llama_forward_residual(void *model, kv_cache *kv, const int *tokens, int n,
+                                  int pos0, float *logits,
+                                  nt_residual_fn callback, void *user) {
     llama_model *m = (llama_model*)model;
     int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_layers, m->kv_dim);
     if (rc != NT_OK) return rc;
@@ -391,7 +404,16 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
         pf_add(PF_FFN, pft);
         pft = pf_mark();
         for (long i = 0; i < (long)n * E; i++) x[i] += ffn_out[i];
+        /* Keep the addition order of an equivalent residual callback, so an
+         * exported additive direction reproduces the live intervention. */
+        if (m->layers[l].ffn_down_bias)
+            for (int j = 0; j < n; j++)
+                add_bias(x + (long)j * E, m->layers[l].ffn_down_bias, E);
         pf_add(PF_RESID, pft);
+        if (callback) {
+            rc = callback(user, l, pos0, n, E, x);
+            if (rc != NT_OK) goto done;
+        }
     }
 
     /* The head is the single largest matvec in the model — 151936 rows against
@@ -405,9 +427,15 @@ static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
         pf_add(PF_HEAD, pft);
     }
 
+done:
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
     free(attn_out); free(ffn_gate); free(ffn_up); free(ffn_out); free(scratch_scores);
-    return NT_OK;
+    return rc;
+}
+
+static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
+                         int pos0, float *logits) {
+    return llama_forward_residual(model, kv, tokens, n, pos0, logits, NULL, NULL);
 }
 
 static const char *const llama_names[] = { "llama", "mistral3", "qwen2", "qwen3", NULL };
@@ -417,4 +445,5 @@ const nt_arch nt_arch_llama = {
     .load = llama_load,
     .free = llama_free,
     .forward = llama_forward,
+    .forward_residual = llama_forward_residual,
 };

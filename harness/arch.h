@@ -44,6 +44,16 @@ enum {
 
 const char *nt_strerror(int rc);
 
+/* Optional observation / intervention after a complete decoder layer, before
+ * the next layer (or final output norm). residual is a borrowed, writable
+ * row-major [n, width] view, valid only during this call. Layer and absolute
+ * token positions are zero-based; row j is position pos0+j. A caller may
+ * inspect rows or mutate them in place, and selects layers/positions itself.
+ * Return NT_OK to continue or a nonzero caller error to stop the forward.
+ * The callback runs synchronously on the caller's thread. */
+typedef int (*nt_residual_fn)(void *user, int layer, int pos0, int n,
+                              int width, float *residual);
+
 typedef struct {
     const char *const *names;    /* NULL-terminated list of supported names */
     void *(*load)(gguf_file *gf, nt_dims *dims);
@@ -58,6 +68,13 @@ typedef struct {
      * prefill: the sequence has to be restarted, not continued. */
     int   (*forward)(void *model, kv_cache *kv, const int *tokens, int n,
                      int pos0, float *logits);
+    /* NULL when this family does not expose residuals. With callback=NULL,
+     * identical to forward. Callback errors propagate unchanged, leave logits
+     * untouched, and require restarting the sequence just like forward errors.
+     * No callback is retained in the model between calls. */
+    int   (*forward_residual)(void *model, kv_cache *kv, const int *tokens, int n,
+                              int pos0, float *logits,
+                              nt_residual_fn callback, void *user);
 } nt_arch;
 
 /* The checks every family needs and none should be writing for itself: token
