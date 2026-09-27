@@ -87,3 +87,5 @@ LOCAL_STATE.md
 bench_qmatmul
 
 /test_gemma3
+
+/test_smollm_tokenizer

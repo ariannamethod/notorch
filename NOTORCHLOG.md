@@ -13,6 +13,43 @@ Newest entries on top.
 
 ---
 
+## 2026-09-27 — Isolate SmolLM Unicode numbers before byte-level BPE
+
+The official `HuggingFaceTB/SmolLM2-360M-Instruct-GGUF` Q8_0 exposed a
+pre-tokenizer defect: a Unicode/numeric ChatML probe produced 83 IDs instead
+of llama.cpp's 84. At index 44, the old path merged a space with the first
+UTF-8 byte of Arabic-Indic zero (16936 instead of 216, 164).
+
+Only `tokenizer.ggml.pre=smollm` now isolates each Unicode number before the
+existing byte-level splitter. Its 137 inclusive ranges cover category N
+(Nd, Nl and No), extracted from the generated Unicode table in reference
+llama.cpp `2145525a4081d66ff1a87cf43ef809f95a85ac0c`. UTF-8 reads are bounded;
+invalid sequences remain bytes. This is the individual-number stage declared
+by SmolLM's tokenizer, not a replacement for every family's regex. Qwen,
+default byte-level, SentencePiece and decoder arithmetic are unchanged.
+
+Proof: `make check_smollm_tokenizer BLAS_FLAGS= BLAS_LIBS=` passes 89 checks
+using a generated GGUF with deliberately available forbidden merges. It covers
+Arabic, Devanagari, fullwidth and supplementary-plane decimal digits, Roman
+numerals, superscripts, fractions, adjacent numbers, whitespace boundaries,
+capacity limits, malformed UTF-8, and unchanged Qwen/default behavior. Linking
+the same gate with the previous tokenizer fails 33 checks. ASan/UBSan on the
+tokenizer and test also passes 89 checks (`detect_leaks=0`).
+
+`make test harness BLAS_FLAGS= BLAS_LIBS=` passes the full C suite and compiles
+all registered families. Its first attempt stopped at a restored local
+`test_vision` ELF lacking execute permission; after restoring that generated
+binary's executable bit, the complete rerun passes.
+
+An independent pinned llama.cpp tokenizer comparison on the official 360M file
+(revision `593b5a2e04c8f3e4ee880263f93e0bd2901ad47f`, SHA-256
+`48ab3034d0dd401fbc721eb1df3217902fee7dab9078992d66431f09b7750201`)
+now matches all five actual CLI templates exactly: development 40 IDs,
+Unicode/numeric 84, leading-space user 41, teacher-forced answer 49, and
+mixed Nd/Nl/No 64. The old failing 83-ID result is preserved separately.
+
+---
+
 ## 2026-09-26 — Preserve SentencePiece USER_DEFINED whitespace before escaping
 
 The real Gemma tokenizer oracle found a concrete defect after the decoder gates:
