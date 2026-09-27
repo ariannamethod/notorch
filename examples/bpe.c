@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include "unicode_numbers.h"
 
 /* ── string -> int open-addressing hashmap ─────────────────────────────────── */
 typedef struct { char **keys; int *vals; int cap; int n; } smap;
@@ -98,6 +99,7 @@ struct bpe_tokenizer {
      * tree runs are kept below, chosen the same way. Getting it wrong is silent: the ids
      * shift from the first whitespace onward and the text still reads like text. */
     int pre_qwen2;
+    int pre_smollm;
     /* Tokens the file marks USER_DEFINED. They are stored as literal text rather than in the
      * byte-level encoding — a run of four real spaces, not four 'Ġ' — so the merge path can
      * never produce them, and the reference matches them against the raw text before it runs.
@@ -165,8 +167,10 @@ bpe_tokenizer *bpe_load(const char *path) {
      * when it is a space. Anything else, including a file with no key at all, gets the GPT-2
      * rule, which is what llama.cpp falls back to. */
     char pre[64] = {0};
-    if (gguf_read_str_kv(path, "tokenizer.ggml.pre", pre, sizeof(pre)) == 0)
+    if (gguf_read_str_kv(path, "tokenizer.ggml.pre", pre, sizeof(pre)) == 0) {
         t->pre_qwen2 = (strcmp(pre, "qwen2") == 0);
+        t->pre_smollm = (strcmp(pre, "smollm") == 0);
+    }
 
     int ntt = 0;
     int32_t *ttypes = gguf_read_i32_array(path, "tokenizer.ggml.token_type", &ntt);
@@ -481,12 +485,65 @@ static int spm_bpe_encode(const bpe_tokenizer *t, const char *text, int *out, in
 /* Byte-level BPE over one stretch of text with no added token in it. */
 static int bpe_encode_span(const bpe_tokenizer *t, const char *text, int len, int *out, int cap);
 
+/* Bounded UTF-8 decoding for the number pre-split. Invalid/truncated input
+ * remains an ordinary byte, never a numeric codepoint or an out-of-span read. */
+static int smollm_codepoint(const char *s, int len, unsigned int *cp) {
+    unsigned int c = (unsigned char)s[0];
+    int n = c < 0x80 ? 1 : c >= 0xC2 && c <= 0xDF ? 2 :
+            c >= 0xE0 && c <= 0xEF ? 3 : c >= 0xF0 && c <= 0xF4 ? 4 : 1;
+    *cp = c < 0x80 ? c : 0x110000;
+    if (n > len || n == 1) return 1;
+    c &= (1u << (7 - n)) - 1;
+    for (int i = 1; i < n; i++) {
+        unsigned int b = (unsigned char)s[i];
+        if ((b & 0xC0) != 0x80) return 1;
+        c = (c << 6) | (b & 0x3F);
+    }
+    if ((n == 2 && c < 0x80) || (n == 3 && c < 0x800) ||
+        (n == 4 && c < 0x10000) || c > 0x10FFFF ||
+        (c >= 0xD800 && c <= 0xDFFF)) return 1;
+    *cp = c;
+    return n;
+}
+static int smollm_is_number(unsigned int cp) {
+    size_t lo = 0, hi = sizeof(smollm_numbers) / sizeof(smollm_numbers[0]);
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (cp < smollm_numbers[mid][0]) hi = mid;
+        else if (cp > smollm_numbers[mid][1]) lo = mid + 1;
+        else return 1;
+    }
+    return 0;
+}
+/* SmolLM runs individual Unicode numbers BEFORE its byte-level splitter.
+ * Flush both sides: a space cannot merge with a number's first UTF-8 byte,
+ * and adjacent numbers cannot merge together. Other declared pre-types retain
+ * their existing path. This adds the number stage, not a new regex engine. */
+static int smollm_encode_span(const bpe_tokenizer *t, const char *text, int len,
+                             int *out, int cap) {
+    int no = 0, gap = 0;
+    for (int i = 0; i < len;) {
+        unsigned int cp;
+        int n = smollm_codepoint(text + i, len - i, &cp);
+        if (smollm_is_number(cp)) {
+            if (i > gap) no += bpe_encode_span(t, text + gap, i - gap, out + no, cap - no);
+            no += bpe_encode_span(t, text + i, n, out + no, cap - no);
+            gap = i + n;
+        }
+        i += n;
+    }
+    if (len > gap) no += bpe_encode_span(t, text + gap, len - gap, out + no, cap - no);
+    return no;
+}
+
 /* Added tokens are literal before space escaping in every tokenizer scheme.
  * The SentencePiece reference also reapplies its declared dummy prefix to each
  * ordinary fragment following a special token. Gemma declares that prefix off. */
 static int scheme_encode_span(const bpe_tokenizer *t, const char *text, int len,
                               int *out, int cap) {
-    if (!t->spm && !t->spm_bpe) return bpe_encode_span(t, text, len, out, cap);
+    if (!t->spm && !t->spm_bpe)
+        return t->pre_smollm ? smollm_encode_span(t, text, len, out, cap)
+                             : bpe_encode_span(t, text, len, out, cap);
     if (len <= 0 || cap <= 0) return 0;
     char *span = (char*)malloc((size_t)len + 1);
     if (!span) return 0;
