@@ -13,6 +13,32 @@ Newest entries on top.
 
 ---
 
+## 2026-09-28 — Qwen keeps the last tab with the word
+
+JOVOVICH's real Makefile review exposed a Qwen pre-tokenizer boundary error:
+`Makefile:2: \tcc` produced `7018,638` for the space, tab and `cc`, where the
+reference produces `220,63517`. The Qwen branch counted only spaces, so it
+merged a mixed whitespace prefix before the word could claim its final tab.
+It now counts the whitespace run, consumes through its last newline when one
+is present, and otherwise leaves its final character with the following word.
+Trailing space/tab runs stay a complete piece. The existing non-whitespace scan
+is preserved; changing it also splits legitimate punctuation/newline tokens.
+
+Proof: the synthetic fixture in `tests/test_smollm_tokenizer.c` has a tempting
+tab-word merge. With the old implementation two of 92 checks fail; with this
+change all 92 pass. SmolLM and GPT-2 fixtures still pass. The external tokenizer
+gate also gains the actual mixed Makefile prefix. Against llama.cpp `680a036`,
+`notorch -T` and `llama-completion -n 0 --verbose-prompt` agree on all IDs for
+the gate's nine texts plus nine focused space/tab/newline cases, using the same
+Qwen2.5-Coder-0.5B-Instruct Q8_0 GGUF (SHA-256
+`e1a77721fa97d412f121878223eec81fb4ae6f271e18f922d746711f67b344d1`).
+`harness/test_tokenizer.sh` against `llama-tokenize` also passes all nine checks.
+The full 400-token ChatML review prompt now agrees at every position, including
+the two formerly different IDs. At temperature zero, the base GGUF and a
+locally merged output-head GGUF each produce byte-identical review continuations
+in the two engines. Both still miss the review concern: tokenizer parity fixes
+the input, not the model's judgment. No weights or numerical kernels changed.
+
 ## 2026-09-28 — The wide-body gate holds on every device, not only on an A40
 
 Review finding on #145, confirmed: the 12288-wide gate required every CUDA device to load the body, while on a device whose opt-in shared memory is only 48 KB `norm_width_ok` refuses it at load, which is the decoder's correct behavior, and `make check_cuda_decode` would go red there. The test now reads the device's limit (`device_norm_width`, the same rule as `norm_width_ok`) and holds the rule on both sides of it: a body within the limit loads, prefills and decodes with the CPU's argmax at every step, and a body beyond it is refused at load. It runs three widths: 12288; the widest multiple of 32 within the device's limit, which must run, so a regression that refuses valid widths goes red on every device, a 48 KB one included (12256 there); and the first multiple of 32 past the limit, which must be refused (the second review finding, on this change).
