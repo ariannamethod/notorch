@@ -621,15 +621,17 @@ static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int 
          * differed. Space-indented code happened to agree, which is why it went unseen. */
         int j;
         if (t->pre_qwen2) {
-            /* What this tree has always done, kept unchanged and now named: a run of spaces
-             * gives up its last one to the word, and everything else runs together until the
-             * next space. That is not GPT-2's rule, but it is what qwen2's pattern amounts to
-             * on the text these models see — a word may take one preceding character of any
-             * kind, and a run of newlines is one piece. Measured against llama-tokenize on
-             * every whitespace shape this repo tests, it agrees. */
-            int run = 0;
-            while (i + run < L && text[i + run] == ' ') run++;
-            if (run > 1) j = (i + run < L) ? i + run - 1 : L;
+            /* Qwen's word prefix permits a tab as well as a space. A mixed whitespace
+             * run must therefore give up its last character, not merge the whole run
+             * into the word. Its earlier \s*[\r\n]+ alternative consumes through the
+             * last newline first; trailing space/tab runs remain a complete piece. */
+            int run = 0, last_nl = -1;
+            while (i + run < L && nt_is_ws(text[i + run])) {
+                if (text[i + run] == '\r' || text[i + run] == '\n') last_nl = run;
+                run++;
+            }
+            if (last_nl >= 0) j = i + last_nl + 1;
+            else if (run > 1) j = (i + run < L) ? i + run - 1 : L;
             else {
                 j = i + 1;
                 while (j < L && text[j] != ' ') j++;

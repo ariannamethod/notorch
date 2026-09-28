@@ -56,6 +56,7 @@ fi
 set -- \
   "The capital of France is" \
   "Hello, world!" \
+  "Makefile:2: 	cc main.c -o app" \
   "  leading and   repeated   spaces" \
   "2 + 2 = 4, right?!" \
   "Привет, как дела?" \

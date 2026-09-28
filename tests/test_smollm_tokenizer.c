@@ -14,7 +14,8 @@ static int enc(int cp, char *s) {
     s[0]=(char)(0xC0|(cp>>6));s[1]=(char)(0x80|(cp&63));s[2]=0;return 2;
 }
 static int fixture(const char *path, const char *pre) {
-    char storage[512][16], ranks[256][24];const char *tokens[513],*merges[257];
+    char storage[512][16], ranks[256][24], tab_word[24], tab_rank[24];
+    const char *tokens[514],*merges[258];
     int n=0;
     for(int b=0;b<256;b++) {
         int printable=(b>=33&&b<=126)||(b>=161&&b<=172)||(b>=174&&b<=255);
@@ -27,11 +28,13 @@ static int fixture(const char *path, const char *pre) {
         snprintf(ranks[b],24,"%s %s",storage[32],storage[b]);merges[b]=ranks[b];
     }
     tokens[512]="12";merges[256]="1 2";
+    snprintf(tab_word,sizeof(tab_word),"%sx",storage[9]);tokens[513]=tab_word;
+    snprintf(tab_rank,sizeof(tab_rank),"%s x",storage[9]);merges[257]=tab_rank;
     gguf_writer *w=gguf_write_open(path);if(!w)return -1;
     gguf_write_kv_str(w,"tokenizer.ggml.model","gpt2");
     gguf_write_kv_str(w,"tokenizer.ggml.pre",pre);
-    gguf_write_kv_str_array(w,"tokenizer.ggml.tokens",tokens,513);
-    gguf_write_kv_str_array(w,"tokenizer.ggml.merges",merges,257);
+    gguf_write_kv_str_array(w,"tokenizer.ggml.tokens",tokens,514);
+    gguf_write_kv_str_array(w,"tokenizer.ggml.merges",merges,258);
     gguf_write_kv_u32(w,"tokenizer.ggml.add_bos_token",0);
     return gguf_write_close(w);
 }
@@ -53,6 +56,11 @@ int main(void) {
         CHECK(bpe_encode_raw(t,"12",ids,16)==(family==0?2:1)&&ids[0]==(family==0?'1':512),"adjacent ASCII numbers cannot merge in Smol only");
         CHECK(bpe_encode_raw(t," ax",ids,16)==2&&ids[0]==256+'a',"ordinary text keeps existing merge");
         CHECK(bpe_encode_raw(t,"",ids,16)==0,"empty raw input");
+        if(family==1) {
+            CHECK(bpe_encode_raw(t," \tx",ids,16)==2&&ids[0]==32&&ids[1]==513,"Qwen mixed whitespace leaves the final tab with the word");
+            CHECK(bpe_encode_raw(t,"\t \tx",ids,16)==3&&ids[0]==9&&ids[1]==32&&ids[2]==513,"Qwen longer mixed prefix preserves the final tab-word merge");
+            CHECK(bpe_encode_raw(t," \t",ids,16)==1&&ids[0]==256+9,"Qwen trailing whitespace remains a complete run");
+        }
         if(family==0) {
             CHECK(bpe_encode_raw(t,"  ٠",ids,16)==3&&ids[0]==256+32&&ids[1]==0xD9&&ids[2]==0xA0,"whole whitespace run before isolated numeral");
             CHECK(bpe_encode_raw(t," \xF0\x9D",ids,16)==2&&ids[0]==256+0xF0,"truncated UTF-8 stays bytes");
