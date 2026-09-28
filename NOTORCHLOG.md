@@ -13,6 +13,13 @@ Newest entries on top.
 
 ---
 
+## 2026-09-28 — The CUDA decoder runs every width it accepts, and a cache-only call allocates no logits
+
+Two findings of the automated review of #144, both confirmed. `k_rmsnorm` staged `dim` floats of dynamic shared memory next to a static float for `inv`, and the loaders accepted any embedding width up to 12288. At exactly 12288 that is 48 KB plus 4 bytes, past the default per-block limit: a 12288-wide body loaded, and its first forward failed at the RMSNorm launch with `invalid argument`. `inv` now lives in the dynamic buffer at `xs[dim]`, the launch asks for `dim + 1` floats, and `norm_width_ok` accepts a width when it fits the default 48 KB or, beyond that, the device's opt-in limit (`cudaDevAttrMaxSharedMemoryPerBlockOptin`), which it then enables for the kernel; anything wider is refused at load. The arithmetic is unchanged. Second, `cuda_rows` grew the logits buffer for `head_rows` rows even when the caller passed `logits == NULL` and asked for the cache alone; it now grows it for none. That change has no test of its own: it is one argument, and a cache-only call behaves the same apart from the memory it no longer takes.
+
+Gate: `tests/test_cuda_decode.c` writes a gemma3 body 12288 wide (one head of 32, FF 32, one layer) and requires that the GPU loads it, prefills and decodes it, and matches the CPU's argmax at every step. On an A40 (driver 570.195.03, opt-in limit above 48 KB) it passes with the change, 247 checks; with the `cuda_decode.cu` of `7a4b97d` it fails on those two checks, the forward stopping at `cuda: invalid argument` on the RMSNorm launch. compute-sanitizer memcheck, racecheck, initcheck and synccheck report 0 errors; `test_multi_decode` passes its 753 checks.
+
+
 ## 2026-09-28 — The llama and gemma3 decoders on an NVIDIA GPU
 
 `harness/cuda_decode.cu` implements the `llama` family (llama, mistral3, qwen2, qwen3) and
