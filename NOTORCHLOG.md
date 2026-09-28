@@ -13,6 +13,71 @@ Newest entries on top.
 
 ---
 
+## 2026-09-28 — Retry exceptional Q8_0 rows without changing ordinary SIMD sums
+
+The review of #140 supplied a reproducible cancellation failure: two Q8_0
+blocks at scale 1, weights +127 at position 0 and -127 at position 8, and
+activations `0.6f * FLT_MAX / 127` make the new AVX2 partials overflow and
+return NaN, while the sequential loop on this GCC build returns zero. Both
+inputs and each product are finite. `nt_q8_0_rows` now retries a row in its
+original scalar order only when the final SIMD sum is non-finite. Finite
+SIMD results keep their exact previous bits and fold order; genuinely
+non-finite scalar results remain non-finite.
+
+The regression uses unit weights and `0.6f * FLT_MAX`, so each product is
+exact even when a compiler contracts the scalar multiply-add. Seven rows
+exercise overflow within a partial and overflow only at the final fold,
+with fan-out enabled and disabled. Positive infinity and NaN each have a
+separate check. The narrow AVX2 gate passes all 22 checks; the new fixture
+linked to unchanged `0c7cc725acc7` fails the cancellation assertion (exit 1).
+The no-AVX/no-FMA build also passes 22 checks. `make test BLAS_FLAGS=
+BLAS_LIBS=` passes the complete C suite on this Linux x86_64 host. A separate
+read-only reviewer caught the original fixture's scalar-FMA rounding
+sensitivity before this unit-weight version was retained.
+
+A direct-kernel timing probe compared unchanged `0c7cc725acc7` with the
+finite-check retry on synthetic Q8_0 tensors and F32 activations: AMD EPYC
+9V74 VM, GCC 13.3.0, `-O2 -mavx2 -mfma -mf16c`, one thread pinned to CPU 2.
+Every allocated weight byte was touched, both kernels warmed for three calls,
+and nine alternating-order rounds ran in one process. Per-round repetition
+count was `max(3, min(20000, 200000000 / weight_bytes))`. Normal outputs were
+bit-identical. These are kernel milliseconds, with process peak resident KiB
+recorded at each shape, not a model-throughput measurement.
+
+| rows × k | original ms | retry-check ms | peak resident KiB |
+|---|---:|---:|---:|
+| 64 × 32 | 0.00022815 | 0.00025653 | 640 |
+| 1152 × 1152 | 0.08965318 | 0.09102640 | 1920 |
+| 6912 × 1152 | 0.53726226 | 0.53880143 | 8824 |
+| 1152 × 6912 | 0.52756365 | 0.53293022 | 8868 |
+| 4096 × 4096 | 1.11021264 | 1.11145364 | 26276 |
+| 32768 × 2048 | 4.38102667 | 4.54396400 | 78548 |
+
+A separate two-row candidate reused activation loads while retaining every
+row's 32 partials. It was rejected. The same host, flags, affinity, shapes,
+warmup and nine-round protocol gave original→paired medians below; the
+largest tensor contains 71,303,168 packed weight bytes. Its regression is
+kept here rather than presenting the small-shape gains as a general speedup.
+
+| rows × k | original ms | paired ms | peak resident KiB |
+|---|---:|---:|---:|
+| 64 × 32 | 0.00021378 | 0.00019889 | 768 |
+| 1152 × 1152 | 0.08608804 | 0.07740238 | 1920 |
+| 6912 × 1152 | 0.51720900 | 0.48153230 | 8828 |
+| 1152 × 6912 | 0.49675678 | 0.45080026 | 8872 |
+| 4096 × 4096 | 1.06442191 | 1.09314955 | 26280 |
+| 32768 × 2048 | 4.44070933 | 10.39376167 | 78552 |
+
+The [benchmark archive](bench/q8_0_followup.json) preserves both standalone C
+probe sources with SHA256 and all 108 raw measurements. To replay a probe,
+write its `experiments[].source` to a C file and compile with
+`cc -O2 -mavx2 -mfma -mf16c probe.c -lm -o probe`, then run
+`taskset -c 2 ./probe`. Its fixed warmup, shapes, repetitions and alternating
+order are in that source. Repeating it on another machine produces a new
+measurement; the archived samples retain this host's original values.
+
+---
+
 ## 2026-09-28 — Q8_0 against float activations in 32 partial sums (AVX2+FMA)
 
 `nt_q8_0_rows` is the kernel every Q8_0 weight goes through when a consumer
