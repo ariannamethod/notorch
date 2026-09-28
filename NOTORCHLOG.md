@@ -13,6 +13,13 @@ Newest entries on top.
 
 ---
 
+## 2026-09-28 — The wide-body gate holds on every device, not only on an A40
+
+Review finding on #145, confirmed: the 12288-wide gate required every CUDA device to load the body, while on a device whose opt-in shared memory is only 48 KB `norm_width_ok` refuses it at load, which is the decoder's correct behavior, and `make check_cuda_decode` would go red there. The test now reads the device's limit (`device_norm_width`, the same rule as `norm_width_ok`) and holds the rule on both sides of it: a body within the limit loads, prefills and decodes with the CPU's argmax at every step, and a body beyond it is refused at load. It runs three widths: 12288; the widest multiple of 32 within the device's limit, which must run, so a regression that refuses valid widths goes red on every device, a 48 KB one included (12256 there); and the first multiple of 32 past the limit, which must be refused (the second review finding, on this change).
+
+On an A40 (limit 25343 floats per row) the gate passes with 253 checks: 12288 and 25312 run, 25344 is refused. With `norm_width_ok` made to accept every width it fails three checks: 25344 is no longer refused, and 12288 no longer runs, because without the opt-in the launch above 48 KB is rejected. With it made to refuse every width above 48 KB it fails two: 12288 and 25312 are no longer loaded.
+
+
 ## 2026-09-28 — The CUDA decoder runs every width it accepts, and a cache-only call allocates no logits
 
 Two findings of the automated review of #144, both confirmed. `k_rmsnorm` staged `dim` floats of dynamic shared memory next to a static float for `inv`, and the loaders accepted any embedding width up to 12288. At exactly 12288 that is 48 KB plus 4 bytes, past the default per-block limit: a 12288-wide body loaded, and its first forward failed at the RMSNorm launch with `invalid argument`. `inv` now lives in the dynamic buffer at `xs[dim]`, the launch asks for `dim + 1` floats, and `norm_width_ok` accepts a width when it fits the default 48 KB or, beyond that, the device's opt-in limit (`cudaDevAttrMaxSharedMemoryPerBlockOptin`), which it then enables for the kernel; anything wider is refused at load. The arithmetic is unchanged. Second, `cuda_rows` grew the logits buffer for `head_rows` rows even when the caller passed `logits == NULL` and asked for the cache alone; it now grows it for none. That change has no test of its own: it is one argument, and a cache-only call behaves the same apart from the memory it no longer takes.

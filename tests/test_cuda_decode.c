@@ -209,12 +209,25 @@ static void matmul_exact(void) {
     free(w); free(x); free(cpu); free(gpu); free(packed);
 }
 
-/* A gemma3 body 12288 wide (one head of 32, FF 32, one layer): the width the first decoder
- * accepted at load and then could not normalize, because 48 KB of staged row plus one static
- * float is past the default per-block shared memory. An accepted body has to run: on this
- * device it loads, prefills and decodes, with the CPU's argmax at every step. */
-static void wide_body(void) {
-    enum { WE = 12288, WH = 32, WF = 32, STEPS_W = 3 };
+/* The widest row RMSNorm can stage on this device, in floats: dim + 1 of them must fit the
+ * default 48 KB or the device's opt-in limit, whichever is larger. */
+static int device_norm_width(void) {
+    int dev = 0, optin = 0;
+    if (cudaGetDevice(&dev) != cudaSuccess ||
+        cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev) != cudaSuccess) optin = 0;
+    if (optin < 48 * 1024) optin = 48 * 1024;
+    return optin / (int)sizeof(float) - 1;
+}
+
+/* A gemma3 body WE wide (one head of 32, FF 32, one layer). 12288 is the width the first
+ * decoder accepted at load and then could not normalize, because 48 KB of staged row plus one
+ * static float is past the default per-block shared memory. The rule is the same on every
+ * device: a body within its limit loads, prefills and decodes with the CPU's argmax at every
+ * step, and a body beyond it is refused at load. */
+static void wide_body(int WE) {
+    enum { WH = 32, WF = 32, STEPS_W = 3 };
+    int fits = WE <= device_norm_width();
+    char what[128];
     const char *fields[] = {"attn_norm", "attn_q", "attn_k", "attn_v", "attn_output", "attn_q_norm",
         "attn_k_norm", "post_attention_norm", "ffn_norm", "ffn_gate", "ffn_up", "ffn_down", "post_ffw_norm"};
     int rows[] = {0, WH, WH, WH, WE, 0, 0, 0, 0, WF, WF, WE, 0};
@@ -255,13 +268,20 @@ static void wide_body(void) {
         }
         ok = gguf_write_close(w) == 0 && ok;
     }
-    CHECK(ok, "wide body: write a 12288-wide gemma3 GGUF");
+    snprintf(what, sizeof(what), "wide body %d: write the GGUF", WE);
+    CHECK(ok, what);
     const nt_arch *gpu = &nt_arch_gemma3_cuda;
-    gguf_file *gf = ok ? gguf_open(path) : NULL, *gf2 = ok ? gguf_open(path) : NULL;
+    gguf_file *gf = ok && fits ? gguf_open(path) : NULL, *gf2 = ok ? gguf_open(path) : NULL;
     nt_dims dims, gdims;
     void *cm = gf ? nt_arch_gemma3.load(gf, &dims) : NULL;
     void *gm = gf2 ? gpu->load(gf2, &gdims) : NULL;
-    CHECK(cm && gm, "wide body: the GPU loads a 12288-wide body");
+    if (fits) {
+        snprintf(what, sizeof(what), "wide body %d: within this device's limit, the GPU loads it", WE);
+        CHECK(cm && gm, what);
+    } else {
+        snprintf(what, sizeof(what), "wide body %d: beyond this device's limit, the GPU refuses it at load", WE);
+        CHECK(ok && !gm, what);
+    }
     if (cm && gm) {
         kv_cache *hk = kv_new(dims.n_layers, CAP, dims.kv_dim), *dk = gpu->kv_new(gm, CAP);
         float host[V], dev[V];
@@ -274,8 +294,10 @@ static void wide_body(void) {
             rc |= nt_arch_gemma3.forward(cm, hk, &next, 1, 3 + t, host);
             rc |= gpu->forward(gm, dk, &next, 1, 3 + t, dev);
         }
-        CHECK(rc == NT_OK, "wide body: the GPU prefills and decodes it");
-        CHECK(rc == NT_OK && same && argmax(host) == argmax(dev), "wide body: every argmax agrees with the CPU");
+        snprintf(what, sizeof(what), "wide body %d: the GPU prefills and decodes it", WE);
+        CHECK(rc == NT_OK, what);
+        snprintf(what, sizeof(what), "wide body %d: every argmax agrees with the CPU", WE);
+        CHECK(rc == NT_OK && same && argmax(host) == argmax(dev), what);
         kv_free(hk); gpu->kv_free(gm, dk);
     }
     if (cm) nt_arch_gemma3.free(cm);
@@ -292,7 +314,10 @@ int main(void) {
     }
     setenv("NT_NO_I8", "1", 1);
     matmul_exact();
-    wide_body();
+    wide_body(12288);
+    wide_body(device_norm_width() / 32 * 32);         /* the widest this device can stage */
+    wide_body((device_norm_width() / 32 + 1) * 32);   /* the first width past this device */
+    printf("RMSNorm staging on this device: up to %d floats per row\n", device_norm_width());
     const char *families[] = {"qwen2", "qwen3", "gemma3"};
     for (int family = 0; family < 3; family++) {
         const nt_arch *cpu = family == 2 ? &nt_arch_gemma3 : &nt_arch_llama;
