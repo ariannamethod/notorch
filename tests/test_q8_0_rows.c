@@ -215,6 +215,47 @@ static void cancellation(void) {
     check("NaN input remains NaN", isnan(got[0]), NULL);
 }
 
+/* nt_qmatmul takes Q8_0 with float activations too, so NT_NO_I8 can decode several
+ * sequences while reading the weights once. Its promise is identity, not closeness: each
+ * of the n outputs must equal what nt_qmatvec returns for that vector alone, bit for bit,
+ * for every n across the 8-wide activation tile, threaded or not, and including the
+ * scalar retry of an overflowing row. */
+static void batched(void) {
+    int m = 67, k = 1152, nmax = 11;
+    uint8_t *W = build(m, k);
+    float *X = (float *)malloc((size_t)nmax * k * sizeof(float));
+    float *got = (float *)malloc((size_t)nmax * m * sizeof(float));
+    float *want = (float *)malloc((size_t)nmax * m * sizeof(float));
+    char detail[128];
+    if (!W || !X || !got || !want) { check("allocation", 0, NULL); goto out; }
+    for (long i = 0; i < (long)nmax * k; i++) X[i] = ragged_value(i * 3 + 7);
+    int identical = 1, accepted = 1;
+    for (int threaded = 0; threaded < 2; threaded++) {
+        nt_qmv_set_thread_min(threaded ? 1 : LONG_MAX);
+        for (int n = 2; n <= nmax; n++) {
+            accepted &= nt_qmatmul(got, W, GGUF_TYPE_Q8_0, X, m, k, n) == 0;
+            for (int j = 0; j < n; j++) nt_qmatvec(want + (long)j * m, W, GGUF_TYPE_Q8_0, X + (long)j * k, m, k);
+            identical &= memcmp(got, want, (size_t)n * m * sizeof(float)) == 0;
+        }
+    }
+    check("q8_0 batched matmul takes float activations", accepted, NULL);
+    snprintf(detail, sizeof(detail), "m=%d k=%d n=2..%d, threaded and not", m, k, nmax);
+    check("q8_0 batched matmul equals per-vector matvec bit for bit", identical, detail);
+
+    /* One vector that overflows a partial between finite ones: the retry must fire inside
+     * the batch exactly as it does alone. */
+    uint8_t Wc[2 * 34] = {0};
+    Wc[1] = Wc[34 + 1] = 0x3c; Wc[2] = Wc[34 + 2] = 1; Wc[2 + 8] = Wc[34 + 2 + 8] = (uint8_t)-1;
+    float Xc[3 * 64], gc[3], wc[3];
+    for (int i = 0; i < 3 * 64; i++) Xc[i] = (i / 64 == 1) ? 0.6f * FLT_MAX : ragged_value(i);
+    nt_qmv_set_thread_min(LONG_MAX);
+    nt_qmatmul(gc, Wc, GGUF_TYPE_Q8_0, Xc, 1, 64, 3);
+    for (int j = 0; j < 3; j++) nt_qmatvec(wc + j, Wc, GGUF_TYPE_Q8_0, Xc + j * 64, 1, 64);
+    check("q8_0 batched matmul keeps the overflow retry", memcmp(gc, wc, sizeof(gc)) == 0 && gc[1] == 0.0f, NULL);
+out:
+    free(W); free(X); free(got); free(want);
+}
+
 int main(void) {
 #if defined(__AVX2__) && defined(__FMA__)
     printf("test_q8_0_rows — AVX2+FMA kernel, 32 partial sums\n");
@@ -230,6 +271,7 @@ int main(void) {
     int ks[] = {32, 64, 96, 1152, 2048, 6912};
     for (size_t i = 0; i < sizeof(ks) / sizeof(ks[0]); i++) run(i < 3 ? 7 : 64, ks[i], 1e-5);
     cancellation();
+    batched();
     printf("%s (%d failed)\n", fails ? "FAIL" : "ALL PASS", fails);
     return fails ? 1 : 0;
 }

@@ -145,18 +145,23 @@ static void gemma3_rope(float *x, int pos, int hd, float base, float scale) {
         x[i] = a*c - b*s; x[i + hd/2] = a*s + b*c;
     }
 }
-static int gemma3_forward_residual(void *ptr, kv_cache *kv, const int *ids, int n,
-                                   int pos0, float *logits, nt_residual_fn hook, void *user) {
-    gemma3_model *m = ptr;
-    if (!m) return NT_E_ARG;
-    int rc = nt_check_call(kv, ids, n, pos0, m->V, m->L, m->KD);
-    if (rc) return rc;
+/* Row j is ids[j] at position pos[j] of the cache kvs[j]: one cache and consecutive
+ * positions for a prefill or a single decode, one row per sequence for a multi-sequence
+ * decode. `head_rows` trailing rows get logits, [head_rows, vocab]. With `users` NULL the
+ * hook sees the whole block once per layer; with `users` it runs per row, n = 1, with that
+ * row's position and user. Callers have validated every row. */
+static int gemma3_rows(gemma3_model *m, int n, const int *ids, kv_cache *const *kvs,
+                       const int *pos, float *logits, int head_rows,
+                       nt_residual_fn hook, void *user, void *const *users) {
+    int rc=NT_OK;
     int E=m->E, QD=m->QD, KD=m->KD, HD=m->HD, FF=m->FF;
+    int stride=0;
+    for (int j=0;j<n;j++) if (kvs[j]->max_seq>stride) stride=kvs[j]->max_seq;
     float *x=calloc((size_t)n*E,sizeof(float)), *norm=calloc((size_t)n*E,sizeof(float));
     float *q=calloc((size_t)n*QD,sizeof(float)), *k=calloc((size_t)n*KD,sizeof(float));
     float *v=calloc((size_t)n*KD,sizeof(float)), *att=calloc((size_t)n*QD,sizeof(float));
     float *out=calloc((size_t)n*E,sizeof(float)), *gate=calloc((size_t)n*FF,sizeof(float));
-    float *up=calloc((size_t)n*FF,sizeof(float)), *scores=calloc((size_t)kv->max_seq,sizeof(float));
+    float *up=calloc((size_t)n*FF,sizeof(float)), *scores=calloc((size_t)stride,sizeof(float));
     if (!x||!norm||!q||!k||!v||!att||!out||!gate||!up||!scores) {rc=NT_E_MEMORY;goto done;}
     for (int j=0;j<n;j++) {
         float *row=x+(size_t)j*E;
@@ -168,28 +173,30 @@ static int gemma3_forward_residual(void *ptr, kv_cache *kv, const int *ids, int 
         gemma3_layer *l=&m->layers[b];
         int local=m->window>0 && (b+1)%m->pattern!=0;
         float base=local?m->local_base:m->base, scale=local?1.0f:m->rope_scale;
-        size_t cache_base=(size_t)b*kv->max_seq*KD;
         for (int j=0;j<n;j++) rmsnorm(norm+(size_t)j*E,x+(size_t)j*E,l->attn_norm,E,m->eps);
         qmm(q,&l->q,norm,n); qmm(k,&l->k,norm,n); qmm(v,&l->v,norm,n);
         for (int j=0;j<n;j++) {
+            size_t cache_base=(size_t)b*kvs[j]->max_seq*KD;
             for (int h=0;h<m->H;h++) {
                 float *row=q+(size_t)j*QD+h*HD;
                 rmsnorm(row,row,l->q_norm,HD,m->eps);
-                gemma3_rope(row,pos0+j,HD,base,scale);
+                gemma3_rope(row,pos[j],HD,base,scale);
                 for (int i=0;i<HD;i++) row[i]*=m->query_scale;
             }
             for (int h=0;h<m->KV;h++) {
                 float *row=k+(size_t)j*KD+h*HD;
                 rmsnorm(row,row,l->k_norm,HD,m->eps);
-                gemma3_rope(row,pos0+j,HD,base,scale);
+                gemma3_rope(row,pos[j],HD,base,scale);
             }
-            memcpy(kv->k+cache_base+(size_t)(pos0+j)*KD,k+(size_t)j*KD,(size_t)KD*sizeof(float));
-            memcpy(kv->v+cache_base+(size_t)(pos0+j)*KD,v+(size_t)j*KD,(size_t)KD*sizeof(float));
+            memcpy(kvs[j]->k+cache_base+(size_t)pos[j]*KD,k+(size_t)j*KD,(size_t)KD*sizeof(float));
+            memcpy(kvs[j]->v+cache_base+(size_t)pos[j]*KD,v+(size_t)j*KD,(size_t)KD*sizeof(float));
         }
         memset(att,0,(size_t)n*QD*sizeof(float));
         for (int j=0;j<n;j++) {
-            int pos=pos0+j, first=local && pos>=m->window ? pos-m->window+1 : 0;
-            int span=pos-first+1;
+            const kv_cache *kv=kvs[j];
+            size_t cache_base=(size_t)b*kv->max_seq*KD;
+            int p=pos[j], first=local && p>=m->window ? p-m->window+1 : 0;
+            int span=p-first+1;
             for (int h=0;h<m->H;h++) {
                 int kh=h/(m->H/m->KV);
                 for (int t=0;t<span;t++) scores[t]=dot_f32(q+(size_t)j*QD+h*HD,
@@ -211,20 +218,53 @@ static int gemma3_forward_residual(void *ptr, kv_cache *kv, const int *ids, int 
         qmm(out,&l->down,gate,n);
         for (int j=0;j<n;j++) rmsnorm(out+(size_t)j*E,out+(size_t)j*E,l->post_ffw_norm,E,m->eps);
         for (size_t i=0;i<(size_t)n*E;i++) x[i]+=out[i];
-        if (hook && (rc=hook(user,b,pos0,n,E,x))!=NT_OK) goto done;
+        if (hook && !users && (rc=hook(user,b,pos[0],n,E,x))!=NT_OK) goto done;
+        if (hook && users)
+            for (int j=0;j<n;j++)
+                if ((rc=hook(users[j],b,pos[j],1,E,x+(size_t)j*E))!=NT_OK) goto done;
     }
     if (logits) {
-        rmsnorm(norm,x+(size_t)(n-1)*E,m->norm,E,m->eps);
-        qmv(logits,m->output.q||m->output.f32?&m->output:&m->emb,norm);
-        if (m->softcap>0) for(int i=0;i<m->V;i++) logits[i]=m->softcap*tanhf(logits[i]/m->softcap);
+        const wt *head=m->output.q||m->output.f32?&m->output:&m->emb;
+        int first=n-head_rows;
+        for (int j=0;j<head_rows;j++) rmsnorm(norm+(size_t)j*E,x+(size_t)(first+j)*E,m->norm,E,m->eps);
+        if (head_rows==1) qmv(logits,head,norm);
+        else qmm(logits,head,norm,head_rows);
+        if (m->softcap>0) for(size_t i=0;i<(size_t)head_rows*m->V;i++) logits[i]=m->softcap*tanhf(logits[i]/m->softcap);
     }
 done:
     free(x);free(norm);free(q);free(k);free(v);free(att);free(out);free(gate);free(up);free(scores);
     return rc;
 }
+static int gemma3_forward_residual(void *ptr, kv_cache *kv, const int *ids, int n,
+                                   int pos0, float *logits, nt_residual_fn hook, void *user) {
+    gemma3_model *m = ptr;
+    if (!m) return NT_E_ARG;
+    int rc = nt_check_call(kv, ids, n, pos0, m->V, m->L, m->KD);
+    if (rc) return rc;
+    int *pos=malloc((size_t)n*sizeof(int)); kv_cache **kvs=malloc((size_t)n*sizeof(kv_cache*));
+    if (!pos||!kvs) { free(pos); free(kvs); return NT_E_MEMORY; }
+    for (int j=0;j<n;j++) { pos[j]=pos0+j; kvs[j]=kv; }
+    rc=gemma3_rows(m,n,ids,kvs,pos,logits,1,hook,user,NULL);
+    free(pos); free(kvs);
+    return rc;
+}
 static int gemma3_forward(void *m,kv_cache *kv,const int *ids,int n,int pos,float *logits) {
     return gemma3_forward_residual(m,kv,ids,n,pos,logits,NULL,NULL);
 }
+/* One decode step for n independent sequences; see forward_multi in arch.h. */
+static int gemma3_forward_multi(void *ptr, kv_cache *const *kvs, const int *ids, const int *pos,
+                                int n, float *logits, nt_residual_fn hook, void *const *users) {
+    gemma3_model *m = ptr;
+    if (!m || !kvs || !ids || !pos || n < 1 || (hook && !users)) return NT_E_ARG;
+    for (int j=0;j<n;j++) {
+        if (!kvs[j]) return NT_E_ARG;
+        for (int i=0;i<j;i++) if (kvs[i]==kvs[j]) return NT_E_ARG;
+        int rc=nt_check_call(kvs[j],&ids[j],1,pos[j],m->V,m->L,m->KD);
+        if (rc) return rc;
+    }
+    return gemma3_rows(m,n,ids,kvs,pos,logits,n,hook,NULL,users);
+}
 static const char *const names[]={"gemma3",NULL};
 const nt_arch nt_arch_gemma3={.names=names,.load=gemma3_load,.free=gemma3_free,
-    .forward=gemma3_forward,.forward_residual=gemma3_forward_residual};
+    .forward=gemma3_forward,.forward_residual=gemma3_forward_residual,
+    .forward_multi=gemma3_forward_multi};

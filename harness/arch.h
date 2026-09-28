@@ -75,6 +75,19 @@ typedef struct {
     int   (*forward_residual)(void *model, kv_cache *kv, const int *tokens, int n,
                               int pos0, float *logits,
                               nt_residual_fn callback, void *user);
+    /* NULL when this family has no multi-sequence decode. One decode step for n
+     * independent sequences: row j is tokens[j] at position pos[j] of the sequence whose
+     * cache is kvs[j], and the n caches must be distinct. `logits`, when not NULL, is
+     * [n, vocab] with one row per sequence. Each row's arithmetic is exactly that of
+     * forward_residual(model, kvs[j], &tokens[j], 1, pos[j], ..., users[j]) — the same
+     * logits and the same cache contents, bit for bit — while each weight matrix is read
+     * once for all rows. The callback, if any, runs per row and layer with n = 1, that
+     * row's position and users[j]; `users` is required when a callback is given. Errors
+     * follow forward_residual: on a nonzero return no logits are written and every
+     * sequence in the call has to be restarted. */
+    int   (*forward_multi)(void *model, kv_cache *const *kvs, const int *tokens,
+                           const int *pos, int n, float *logits,
+                           nt_residual_fn callback, void *const *users);
 } nt_arch;
 
 /* The checks every family needs and none should be writing for itself: token
