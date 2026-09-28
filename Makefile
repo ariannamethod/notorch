@@ -286,7 +286,7 @@ llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorc
 # table in harness/main.c; adding a family adds a file, not a branch.
 
 HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c examples/bpe.c gguf.c notorch.c
-HARNESS_HDR = harness/arch.h harness/archs.h harness/runtime.h harness/logo.h examples/bpe.h gguf.h notorch.h
+HARNESS_HDR = harness/arch.h harness/arch_models.h harness/archs.h harness/runtime.h harness/logo.h examples/bpe.h gguf.h notorch.h
 
 # `harness` is phony because a directory of that name sits right there, and
 # make would otherwise call it up to date and build nothing.
@@ -312,7 +312,7 @@ test_consumer_link:
 test_residual: tests/test_residual.c libnotorch_harness.a libnotorch.a
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
 
-test_multi_decode: tests/test_multi_decode.c libnotorch_harness.a libnotorch.a
+test_multi_decode: tests/test_multi_decode.c tests/decode_fixtures.h libnotorch_harness.a libnotorch.a
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
 
 bench_multi_decode: tests/bench_multi_decode.c libnotorch_harness.a libnotorch.a
@@ -338,6 +338,33 @@ check_gemma3: test_gemma3
 	./test_gemma3
 
 .PHONY: check_residual check_gemma3
+
+# ── The CUDA decoder ──
+# The llama and gemma3 decoders on an NVIDIA GPU (harness/cuda_decode.cu), in an archive of
+# their own so the CPU archives keep no CUDA dependency. A body links it before the harness:
+#   -lnotorch_cuda -lnotorch_harness -lnotorch -L$(CUDA_HOME)/lib64 -lcudart -lstdc++
+CUDA_HOME ?= /usr/local/cuda
+NVCC ?= $(CUDA_HOME)/bin/nvcc
+NVCC_ARCH ?= -arch=native
+CUDA_LIBS = -L$(CUDA_HOME)/lib64 -lcudart -lstdc++
+
+harness/cuda_decode.o: harness/cuda_decode.cu harness/cuda_decode.h $(HARNESS_HDR)
+	$(NVCC) -O2 $(NVCC_ARCH) -I. -c $< -o $@
+
+libnotorch_cuda.a: harness/cuda_decode.o Makefile
+	rm -f libnotorch_cuda.a
+	$(AR) rcs libnotorch_cuda.a harness/cuda_decode.o
+
+test_cuda_decode: tests/test_cuda_decode.c tests/decode_fixtures.h libnotorch_cuda.a libnotorch_harness.a libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I$(CUDA_HOME)/include -o $@ $< -L. -lnotorch_cuda -lnotorch_harness -lnotorch $(CUDA_LIBS) -lm $(BLAS_LIBS)
+
+bench_cuda_decode: tests/bench_multi_decode.c libnotorch_cuda.a libnotorch_harness.a libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -DNT_CUDA -I$(CUDA_HOME)/include -o $@ $< -L. -lnotorch_cuda -lnotorch_harness -lnotorch $(CUDA_LIBS) -lm $(BLAS_LIBS)
+
+check_cuda_decode: test_cuda_decode
+	./test_cuda_decode
+
+.PHONY: check_cuda_decode
 
 # A family that keeps state outside the KV cache must clear it when a sequence
 # starts. Exact equality between two identical runs, because greedy sampling
@@ -650,7 +677,8 @@ clean:
 		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \
 		train_dpo train_grpo train_distillation test_vision test_gguf test_gguf_write \
 		tests/test_simd_correctness tests/test_simd_loss tests/test_rrpram_lr \
-		bench/bench_simd bench/bench_blas
+		bench/bench_simd bench/bench_blas \
+		test_cuda_decode bench_cuda_decode libnotorch_cuda.a harness/cuda_decode.o
 
 help:
 	@echo "notorch — neural networks in pure C"

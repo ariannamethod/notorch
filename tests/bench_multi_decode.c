@@ -4,8 +4,12 @@
  * Each sequence starts from its own short prompt (fixed token ids, prefilled alone), then
  * both runs feed the same greedy tokens: the single run's choices. Prints the wall time of
  * the STEPS decode steps each way and whether every row's logits matched bit for bit. The
- * numerical mode is the environment's (NT_NO_I8 or not), as for any consumer. */
+ * numerical mode is the environment's (NT_NO_I8 or not), as for any consumer. Built as
+ * bench_cuda_decode (-DNT_CUDA) it runs the family's CUDA decoder, with device caches. */
 #include "harness/archs.h"
+#ifdef NT_CUDA
+#include "harness/cuda_decode.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +30,9 @@ int main(int argc, char **argv) {
     if (B < 1 || B > 64 || S < 1) return 1;
     gguf_file *gf = gguf_open(argv[1]); if (!gf) return 2;
     const nt_arch *arch = nt_pick_arch(gf->arch);
+#ifdef NT_CUDA
+    if (arch) arch = nt_cuda_arch_for(arch);
+#endif
     if (!arch || !arch->forward_multi) { fprintf(stderr, "no multi-sequence decode for %s\n", gf->arch); return 3; }
     nt_dims d; void *model = arch->load(gf, &d); if (!model) return 4;
     int V = d.vocab, P = 8, cap = P + S + 1;
@@ -38,7 +45,8 @@ int main(int argc, char **argv) {
     int prompt[8];
     for (int b = 0; b < B; b++) {
         for (int i = 0; i < P; i++) prompt[i] = 100 + ((b * 131 + i * 17) % 5000);
-        kv[b] = kv_new(d.n_layers, cap, d.kv_dim); kvm[b] = kv_new(d.n_layers, cap, d.kv_dim);
+        kv[b] = arch->kv_new ? arch->kv_new(model, cap) : kv_new(d.n_layers, cap, d.kv_dim);
+        kvm[b] = arch->kv_new ? arch->kv_new(model, cap) : kv_new(d.n_layers, cap, d.kv_dim);
         if (!kv[b] || !kvm[b]) return 6;
         if (arch->forward(model, kv[b], prompt, P, 0, single + (size_t)b * (S + 1) * V)) return 7;
         if (arch->forward(model, kvm[b], prompt, P, 0, multi + (size_t)b * V)) return 7;
@@ -60,10 +68,13 @@ int main(int argc, char **argv) {
     }
     double t2 = now();
     printf("{\"model\":\"%s\",\"B\":%d,\"steps\":%d,\"single_s\":%.3f,\"multi_s\":%.3f,"
-           "\"single_tok_s\":%.2f,\"multi_tok_s\":%.2f,\"identical\":%s,\"nt_no_i8\":%d}\n",
+           "\"single_tok_s\":%.2f,\"multi_tok_s\":%.2f,\"identical\":%s,\"nt_no_i8\":%d,\"device\":\"%s\"}\n",
            argv[1], B, S, t1 - t0, t2 - t1, B * S / (t1 - t0), B * S / (t2 - t1),
-           same ? "true" : "false", getenv("NT_NO_I8") != NULL);
-    for (int b = 0; b < B; b++) { kv_free(kv[b]); kv_free(kvm[b]); }
+           same ? "true" : "false", getenv("NT_NO_I8") != NULL, arch->kv_new ? "cuda" : "cpu");
+    for (int b = 0; b < B; b++) {
+        if (arch->kv_free) { arch->kv_free(model, kv[b]); arch->kv_free(model, kvm[b]); }
+        else { kv_free(kv[b]); kv_free(kvm[b]); }
+    }
     arch->free(model); gguf_close(gf);
     return same ? 0 : 10;
 }
