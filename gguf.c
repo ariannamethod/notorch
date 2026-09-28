@@ -69,16 +69,19 @@ static int skip_array(FILE* f) {
     return 1;
 }
 
+/* Every value type the format defines. The 8- and 16-bit integers and int64 were missing,
+ * and a missing type is not skipped: the read position stays where it was and every key,
+ * tensor and offset after it is parsed from the wrong bytes. llama-gguf-split writes
+ * split.no and split.count as uint16, so each merged file stopped loading at its last
+ * metadata key while llama.cpp read it fine. */
 static int skip_value(FILE* f, uint32_t type) {
     switch (type) {
-        case 4: fseek(f, 4, SEEK_CUR); return 1;  // uint32
-        case 5: fseek(f, 4, SEEK_CUR); return 1;  // int32
-        case 6: fseek(f, 4, SEEK_CUR); return 1;  // float32
-        case 7: fseek(f, 1, SEEK_CUR); return 1;  // bool
+        case 0: case 1: case 7: return fseek(f, 1, SEEK_CUR) == 0;   // uint8, int8, bool
+        case 2: case 3: return fseek(f, 2, SEEK_CUR) == 0;           // uint16, int16
+        case 4: case 5: case 6: return fseek(f, 4, SEEK_CUR) == 0;   // uint32, int32, float32
         case 8: { char buf[4096]; return read_string(f, buf, sizeof(buf)); } // string
-        case 9: return skip_array(f);               // array
-        case 10: fseek(f, 8, SEEK_CUR); return 1;  // uint64
-        case 12: fseek(f, 8, SEEK_CUR); return 1;  // uint64
+        case 9: return skip_array(f);                                // array
+        case 10: case 11: case 12: return fseek(f, 8, SEEK_CUR) == 0; // uint64, int64, float64
         default: return 0;
     }
 }
@@ -117,30 +120,39 @@ gguf_file* gguf_open(const char* path) {
     gf->n_kv_parsed = 0;
     for (uint64_t i = 0; i < gf->n_kv; i++) {
         char key[512] = {0};
-        uint32_t vtype;
-        read_string(f, key, sizeof(key));
-        read_u32(f, &vtype);
+        uint32_t vtype = 0;
+        int ok = read_string(f, key, sizeof(key)) && read_u32(f, &vtype);
 
         // Store simple types, skip arrays
-        if (gf->n_kv_parsed < GGUF_MAX_KV) {
+        if (ok && gf->n_kv_parsed < GGUF_MAX_KV) {
             gguf_kv* kv = &gf->kv[gf->n_kv_parsed];
             strncpy(kv->key, key, GGUF_MAX_NAME - 1);
             kv->type = vtype;
+            /* The small integers are kept widened in the member of their signedness;
+             * the stored type is the file's, so a reader that checks it is not misled. */
             switch (vtype) {
-                case 4: read_u32(f, &kv->val.u32); break;
-                case 5: { int32_t v; fread(&v, 4, 1, f); kv->val.i32 = v; break; }
-                case 6: read_f32(f, &kv->val.f32); break;
-                case 7: { uint8_t v; fread(&v, 1, 1, f); kv->val.b = v; break; }
-                case 8: read_string(f, kv->val.str, sizeof(kv->val.str)); break;
-                case 10: case 12: read_u64(f, &kv->val.u64); break;
+                case 0: { uint8_t v; ok = fread(&v, 1, 1, f) == 1; kv->val.u32 = v; break; }
+                case 1: { int8_t v; ok = fread(&v, 1, 1, f) == 1; kv->val.i32 = v; break; }
+                case 2: { uint16_t v; ok = fread(&v, 2, 1, f) == 1; kv->val.u32 = v; break; }
+                case 3: { int16_t v; ok = fread(&v, 2, 1, f) == 1; kv->val.i32 = v; break; }
+                case 4: ok = read_u32(f, &kv->val.u32); break;
+                case 5: { int32_t v; ok = fread(&v, 4, 1, f) == 1; kv->val.i32 = v; break; }
+                case 6: ok = read_f32(f, &kv->val.f32); break;
+                case 7: { uint8_t v; ok = fread(&v, 1, 1, f) == 1; kv->val.b = v; break; }
+                case 8: ok = read_string(f, kv->val.str, sizeof(kv->val.str)); break;
+                case 10: case 11: case 12: ok = read_u64(f, &kv->val.u64); break;
                 /* Retain array presence/type even though its values are read separately.
                  * An architecture must distinguish an unsupported array from an absent key. */
-                case 9: skip_value(f, vtype); break;
-                default: skip_value(f, vtype); break;
+                default: ok = skip_value(f, vtype); break;
             }
             gf->n_kv_parsed++;
-        } else {
-            skip_value(f, vtype);
+        } else if (ok) {
+            ok = skip_value(f, vtype);
+        }
+        if (!ok) {
+            fprintf(stderr, "gguf: unreadable metadata value %llu ('%s', type %u) in %s\n",
+                    (unsigned long long)i, key, vtype, path);
+            fclose(f); free(gf); return NULL;
         }
     }
 

@@ -13,6 +13,30 @@ Newest entries on top.
 
 ---
 
+## 2026-09-28 — Every GGUF value type read in place, and an unknown one refused
+
+`gguf_open` read and skipped only the metadata types 4 to 10 and 12. For uint8, int8,
+uint16, int16 and int64 (types 0 to 3 and 11) `skip_value` returned without moving the
+read position and nobody checked the return, so every later key, tensor info and offset
+was parsed from the wrong bytes. `llama-gguf-split --merge` writes `split.no` and
+`split.count` as uint16: Qwen2.5-7B-Instruct Q8_0, published in three parts and merged
+with llama.cpp `505b1ed15`, loaded in llama.cpp and failed here with `V=32000` and all
+196 layer matrices "missing". The helpers that rescan metadata for arrays share
+`skip_value` and had the same blind spot.
+
+`skip_value` now knows every type the format defines. `gguf_open` stores the small
+integers widened in the union member of their signedness, keeps the file's type code in
+`kv->type`, checks every read, and refuses a file with an undefined type or a short read
+instead of continuing from a guess.
+
+Gate: `tests/test_gguf_keys.c` writes a GGUF by hand, since the writer has no
+small-integer keys, with one key of each of those types, a float64 and an array of
+uint16 before an ordinary uint32 and an F32 tensor, and checks every value, the block
+count after them, the tensor and its data; a second file with type 13 must be refused.
+16 checks pass; against the previous `gguf.c` the first file fails to open ("truncated
+before tensor data"). The merged Qwen2.5-7B now loads with `V=152064` and decodes on
+polygon. `make test` passes in full there.
+
 ## 2026-09-28 — Several sequences in one decode step, each bit for bit its own
 
 `nt_arch` gains `forward_multi`: one decode step for n independent sequences, row j
