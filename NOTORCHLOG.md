@@ -13,6 +13,44 @@ Newest entries on top.
 
 ---
 
+## 2026-09-28 — Q8_0 against float activations in 32 partial sums (AVX2+FMA)
+
+`nt_q8_0_rows` is the kernel every Q8_0 weight goes through when a consumer
+sets `NT_NO_I8` (quantized weights, float activations, no int8 quantization
+of the activation). It was one scalar chain, `acc += d * w * x`, so each term
+waited for the previous add. On AVX2+FMA the row is now carried in 32 partial
+sums, one per position in the block (four 8-lane vectors): each term is the
+same `d * w` product the scalar loop forms, added to its partial by a fused
+multiply-add, and the partials are folded once per row, `(p0..7 + p8..15) +
+(p16..23 + p24..31)` and then `nt_hsum256_ps`. The scalar loop stays under
+`#else` for ARM and x86 without FMA; `nt_hsum256_ps` moved above the kernel
+unchanged.
+
+A different summation order moves the last bits. The new gate
+`tests/test_q8_0_rows.c` holds it against a double accumulation normalised by
+the magnitude sum, with ragged activations and outlier channels: worst
+relative error at k = 6912 is 3.42e-7 for the new order against 1.54e-6 for
+the scalar one (1.71e-7 against 1.45e-6 at k = 1152). It also checks the exact
+bits of the documented order on AVX2+FMA, the exact scalar bits on x86 without
+FMA (`X86_FLAGS=`), and bit-identical output with the thread fan-out forced on
+and off. Folding the partials in another order fails the order check on every
+shape; dropping the last block fails the distance check (0.78 at k = 32).
+
+Measured on polygon (i5-8500T, 6 cores, gcc 13.3), SUBLITERATUS at `main`
+built natively against this tree, Gemma 3 1B IT Q8_0 with `NT_NO_I8=1`, four
+QMV and four attention workers, 128 greedy tokens of one prompt, while another
+4-thread job ran: 104.1 s and 103.2 s with the scalar kernel, 29.7 s and
+20.1 s with this one; the generated text is byte-identical on that prompt.
+Other prompts and models can change at the last bit and therefore at a near
+tie, so a consumer that treats `NT_NO_I8` as a recorded numerical mode pins
+this commit as a new mode.
+
+`make test` on the intel host (clang, macOS) passes every gate except
+`test_quantize`'s Q8_0 round trip (2.081e-4 over its 2.067e-4 bound), which
+fails identically on untouched `origin/main` there and passes on polygon; that
+gate does not call this kernel. The stale comment in `nt_qmatvec` that still
+described a 4M-element thread floor now points at the 64K default.
+
 ## 2026-09-27 — Isolate SmolLM Unicode numbers before byte-level BPE
 
 The official `HuggingFaceTB/SmolLM2-360M-Instruct-GGUF` Q8_0 exposed a
