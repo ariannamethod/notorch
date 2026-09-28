@@ -13,6 +13,91 @@ Newest entries on top.
 
 ---
 
+## 2026-09-28 — The llama and gemma3 decoders on an NVIDIA GPU
+
+`harness/cuda_decode.cu` implements the `llama` family (llama, mistral3, qwen2, qwen3) and
+`gemma3` a second time, for NVIDIA GPUs, as `nt_arch_llama_cuda` and `nt_arch_gemma3_cuda`;
+`nt_cuda_arch_for(cpu_family)` returns the twin. It builds into its own archive,
+`libnotorch_cuda.a`, so the CPU archives keep no CUDA dependency. A model loads through the
+CPU family's own loader and what that loader parsed is uploaded, Q8_0 matrices still
+packed; the llama and gemma3 structs moved unchanged into `harness/arch_models.h` so the
+upload reads the loaders' output instead of a copy of their logic. `forward`,
+`forward_residual` and `forward_multi` run over rows that each name their cache and
+position, as the CPU forwards do, and keep their contracts: the residual callback runs on
+the host between layers on a copy of the rows, which is copied back, and refusals leave the
+logits unwritten. `nt_arch` gains two optional members, `kv_new` and `kv_free`, for a family
+whose cache does not live in host memory; the CUDA caches live on the device, and a host
+cache handed to a CUDA forward is refused with `NT_E_CACHE` instead of being read as a
+device address.
+
+Arithmetic. The Q8_0 matmul keeps the order of the CPU `NT_NO_I8` kernel
+(`nt_q8_0_row_dot`): lane = position in a block, `d·w` then a fused add in block order,
+the 32 partial sums folded in the AVX2 tree, and the sequential retry when the fold
+overflows. Attention's q·k keeps `dot_f32`'s fold, RMSNorm and softmax sum sequentially,
+and the RoPE cosines and sines are tabulated on the host with the CPU forward's own
+expressions and libm. Every reduction has a fixed order and no atomics, so a run repeats
+itself bit for bit and a row's result does not depend on the other rows in its call.
+`expf`, `tanhf` and where the compiler fuses a product still differ from the CPU in the
+last bit.
+
+Kernel. One warp per output row, eight rows to a block of 256 threads. The block stages X
+in shared memory, 16 KB per pass, so eight warps do not each read it from L2; a row whose
+length is a multiple of eight Q8_0 blocks is read as seventeen 16-byte words per eight
+blocks into a buffer of the warp while the previous eight are multiplied, other rows one
+byte per lane with eight blocks loaded ahead. RMSNorm stages its row in shared memory
+before the sequential sum. The first version (one byte per lane, X read from L2 by every
+warp, the RMSNorm sum reading global memory) ran Qwen2.5-7B at 15.45 tok/s for one
+sequence and 51.34 for eight; kernel timings on the 7B shapes put about 60 of its 65 ms per token
+in the matmuls, the 18944 × 3584 FFN matrices at 174 GB/s and the 3584 × 18944 down
+projection at 86 GB/s.
+
+Measured on an NVIDIA A40 (driver 580.159.03, CUDA 12.4) under `NT_NO_I8=1`,
+`make bench_cuda_decode` (the source of `bench_multi_decode`, built with `-DNT_CUDA`),
+8-token prefill, 32 greedy steps; "8 together" is one `forward_multi` step for eight
+sequences, whose rows were each identical to the single decode:
+
+| body | one sequence, tok/s | 8 together, tok/s |
+| --- | ---: | ---: |
+| Qwen2.5-7B-Instruct Q8_0 | 25.19 | 124.43 |
+| Gemma 3 4B IT Q8_0 | 38.09 | 215.28 |
+| Qwen3-8B Q8_0 | 22.75 | 111.41 |
+
+The same pod's CPU (Intel Xeon Gold 6342 under a quota of 7.65 CPUs, four QMV and four
+attention workers, `bench_multi_decode`, 8 steps) runs Qwen2.5-7B at 3.10 tok/s for one
+sequence and 4.05 for eight together; the GPU is 8.1 and 30.7 times that.
+
+Gates. `make check_cuda_decode` (`tests/test_cuda_decode.c`), 243 checks:
+
+- the device Q8_0 matmul equals `qmm` under `NT_NO_I8` bit for bit, 45 × 3584 (the vector
+  path) and 45 × 3680 (the byte path), for 1, 3, 8 and 11 activation rows; a row whose
+  partial sums overflow while the sequential sum is 0 comes out 0 on both;
+- the three fixtures of `test_multi_decode` (moved into `tests/decode_fixtures.h`, which
+  both tests include; `test_multi_decode` still passes its 753 checks), each prefilled and
+  decoded greedily for three sequences, plain and with a per-row steering callback: every
+  argmax agrees with the CPU, every logit is within 1e-4 of it (the largest difference is
+  4.29e-6), a second GPU run repeats every logit bit for bit, and a multi-sequence step
+  leaves every row the logits and the device cache of its single decode;
+- the refusals: a cache shared by two rows, a token outside the vocabulary, a position
+  beyond the cache, a callback without per-row users, a host cache in a multi-sequence step
+  and in a prefill, a device cache of zero positions or beyond the RoPE table.
+
+Each of eight mutations of `cuda_decode.cu` turns it red: the fold's 8 and 16 swapped, the
+overflow retry removed, the sliding window ignored, every row reading row 0's position, the
+callback's rows not copied back, the q/k norm skipped, the vector path reading its buffer
+at a stride of 32 bytes instead of 34, the byte path reading row 0 of the staged X for every
+row. `compute-sanitizer` reports 0 errors under memcheck (0 bytes leaked), racecheck,
+initcheck and synccheck. `make test` passes on the Mac except `test_quantize`, which fails
+the same way at `545e419`; on the pod it passes except `test_affinity`, which fails the same
+way at `545e419` because the container sees 96 CPUs under a quota of 7.65.
+
+Against llama.cpp `505b1ed15` running exact F32 dequantizations of the same weights,
+through SUBLITERATUS's body audit (`audit_bodies.sh` with `AUDIT_DEVICE=cuda`: five chat
+questions, forced logits over 64 greedy steps and a free greedy run) on the three Q8_0
+bodies above: every forced argmax agrees, all 15 free runs equal the reference, and the
+largest logit difference is 1.9e-4 on Qwen2.5-7B, 1.4e-4 on Qwen3-8B and 0.045 on
+Gemma 3 4B. That audit ran on the first kernel; rerun on this one, the `dev` and `k04`
+lines of all three bodies come out identical, free-run token ids included.
+
 ## 2026-09-28 — Every GGUF value type read in place, and an unknown one refused
 
 `gguf_open` read and skipped only the metadata types 4 to 10 and 12. For uint8, int8,

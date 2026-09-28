@@ -3,25 +3,13 @@
  * post-attention and post-FFN RMSNorm before each residual addition.
  * GGUF conversion has already folded +1 into every norm weight.
  * Unlike a llama block, ffn_down.bias is NOT an additive residual direction. */
-#include "harness/arch.h"
+#include "harness/arch_models.h"
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct {
-    float *attn_norm, *q_norm, *k_norm, *post_attn_norm, *ffn_norm, *post_ffw_norm;
-    wt q, k, v, o, gate, up, down;
-} gemma3_layer;
-typedef struct {
-    int E, H, KV, HD, QD, KD, FF, V, L, window, pattern, emb_ti;
-    float eps, base, local_base, rope_scale, query_scale, softcap;
-    gguf_file *gf;
-    wt emb, output;
-    float *norm;
-    gemma3_layer layers[];
-} gemma3_model;
 
 static int meta_u(const gguf_file *gf, const char *name, int fallback) {
     const gguf_kv *v = gguf_get_kv(gf, name);

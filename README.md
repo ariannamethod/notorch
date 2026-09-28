@@ -677,6 +677,30 @@ two archives on purpose. `libnotorch` is the substrate anything can use — tens
 
 `make test_consumer_link` proves it the only way that counts: install into a throwaway prefix, build a program from outside the tree with nothing but those two `-l` flags, run a model through it — and then build it *again* without `-lnotorch_harness` and require that one to fail. `make test_repeat` covers the other half of a runtime contract: a family that keeps state outside the KV cache — Mamba's scan, Janus's running low-rank sum — has to clear it when a sequence starts, and the check is exact equality between two identical runs, because Janus drifted 0.49 on the logits while keeping its argmax and nothing noticed.
 
+### the harness on an NVIDIA GPU — `libnotorch_cuda`
+
+`harness/cuda_decode.cu` is the `llama` family (llama, mistral3, qwen2, qwen3) and `gemma3` a second time, on an NVIDIA GPU, behind the same `nt_arch`. the twin loads through the CPU family's own loader and uploads what it parsed, Q8_0 still packed, so the metadata checks and tensor lookups exist once. `forward`, `forward_residual` and `forward_multi` keep their contracts — the residual callback still sees host rows between layers, refusals still leave the logits unwritten — and the KV cache lives on the device: a caller takes it from the family's `kv_new` and returns it to `kv_free`, and a host cache handed to the GPU is refused with `NT_E_CACHE`, not dereferenced.
+
+```bash
+make lib lib_harness libnotorch_cuda.a     # nvcc from CUDA_HOME (/usr/local/cuda), -arch=native
+cc body.c -L. -lnotorch_cuda -lnotorch_harness -lnotorch \
+   -L/usr/local/cuda/lib64 -lcudart -lstdc++ -lopenblas -lm
+```
+
+```c
+#include "harness/archs.h"
+#include "harness/cuda_decode.h"
+const nt_arch *arch = nt_cuda_arch_for(nt_pick_arch(gf->arch));   /* NULL: no GPU twin */
+void *model = arch->load(gf, &dims);
+kv_cache *kv = arch->kv_new(model, max_seq);                      /* device memory */
+int rc = arch->forward(model, kv, ids, n, 0, logits);             /* logits come back to the host */
+arch->kv_free(model, kv);
+```
+
+the arithmetic is the CPU's wherever that costs nothing. the Q8_0 matmul keeps the `NT_NO_I8` kernel's order — lane = position in a block, `d·w` then a fused add in block order, the 32 partial sums folded in the AVX2 tree, the sequential retry when the fold overflows — and `make check_cuda_decode` holds it to `qmm` bit for bit. every reduction has a fixed order and no atomics, so a run repeats itself exactly and a row's logits do not depend on which rows share its batch. what still differs from the CPU is `expf`, `tanhf` and where the compiler fuses a product: 4.3e-6 at most on the test fixtures. against llama.cpp running exact F32 dequantizations of the same weights — Qwen2.5-7B, Gemma 3 4B and Qwen3-8B at Q8_0, five chat questions, 64 greedy steps — every forced argmax agrees, every free run is the reference's, and the largest logit difference is 1.9e-4 on the Qwens and 0.045 on Gemma.
+
+on an NVIDIA A40, `NT_NO_I8`, 32 greedy steps (`make bench_cuda_decode`): Qwen2.5-7B Q8_0 at **25.2 tok/s** for one sequence and **124.4** for eight decoded together, Gemma 3 4B at 38.1 and 215.3, Qwen3-8B at 22.8 and 111.4. the host's own CPU, a Xeon Gold 6342 in the same mode with four workers per pool, does 3.1 and 4.1 on the 7B.
+
 ---
 
 ## alignment training — DPO / GRPO / distillation
@@ -745,7 +769,7 @@ make clean
 - `-lm` (math library, because we use sqrt and exp like civilized people)
 - **optional**: OpenBLAS (Linux) or Accelerate framework (macOS) for BLAS-accelerated matmuls
 - **optional**: x86_64 CPU with AVX2 + FMA (Intel Haswell 2013+, AMD Excavator 2015+) for `make simd` — zero external math library
-- **optional**: CUDA toolkit for GPU support (cuBLAS-backed sgemm + element-wise + attention + cross-entropy kernels)
+- **optional**: CUDA toolkit for GPU support (cuBLAS-backed sgemm + element-wise + attention + cross-entropy kernels), and the harness decoders on the GPU (`libnotorch_cuda.a`, `make check_cuda_decode`)
 - **optional**: Apple Silicon + Metal (macOS) for packed-Q4_K/Q6_K GGUF inference (`make metal` / `make infer_gguf_metal`) — nothing to install, Metal ships with macOS
 
 that's it. no cmake. no configure script. no 300-line `requirements.txt`. no docker. no kubernetes. just `make`. the way Ken Thompson intended.

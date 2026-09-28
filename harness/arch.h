@@ -88,6 +88,13 @@ typedef struct {
     int   (*forward_multi)(void *model, kv_cache *const *kvs, const int *tokens,
                            const int *pos, int n, float *logits,
                            nt_residual_fn callback, void *const *users);
+    /* NULL when the family's cache is the host cache kv_new makes. A family that keeps
+     * its cache elsewhere — the CUDA decoder keeps it in device memory — allocates it
+     * here: the struct carries n_layers, max_seq and kv_dim as kv_new's does, its k and
+     * v belong to the family and are never read by the caller, and it is released with
+     * the same family's kv_free. */
+    kv_cache *(*kv_new)(void *model, int max_seq);
+    void      (*kv_free)(void *model, kv_cache *kv);
 } nt_arch;
 
 /* The checks every family needs and none should be writing for itself: token

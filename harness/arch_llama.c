@@ -20,35 +20,12 @@
  * stays put as the reference this is measured against.
  *
  * Prints go to stderr: stdout belongs to the model. */
-#include "harness/arch.h"
+#include "harness/arch_models.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
-typedef struct {
-    int n_layers, n_heads, n_kv_heads, embed, ffn, vocab, head_dim, kv_dim, q_dim;
-    float rope_base, rms_eps;
-    int rope_neox;         /* 1 = pair i with i+hd/2 (qwen2 and most non-llama) */
-    int has_output_weight; /* 0 = tied embeddings */
-
-    gguf_file *gf;      /* the packed weights point into it; must outlive this */
-    int emb_ti;         /* token_embd tensor index, for the per-token row read */
-
-    wt tok_emb;         /* [vocab, embed] — also the lm_head when tied */
-    float *out_norm;    /* [embed] */
-    wt out_weight;      /* [vocab, embed], absent when tied */
-
-    struct {
-        float *attn_norm;
-        wt wq, wk, wv, wo;
-        float *q_bias, *k_bias, *v_bias;   /* Qwen2 has bias; Qwen3 does not */
-        float *q_norm, *k_norm;            /* [head_dim] — Qwen3's QK norm, absent elsewhere */
-        float *ffn_norm;
-        float *ffn_down_bias;             /* [embed], optional residual shift */
-        wt wgate, wup, wdown;
-    } layers[];
-} llama_model;
 
 static void llama_free(void *model);
 
