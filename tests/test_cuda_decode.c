@@ -315,6 +315,7 @@ int main(void) {
     setenv("NT_NO_I8", "1", 1);
     matmul_exact();
     wide_body(12288);
+    wide_body(device_norm_width() / 32 * 32);         /* the widest this device can stage */
     wide_body((device_norm_width() / 32 + 1) * 32);   /* the first width past this device */
     printf("RMSNorm staging on this device: up to %d floats per row\n", device_norm_width());
     const char *families[] = {"qwen2", "qwen3", "gemma3"};
