@@ -209,6 +209,81 @@ static void matmul_exact(void) {
     free(w); free(x); free(cpu); free(gpu); free(packed);
 }
 
+/* A gemma3 body 12288 wide (one head of 32, FF 32, one layer): the width the first decoder
+ * accepted at load and then could not normalize, because 48 KB of staged row plus one static
+ * float is past the default per-block shared memory. An accepted body has to run: on this
+ * device it loads, prefills and decodes, with the CPU's argmax at every step. */
+static void wide_body(void) {
+    enum { WE = 12288, WH = 32, WF = 32, STEPS_W = 3 };
+    const char *fields[] = {"attn_norm", "attn_q", "attn_k", "attn_v", "attn_output", "attn_q_norm",
+        "attn_k_norm", "post_attention_norm", "ffn_norm", "ffn_gate", "ffn_up", "ffn_down", "post_ffw_norm"};
+    int rows[] = {0, WH, WH, WH, WE, 0, 0, 0, 0, WF, WF, WE, 0};
+    int cols[] = {WE, WE, WE, WE, WH, WH, WH, WE, WE, WE, WE, WF, WE};
+    char path[] = "/tmp/nt_cuda_wide_XXXXXX", name[96];
+    int fd = mkstemp(path);
+    float *norm = malloc(WE * sizeof(float));
+    if (fd < 0 || !norm) { CHECK(0, "wide body: temporary file"); free(norm); return; }
+    close(fd);
+    for (int i = 0; i < WE; i++) norm[i] = 0.9f + 0.02f * (float)(i % 7);
+    gguf_writer *w = gguf_write_open(path);
+    int ok = w != NULL;
+    if (ok) {
+        gguf_write_kv_str(w, "general.architecture", "gemma3");
+        gguf_write_kv_u32(w, "gemma3.block_count", 1);
+        gguf_write_kv_u32(w, "gemma3.embedding_length", WE);
+        gguf_write_kv_u32(w, "gemma3.feed_forward_length", WF);
+        gguf_write_kv_u32(w, "gemma3.attention.head_count", 1);
+        gguf_write_kv_u32(w, "gemma3.attention.head_count_kv", 1);
+        gguf_write_kv_u32(w, "gemma3.attention.key_length", WH);
+        gguf_write_kv_u32(w, "gemma3.attention.value_length", WH);
+        gguf_write_kv_u32(w, "gemma3.context_length", CAP);
+        gguf_write_kv_f32(w, "gemma3.attention.layer_norm_rms_epsilon", 1e-6f);
+        gguf_write_kv_f32(w, "gemma3.rope.freq_base", 10000);
+        gguf_write_tensor_decl(w, "token_embd.weight", 2, (uint64_t[]){WE, V}, GGUF_TYPE_Q8_0);
+        gguf_write_tensor_decl(w, "output_norm.weight", 1, (uint64_t[]){WE}, GGUF_TYPE_F32);
+        for (int f = 0; f < 13; f++) {
+            snprintf(name, sizeof(name), "blk.0.%s.weight", fields[f]);
+            if (rows[f]) gguf_write_tensor_decl(w, name, 2, (uint64_t[]){(uint64_t)cols[f], (uint64_t)rows[f]}, GGUF_TYPE_Q8_0);
+            else gguf_write_tensor_decl(w, name, 1, (uint64_t[]){(uint64_t)cols[f]}, GGUF_TYPE_F32);
+        }
+        ok = put_q8(w, "token_embd.weight", V, WE, 3) == 0 &&
+             gguf_write_tensor_f32(w, "output_norm.weight", norm, WE) == 0;
+        for (int f = 0; ok && f < 13; f++) {
+            snprintf(name, sizeof(name), "blk.0.%s.weight", fields[f]);
+            ok = rows[f] ? put_q8(w, name, rows[f], cols[f], 7 + f) == 0
+                         : gguf_write_tensor_f32(w, name, norm, (uint64_t)cols[f]) == 0;
+        }
+        ok = gguf_write_close(w) == 0 && ok;
+    }
+    CHECK(ok, "wide body: write a 12288-wide gemma3 GGUF");
+    const nt_arch *gpu = &nt_arch_gemma3_cuda;
+    gguf_file *gf = ok ? gguf_open(path) : NULL, *gf2 = ok ? gguf_open(path) : NULL;
+    nt_dims dims, gdims;
+    void *cm = gf ? nt_arch_gemma3.load(gf, &dims) : NULL;
+    void *gm = gf2 ? gpu->load(gf2, &gdims) : NULL;
+    CHECK(cm && gm, "wide body: the GPU loads a 12288-wide body");
+    if (cm && gm) {
+        kv_cache *hk = kv_new(dims.n_layers, CAP, dims.kv_dim), *dk = gpu->kv_new(gm, CAP);
+        float host[V], dev[V];
+        int tokens[3] = {1, 7, 3}, same = 1, rc = NT_OK;
+        rc |= nt_arch_gemma3.forward(cm, hk, tokens, 3, 0, host);
+        rc |= gpu->forward(gm, dk, tokens, 3, 0, dev);
+        for (int t = 0; t < STEPS_W && rc == NT_OK; t++) {
+            same &= argmax(host) == argmax(dev);
+            int next = argmax(host);
+            rc |= nt_arch_gemma3.forward(cm, hk, &next, 1, 3 + t, host);
+            rc |= gpu->forward(gm, dk, &next, 1, 3 + t, dev);
+        }
+        CHECK(rc == NT_OK, "wide body: the GPU prefills and decodes it");
+        CHECK(rc == NT_OK && same && argmax(host) == argmax(dev), "wide body: every argmax agrees with the CPU");
+        kv_free(hk); gpu->kv_free(gm, dk);
+    }
+    if (cm) nt_arch_gemma3.free(cm);
+    if (gm) gpu->free(gm);
+    gguf_close(gf); gguf_close(gf2);
+    unlink(path); free(norm);
+}
+
 int main(void) {
     int devices = 0;
     if (cudaGetDeviceCount(&devices) != cudaSuccess || devices < 1) {
@@ -217,6 +292,7 @@ int main(void) {
     }
     setenv("NT_NO_I8", "1", 1);
     matmul_exact();
+    wide_body();
     const char *families[] = {"qwen2", "qwen3", "gemma3"};
     for (int family = 0; family < 3; family++) {
         const nt_arch *cpu = family == 2 ? &nt_arch_gemma3 : &nt_arch_llama;

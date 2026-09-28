@@ -208,22 +208,39 @@ __global__ void k_embed(float *x, dwt w, const int *tok, int n, int E, float sca
 }
 
 /* RMSNorm per row: the row staged in shared memory by the whole block, the sum of squares
- * then sequential in one thread, as the CPU loop runs it, and w * x * inv in parallel. */
-#define NT_CUDA_MAX_NORM 12288   /* widest row the staging holds, 48 KB */
+ * then sequential in one thread, as the CPU loop runs it, and w * x * inv in parallel. The
+ * kernel has no static shared memory: dim + 1 floats of dynamic memory hold the row and inv,
+ * so the widest row is set by the device alone (norm_width_ok). */
 __global__ void k_rmsnorm(float *out, const float *x, const float *w, int dim, float eps) {
     extern __shared__ float xs[];
     const float *xr = x + (size_t)blockIdx.x * dim;
     float *o = out + (size_t)blockIdx.x * dim;
-    __shared__ float inv;
     for (int i = threadIdx.x; i < dim; i += blockDim.x) xs[i] = xr[i];
     __syncthreads();
     if (threadIdx.x == 0) {
         float ss = 0.0f;
         for (int i = 0; i < dim; i++) ss = __fmaf_rn(xs[i], xs[i], ss);
-        inv = __fdiv_rn(1.0f, sqrtf(__fadd_rn(__fdiv_rn(ss, (float)dim), eps)));
+        xs[dim] = __fdiv_rn(1.0f, sqrtf(__fadd_rn(__fdiv_rn(ss, (float)dim), eps)));
     }
     __syncthreads();
+    float inv = xs[dim];
     for (int i = threadIdx.x; i < dim; i += blockDim.x) o[i] = __fmul_rn(__fmul_rn(w[i], xs[i]), inv);
+}
+
+/* Whether this device can stage a row of `dim`: up to 48 KB of dynamic shared memory needs
+ * nothing, beyond it the kernel opts into the device's larger per-block limit. */
+static int norm_width_ok(int dim) {
+    size_t need = ((size_t)dim + 1) * sizeof(float);
+    if (need <= 48 * 1024) return 1;
+    int dev = 0, optin = 0;
+    if (cudaGetDevice(&dev) != cudaSuccess ||
+        cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev) != cudaSuccess ||
+        need > (size_t)optin ||
+        cudaFuncSetAttribute(k_rmsnorm, cudaFuncAttributeMaxDynamicSharedMemorySize, optin) != cudaSuccess) {
+        cudaGetLastError();
+        return 0;
+    }
+    return 1;
 }
 
 __global__ void k_add_rows(float *x, const float *bias, int dim, int n) {
@@ -424,7 +441,7 @@ static void *cuda_llama_load(gguf_file *gf, nt_dims *dims) {
     m->QD = c->q_dim; m->KVD = c->kv_dim; m->FF = c->ffn; m->V = c->vocab; m->L = c->n_layers;
     m->eps = c->rms_eps; m->neox = c->rope_neox; m->query_scale = 1.0f; m->softcap = 0.0f;
     m->emb_scale = 1.0f; m->attn_scale = 1.0f / sqrtf((float)m->HD);
-    if (m->E > NT_CUDA_MAX_NORM) { fprintf(stderr, "cuda: embedding width %d exceeds the RMSNorm staging\n", m->E); cuda_free(m); return NULL; }
+    if (!norm_width_ok(m->E)) { fprintf(stderr, "cuda: embedding width %d exceeds this device's shared memory for RMSNorm\n", m->E); cuda_free(m); return NULL; }
     m->layers = (dlayer *)calloc((size_t)m->L, sizeof(dlayer));
     const float *cs, *sn;
     int ok = m->layers && up_wt(m, &m->emb, &c->tok_emb) &&
@@ -462,7 +479,7 @@ static void *cuda_gemma3_load(gguf_file *gf, nt_dims *dims) {
     m->FF = c->FF; m->V = c->V; m->L = c->L; m->window = c->window; m->neox = 1;
     m->eps = c->eps; m->query_scale = c->query_scale; m->softcap = c->softcap;
     m->emb_scale = sqrtf((float)c->E); m->attn_scale = 1.0f;
-    if (m->E > NT_CUDA_MAX_NORM) { fprintf(stderr, "cuda: embedding width %d exceeds the RMSNorm staging\n", m->E); cuda_free(m); return NULL; }
+    if (!norm_width_ok(m->E)) { fprintf(stderr, "cuda: embedding width %d exceeds this device's shared memory for RMSNorm\n", m->E); cuda_free(m); return NULL; }
     m->layers = (dlayer *)calloc((size_t)m->L, sizeof(dlayer));
     const float *gcs, *gsn, *lcs, *lsn;
     int ok = m->layers && up_wt(m, &m->emb, &c->emb) &&
@@ -533,7 +550,7 @@ static int matmul(float *out, const dwt *w, const float *X, int n) {
     return NT_OK;
 }
 static int rms(float *out, const float *x, const float *w, int dim, int n, float eps) {
-    k_rmsnorm<<<n, 256, (size_t)dim * sizeof(float)>>>(out, x, w, dim, eps);
+    k_rmsnorm<<<n, 256, ((size_t)dim + 1) * sizeof(float)>>>(out, x, w, dim, eps);
     CK(cudaGetLastError());
     return NT_OK;
 }
@@ -545,7 +562,7 @@ static int cuda_rows(cuda_model *m, int n, const int *tokens, kv_cache *const *k
                      float *logits, int head_rows, nt_residual_fn cb, void *user, void *const *users) {
     int stride = 0;
     for (int j = 0; j < n; j++) if (kvs[j]->max_seq > stride) stride = kvs[j]->max_seq;
-    int rc = grow(m, n, head_rows, stride);
+    int rc = grow(m, n, logits ? head_rows : 0, stride);   /* a cache-only call needs no logits buffer */
     if (rc) return rc;
     int E = m->E;
     int *maxseq = (int *)malloc((size_t)n * sizeof(int));
