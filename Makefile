@@ -495,6 +495,9 @@ test_gguf_write: tests/test_gguf_write.c gguf.c notorch.c gguf.h notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_gguf_write tests/test_gguf_write.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_gguf_write (GGUF writer round-tripped through the reader, $(BLAS_NAME))"
 
+test_gguf_keys: tests/test_gguf_keys.c gguf.c notorch.c gguf.h notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_gguf_keys tests/test_gguf_keys.c gguf.c notorch.c -lm $(BLAS_LIBS)
+
 gguf_quantize: tools/gguf_quantize.c gguf.c notorch.c gguf.h notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o gguf_quantize tools/gguf_quantize.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: gguf_quantize (f32/f16 GGUF -> packed GGUF, $(BLAS_NAME))"
@@ -569,7 +572,7 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
+test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
 	./notorch_test
 	./test_vision
 	./test_conv1d
@@ -584,6 +587,7 @@ test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_w
 	./test_gguf_write
 	./test_gguf_write rss19
 	./test_gguf_write rss91
+	./test_gguf_keys
 	./test_qmatvec_leak
 	./test_affinity
 	NT_QMV_BIG_ONLY=0 ./test_affinity off
