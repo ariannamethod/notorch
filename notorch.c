@@ -5094,7 +5094,8 @@ static inline float nt_hsum256_ps(__m256 v) {
  * summation order from the scalar loop, so the last bits move — gated by
  * tests/test_q8_0_rows.c against a double accumulation, with the exact bits of this order.
  * A row is one thread's work from start to finish, so the result does not depend on how
- * many threads NT_QMV_THREADS allows. The scalar body stays under #else. */
+ * many threads NT_QMV_THREADS allows. A non-finite SIMD sum retries in scalar order;
+ * that same scalar body serves targets without AVX2+FMA. */
 static void nt_q8_0_rows(float *out, const uint8_t *W, const float *x,
                          int r0, int r1, int k) {
     int nb = k / 32;
@@ -5119,7 +5120,11 @@ static void nt_q8_0_rows(float *out, const uint8_t *W, const float *x,
             a3 = _mm256_fmadd_ps(_mm256_mul_ps(d, w3), _mm256_loadu_ps(xb + 24), a3);
         }
         out[row] = nt_hsum256_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3)));
-#else
+        if (isfinite(out[row])) continue;
+        /* Partial sums or their fold can overflow even when the sequential dot
+         * stays finite through cancellation. Retry only that row in the scalar
+         * order; ordinary rows retain the SIMD result bit for bit. */
+#endif
         float acc = 0.0f;
         for (int blk = 0; blk < nb; blk++) {
             const uint8_t *b = rb + (long)blk * 34;
@@ -5129,7 +5134,6 @@ static void nt_q8_0_rows(float *out, const uint8_t *W, const float *x,
                 acc += d * (float)(int8_t)b[2 + i] * xb[i];
         }
         out[row] = acc;
-#endif
     }
 }
 

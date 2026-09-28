@@ -21,6 +21,9 @@
  * The threads: the same call with the fan-out forced on and forced off must give identical
  * bits, since a row is one thread's work.
  *
+ * The exception: non-finite SIMD sums retry in scalar order, so finite cancellation
+ * survives overflow within a partial or at the fold. Genuine infinity and NaN survive too.
+ *
  * The reference is written out in this file instead of borrowed from the library, because a
  * test that calls the code it is checking agrees with it however wrong it is. */
 #include "notorch.h"
@@ -29,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <float.h>
 #include <math.h>
 
 static int fails = 0;
@@ -168,6 +172,49 @@ out:
     free(W); free(x); free(got); free(got1);
 }
 
+/* Finite products may cancel in scalar order while overflowing a SIMD partial,
+ * or while folding finite partials. Both must take the scalar retry. */
+static void cancellation(void) {
+    uint8_t W[7 * 2 * 34] = {0};
+    float x[64], got[7], got1[7];
+    /* Unit weights make every product exact, including on scalar FMA targets. */
+    for (int i = 0; i < 64; i++) x[i] = 0.6f * FLT_MAX;
+    for (int r = 0; r < 7; r++) {
+        for (int b = 0; b < 2; b++) {
+            uint8_t *p = W + (r * 2 + b) * 34;
+            p[1] = 0x3c;                            /* scale = 1 */
+            p[2] = 1;
+            if (r % 2 == 0) {
+                p[2 + 8] = (uint8_t)-1;             /* overflow within partials */
+            } else if (b == 0) {
+                p[2 + 1] = (uint8_t)-1;
+                p[2 + 8] = 1;
+                p[2 + 9] = (uint8_t)-1;             /* overflow only at the fold */
+            } else {
+                p[2] = 0;
+            }
+        }
+    }
+    nt_qmv_set_thread_min(1);
+    nt_qmatvec(got, W, GGUF_TYPE_Q8_0, x, 7, 64);
+    nt_qmv_set_thread_min(LONG_MAX);
+    nt_qmatvec(got1, W, GGUF_TYPE_Q8_0, x, 7, 64);
+    int finite_zero = 1;
+    for (int r = 0; r < 7; r++) finite_zero &= got[r] == 0.0f;
+    check("large finite products cancel without SIMD overflow", finite_zero, NULL);
+    check("scalar retry is bit-identical across thread counts",
+          memcmp(got, got1, sizeof(got)) == 0, NULL);
+
+    /* A retry is not saturation: a genuinely overflowing dot or a NaN input
+     * retains its non-finite scalar result. */
+    W[2 + 8] = W[34 + 2 + 8] = 1;
+    nt_qmatvec(got, W, GGUF_TYPE_Q8_0, x, 1, 64);
+    check("genuine overflow remains positive infinity", isinf(got[0]) && got[0] > 0, NULL);
+    x[0] = NAN;
+    nt_qmatvec(got, W, GGUF_TYPE_Q8_0, x, 1, 64);
+    check("NaN input remains NaN", isnan(got[0]), NULL);
+}
+
 int main(void) {
 #if defined(__AVX2__) && defined(__FMA__)
     printf("test_q8_0_rows — AVX2+FMA kernel, 32 partial sums\n");
@@ -182,6 +229,7 @@ int main(void) {
      * blocks, tight enough that a dropped block or a lost partial cannot hide in it. */
     int ks[] = {32, 64, 96, 1152, 2048, 6912};
     for (size_t i = 0; i < sizeof(ks) / sizeof(ks[0]); i++) run(i < 3 ? 7 : 64, ks[i], 1e-5);
+    cancellation();
     printf("%s (%d failed)\n", fails ? "FAIL" : "ALL PASS", fails);
     return fails ? 1 : 0;
 }

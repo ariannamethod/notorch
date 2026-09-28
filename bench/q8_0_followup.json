@@ -1,0 +1,1117 @@
+{
+  "kind": "notorch_q8_direct_kernel_followup",
+  "base_commit": "0c7cc725acc7",
+  "cpu": "AMD EPYC 9V74 80-Core Processor (VM)",
+  "compiler": "GCC 13.3.0",
+  "flags": [
+    "-O2",
+    "-mavx2",
+    "-mfma",
+    "-mf16c"
+  ],
+  "threads": 1,
+  "cpu_affinity": [
+    2
+  ],
+  "warmup_calls_per_kernel": 3,
+  "paired_rounds": 9,
+  "order": "alternating per round",
+  "residency": "weight storage fully touched before warmup; peak RSS KiB sampled once per shape",
+  "scope": "synthetic kernel only; no model throughput claim",
+  "experiments": [
+    {
+      "name": "rejected_two_row",
+      "source_sha256": "5b526b34399f9aaff765f438cd57d3d0d387ff64f281541a853ff1c5963bae9d",
+      "source": "#define _GNU_SOURCE\n#include <immintrin.h>\n#include <stdio.h>\n#include <stdint.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <sys/resource.h>\nstatic inline float nt_f16_to_f32(uint16_t h) { return _cvtsh_ss(h); }\nstatic inline float nt_hsum256_ps(__m256 v) {\n    __m128 lo = _mm256_castps256_ps128(v), hi = _mm256_extractf128_ps(v, 1);\n    lo = _mm_add_ps(lo, hi);\n    __m128 sh = _mm_movehl_ps(lo, lo); lo = _mm_add_ps(lo, sh);\n    sh = _mm_shuffle_ps(lo, lo, 0x1);  lo = _mm_add_ss(lo, sh);\n    return _mm_cvtss_f32(lo);\n}\nstatic void baseline(float *out, const uint8_t *W, const float *x,\n                         int r0, int r1, int k) {\n    int nb = k / 32;\n    for (int row = r0; row < r1; row++) {\n        const uint8_t *rb = W + (long)row * nb * 34;\n#if defined(__AVX2__) && defined(__FMA__)\n        __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps(),\n               a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();\n        for (int blk = 0; blk < nb; blk++) {\n            const uint8_t *b = rb + (long)blk * 34;\n            __m256 d = _mm256_set1_ps(nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8))));\n            const float *xb = x + (long)blk * 32;\n            __m128i q0 = _mm_loadu_si128((const __m128i *)(b + 2));\n            __m128i q1 = _mm_loadu_si128((const __m128i *)(b + 18));\n            __m256 w0 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q0));\n            __m256 w1 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q0, 8)));\n            __m256 w2 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q1));\n            __m256 w3 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q1, 8)));\n            a0 = _mm256_fmadd_ps(_mm256_mul_ps(d, w0), _mm256_loadu_ps(xb),      a0);\n            a1 = _mm256_fmadd_ps(_mm256_mul_ps(d, w1), _mm256_loadu_ps(xb + 8),  a1);\n            a2 = _mm256_fmadd_ps(_mm256_mul_ps(d, w2), _mm256_loadu_ps(xb + 16), a2);\n            a3 = _mm256_fmadd_ps(_mm256_mul_ps(d, w3), _mm256_loadu_ps(xb + 24), a3);\n        }\n        out[row] = nt_hsum256_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3)));\n#else\n        float acc = 0.0f;\n        for (int blk = 0; blk < nb; blk++) {\n            const uint8_t *b = rb + (long)blk * 34;\n            float d = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));\n            const float *xb = x + (long)blk * 32;\n            for (int i = 0; i < 32; i++)\n                acc += d * (float)(int8_t)b[2 + i] * xb[i];\n        }\n        out[row] = acc;\n#endif\n    }\n}\n\nstatic void paired(float *out, const uint8_t *W, const float *x, int r0,int r1,int k) {\n    int nb=k/32, row=r0;\n    for (; row+1<r1;row+=2) {\n        const uint8_t *ra=W+(long)row*nb*34, *rb=ra+(long)nb*34;\n        __m256 a0=_mm256_setzero_ps(),a1=a0,a2=a0,a3=a0;\n        __m256 b0=a0,b1=a0,b2=a0,b3=a0;\n        for(int blk=0;blk<nb;blk++) {\n            const uint8_t *pa=ra+(long)blk*34, *pb=rb+(long)blk*34;\n            __m256 da=_mm256_set1_ps(nt_f16_to_f32(pa[0]|(pa[1]<<8)));\n            __m256 db=_mm256_set1_ps(nt_f16_to_f32(pb[0]|(pb[1]<<8)));\n            const float *xb=x+(long)blk*32;\n#define DO_LANE(i,aa,bb) { \\\n    __m256 xx=_mm256_loadu_ps(xb+i); \\\n    __m256 wa=_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_loadl_epi64((const __m128i *)(pa+2+i)))); \\\n    __m256 wb=_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_loadl_epi64((const __m128i *)(pb+2+i)))); \\\n    aa=_mm256_fmadd_ps(_mm256_mul_ps(da,wa),xx,aa); \\\n    bb=_mm256_fmadd_ps(_mm256_mul_ps(db,wb),xx,bb); }\n            DO_LANE(0,a0,b0); DO_LANE(8,a1,b1); DO_LANE(16,a2,b2); DO_LANE(24,a3,b3);\n#undef DO_LANE\n        }\n        out[row]=nt_hsum256_ps(_mm256_add_ps(_mm256_add_ps(a0,a1),_mm256_add_ps(a2,a3)));\n        out[row+1]=nt_hsum256_ps(_mm256_add_ps(_mm256_add_ps(b0,b1),_mm256_add_ps(b2,b3)));\n    }\n    baseline(out,W,x,row,r1,k);\n}\nstatic uint32_t rng=1;\nstatic uint32_t next(void) {rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;return rng;}\nstatic double now(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec+t.tv_nsec*1e-9;}\ntypedef void (*kernel)(float *,const uint8_t *,const float *,int,int,int);\nstatic double time_kernel(kernel f,float *out,const uint8_t *W,const float*x,int rows,int k,int reps) {\n    double start=now();for(int r=0;r<reps;r++) f(out,W,x,0,rows,k); return (now()-start)*1000/reps;\n}\nint main(void) {\n    int shapes[][2]={{64,32},{1152,1152},{6912,1152},{1152,6912},{4096,4096},{32768,2048}};\n    for(int s=0;s<6;s++) {\n      int rows=shapes[s][0],k=shapes[s][1],nb=k/32;\n      size_t bytes=(size_t)rows*nb*34;\n      uint8_t *W=malloc(bytes);float*x=malloc(k*4),*a=malloc(rows*4),*b=malloc(rows*4);\n      for(size_t j=0;j<bytes;j+=34) {uint16_t h=0x2000+(next()%0x2000); W[j]=h;W[j+1]=h>>8;\n        for(int t=2;t<34;t++) W[j+t]=next();}\n      for(int j=0;j<k;j++) x[j]=((int)(next()%10000)-5000)/717.0f;\n      baseline(a,W,x,0,rows,k);paired(b,W,x,0,rows,k);\n      if(memcmp(a,b,rows*4)) {puts(\"DIFFERENT\");return 1;}\n      int reps=(int)(200000000/bytes);if(reps<3)reps=3;if(reps>20000)reps=20000;\n      for(int t=0;t<3;t++) {baseline(a,W,x,0,rows,k);paired(b,W,x,0,rows,k);}\n      struct rusage ru;getrusage(RUSAGE_SELF,&ru);\n      for(int t=0;t<9;t++) {\n        double ta,tb;if(t%2) {tb=time_kernel(paired,b,W,x,rows,k,reps);ta=time_kernel(baseline,a,W,x,rows,k,reps);}\n        else {ta=time_kernel(baseline,a,W,x,rows,k,reps);tb=time_kernel(paired,b,W,x,rows,k,reps);}\n        printf(\"%d %d %d %zu %ld %.8f %.8f %.6f\\n\",rows,k,reps,bytes,ru.ru_maxrss,ta,tb,ta/tb);fflush(stdout);\n      }\n      free(W);free(x);free(a);free(b);\n    } return 0;\n}\n",
+      "samples": [
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 768,
+          "baseline_ms": 0.00021067,
+          "candidate_ms": 0.00019496,
+          "speed_ratio": 1.080613
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 768,
+          "baseline_ms": 0.00021664,
+          "candidate_ms": 0.00019541,
+          "speed_ratio": 1.108653
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 768,
+          "baseline_ms": 0.00024303,
+          "candidate_ms": 0.00020176,
+          "speed_ratio": 1.204521
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 768,
+          "baseline_ms": 0.00021289,
+          "candidate_ms": 0.00020585,
+          "speed_ratio": 1.034194
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 768,
+          "baseline_ms": 0.00020912,
+          "candidate_ms": 0.00019433,
+          "speed_ratio": 1.076095
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 768,
+          "baseline_ms": 0.0002575,
+          "candidate_ms": 0.00020247,
+          "speed_ratio": 1.271796
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 768,
+          "baseline_ms": 0.00021378,
+          "candidate_ms": 0.00020459,
+          "speed_ratio": 1.044919
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 768,
+          "baseline_ms": 0.00021869,
+          "candidate_ms": 0.00019889,
+          "speed_ratio": 1.099554
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 768,
+          "baseline_ms": 0.00021218,
+          "candidate_ms": 0.00019481,
+          "speed_ratio": 1.089194
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08435834,
+          "candidate_ms": 0.07638997,
+          "speed_ratio": 1.104312
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.0862416,
+          "candidate_ms": 0.08112039,
+          "speed_ratio": 1.063131
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08554277,
+          "candidate_ms": 0.07645816,
+          "speed_ratio": 1.118818
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08664446,
+          "candidate_ms": 0.07802223,
+          "speed_ratio": 1.11051
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08423126,
+          "candidate_ms": 0.07651633,
+          "speed_ratio": 1.100827
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08552628,
+          "candidate_ms": 0.08239659,
+          "speed_ratio": 1.037983
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08868418,
+          "candidate_ms": 0.07869058,
+          "speed_ratio": 1.126999
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08670263,
+          "candidate_ms": 0.07740238,
+          "speed_ratio": 1.120155
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08608804,
+          "candidate_ms": 0.07654957,
+          "speed_ratio": 1.124605
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8828,
+          "baseline_ms": 0.68884696,
+          "candidate_ms": 0.49498161,
+          "speed_ratio": 1.391662
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8828,
+          "baseline_ms": 0.5204163,
+          "candidate_ms": 0.47899291,
+          "speed_ratio": 1.08648
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8828,
+          "baseline_ms": 0.53016717,
+          "candidate_ms": 0.475658,
+          "speed_ratio": 1.114597
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8828,
+          "baseline_ms": 0.517209,
+          "candidate_ms": 0.47065717,
+          "speed_ratio": 1.098908
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8828,
+          "baseline_ms": 0.51741974,
+          "candidate_ms": 0.50593504,
+          "speed_ratio": 1.0227
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8828,
+          "baseline_ms": 0.50302078,
+          "candidate_ms": 0.4815323,
+          "speed_ratio": 1.044625
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8828,
+          "baseline_ms": 0.51560274,
+          "candidate_ms": 0.48229126,
+          "speed_ratio": 1.069069
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8828,
+          "baseline_ms": 0.50934226,
+          "candidate_ms": 0.47029496,
+          "speed_ratio": 1.083027
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8828,
+          "baseline_ms": 0.51097596,
+          "candidate_ms": 0.574554,
+          "speed_ratio": 0.889344
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8872,
+          "baseline_ms": 0.49476217,
+          "candidate_ms": 0.45065613,
+          "speed_ratio": 1.097871
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8872,
+          "baseline_ms": 0.49635709,
+          "candidate_ms": 0.48245756,
+          "speed_ratio": 1.02881
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8872,
+          "baseline_ms": 0.49579148,
+          "candidate_ms": 0.45080026,
+          "speed_ratio": 1.099803
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8872,
+          "baseline_ms": 0.57305661,
+          "candidate_ms": 0.43886883,
+          "speed_ratio": 1.305758
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8872,
+          "baseline_ms": 0.49620291,
+          "candidate_ms": 0.44359096,
+          "speed_ratio": 1.118605
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8872,
+          "baseline_ms": 0.5167513,
+          "candidate_ms": 0.45341922,
+          "speed_ratio": 1.139677
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8872,
+          "baseline_ms": 0.49675678,
+          "candidate_ms": 0.51228348,
+          "speed_ratio": 0.969691
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8872,
+          "baseline_ms": 0.51700778,
+          "candidate_ms": 0.4583513,
+          "speed_ratio": 1.127973
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8872,
+          "baseline_ms": 0.49739074,
+          "candidate_ms": 0.44735474,
+          "speed_ratio": 1.111849
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26280,
+          "baseline_ms": 1.039438,
+          "candidate_ms": 1.06320827,
+          "speed_ratio": 0.977643
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26280,
+          "baseline_ms": 1.10518264,
+          "candidate_ms": 1.10528373,
+          "speed_ratio": 0.999909
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26280,
+          "baseline_ms": 1.049246,
+          "candidate_ms": 1.163704,
+          "speed_ratio": 0.901643
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26280,
+          "baseline_ms": 1.09112836,
+          "candidate_ms": 1.15100173,
+          "speed_ratio": 0.947982
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26280,
+          "baseline_ms": 1.06442191,
+          "candidate_ms": 1.05293054,
+          "speed_ratio": 1.010914
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26280,
+          "baseline_ms": 1.11557964,
+          "candidate_ms": 1.25482309,
+          "speed_ratio": 0.889033
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26280,
+          "baseline_ms": 1.06090309,
+          "candidate_ms": 1.090685,
+          "speed_ratio": 0.972694
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26280,
+          "baseline_ms": 1.04565618,
+          "candidate_ms": 1.09314955,
+          "speed_ratio": 0.956554
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26280,
+          "baseline_ms": 1.07160891,
+          "candidate_ms": 1.047305,
+          "speed_ratio": 1.023206
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78552,
+          "baseline_ms": 4.44070933,
+          "candidate_ms": 10.14519367,
+          "speed_ratio": 0.437716
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78552,
+          "baseline_ms": 4.34680167,
+          "candidate_ms": 10.365754,
+          "speed_ratio": 0.419343
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78552,
+          "baseline_ms": 4.40380533,
+          "candidate_ms": 10.84943366,
+          "speed_ratio": 0.405902
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78552,
+          "baseline_ms": 4.454867,
+          "candidate_ms": 10.39376167,
+          "speed_ratio": 0.42861
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78552,
+          "baseline_ms": 4.382404,
+          "candidate_ms": 10.56383167,
+          "speed_ratio": 0.41485
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78552,
+          "baseline_ms": 4.44924533,
+          "candidate_ms": 10.46293633,
+          "speed_ratio": 0.425239
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78552,
+          "baseline_ms": 4.449816,
+          "candidate_ms": 10.22267733,
+          "speed_ratio": 0.435289
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78552,
+          "baseline_ms": 4.36470133,
+          "candidate_ms": 10.89647934,
+          "speed_ratio": 0.400561
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78552,
+          "baseline_ms": 4.624319,
+          "candidate_ms": 9.94703967,
+          "speed_ratio": 0.464894
+        }
+      ]
+    },
+    {
+      "name": "retained_finite_check",
+      "source_sha256": "92e0f89639b4b8083d60fab31ab5d8580b7935534468c01a4e3852b0628fdcd3",
+      "source": "#define _GNU_SOURCE\n#include <immintrin.h>\n#include <stdio.h>\n#include <stdint.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <sys/resource.h>\nstatic inline float nt_f16_to_f32(uint16_t h) { return _cvtsh_ss(h); }\nstatic inline float nt_hsum256_ps(__m256 v) {\n    __m128 lo = _mm256_castps256_ps128(v), hi = _mm256_extractf128_ps(v, 1);\n    lo = _mm_add_ps(lo, hi);\n    __m128 sh = _mm_movehl_ps(lo, lo); lo = _mm_add_ps(lo, sh);\n    sh = _mm_shuffle_ps(lo, lo, 0x1);  lo = _mm_add_ss(lo, sh);\n    return _mm_cvtss_f32(lo);\n}\nstatic void baseline(float *out, const uint8_t *W, const float *x,\n                         int r0, int r1, int k) {\n    int nb = k / 32;\n    for (int row = r0; row < r1; row++) {\n        const uint8_t *rb = W + (long)row * nb * 34;\n#if defined(__AVX2__) && defined(__FMA__)\n        __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps(),\n               a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();\n        for (int blk = 0; blk < nb; blk++) {\n            const uint8_t *b = rb + (long)blk * 34;\n            __m256 d = _mm256_set1_ps(nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8))));\n            const float *xb = x + (long)blk * 32;\n            __m128i q0 = _mm_loadu_si128((const __m128i *)(b + 2));\n            __m128i q1 = _mm_loadu_si128((const __m128i *)(b + 18));\n            __m256 w0 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q0));\n            __m256 w1 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q0, 8)));\n            __m256 w2 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q1));\n            __m256 w3 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q1, 8)));\n            a0 = _mm256_fmadd_ps(_mm256_mul_ps(d, w0), _mm256_loadu_ps(xb),      a0);\n            a1 = _mm256_fmadd_ps(_mm256_mul_ps(d, w1), _mm256_loadu_ps(xb + 8),  a1);\n            a2 = _mm256_fmadd_ps(_mm256_mul_ps(d, w2), _mm256_loadu_ps(xb + 16), a2);\n            a3 = _mm256_fmadd_ps(_mm256_mul_ps(d, w3), _mm256_loadu_ps(xb + 24), a3);\n        }\n        out[row] = nt_hsum256_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3)));\n#else\n        float acc = 0.0f;\n        for (int blk = 0; blk < nb; blk++) {\n            const uint8_t *b = rb + (long)blk * 34;\n            float d = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));\n            const float *xb = x + (long)blk * 32;\n            for (int i = 0; i < 32; i++)\n                acc += d * (float)(int8_t)b[2 + i] * xb[i];\n        }\n        out[row] = acc;\n#endif\n    }\n}\n\nstatic void paired(float *out, const uint8_t *W, const float *x,\n                         int r0, int r1, int k) {\n    int nb = k / 32;\n    for (int row = r0; row < r1; row++) {\n        const uint8_t *rb = W + (long)row * nb * 34;\n#if defined(__AVX2__) && defined(__FMA__)\n        __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps(),\n               a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();\n        for (int blk = 0; blk < nb; blk++) {\n            const uint8_t *b = rb + (long)blk * 34;\n            __m256 d = _mm256_set1_ps(nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8))));\n            const float *xb = x + (long)blk * 32;\n            __m128i q0 = _mm_loadu_si128((const __m128i *)(b + 2));\n            __m128i q1 = _mm_loadu_si128((const __m128i *)(b + 18));\n            __m256 w0 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q0));\n            __m256 w1 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q0, 8)));\n            __m256 w2 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q1));\n            __m256 w3 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q1, 8)));\n            a0 = _mm256_fmadd_ps(_mm256_mul_ps(d, w0), _mm256_loadu_ps(xb),      a0);\n            a1 = _mm256_fmadd_ps(_mm256_mul_ps(d, w1), _mm256_loadu_ps(xb + 8),  a1);\n            a2 = _mm256_fmadd_ps(_mm256_mul_ps(d, w2), _mm256_loadu_ps(xb + 16), a2);\n            a3 = _mm256_fmadd_ps(_mm256_mul_ps(d, w3), _mm256_loadu_ps(xb + 24), a3);\n        }\n        out[row] = nt_hsum256_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3)));\n        if (isfinite(out[row])) continue;\n        /* Partial sums or their fold can overflow even when the sequential dot\n         * stays finite through cancellation. Retry only that row in the scalar\n         * order; ordinary rows retain the SIMD result bit for bit. */\n#endif\n        float acc = 0.0f;\n        for (int blk = 0; blk < nb; blk++) {\n            const uint8_t *b = rb + (long)blk * 34;\n            float d = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));\n            const float *xb = x + (long)blk * 32;\n            for (int i = 0; i < 32; i++)\n                acc += d * (float)(int8_t)b[2 + i] * xb[i];\n        }\n        out[row] = acc;\n    }\n}\n\nstatic uint32_t rng=1;\nstatic uint32_t next(void) {rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;return rng;}\nstatic double now(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec+t.tv_nsec*1e-9;}\ntypedef void (*kernel)(float *,const uint8_t *,const float *,int,int,int);\nstatic double time_kernel(kernel f,float *out,const uint8_t *W,const float*x,int rows,int k,int reps) {\n    double start=now();for(int r=0;r<reps;r++) f(out,W,x,0,rows,k); return (now()-start)*1000/reps;\n}\nint main(void) {\n    int shapes[][2]={{64,32},{1152,1152},{6912,1152},{1152,6912},{4096,4096},{32768,2048}};\n    for(int s=0;s<6;s++) {\n      int rows=shapes[s][0],k=shapes[s][1],nb=k/32;\n      size_t bytes=(size_t)rows*nb*34;\n      uint8_t *W=malloc(bytes);float*x=malloc(k*4),*a=malloc(rows*4),*b=malloc(rows*4);\n      for(size_t j=0;j<bytes;j+=34) {uint16_t h=0x2000+(next()%0x2000); W[j]=h;W[j+1]=h>>8;\n        for(int t=2;t<34;t++) W[j+t]=next();}\n      for(int j=0;j<k;j++) x[j]=((int)(next()%10000)-5000)/717.0f;\n      baseline(a,W,x,0,rows,k);paired(b,W,x,0,rows,k);\n      if(memcmp(a,b,rows*4)) {puts(\"DIFFERENT\");return 1;}\n      int reps=(int)(200000000/bytes);if(reps<3)reps=3;if(reps>20000)reps=20000;\n      for(int t=0;t<3;t++) {baseline(a,W,x,0,rows,k);paired(b,W,x,0,rows,k);}\n      struct rusage ru;getrusage(RUSAGE_SELF,&ru);\n      for(int t=0;t<9;t++) {\n        double ta,tb;if(t%2) {tb=time_kernel(paired,b,W,x,rows,k,reps);ta=time_kernel(baseline,a,W,x,rows,k,reps);}\n        else {ta=time_kernel(baseline,a,W,x,rows,k,reps);tb=time_kernel(paired,b,W,x,rows,k,reps);}\n        printf(\"%d %d %d %zu %ld %.8f %.8f %.6f\\n\",rows,k,reps,bytes,ru.ru_maxrss,ta,tb,ta/tb);fflush(stdout);\n      }\n      free(W);free(x);free(a);free(b);\n    } return 0;\n}\n",
+      "samples": [
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 640,
+          "baseline_ms": 0.00024364,
+          "candidate_ms": 0.00027988,
+          "speed_ratio": 0.8705
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 640,
+          "baseline_ms": 0.00022561,
+          "candidate_ms": 0.00024635,
+          "speed_ratio": 0.915816
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 640,
+          "baseline_ms": 0.00022817,
+          "candidate_ms": 0.00025596,
+          "speed_ratio": 0.891412
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 640,
+          "baseline_ms": 0.00022815,
+          "candidate_ms": 0.00023602,
+          "speed_ratio": 0.96668
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 640,
+          "baseline_ms": 0.00022033,
+          "candidate_ms": 0.00025653,
+          "speed_ratio": 0.858908
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 640,
+          "baseline_ms": 0.00022943,
+          "candidate_ms": 0.00026115,
+          "speed_ratio": 0.878542
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 640,
+          "baseline_ms": 0.0002489,
+          "candidate_ms": 0.0002576,
+          "speed_ratio": 0.966239
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 640,
+          "baseline_ms": 0.00022103,
+          "candidate_ms": 0.00025965,
+          "speed_ratio": 0.851268
+        },
+        {
+          "rows": 64,
+          "k": 32,
+          "repetitions": 20000,
+          "weight_bytes": 2176,
+          "peak_rss_KiB": 640,
+          "baseline_ms": 0.00020914,
+          "candidate_ms": 0.00025231,
+          "speed_ratio": 0.828896
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.09477175,
+          "candidate_ms": 0.09406625,
+          "speed_ratio": 1.0075
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08965318,
+          "candidate_ms": 0.09163992,
+          "speed_ratio": 0.97832
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08742985,
+          "candidate_ms": 0.09003708,
+          "speed_ratio": 0.971043
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08882288,
+          "candidate_ms": 0.10691489,
+          "speed_ratio": 0.830781
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.09380807,
+          "candidate_ms": 0.09017912,
+          "speed_ratio": 1.040242
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08967378,
+          "candidate_ms": 0.09071907,
+          "speed_ratio": 0.988478
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08801062,
+          "candidate_ms": 0.0910264,
+          "speed_ratio": 0.966869
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.08754157,
+          "candidate_ms": 0.09184021,
+          "speed_ratio": 0.953194
+        },
+        {
+          "rows": 1152,
+          "k": 1152,
+          "repetitions": 141,
+          "weight_bytes": 1410048,
+          "peak_rss_KiB": 1920,
+          "baseline_ms": 0.09113933,
+          "candidate_ms": 0.08879767,
+          "speed_ratio": 1.026371
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8824,
+          "baseline_ms": 0.55614557,
+          "candidate_ms": 0.55448274,
+          "speed_ratio": 1.002999
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8824,
+          "baseline_ms": 0.53726226,
+          "candidate_ms": 0.57501283,
+          "speed_ratio": 0.934348
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8824,
+          "baseline_ms": 0.55986583,
+          "candidate_ms": 0.53880143,
+          "speed_ratio": 1.039095
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8824,
+          "baseline_ms": 0.88265117,
+          "candidate_ms": 0.560741,
+          "speed_ratio": 1.57408
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8824,
+          "baseline_ms": 0.53379583,
+          "candidate_ms": 0.52796165,
+          "speed_ratio": 1.01105
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8824,
+          "baseline_ms": 0.5433703,
+          "candidate_ms": 0.53349804,
+          "speed_ratio": 1.018505
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8824,
+          "baseline_ms": 0.53651509,
+          "candidate_ms": 0.52498726,
+          "speed_ratio": 1.021958
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8824,
+          "baseline_ms": 0.51083174,
+          "candidate_ms": 0.53892987,
+          "speed_ratio": 0.947863
+        },
+        {
+          "rows": 6912,
+          "k": 1152,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8824,
+          "baseline_ms": 0.5268657,
+          "candidate_ms": 0.52733943,
+          "speed_ratio": 0.999102
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8868,
+          "baseline_ms": 0.52649948,
+          "candidate_ms": 0.51072678,
+          "speed_ratio": 1.030883
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8868,
+          "baseline_ms": 0.53519661,
+          "candidate_ms": 0.603917,
+          "speed_ratio": 0.886209
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8868,
+          "baseline_ms": 0.54809422,
+          "candidate_ms": 0.53293022,
+          "speed_ratio": 1.028454
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8868,
+          "baseline_ms": 0.51474791,
+          "candidate_ms": 0.56717439,
+          "speed_ratio": 0.907566
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8868,
+          "baseline_ms": 0.52862648,
+          "candidate_ms": 0.52741035,
+          "speed_ratio": 1.002306
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8868,
+          "baseline_ms": 0.52756365,
+          "candidate_ms": 0.57245909,
+          "speed_ratio": 0.921574
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8868,
+          "baseline_ms": 0.51673361,
+          "candidate_ms": 0.50012035,
+          "speed_ratio": 1.033219
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8868,
+          "baseline_ms": 0.50176752,
+          "candidate_ms": 0.49849183,
+          "speed_ratio": 1.006571
+        },
+        {
+          "rows": 1152,
+          "k": 6912,
+          "repetitions": 23,
+          "weight_bytes": 8460288,
+          "peak_rss_KiB": 8868,
+          "baseline_ms": 0.59376822,
+          "candidate_ms": 0.55379865,
+          "speed_ratio": 1.072173
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26276,
+          "baseline_ms": 1.15023782,
+          "candidate_ms": 1.07441918,
+          "speed_ratio": 1.070567
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26276,
+          "baseline_ms": 1.09550927,
+          "candidate_ms": 1.06900764,
+          "speed_ratio": 1.024791
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26276,
+          "baseline_ms": 1.10513245,
+          "candidate_ms": 1.07893764,
+          "speed_ratio": 1.024278
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26276,
+          "baseline_ms": 1.13310355,
+          "candidate_ms": 1.24902727,
+          "speed_ratio": 0.907189
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26276,
+          "baseline_ms": 1.14109436,
+          "candidate_ms": 1.17527082,
+          "speed_ratio": 0.97092
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26276,
+          "baseline_ms": 1.11021264,
+          "candidate_ms": 1.11571355,
+          "speed_ratio": 0.99507
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26276,
+          "baseline_ms": 1.10581527,
+          "candidate_ms": 1.11145364,
+          "speed_ratio": 0.994927
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26276,
+          "baseline_ms": 1.08226618,
+          "candidate_ms": 1.09595809,
+          "speed_ratio": 0.987507
+        },
+        {
+          "rows": 4096,
+          "k": 4096,
+          "repetitions": 11,
+          "weight_bytes": 17825792,
+          "peak_rss_KiB": 26276,
+          "baseline_ms": 1.13736345,
+          "candidate_ms": 1.12393827,
+          "speed_ratio": 1.011945
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78548,
+          "baseline_ms": 4.38102667,
+          "candidate_ms": 4.543964,
+          "speed_ratio": 0.964142
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78548,
+          "baseline_ms": 4.48269433,
+          "candidate_ms": 4.75917633,
+          "speed_ratio": 0.941905
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78548,
+          "baseline_ms": 4.365746,
+          "candidate_ms": 4.96607667,
+          "speed_ratio": 0.879114
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78548,
+          "baseline_ms": 4.32935233,
+          "candidate_ms": 4.61019133,
+          "speed_ratio": 0.939083
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78548,
+          "baseline_ms": 4.49218133,
+          "candidate_ms": 4.58849934,
+          "speed_ratio": 0.979009
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78548,
+          "baseline_ms": 4.32422467,
+          "candidate_ms": 4.51516833,
+          "speed_ratio": 0.957711
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78548,
+          "baseline_ms": 4.260074,
+          "candidate_ms": 4.366547,
+          "speed_ratio": 0.975616
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78548,
+          "baseline_ms": 4.60218933,
+          "candidate_ms": 4.50029,
+          "speed_ratio": 1.022643
+        },
+        {
+          "rows": 32768,
+          "k": 2048,
+          "repetitions": 3,
+          "weight_bytes": 71303168,
+          "peak_rss_KiB": 78548,
+          "baseline_ms": 4.52041933,
+          "candidate_ms": 4.50819133,
+          "speed_ratio": 1.002712
+        }
+      ]
+    }
+  ]
+}
