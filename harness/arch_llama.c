@@ -192,22 +192,25 @@ static void llama_free(void *model) {
 /* One head of causal GQA attention, for every row of the chunk. Split out so that a fan-out
  * can hand a worker a range of heads: everything it touches is either read-only or indexed
  * by the head. */
+/* Row j of a forward is at position pos[j] of the cache kvs[j]. Prefill hands every row
+ * the same cache and consecutive positions; a multi-sequence decode hands each row its own
+ * sequence. The layer's slice of a cache starts at layer * max_seq * kv_dim of that cache. */
 typedef struct {
     const float *q_all;
     float *attn_out;
-    const kv_cache *kv;
-    float *scores;                 /* one row per head, max_seq wide */
-    int n, pos0, H, HD, KVD, Q_DIM, gqa;
-    long base;
+    kv_cache *const *kvs;
+    const int *pos;
+    float *scores;                 /* one row per head, stride wide */
+    int n, layer, stride, H, HD, KVD, Q_DIM, gqa;
     float scale;
 } attn_ctx;
 
 typedef struct {
     float *q_all, *k_new, *v_new;
     const float *q_norm, *k_norm;
-    kv_cache *kv;
-    int pos0, H, KV, HD, KVD, Q_DIM, neox;
-    long base;
+    kv_cache *const *kvs;
+    const int *pos;
+    int layer, H, KV, HD, KVD, Q_DIM, neox;
     float rope_base, eps;
 } rope_ctx;
 
@@ -218,7 +221,9 @@ typedef struct {
 static void rope_tokens(void *vctx, int j0, int j1) {
     const rope_ctx *r = (const rope_ctx *)vctx;
     for (int j = j0; j < j1; j++) {
-        int pos = r->pos0 + j;
+        int pos = r->pos[j];
+        kv_cache *kv = r->kvs[j];
+        long base = (long)r->layer * kv->max_seq * r->KVD;
         float *qj = r->q_all + (long)j * r->Q_DIM, *kj = r->k_new + (long)j * r->KVD;
         for (int h = 0; h < r->H; h++) {
             if (r->q_norm) rmsnorm(qj + h*r->HD, qj + h*r->HD, r->q_norm, r->HD, r->eps);
@@ -228,8 +233,8 @@ static void rope_tokens(void *vctx, int j0, int j1) {
             if (r->k_norm) rmsnorm(kj + h*r->HD, kj + h*r->HD, r->k_norm, r->HD, r->eps);
             rope(kj + h*r->HD, pos, r->HD, r->rope_base, r->neox);
         }
-        memcpy(r->kv->k + r->base + (long)pos * r->KVD, kj, r->KVD * sizeof(float));
-        memcpy(r->kv->v + r->base + (long)pos * r->KVD,
+        memcpy(kv->k + base + (long)pos * r->KVD, kj, r->KVD * sizeof(float));
+        memcpy(kv->v + base + (long)pos * r->KVD,
                r->v_new + (long)j * r->KVD, r->KVD * sizeof(float));
     }
 }
@@ -250,18 +255,20 @@ static void attn_heads(void *vctx, int h0, int h1) {
     const attn_ctx *a = (const attn_ctx *)vctx;
     for (int h = h0; h < h1; h++) {
         int kv_h = h / a->gqa;
-        float *scores = a->scores + (long)h * a->kv->max_seq;
+        float *scores = a->scores + (long)h * a->stride;
         for (int j = 0; j < a->n; j++) {
-            int pos = a->pos0 + j;
+            int pos = a->pos[j];
+            const kv_cache *kv = a->kvs[j];
+            long base = (long)a->layer * kv->max_seq * a->KVD;
             const float *q = a->q_all + (long)j * a->Q_DIM + h * a->HD;
             for (int t = 0; t <= pos; t++) {
-                const float *kt = a->kv->k + a->base + (long)t * a->KVD + kv_h * a->HD;
+                const float *kt = kv->k + base + (long)t * a->KVD + kv_h * a->HD;
                 scores[t] = dot_f32(q, kt, a->HD) * a->scale;
             }
             softmax(scores, pos + 1);
             float *out_h = a->attn_out + (long)j * a->Q_DIM + h * a->HD;
             for (int t = 0; t <= pos; t++) {
-                const float *vt = a->kv->v + a->base + (long)t * a->KVD + kv_h * a->HD;
+                const float *vt = kv->v + base + (long)t * a->KVD + kv_h * a->HD;
                 axpy_f32(out_h, scores[t], vt, a->HD);
             }
         }
@@ -274,13 +281,17 @@ static void attn_heads(void *vctx, int h0, int h1) {
  * difference between a prompt that costs the same as generating it and one
  * that does not. Attention still runs per row — it reads the KV cache rather
  * than the weights, so batching it buys little and costs a mask. */
-static int llama_forward_residual(void *model, kv_cache *kv, const int *tokens, int n,
-                                  int pos0, float *logits,
-                                  nt_residual_fn callback, void *user) {
-    llama_model *m = (llama_model*)model;
-    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_layers, m->kv_dim);
-    if (rc != NT_OK) return rc;
-
+/* The forward itself, over rows that each name their cache and position. Prefill and a
+ * single decode are one cache and consecutive positions; a multi-sequence decode is one
+ * row per sequence. `head_rows` is how many trailing rows get logits (1 for a prefill,
+ * n for a multi-sequence decode), written [head_rows, vocab]. With `users` NULL the
+ * callback sees the whole block once per layer, as it always has; with `users` it is
+ * called per row with that row's user pointer, n = 1 and its own position. Callers have
+ * validated every row. */
+static int llama_rows(llama_model *m, int n, const int *tokens, kv_cache *const *kvs,
+                      const int *pos, float *logits, int head_rows,
+                      nt_residual_fn callback, void *user, void *const *users) {
+    int rc = NT_OK;
     int E = m->embed, H = m->n_heads, KV = m->n_kv_heads;
     int HD = m->head_dim, KVD = m->kv_dim, FFN = m->ffn, Q_DIM = m->q_dim;
     float eps = m->rms_eps;
@@ -312,7 +323,12 @@ static int llama_forward_residual(void *model, kv_cache *kv, const int *tokens, 
      * (position, head): at 53 positions, 32 heads and 36 layers that is 61 thousand
      * allocations in one prefill, for a buffer whose largest size is known before the
      * first one. Nothing about the arithmetic changes. */
-    float *scratch_scores = (float*)calloc((size_t)kv->max_seq * (size_t)H, sizeof(float));
+    int stride = 0, last = 0;
+    for (int j = 0; j < n; j++) {
+        if (kvs[j]->max_seq > stride) stride = kvs[j]->max_seq;
+        if (pos[j] > last) last = pos[j];
+    }
+    float *scratch_scores = (float*)calloc((size_t)stride * (size_t)H, sizeof(float));
     if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_gate || !ffn_up || !ffn_out ||
         !scratch_scores) {
         free(x); free(xn); free(q_all); free(k_new); free(v_new);
@@ -338,15 +354,14 @@ static int llama_forward_residual(void *model, kv_cache *kv, const int *tokens, 
         pf_add(PF_QKV, pft);
 
         pft = pf_mark();
-        long base = (long)l * kv->max_seq * KVD;
         {
             /* Qwen3 normalises each head of q and k before rotating it, with the
              * model's own epsilon. Before, not after: the rotation mixes lanes
              * within a head, so a norm taken afterwards is a different function.
              * Absent weights mean an older file and the loop is the old loop. */
             rope_ctx rc = { q_all, k_new, v_new,
-                            m->layers[l].q_norm, m->layers[l].k_norm, kv,
-                            pos0, H, KV, HD, KVD, Q_DIM, m->rope_neox, base,
+                            m->layers[l].q_norm, m->layers[l].k_norm, kvs, pos,
+                            l, H, KV, HD, KVD, Q_DIM, m->rope_neox,
                             m->rope_base, eps };
             if ((long)n * (H + KV) * HD >= 65536) nt_par_for(rope_tokens, &rc, n, 2);
             else                                  rope_tokens(&rc, 0, n);
@@ -364,14 +379,15 @@ static int llama_forward_residual(void *model, kv_cache *kv, const int *tokens, 
          * Each worker needs its own scores row, so the scratch is one row per head. */
         pft = pf_mark();
         {
-            attn_ctx ac = { q_all, attn_out, kv, scratch_scores,
-                            n, pos0, H, HD, KVD, Q_DIM, gqa, base,
+            attn_ctx ac = { q_all, attn_out, kvs, pos, scratch_scores,
+                            n, l, stride, H, HD, KVD, Q_DIM, gqa,
                             1.0f / sqrtf((float)HD) };
             memset(attn_out, 0, (size_t)n * Q_DIM * sizeof(float));
             /* Threading decode was a regression: at one row per head the work is a single
              * dot over the cache, and waking five threads 36 times per token cost more than
-             * it saved — 8.8 t/s down to 6.9. The gate is the work, not the head count. */
-            long work = (long)n * (long)(pos0 + n) * (long)HD;
+             * it saved — 8.8 t/s down to 6.9. The gate is the work, not the head count;
+             * for a block of consecutive positions n * (last + 1) is the old n * (pos0 + n). */
+            long work = (long)n * (long)(last + 1) * (long)HD;
             if (work >= 65536) nt_par_for(attn_heads, &ac, H, 2);
             else               attn_heads(&ac, 0, H);
         }
@@ -410,20 +426,29 @@ static int llama_forward_residual(void *model, kv_cache *kv, const int *tokens, 
             for (int j = 0; j < n; j++)
                 add_bias(x + (long)j * E, m->layers[l].ffn_down_bias, E);
         pf_add(PF_RESID, pft);
-        if (callback) {
-            rc = callback(user, l, pos0, n, E, x);
+        if (callback && !users) {
+            rc = callback(user, l, pos[0], n, E, x);
             if (rc != NT_OK) goto done;
         }
+        if (callback && users)
+            for (int j = 0; j < n; j++) {
+                rc = callback(users[j], l, pos[j], 1, E, x + (long)j * E);
+                if (rc != NT_OK) goto done;
+            }
     }
 
     /* The head is the single largest matvec in the model — 151936 rows against
      * 896 for a 0.5B Qwen — so running it at every prompt position spends a
-     * tenth of the prefill on distributions nobody reads. */
+     * tenth of the prefill on distributions nobody reads. A multi-sequence decode
+     * reads it once for all its rows; qmm gives each row the qmv result bit for bit. */
     if (logits) {
         pft = pf_mark();
-        rmsnorm(xn, x + (long)(n - 1) * E, m->out_norm, E, eps);
+        int first = n - head_rows;
+        for (int j = 0; j < head_rows; j++)
+            rmsnorm(xn + (long)j * E, x + (long)(first + j) * E, m->out_norm, E, eps);
         const wt *lm_head = m->has_output_weight ? &m->out_weight : &m->tok_emb;
-        qmv(logits, lm_head, xn);
+        if (head_rows == 1) qmv(logits, lm_head, xn);
+        else                qmm(logits, lm_head, xn, head_rows);
         pf_add(PF_HEAD, pft);
     }
 
@@ -433,9 +458,42 @@ done:
     return rc;
 }
 
+static int llama_forward_residual(void *model, kv_cache *kv, const int *tokens, int n,
+                                  int pos0, float *logits,
+                                  nt_residual_fn callback, void *user) {
+    llama_model *m = (llama_model*)model;
+    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_layers, m->kv_dim);
+    if (rc != NT_OK) return rc;
+    int *pos = (int*)malloc((size_t)n * sizeof(int));
+    kv_cache **kvs = (kv_cache**)malloc((size_t)n * sizeof(kv_cache*));
+    if (!pos || !kvs) { free(pos); free(kvs); return NT_E_MEMORY; }
+    for (int j = 0; j < n; j++) { pos[j] = pos0 + j; kvs[j] = kv; }
+    rc = llama_rows(m, n, tokens, kvs, pos, logits, 1, callback, user, NULL);
+    free(pos); free(kvs);
+    return rc;
+}
+
 static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
                          int pos0, float *logits) {
     return llama_forward_residual(model, kv, tokens, n, pos0, logits, NULL, NULL);
+}
+
+/* One decode step for n independent sequences. Row j is tokens[j] at position pos[j] of
+ * the sequence whose cache is kvs[j]; the caches must be distinct. Every row runs the
+ * arithmetic of forward_residual(model, kvs[j], &tokens[j], 1, pos[j], ...), while each
+ * weight matrix is read once for all rows. */
+static int llama_forward_multi(void *model, kv_cache *const *kvs, const int *tokens,
+                               const int *pos, int n, float *logits,
+                               nt_residual_fn callback, void *const *users) {
+    llama_model *m = (llama_model*)model;
+    if (!m || !kvs || !tokens || !pos || n < 1 || (callback && !users)) return NT_E_ARG;
+    for (int j = 0; j < n; j++) {
+        if (!kvs[j]) return NT_E_ARG;
+        for (int i = 0; i < j; i++) if (kvs[i] == kvs[j]) return NT_E_ARG;
+        int rc = nt_check_call(kvs[j], &tokens[j], 1, pos[j], m->vocab, m->n_layers, m->kv_dim);
+        if (rc != NT_OK) return rc;
+    }
+    return llama_rows(m, n, tokens, kvs, pos, logits, n, callback, NULL, users);
 }
 
 static const char *const llama_names[] = { "llama", "mistral3", "qwen2", "qwen3", NULL };
@@ -446,4 +504,5 @@ const nt_arch nt_arch_llama = {
     .free = llama_free,
     .forward = llama_forward,
     .forward_residual = llama_forward_residual,
+    .forward_multi = llama_forward_multi,
 };

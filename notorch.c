@@ -5096,45 +5096,49 @@ static inline float nt_hsum256_ps(__m256 v) {
  * A row is one thread's work from start to finish, so the result does not depend on how
  * many threads NT_QMV_THREADS allows. A non-finite SIMD sum retries in scalar order;
  * that same scalar body serves targets without AVX2+FMA. */
+/* One row of a Q8_0 matrix against one float vector: the whole arithmetic of
+ * nt_q8_0_rows and of its batched form below, so the two agree bit for bit. */
+static inline float nt_q8_0_row_dot(const uint8_t *rb, const float *x, int nb) {
+#if defined(__AVX2__) && defined(__FMA__)
+    __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps(),
+           a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();
+    for (int blk = 0; blk < nb; blk++) {
+        const uint8_t *b = rb + (long)blk * 34;
+        __m256 d = _mm256_set1_ps(nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8))));
+        const float *xb = x + (long)blk * 32;
+        __m128i q0 = _mm_loadu_si128((const __m128i *)(b + 2));
+        __m128i q1 = _mm_loadu_si128((const __m128i *)(b + 18));
+        __m256 w0 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q0));
+        __m256 w1 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q0, 8)));
+        __m256 w2 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q1));
+        __m256 w3 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q1, 8)));
+        a0 = _mm256_fmadd_ps(_mm256_mul_ps(d, w0), _mm256_loadu_ps(xb),      a0);
+        a1 = _mm256_fmadd_ps(_mm256_mul_ps(d, w1), _mm256_loadu_ps(xb + 8),  a1);
+        a2 = _mm256_fmadd_ps(_mm256_mul_ps(d, w2), _mm256_loadu_ps(xb + 16), a2);
+        a3 = _mm256_fmadd_ps(_mm256_mul_ps(d, w3), _mm256_loadu_ps(xb + 24), a3);
+    }
+    float s = nt_hsum256_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3)));
+    if (isfinite(s)) return s;
+    /* Partial sums or their fold can overflow even when the sequential dot
+     * stays finite through cancellation. Retry only that row in the scalar
+     * order; ordinary rows retain the SIMD result bit for bit. */
+#endif
+    float acc = 0.0f;
+    for (int blk = 0; blk < nb; blk++) {
+        const uint8_t *b = rb + (long)blk * 34;
+        float d = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
+        const float *xb = x + (long)blk * 32;
+        for (int i = 0; i < 32; i++)
+            acc += d * (float)(int8_t)b[2 + i] * xb[i];
+    }
+    return acc;
+}
+
 static void nt_q8_0_rows(float *out, const uint8_t *W, const float *x,
                          int r0, int r1, int k) {
     int nb = k / 32;
-    for (int row = r0; row < r1; row++) {
-        const uint8_t *rb = W + (long)row * nb * 34;
-#if defined(__AVX2__) && defined(__FMA__)
-        __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps(),
-               a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();
-        for (int blk = 0; blk < nb; blk++) {
-            const uint8_t *b = rb + (long)blk * 34;
-            __m256 d = _mm256_set1_ps(nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8))));
-            const float *xb = x + (long)blk * 32;
-            __m128i q0 = _mm_loadu_si128((const __m128i *)(b + 2));
-            __m128i q1 = _mm_loadu_si128((const __m128i *)(b + 18));
-            __m256 w0 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q0));
-            __m256 w1 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q0, 8)));
-            __m256 w2 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q1));
-            __m256 w3 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q1, 8)));
-            a0 = _mm256_fmadd_ps(_mm256_mul_ps(d, w0), _mm256_loadu_ps(xb),      a0);
-            a1 = _mm256_fmadd_ps(_mm256_mul_ps(d, w1), _mm256_loadu_ps(xb + 8),  a1);
-            a2 = _mm256_fmadd_ps(_mm256_mul_ps(d, w2), _mm256_loadu_ps(xb + 16), a2);
-            a3 = _mm256_fmadd_ps(_mm256_mul_ps(d, w3), _mm256_loadu_ps(xb + 24), a3);
-        }
-        out[row] = nt_hsum256_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3)));
-        if (isfinite(out[row])) continue;
-        /* Partial sums or their fold can overflow even when the sequential dot
-         * stays finite through cancellation. Retry only that row in the scalar
-         * order; ordinary rows retain the SIMD result bit for bit. */
-#endif
-        float acc = 0.0f;
-        for (int blk = 0; blk < nb; blk++) {
-            const uint8_t *b = rb + (long)blk * 34;
-            float d = nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8)));
-            const float *xb = x + (long)blk * 32;
-            for (int i = 0; i < 32; i++)
-                acc += d * (float)(int8_t)b[2 + i] * xb[i];
-        }
-        out[row] = acc;
-    }
+    for (int row = r0; row < r1; row++)
+        out[row] = nt_q8_0_row_dot(W + (long)row * nb * 34, x, nb);
 }
 
 // Q5_0: 22 B/block, 32 vals — f16 scale + 4 B high-bit word + 16 nibble bytes
@@ -9125,6 +9129,24 @@ static void nt_f16_rows_n(float *out, int m, const uint8_t *W, const float *X,
     }
 }
 
+/* Q8_0 against float activations, several vectors per pass over a row: the row is read
+ * from memory once and stays in cache while up to NT_QMM_TILE_F vectors are dotted with it.
+ * Every (row, vector) pair goes through nt_q8_0_row_dot, the function nt_q8_0_rows calls,
+ * so the result is the single-vector result bit for bit. This is what lets NT_NO_I8 decode
+ * several sequences at the cost of reading the weights once. */
+static void nt_q8_0_rows_n(float *out, int m, const uint8_t *W, const float *X,
+                           int r0, int r1, int k, int n) {
+    int nb = k / 32;
+    for (int j0 = 0; j0 < n; j0 += NT_QMM_TILE_F) {
+        int jn = n - j0; if (jn > NT_QMM_TILE_F) jn = NT_QMM_TILE_F;
+        for (int row = r0; row < r1; row++) {
+            const uint8_t *rb = W + (long)row * nb * 34;
+            for (int j = 0; j < jn; j++)
+                out[(long)(j0 + j) * m + row] = nt_q8_0_row_dot(rb, X + (long)(j0 + j) * k, nb);
+        }
+    }
+}
+
 /* Its own job rather than the int8 one, whose three activation pointers have no meaning
  * here; the row-claiming is the same because the reason for it is the same. */
 typedef struct {
@@ -9149,17 +9171,20 @@ int nt_qmatmul(float *out, const uint8_t *W, int dtype,
                const float *X, int m, int k, int n) {
     if (!out || !W || !X || m <= 0 || k <= 0 || n <= 0) return -1;
     if (n == 1) return nt_qmatvec(out, W, dtype, X, m, k);
-    if (dtype != 1) return -1;           /* only f16 has a batched unpacked kernel */
+    nt_fmmrows_fn fn;                    /* the formats with a batched float kernel */
+    if (dtype == 1) fn = nt_f16_rows_n;
+    else if (dtype == 8 && k % 32 == 0) fn = nt_q8_0_rows_n;
+    else return -1;
 
     /* Same gate as the int8 entry, and for the same reason: the work is m*k*n, and
      * leaving n out of it left most of a prefill on one core. */
     int nt = nt_qmv_host_threads(m);
     if (nt <= 1 || (long)m * k * (long)n < nt_qmv_thread_floor()) {
-        nt_f16_rows_n(out, m, W, X, 0, m, k, n);
+        fn(out, m, W, X, 0, m, k, n);
         return 0;
     }
 
-    nt_fmm_job job = { nt_f16_rows_n, out, W, X, m, k, n, m, 0, 0 };
+    nt_fmm_job job = { fn, out, W, X, m, k, n, m, 0, 0 };
     job.chunk = m / (nt * 8); if (job.chunk < 1) job.chunk = 1;
     pthread_t th[NT_QMV_MAX_THREADS];
     int launched = 0;

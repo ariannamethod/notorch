@@ -312,6 +312,12 @@ test_consumer_link:
 test_residual: tests/test_residual.c libnotorch_harness.a libnotorch.a
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
 
+test_multi_decode: tests/test_multi_decode.c libnotorch_harness.a libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+
+bench_multi_decode: tests/bench_multi_decode.c libnotorch_harness.a libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+
 check_residual: test_residual
 	./test_residual
 
@@ -563,7 +569,7 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_gemma3 test_smollm_tokenizer
+test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
 	./notorch_test
 	./test_vision
 	./test_conv1d
@@ -586,6 +592,7 @@ test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_w
 	./test_plan_race
 	./test_wt_expert
 	./test_residual
+	./test_multi_decode
 	./test_gemma3
 	./test_smollm_tokenizer
 	./test_qgather

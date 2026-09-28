@@ -13,6 +13,49 @@ Newest entries on top.
 
 ---
 
+## 2026-09-28 — Several sequences in one decode step, each bit for bit its own
+
+`nt_arch` gains `forward_multi`: one decode step for n independent sequences, row j
+being `tokens[j]` at `pos[j]` of the sequence whose cache is `kvs[j]`. Each row's logits
+and cache contents are exactly those of `forward_residual` on that sequence alone, while
+every weight matrix is read once for all rows. A steering callback runs per row with the
+row's own user pointer, n = 1 and its own position, so a consumer that steers each
+sequence differently keeps doing so. `llama` (llama, mistral3, qwen2, qwen3) and `gemma3`
+implement it. Both forwards now run over rows that each name their cache and position;
+prefill and single decode pass one cache and consecutive positions, keep the block
+callback, keep the attention threading gate (`n * (last + 1)` is the old
+`n * (pos0 + n)`), and do the arithmetic they did before.
+
+`nt_qmatmul` now also takes Q8_0 with float activations (`nt_q8_0_rows_n`), so NT_NO_I8
+batches too. Every (row, vector) pair goes through `nt_q8_0_row_dot`, the body
+`nt_q8_0_rows` now calls, including the scalar retry of an overflowing row; the batched
+result is the single-vector result bit for bit.
+
+Gates. `tests/test_multi_decode.c` writes small real GGUFs with Q8_0 matrices — qwen2
+with attention biases, qwen3 with per-head q/k norms, gemma3 with five sliding layers
+of window 4 — and for each, in the int8 and NT_NO_I8 paths, with the thread fan-out
+forced on and off, plain and with a per-row steering callback, decodes three sequences
+of different lengths alone and together: logits and caches equal after every step
+(753 checks). It also checks that a shared cache, an out-of-vocabulary token, a
+position beyond the cache and a callback without per-row users are refused with the
+logits unwritten. Making attention read the first row's position for every row turns
+the llama and gemma3 configurations red. `tests/test_q8_0_rows.c` adds the batched
+Q8_0 kernel: n = 2..11 against per-vector matvec, threaded and not, bit-identical, and
+an overflowing vector inside a batch retried like alone. `make test` passes in full on
+polygon (gcc 13.3); on the intel Mac only `test_quantize`'s Q8_0 round trip fails, as
+on untouched `main`.
+
+Throughput, `tests/bench_multi_decode.c` (B sequences of 8 prompt tokens, then the same
+greedy steps alone and together; every run reported identical logits). Both machines
+were running other jobs, so these are ratios under load, not clean rates. Intel Mac,
+i5-8257U, 4 threads, load 4.5 to 12: Qwen2.5-1.5B-Instruct Q8_0, int8, B = 8, 64 steps,
+7.40 to 13.04 tokens/s; NT_NO_I8, 32 steps, B = 4 / 8 / 16: 7.21 to 11.90, 7.61 to
+10.53, 7.16 to 11.32; Gemma 3 1B IT Q8_0, NT_NO_I8, B = 4 / 8: 10.86 to 16.75, 10.09 to
+16.91. Polygon, i5-8500T, load 9.5: Qwen2.5-1.5B int8 B = 8, 1.63 to 7.54; Gemma 3 1B
+NT_NO_I8 B = 8, 6.22 to 10.88. The float kernel limits the NT_NO_I8 gain: each vector
+repeats the block's int8-to-float conversion and scale, which a shared dequantization
+per block would remove without changing a bit.
+
 ## 2026-09-28 — Retry exceptional Q8_0 rows without changing ordinary SIMD sums
 
 The review of #140 supplied a reproducible cancellation failure: two Q8_0

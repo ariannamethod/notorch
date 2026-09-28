@@ -611,9 +611,10 @@ int nt_qmatmul_i8_pre(float *out, const uint8_t *Wq, int dtype,
                       const int8_t *qa, const float *da, const int32_t *asum,
                       int m, int k, int n);
 
-// The same for the unpacked formats, which the entry above refuses. F16 only: its
-// tensors are what a model is made of before anyone quantizes it, while the F32 ones
-// in a real file are norms and biases and carry no traffic worth batching. X is [n, k]
+// The same with float activations, for the formats the int8 entry refuses or a caller
+// keeps off it: F16, whose tensors are what a model is made of before anyone quantizes
+// it, and Q8_0 under NT_NO_I8. The F32 tensors in a real file are norms and biases and
+// carry no traffic worth batching. X is [n, k]
 // row-major, out is [n, m] row-major, and the per-row accumulation order is the one
 // nt_qmatvec uses, so results are identical to calling it n times rather than close.
 // Returns -1 for any other dtype; a caller that gets it loops nt_qmatvec and is correct.
