@@ -509,6 +509,10 @@ test_f16_matvec: tests/test_f16_matvec.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o test_f16_matvec tests/test_f16_matvec.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_f16_matvec (unpacked matvec against a double accumulation, $(BLAS_NAME))"
 
+test_q8_0_rows: tests/test_q8_0_rows.c notorch.c notorch.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o test_q8_0_rows tests/test_q8_0_rows.c notorch.c -lm $(BLAS_LIBS)
+	@echo "Compiled: test_q8_0_rows (Q8_0 float-activation kernel: distance, order, threads, $(BLAS_NAME))"
+
 test_qgather: tests/test_qgather.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o test_qgather tests/test_qgather.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qgather (gathered matvec against the loop, $(BLAS_NAME))"
@@ -559,7 +563,7 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_conv1d test_logmel test_residual test_gemma3 test_smollm_tokenizer
+test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_gemma3 test_smollm_tokenizer
 	./notorch_test
 	./test_vision
 	./test_conv1d
@@ -587,6 +591,7 @@ test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_w
 	./test_qgather
 	NT_QMV_CHUNKS=1 ./test_qgather
 	./test_f16_matvec
+	./test_q8_0_rows
 
 test_js:
 	node js-edition/test_op_parity.mjs

@@ -5068,12 +5068,58 @@ static void nt_q4_0_rows(float *out, const uint8_t *W, const float *x,
     }
 }
 
+#if defined(__AVX2__) && defined(__FMA__)
+#include <immintrin.h>
+/* Fold order, fixed: the two 128-bit halves lane by lane, then lanes 0+2 and 1+3, then
+ * those two. tests/test_q8_0_rows.c reproduces it bit for bit. */
+static inline float nt_hsum256_ps(__m256 v) {
+    __m128 lo = _mm256_castps256_ps128(v), hi = _mm256_extractf128_ps(v, 1);
+    lo = _mm_add_ps(lo, hi);
+    __m128 sh = _mm_movehl_ps(lo, lo); lo = _mm_add_ps(lo, sh);
+    sh = _mm_shuffle_ps(lo, lo, 0x1);  lo = _mm_add_ss(lo, sh);
+    return _mm_cvtss_f32(lo);
+}
+#endif
+
 // Q8_0: 34 B/block, 32 vals — f16 scale + 32 int8.
+/* This is the kernel NT_NO_I8 runs every Q8_0 weight through, and the scalar loop was one
+ * dependency chain: every product waits for the previous add, so a core retires one term
+ * per add latency no matter how wide it is. Gemma 3 1B on an i5-8500T took 35.7 s to
+ * generate 32 tokens with it and 9.7 s on the int8 path, same binary, same prompt.
+ *
+ * On AVX2+FMA the row is carried in 32 partial sums, one per position in the block (four
+ * 8-lane vectors). Each term is the scalar loop's own product d*w, rounded the same way,
+ * added to its partial with a fused multiply-add; the partials are folded once per row,
+ * (p0..7 + p8..15) + (p16..23 + p24..31) and then nt_hsum256_ps. That is a different
+ * summation order from the scalar loop, so the last bits move — gated by
+ * tests/test_q8_0_rows.c against a double accumulation, with the exact bits of this order.
+ * A row is one thread's work from start to finish, so the result does not depend on how
+ * many threads NT_QMV_THREADS allows. The scalar body stays under #else. */
 static void nt_q8_0_rows(float *out, const uint8_t *W, const float *x,
                          int r0, int r1, int k) {
     int nb = k / 32;
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 34;
+#if defined(__AVX2__) && defined(__FMA__)
+        __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps(),
+               a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();
+        for (int blk = 0; blk < nb; blk++) {
+            const uint8_t *b = rb + (long)blk * 34;
+            __m256 d = _mm256_set1_ps(nt_f16_to_f32((uint16_t)(b[0] | (b[1] << 8))));
+            const float *xb = x + (long)blk * 32;
+            __m128i q0 = _mm_loadu_si128((const __m128i *)(b + 2));
+            __m128i q1 = _mm_loadu_si128((const __m128i *)(b + 18));
+            __m256 w0 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q0));
+            __m256 w1 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q0, 8)));
+            __m256 w2 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(q1));
+            __m256 w3 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(q1, 8)));
+            a0 = _mm256_fmadd_ps(_mm256_mul_ps(d, w0), _mm256_loadu_ps(xb),      a0);
+            a1 = _mm256_fmadd_ps(_mm256_mul_ps(d, w1), _mm256_loadu_ps(xb + 8),  a1);
+            a2 = _mm256_fmadd_ps(_mm256_mul_ps(d, w2), _mm256_loadu_ps(xb + 16), a2);
+            a3 = _mm256_fmadd_ps(_mm256_mul_ps(d, w3), _mm256_loadu_ps(xb + 24), a3);
+        }
+        out[row] = nt_hsum256_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3)));
+#else
         float acc = 0.0f;
         for (int blk = 0; blk < nb; blk++) {
             const uint8_t *b = rb + (long)blk * 34;
@@ -5083,6 +5129,7 @@ static void nt_q8_0_rows(float *out, const uint8_t *W, const float *x,
                 acc += d * (float)(int8_t)b[2 + i] * xb[i];
         }
         out[row] = acc;
+#endif
     }
 }
 
@@ -5229,17 +5276,7 @@ static void nt_q4_k_rows(float *out, const uint8_t *W, const float *x,
 // same box, same input, CPU 553%). Eight values per lane, four sub-groups accumulated
 // separately and folded by their int8 sub-scale once per 16-value group, so the scale
 // application is identical to the scalar order. The scalar body is kept verbatim under
-// #else for ARM and non-AVX2 x86.
-#if defined(__AVX2__) && defined(__FMA__)
-#include <immintrin.h>
-static inline float nt_hsum256_ps(__m256 v) {
-    __m128 lo = _mm256_castps256_ps128(v), hi = _mm256_extractf128_ps(v, 1);
-    lo = _mm_add_ps(lo, hi);
-    __m128 sh = _mm_movehl_ps(lo, lo); lo = _mm_add_ps(lo, sh);
-    sh = _mm_shuffle_ps(lo, lo, 0x1);  lo = _mm_add_ss(lo, sh);
-    return _mm_cvtss_f32(lo);
-}
-#endif
+// #else for ARM and non-AVX2 x86. nt_hsum256_ps is defined above nt_q8_0_rows.
 
 static void nt_q6_k_rows(float *out, const uint8_t *W, const float *x,
                          int r0, int r1, int k) {
@@ -5835,15 +5872,11 @@ int nt_qmatvec(float *out, const uint8_t *Wq, int dtype,
     if (!fn) return -1;
 
     int nt = nt_qmv_host_threads(m);
-    // Thread fan-out and the 2P+4E asymmetry of Apple-Silicon-class CPUs make small
-    // single-token decode matvecs counterproductive even when workers are persistent.
-    // Gate it high: only large matvecs (big models / batched work) thread; small
-    // decode stays single-thread.
-    /* The 4M floor was measured on a 360M-class decoder, where fan-out was noise.
-     * Other shapes exist: a 500M decoder's matrices are 2.46M and sit just under
-     * it, so its whole decode stays single-threaded. Default is unchanged;
-     * NT_QMV_THREAD_MIN lets a consumer set the floor for its own shape after
-     * measuring (the eye engine runs at 256K: 3.7 -> 7.3 tok/s, same output). */
+    /* Below the thread floor the call stays on this thread. The floor is
+     * NT_QMV_THREAD_MIN_DEFAULT (64K elements, measured where it is defined), or
+     * NT_QMV_THREAD_MIN / nt_qmv_set_thread_min for a consumer that measured its own
+     * shapes. Row ranges do not change the arithmetic, so the output is the same
+     * threaded or not. */
     if (nt <= 1 || (long)m * k < nt_qmv_thread_floor()) { fn(out, Wq, x, 0, m, k); return 0; }
 
 #ifdef _OPENMP
