@@ -647,17 +647,28 @@ tests/test_simd_correctness: tests/test_simd_correctness.c notorch_simd.h
 tests/test_simd_loss: tests/test_simd_loss.c notorch_simd.h
 	$(CC) -O2 -mavx2 -mfma -DUSE_SIMD -I. -o tests/test_simd_loss tests/test_simd_loss.c -lm -lpthread
 
+# Tail rectangles, padded strides and transpose modes at several thread counts.
+tests/test_simd_tails: tests/test_simd_tails.c notorch_simd.h
+	$(CC) -O2 -mavx2 -mfma -DUSE_SIMD -I. -o tests/test_simd_tails tests/test_simd_tails.c -lm -lpthread
+
+.PHONY: test_simd_tails
+test_simd_tails: tests/test_simd_tails
+	@for threads in 1 2 4 8; do NT_SIMD_THREADS=$$threads ./tests/test_simd_tails --exact || exit $$?; done
+
 # RRPRAM low-rank attention finite-difference grad check
 tests/test_rrpram_lr: tests/test_rrpram_lr.c notorch.c notorch.h
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o tests/test_rrpram_lr tests/test_rrpram_lr.c notorch.c -lm $(BLAS_LIBS)
 
-test_simd: tests/test_simd_correctness tests/test_simd_loss
+test_simd: tests/test_simd_correctness tests/test_simd_loss test_simd_tails
 	./tests/test_simd_correctness
 	./tests/test_simd_loss
 
 # SIMD vs OpenBLAS micro-benchmark at hot-path shapes
 bench/bench_simd: bench/bench_simd.c notorch.c notorch.h notorch_simd.h
 	$(CC) -O2 -mavx2 -mfma -DUSE_SIMD -I. -o bench/bench_simd bench/bench_simd.c notorch.c -lm -lpthread
+
+bench/bench_simd_tails: bench/bench_simd_tails.c notorch.c notorch.h notorch_simd.h
+	$(CC) -O2 -mavx2 -mfma -DUSE_SIMD -I. -o bench/bench_simd_tails bench/bench_simd_tails.c notorch.c -lm -lpthread
 
 bench/bench_blas: bench/bench_simd.c notorch.c notorch.h
 	$(CC) -O2 -mavx2 -mfma $(BLAS_FLAGS) -I. -o bench/bench_blas bench/bench_simd.c notorch.c -lm $(BLAS_LIBS)
@@ -676,8 +687,8 @@ clean:
 		infer_janus_nt infer_gemma infer_llama \
 		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \
 		train_dpo train_grpo train_distillation test_vision test_gguf test_gguf_write \
-		tests/test_simd_correctness tests/test_simd_loss tests/test_rrpram_lr \
-		bench/bench_simd bench/bench_blas \
+		tests/test_simd_correctness tests/test_simd_loss tests/test_simd_tails tests/test_rrpram_lr \
+		bench/bench_simd bench/bench_simd_tails bench/bench_blas \
 		test_cuda_decode bench_cuda_decode libnotorch_cuda.a harness/cuda_decode.o
 
 help:

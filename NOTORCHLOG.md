@@ -13,6 +13,58 @@ Newest entries on top.
 
 ---
 
+## 2026-09-29 — A four-row training tail still gets the vector kernel
+
+JOVOVICH's 16-token batches split into 6/6/4 rows on the SIMD path. The last
+four rows of every output tile fell back to scalar multiplication, including
+the frozen 151936 × 896 vocabulary head and its input-gradient projection.
+More threads did not remove that tail. The packed A/B panels already contain
+zero padding, so an incomplete tile now stages its valid C rectangle in a
+zeroed 6 × 16 temporary, calls the existing FMA microkernel, and copies only
+the valid rectangle back. Full tiles, packing, thread partitioning, and the
+training batch/update schedule are unchanged.
+
+Proof: `make test_simd_tails` runs 8,000 cases at each of 1/2/4/8 threads, covering
+all row/column tail sizes, NN/NT/TN/TT, padded leading dimensions, alpha/beta,
+beta-zero NaN inputs, and packing-panel boundaries. Every result matches an
+ordered `fmaf` reference bitwise; independent double-reference maximum absolute
+error is 4.26e-6 within the reduction-length bound. Input/output canaries hold.
+ASan/UBSan pass at all four thread counts with leak detection disabled because
+LeakSanitizer cannot inspect this environment. Two deliberate scratch defects
+go red: omitting the last valid row fails numerically; copying all six rows
+overwrites an output canary. The original scalar-tail implementation passes
+the numerical bounds but has different rounding from ordered FMA.
+
+The native SIMD autograd suite passes 50/50 tests; the vocabulary-head loss
+check reports finite logits and CE 10.379384. The existing large-shape
+`test_simd_correctness` gate reports the same nine relative-error failures on
+both the original and patched headers, with the same displayed worst relative
+errors for those cases. Its cancellation-sensitive threshold remains unchanged;
+`make test_simd` therefore still exits at that pre-existing gate. The loss
+check was also run directly after that exit.
+
+Bounded benchmark: F32 synthetic frozen-head `nt_seq_linear` forward and its
+input-gradient backward with unit upstream gradients, T=16, E=896, V=151936,
+Intel Xeon Platinum 8573C,
+8-core CPU quota, `cc -O2 -std=gnu11 -march=native -DUSE_SIMD`, four SIMD
+threads. Both sides were rebuilt against the same 57ed1a1 source with the
+original or patched SIMD header. Each process warms once, then measures twice.
+The paired runs overlapped two independent training jobs, each configured for
+four threads. Projection timings were measured under this shared load.
+
+| Pair / batch | Before ms/token | After ms/token | Before peak RSS KiB | After peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: |
+| 1 / 16 | 67.83 | 29.86 | 552520 | 552628 |
+| 2 / 16 | 99.78 | 32.49 | 552516 | 552516 |
+| full-tile control / 48 | 14.06 | 12.74 | 619304 | 619300 |
+
+`make bench/bench_simd_tails` followed by
+`NT_SIMD_THREADS=4 ./bench/bench_simd_tails 16` reproduces the measured workload
+and reports each forward/backward time plus peak RSS. The batch-16 full-tensor
+comparison checks 2,430,976 logits: maximum absolute change 4.54e-9, relative
+L2 3.28e-7, all 16 argmax IDs unchanged. All 14,336 input-gradient elements are
+bit-identical. Moving scalar tails to FMA changes rounding by the amounts above.
+
 ## 2026-09-28 — Qwen keeps the last tab with the word
 
 JOVOVICH's real Makefile review exposed a Qwen pre-tokenizer boundary error:

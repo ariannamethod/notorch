@@ -783,7 +783,7 @@ Design:
 - Outer cache-blocked GEMM (Mc=96, Kc=256, Nc=1024) with row + col packing for streaming through the kernel
 - Persistent pthread pool (no per-call create/join) — workers sleep on `pthread_cond_t`, master signals work, workers FMA. Single-thread fast path for matmuls under 256K mul-adds where signal latency would dominate.
 - AVX2 `_mm_prefetch` ahead of the kernel inner loop, AVX2 vectorized panel packing for `col_stride==1` paths (forward + input-grad)
-- Edge tiles (m mod 6 ≠ 0 or n mod 16 ≠ 0) handled via scalar fallback within the same buffer layout
+- Edge tiles (m mod 6 ≠ 0 or n mod 16 ≠ 0) use the same vector kernel with padded A/B panels and a temporary 6×16 C tile; only the valid output rectangle is copied back
 
 Bench at training-relevant shapes on Intel i5-8500T (6c, no AVX-512) vs OpenBLAS 0.3.26, both at 6 threads (`bench/bench_simd` vs `bench/bench_blas`). Absolute GFLOP/s swing ±20% run-to-run on this desktop part, so the **Ratio** (SIMD ÷ OpenBLAS, same run) is the stable signal:
 
