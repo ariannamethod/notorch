@@ -314,17 +314,21 @@ static void nt_simd_sgemm_block(
                             nt_simd_micro_6x16(A_block, B_strip, C_block,
                                                kc_size, ldc, 1);
                         } else {
-                            // Edge tile — scalar fallback (rare)
-                            // C_block has stride ldc, access C_block[ii*ldc + jj]
+                            // A/B packing already zero-pads the unused rows and
+                            // columns. Stage only the valid C rectangle, run the
+                            // same FMA kernel, then copy that rectangle back.
+                            // In a 16-row batch this handles four rows of every
+                            // output tile; a scalar tail would dominate the head.
+                            float tail[NT_SIMD_MR * NT_SIMD_NR] = {0};
                             for (int ii = 0; ii < i_size; ii++) {
-                                for (int jj = 0; jj < j_size; jj++) {
-                                    float s = C_block[ii*ldc + jj];
-                                    for (int p = 0; p < kc_size; p++) {
-                                        s += A_block[p*NT_SIMD_MR + ii] *
-                                             B_strip[p*NT_SIMD_NR + jj];
-                                    }
-                                    C_block[ii*ldc + jj] = s;
-                                }
+                                memcpy(tail + ii*NT_SIMD_NR, C_block + ii*ldc,
+                                       (size_t)j_size * sizeof(float));
+                            }
+                            nt_simd_micro_6x16(A_block, B_strip, tail,
+                                              kc_size, NT_SIMD_NR, 1);
+                            for (int ii = 0; ii < i_size; ii++) {
+                                memcpy(C_block + ii*ldc, tail + ii*NT_SIMD_NR,
+                                       (size_t)j_size * sizeof(float));
                             }
                         }
                     }
