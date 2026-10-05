@@ -1653,7 +1653,7 @@ export class SGD {
   }
 }
 
-/** Chuck — self-aware Adam, ported 1:1 from notorch.c nt_tape_chuck_step. */
+/** Chuck — self-aware Adam, based on C nt_tape_chuck_step with JS arithmetic and Gaussian noise. */
 export class Chuck {
   constructor(tapeOrEngine, lr = 1e-3) {
     this.tape = _resolveTape(tapeOrEngine);

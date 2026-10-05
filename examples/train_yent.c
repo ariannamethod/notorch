@@ -3,7 +3,7 @@
  *
  * Architecture: V=256, E=224, H=8, FFN=896, CTX=128, L=12
  * Dataset: yent_v11_en_final.txt (5.6MB, cynical AI character)
- * Optimizer: Chuck (synced with PyTorch)
+ * Optimizer: in-house C Chuck (per-parameter variant)
  *
  * Build: make train_yent
  * Run:   ./train_yent [steps] [lr]

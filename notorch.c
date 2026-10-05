@@ -2518,7 +2518,7 @@ static float chuck_randn(void) {
     return 2.0f * (float)(chuck_rng) / 4294967296.0f - 1.0f;
 }
 
-// Synced with PyTorch chuck.py (iamolegataeff/chuck.optimizer) 2026-04-06
+// In-house per-param Chuck; lineage and CPU golden-vector test in notorch.h.
 // θ -= (α × S × λ × λ_l) × m̂/(√v̂ + ε) + η
 void nt_tape_chuck_step(float lr, float loss_val) {
     float beta1 = 0.9f, beta2 = 0.999f, eps = 1e-8f;
