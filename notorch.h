@@ -254,6 +254,74 @@ void  nt_tape_adam_step(float lr);
 void  nt_tape_adamw_step(float lr, float weight_decay, float beta1, float beta2);
 void  nt_tape_chuck_step(float lr, float loss_val);
 
+// Chuck: Loss Architect — state, policy, typed actions.
+// The Architect lives outside nt_tape; existing tape/state layouts are stable.
+typedef enum {
+    NT_CHUCK_ACTION_LEGACY = 0,
+    NT_CHUCK_ACTION_HOLD,
+    NT_CHUCK_ACTION_BRAKE,
+    NT_CHUCK_ACTION_PUSH,
+    NT_CHUCK_ACTION_SET_DAMPEN,
+    NT_CHUCK_ACTION_SET_LR_SCALE,
+    NT_CHUCK_ACTION_SET_NOISE,
+    NT_CHUCK_ACTION_COUNT
+} nt_chuck_action_kind;
+
+#define NT_CHUCK_ACTION_BIT(kind) (UINT32_C(1) << (kind))
+#define NT_CHUCK_ALL_ACTIONS ((UINT32_C(1) << NT_CHUCK_ACTION_COUNT) - 1)
+#define NT_CHUCK_LR_SCALE_LO 0.05f
+#define NT_CHUCK_LR_SCALE_HI 2.0f
+#define NT_CHUCK_NOISE_LO 0.0f
+#define NT_CHUCK_NOISE_HI 0.01f
+
+typedef struct {
+    nt_chuck_action_kind kind;
+    float value; // SET_* absolute value; zero for LEGACY/HOLD/BRAKE/PUSH.
+} nt_chuck_action;
+
+typedef struct {
+    uint32_t enabled_actions;
+    float dampen_min, dampen_max;
+    float lr_scale_min, lr_scale_max;
+    float noise_min, noise_max;
+} nt_chuck_action_limits;
+
+typedef struct {
+    float loss, loss_ema, loss_trend;
+    float macro_ema, best_macro;
+    float dampen, lr_scale, noise;
+    float grad_norm, grad_trend, frozen_fraction;
+    int step, stag, macro_stag, history_len;
+} nt_chuck_observation;
+
+enum {
+    NT_CHUCK_OK = 0,
+    NT_CHUCK_E_ARGUMENT = -1,
+    NT_CHUCK_E_ACTION = -2,
+    NT_CHUCK_E_BOUNDS = -3,
+    NT_CHUCK_E_STATE = -4
+};
+
+void nt_chuck_action_limits_default(nt_chuck_action_limits *limits);
+int nt_chuck_action_limits_validate(const nt_chuck_action_limits *limits);
+// Read-only observation of the pending step: current loss is incorporated into
+// a copy of loss/history/macro state, before any action. Controls are pre-action;
+// a cold tape observes dampen=lr_scale=1. grad_trend compares this gradient norm
+// with the preceding per-slot gradient norms. frozen_fraction counts slots.
+int nt_tape_chuck_observe(float loss, nt_chuck_observation *out);
+// NULL/zero action selects canonical legacy; NULL limits uses the hard bounds.
+// Other actions replace the global policy while retaining the per-slot policy.
+// HOLD retains controls; BRAKE/PUSH scale dampen by 0.97/1.03 and saturate within
+// the supplied bounds; SET_* refuses out-of-bounds values. All request validation
+// precedes mutation. Existing nt_tape_chuck_step retains its original behavior.
+int nt_tape_chuck_step_action(float lr, float loss,
+                             const nt_chuck_action *action,
+                             const nt_chuck_action_limits *limits);
+// Chuck's noise stream is independent of nt_seed. Save both streams when the
+// training body also consumes nt_seed's RNG; this API preserves legacy lifetime.
+uint32_t nt_chuck_rng_get(void);
+int nt_chuck_rng_set(uint32_t state);
+
 // Gradient utilities
 float nt_tape_clip_grads(float max_norm);
 void  nt_tape_accum_grads(void);

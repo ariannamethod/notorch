@@ -95,3 +95,8 @@ bench_multi_decode
 test_gguf_keys
 test_cuda_decode
 bench_cuda_decode
+
+# Chuck: Loss Architect build outputs
+/test_chuck_architect
+/chuck_architect_train
+!tests/test_chuck_architect_mutations.py

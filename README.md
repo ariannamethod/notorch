@@ -24,6 +24,7 @@
 - [operations](#operations)
 - [optimizers](#optimizers)
 - [the chuck optimizer](#the-chuck-optimizer)
+- [Chuck: Loss Architect](#chuck-loss-architect)
 - [bit-level precision — BitNet b1.58](#bit-level-precision--bitnet-b158)
 - [SwiGLU FFN](#swiglu-ffn)
 - [SPA — Sentence Phonon Attention](#spa--sentence-phonon-attention)
@@ -469,6 +470,33 @@ constants (window size, trend thresholds, noise decay, freeze threshold, macro i
 it's the diagonal baseline, but with opinions. think of it as a baseline that went to therapy, got a mindfulness app, and now checks in with itself every step. `"how are my gradients feeling today?"` — actual question the Chuck optimizer asks itself (metaphorically) (or is it?).
 
 more details: [github.com/iamolegataeff/chuck.optimizer](https://github.com/iamolegataeff/chuck.optimizer)
+
+### Chuck: Loss Architect
+
+Chuck's training world now has an explicit action language:
+**state → policy → typed action → measured consequence → acquired experience**.
+The executor accepts `hold`, `brake`, `push`, and bounded dampening, LR-scale and
+noise setters. The first learned policy is a **163-parameter** outcome model
+choosing among hold/brake/push. It learns from loss measured on the same window
+before and after its action. Each life carries its weights, history, RNG and
+pending decision through save/resume.
+
+`nt_tape_chuck_step` keeps the canonical trajectory. Absent, disabled, empty and
+legacy Architect configurations select that same policy. The learned Architect
+selects global actions; per-parameter Chuck state and updates retain their local
+policy. Configuration is [inspectable JSON](examples/chuck-loss-architect.json),
+and the public C API is [chuck_architect.h](chuck_architect.h).
+
+```bash
+make check_chuck_architect BLAS_FLAGS= BLAS_LIBS=
+make test_chuck_architect_mutations
+make chuck_architect_train BLAS_FLAGS= BLAS_LIBS=
+```
+
+[Architecture and objective](docs/chuck-loss-architect.md) ·
+[two-body training recipe and receipts](experiments/chuck_loss_architect/README.md).
+WOLFE supplies the finite tool-calling lineage; Netta supplies the
+action/consequence/experience lineage. This architecture lives in notorch training.
 
 ---
 

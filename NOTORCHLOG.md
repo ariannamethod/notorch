@@ -13,6 +13,35 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Chuck: Loss Architect
+
+Separate Chuck's observation, policy and typed action surface. The canonical
+policy retains the original expression order; the learned policy selects global
+hold/brake/push actions, with local parameter history and updates preserved.
+The 163-parameter outcome MLP learns from the same window's measured loss before
+and after an executed step. Its versioned life carries weights, configuration,
+history, RNG and pending credit. A strict JSON schema and the core executor
+enforce enabled actions and bounds; contradictory legacy settings are refused.
+
+Proof: the original core suite passes 51/51. `make check_chuck_architect
+BLAS_FLAGS= BLAS_LIBS=` passes eight groups, including the immutable golden
+vectors through nine entry/configuration routes, unavailable/bounded actions,
+configuration refusals, opposite-consequence learning and exact CPU body + Adam
+moments + Chuck noise/history + pending policy save/resume. Four deliberate
+defects go red: brake executes push, selected action is replaced, credit sign is
+reversed, and learning is suppressed. ASan/UBSan pass the focused suite.
+
+`make test_chuck_legacy_parity` independently rebuilds `097fc06` and current
+Chuck: 6000 steps with noise, freezing and macro LR adjustment are byte-identical
+(SHA-256 `306275db6c3e8b72d5a1d767fb573c443d300a9a8959363f5e76c8fe37a82601`).
+An independent 8000-step audit also matches all 5,024,000 recorded bytes.
+`make -j2 test BLAS_FLAGS= BLAS_LIBS=` passes the complete CPU suite.
+
+The upstream runner connects SimpleLLM (450,688 parameters, Dracula) and HeVLM
+(1,123,456 parameters, Hebrew) to four matched arms. Source/corpus identities,
+the fixed experimental objective and reproduction commands live in
+`experiments/chuck_loss_architect/`; full traces and weights stay outside Git.
+
 ## 2026-10-05 — Pin the canonical C Chuck trajectory
 
 `test_chuck_golden_vector` records 25 deterministic steps from unmodified
