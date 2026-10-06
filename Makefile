@@ -123,6 +123,9 @@ endif
 SIMD_FLAGS = -DUSE_SIMD -mavx2 -mfma
 SIMD_LIBS  = -lpthread
 
+# Loss Architect is included by notorch.c, including single-file consumers.
+CHUCK_HEADERS = chuck_architect.h chuck_architect_impl.h
+
 # ── Targets ──
 
 .PHONY: bench_qmatmul
@@ -132,22 +135,22 @@ all: notorch_test
 	@echo "Built with $(BLAS_NAME). Run: ./notorch_test"
 
 # CPU with BLAS
-notorch_test: notorch.c notorch.h tests/test_notorch.c
+notorch_test: notorch.c notorch.h tests/test_notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch_test tests/test_notorch.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: notorch_test (CPU + $(BLAS_NAME))"
 
 # CPU without BLAS (portable scalar fallback)
-cpu: notorch.c notorch.h tests/test_notorch.c
+cpu: notorch.c notorch.h tests/test_notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) -o notorch_test tests/test_notorch.c notorch.c -lm
 	@echo "Compiled: notorch_test (CPU, scalar — no BLAS, no SIMD)"
 
 # In-house AVX2+FMA SIMD shim — zero external BLAS dependency
-simd: notorch.c notorch.h notorch_simd.h tests/test_notorch.c
+simd: notorch.c notorch.h notorch_simd.h tests/test_notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(SIMD_FLAGS) -o notorch_test_simd tests/test_notorch.c notorch.c -lm $(SIMD_LIBS)
 	@echo "Compiled: notorch_test_simd (in-house AVX2+FMA, pthread)"
 
 # GPU (CUDA)
-gpu: notorch.c notorch.h notorch_cuda.cu tests/test_notorch.c
+gpu: notorch.c notorch.h notorch_cuda.cu tests/test_notorch.c $(CHUCK_HEADERS)
 	nvcc -O2 -DUSE_CUDA -c notorch_cuda.cu -o notorch_cuda.o
 	$(CC) $(CFLAGS) -DUSE_CUDA -DUSE_BLAS -o notorch_test_gpu \
 		tests/test_notorch.c notorch.c notorch_cuda.o \
@@ -160,7 +163,7 @@ gpu: notorch.c notorch.h notorch_cuda.cu tests/test_notorch.c
 lib: libnotorch.a $(if $(filter 1,$(USE_CUDA)),libnotorch_gpu.a)
 
 # CPU-only library — always built, organism binaries link this (no CUDA deps).
-libnotorch.a: notorch.c notorch.h gguf.c gguf.h
+libnotorch.a: notorch.c notorch.h gguf.c gguf.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf.o
 	rm -f libnotorch.a
@@ -169,7 +172,7 @@ libnotorch.a: notorch.c notorch.h gguf.c gguf.h
 
 # GPU-enabled library — only when USE_CUDA=1. SFT trainer links this +
 # -lcudart -lcublas. Compiled with -DUSE_CUDA so #ifdef blocks activate.
-libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h
+libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -DUSE_CUDA -I/usr/local/cuda/include -c notorch.c -o notorch_gpu.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf_gpu.o
 	nvcc -O2 -DUSE_CUDA -c notorch_cuda.cu -o notorch_cuda.o
@@ -195,7 +198,7 @@ endif
 
 shared: libnotorch.$(SOEXT)
 
-libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h
+libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c -lm $(BLAS_LIBS)
 	@echo "Built: libnotorch.$(SOEXT) ($(BLAS_NAME)) — load it with any FFI"
 
@@ -243,6 +246,7 @@ install: lib lib_harness
 	install -m 0644 libnotorch.a $(PREFIX)/lib/libnotorch.a
 	install -m 0644 libnotorch_harness.a $(PREFIX)/lib/libnotorch_harness.a
 	install -m 0644 notorch.h    $(PREFIX)/include/ariannamethod/notorch.h
+	install -m 0644 chuck_architect.h $(PREFIX)/include/ariannamethod/chuck_architect.h
 	install -m 0644 gguf.h       $(PREFIX)/include/ariannamethod/gguf.h
 	# The harness headers include each other as "harness/arch.h", so they are
 	# installed under a directory of that name and the caller adds one -I.
@@ -269,15 +273,15 @@ endif
 
 # ── Inference ──
 
-infer: examples/infer_janus.c notorch.c notorch.h
+infer: examples/infer_janus.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_janus_nt examples/infer_janus.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_janus_nt (Janus RRPRAM, $(BLAS_NAME))"
 
-gemma: examples/infer_gemma.c gguf.c gguf.h notorch.c notorch.h
+gemma: examples/infer_gemma.c gguf.c gguf.h notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_gemma examples/infer_gemma.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_gemma (Gemma-3 GGUF, $(BLAS_NAME))"
 
-llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorch.c notorch.h
+llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama examples/infer_llama.c examples/bpe.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_llama (LLaMA/Qwen GGUF + GGUF-BPE tokenizer, $(BLAS_NAME))"
 
@@ -294,7 +298,7 @@ HARNESS_HDR = harness/arch.h harness/arch_models.h harness/archs.h harness/runti
 
 harness: notorch
 
-notorch: $(HARNESS_SRC) $(HARNESS_HDR)
+notorch: $(HARNESS_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch $(HARNESS_SRC) -lm $(BLAS_LIBS)
 	@echo "Compiled: notorch (harness — GGUF in, text out, $(BLAS_NAME))"
 
@@ -402,56 +406,56 @@ test_reference: notorch
 
 # Tokenizer round-trip. Needs a model, because the thing being tested is what
 # the file says about itself: MODEL=path/to.gguf make test_bpe
-test_bpe: examples/bpe.c gguf.c notorch.c
+test_bpe: examples/bpe.c gguf.c notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) -DBPE_TEST -o /tmp/nt_bpe_test examples/bpe.c gguf.c notorch.c -lm
 	/tmp/nt_bpe_test $(MODEL)
 
 # ── Training ──
 
-train_q: examples/train_q.c notorch.c notorch.h
+train_q: examples/train_q.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_q examples/train_q.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_q (PostGPT-Q 1.65M, $(BLAS_NAME))"
 
-train_yent: examples/train_yent.c notorch.c notorch.h
+train_yent: examples/train_yent.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_yent examples/train_yent.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_yent (Yent 9.8M, $(BLAS_NAME))"
 
 # LLaMA 3 BPE training (MHA + RoPE + SwiGLU, 15.7M params, vocab 2048)
-train_llama3_bpe: examples/train_llama3_bpe.c notorch.c notorch.h
+train_llama3_bpe: examples/train_llama3_bpe.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_llama3_bpe examples/train_llama3_bpe.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_llama3_bpe (MHA + RoPE + BPE 2048, 15.7M, $(BLAS_NAME))"
 
 # LLaMA 3 BPE inference (interactive chat, KV cache, optional FP16 weights)
-infer_llama3_bpe: examples/infer_llama3_bpe.c notorch.c notorch.h
+infer_llama3_bpe: examples/infer_llama3_bpe.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama3_bpe examples/infer_llama3_bpe.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_llama3_bpe (MHA + RoPE + BPE 2048, $(BLAS_NAME))"
 
 # LLaMA 3 char-level training (GQA + RoPE + SwiGLU, ~9.5M params)
-train_llama3_char: examples/train_llama3_char.c notorch.c notorch.h
+train_llama3_char: examples/train_llama3_char.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_llama3_char examples/train_llama3_char.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_llama3_char (GQA + RoPE, $(BLAS_NAME))"
 
-infer_llama3_char: examples/infer_llama3_char.c notorch.c notorch.h
+infer_llama3_char: examples/infer_llama3_char.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama3_char examples/infer_llama3_char.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_llama3_char (char-level inference, $(BLAS_NAME))"
 
 # DPO — Direct Preference Optimization (Rafailov 2023)
-train_dpo: examples/train_dpo.c notorch.c notorch.h
+train_dpo: examples/train_dpo.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_dpo examples/train_dpo.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_dpo (DPO alignment, $(BLAS_NAME))"
 
 # GRPO — Group Relative Policy Optimization (DeepSeek-R1)
-train_grpo: examples/train_grpo.c notorch.c notorch.h
+train_grpo: examples/train_grpo.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_grpo examples/train_grpo.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_grpo (GRPO self-play RL, $(BLAS_NAME))"
 
 # Knowledge Distillation (Hinton 2015)
-train_distillation: examples/train_distillation.c notorch.c notorch.h
+train_distillation: examples/train_distillation.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o train_distillation examples/train_distillation.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: train_distillation (teacher→student KL, $(BLAS_NAME))"
 
 # Vision + BPE tests
-test_vision: tests/test_vision.c notorch.c notorch.h notorch_vision.h stb_image.h
+test_vision: tests/test_vision.c notorch.c notorch.h notorch_vision.h stb_image.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_vision tests/test_vision.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_vision (vision + BPE, $(BLAS_NAME))"
 
@@ -508,68 +512,87 @@ infer_gguf_metal:
 	@echo "infer_gguf_metal needs Apple Metal; this is $(UNAME). Skipping."
 endif
 
+# ── Chuck: Loss Architect ──
+
+.PHONY: check_chuck_architect test_chuck_architect_mutations test_chuck_legacy_parity
+
+test_chuck_architect: tests/test_chuck_architect.c tests/test_notorch.c notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ tests/test_chuck_architect.c notorch.c -lm $(BLAS_LIBS)
+
+check_chuck_architect: test_chuck_architect
+	./test_chuck_architect
+
+test_chuck_architect_mutations:
+	python3 tests/test_chuck_architect_mutations.py
+
+test_chuck_legacy_parity:
+	sh tests/test_chuck_legacy_parity.sh
+
+chuck_architect_train: examples/chuck_architect_train.c libnotorch.a $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ examples/chuck_architect_train.c ./libnotorch.a -lm $(BLAS_LIBS)
+
 # ── Test & Clean ──
 
-test_qpool: tests/test_qpool.c notorch.c notorch.h
+test_qpool: tests/test_qpool.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qpool tests/test_qpool.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qpool (threading determinism, $(BLAS_NAME))"
 
-test_quantize: tests/test_quantize.c notorch.c gguf.c notorch.h gguf.h
+test_quantize: tests/test_quantize.c notorch.c gguf.c notorch.h gguf.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_quantize tests/test_quantize.c notorch.c gguf.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_quantize (quantizer against a llama-quantize reference, $(BLAS_NAME))"
 
-test_gguf_write: tests/test_gguf_write.c gguf.c notorch.c gguf.h notorch.h
+test_gguf_write: tests/test_gguf_write.c gguf.c notorch.c gguf.h notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_gguf_write tests/test_gguf_write.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_gguf_write (GGUF writer round-tripped through the reader, $(BLAS_NAME))"
 
-test_gguf_keys: tests/test_gguf_keys.c gguf.c notorch.c gguf.h notorch.h
+test_gguf_keys: tests/test_gguf_keys.c gguf.c notorch.c gguf.h notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_gguf_keys tests/test_gguf_keys.c gguf.c notorch.c -lm $(BLAS_LIBS)
 
-gguf_quantize: tools/gguf_quantize.c gguf.c notorch.c gguf.h notorch.h
+gguf_quantize: tools/gguf_quantize.c gguf.c notorch.c gguf.h notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o gguf_quantize tools/gguf_quantize.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: gguf_quantize (f32/f16 GGUF -> packed GGUF, $(BLAS_NAME))"
 
-test_qmatmul: tests/test_qmatmul.c notorch.c notorch.h
+test_qmatmul: tests/test_qmatmul.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qmatmul tests/test_qmatmul.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qmatmul (batched packed matmul vs per-token, $(BLAS_NAME))"
 
-test_conv1d: tests/test_conv1d.c notorch.c notorch.h
+test_conv1d: tests/test_conv1d.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_conv1d tests/test_conv1d.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_conv1d (1-D convolution against the definition, $(BLAS_NAME))"
 
-test_logmel: tests/test_logmel.c notorch.c notorch.h
+test_logmel: tests/test_logmel.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_logmel tests/test_logmel.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_logmel (STFT against a direct DFT, log-mel end to end, $(BLAS_NAME))"
 
-test_f16_matvec: tests/test_f16_matvec.c notorch.c notorch.h
+test_f16_matvec: tests/test_f16_matvec.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o test_f16_matvec tests/test_f16_matvec.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_f16_matvec (unpacked matvec against a double accumulation, $(BLAS_NAME))"
 
-test_q8_0_rows: tests/test_q8_0_rows.c notorch.c notorch.h
+test_q8_0_rows: tests/test_q8_0_rows.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o test_q8_0_rows tests/test_q8_0_rows.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_q8_0_rows (Q8_0 float-activation kernel: distance, order, threads, $(BLAS_NAME))"
 
-test_qgather: tests/test_qgather.c notorch.c notorch.h
+test_qgather: tests/test_qgather.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o test_qgather tests/test_qgather.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qgather (gathered matvec against the loop, $(BLAS_NAME))"
 
-test_wt_expert: tests/test_wt_expert.c harness/runtime.c gguf.c notorch.c harness/runtime.h
+test_wt_expert: tests/test_wt_expert.c harness/runtime.c gguf.c notorch.c harness/runtime.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o test_wt_expert tests/test_wt_expert.c \
 	  harness/runtime.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_wt_expert (one expert out of a stacked tensor, $(BLAS_NAME))"
 
-check_requant: tests/check_requant.c gguf.c notorch.c gguf.h
+check_requant: tests/check_requant.c gguf.c notorch.c gguf.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o check_requant tests/check_requant.c gguf.c notorch.c \
 	  -lm $(BLAS_LIBS)
 	@echo "Compiled: check_requant (row mapping across a requantisation)"
 
-bench_dtype: tests/bench_dtype.c notorch.c notorch.h
+bench_dtype: tests/bench_dtype.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o bench_dtype tests/bench_dtype.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: bench_dtype (one matvec shape across every packed format)"
 
 # How much of the instruction set the batched packed matmul is using, with the ceiling
 # computed from the ISA rather than guessed. Pass cores and GHz to get the fraction.
-bench_qmatmul: tests/bench_qmatmul.c notorch.c notorch.h
+bench_qmatmul: tests/bench_qmatmul.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o bench_qmatmul tests/bench_qmatmul.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: bench_qmatmul (batched Q4_K against the ISA ceiling)"
 
@@ -577,30 +600,31 @@ bench_claim: tests/bench_claim.c
 	$(CC) $(CFLAGS) -o bench_claim tests/bench_claim.c
 	@echo "Compiled: bench_claim (row-claim cost, shared line against separated)"
 
-test_plan_race: tests/test_plan_race.c notorch.c notorch.h
+test_plan_race: tests/test_plan_race.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_plan_race tests/test_plan_race.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_plan_race (both pools settling the plan at once, $(BLAS_NAME))"
 
 # The plan is shared state built once. Under a sanitizer this is the gate that proves it:
 # five races on the version before it was one pthread_once, none after. Android's ASLR is
 # wider than ThreadSanitizer's shadow mapping expects, hence setarch.
-test_tsan: tests/test_plan_race.c notorch.c notorch.h
+test_tsan: tests/test_plan_race.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fsanitize=thread -O1 -o test_plan_race_tsan \
 	  tests/test_plan_race.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Running under ThreadSanitizer — expect no warnings"
 	setarch -R ./test_plan_race_tsan 2>&1 | tee /dev/stderr | grep -q 'WARNING: ThreadSanitizer' \
 	  && { echo "RACE REPORTED"; exit 1; } || echo "clean"
 
-test_qmatvec_leak: tests/test_qmatvec_leak.c notorch.c notorch.h
+test_qmatvec_leak: tests/test_qmatvec_leak.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qmatvec_leak tests/test_qmatvec_leak.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qmatvec_leak (packed matvec returns what it takes, $(BLAS_NAME))"
 
-test_affinity: tests/test_affinity.c notorch.c notorch.h
+test_affinity: tests/test_affinity.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
+test: notorch_test test_chuck_architect test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
 	./notorch_test
+	./test_chuck_architect
 	./test_vision
 	./test_conv1d
 	./test_logmel
@@ -656,7 +680,7 @@ test_simd_tails: tests/test_simd_tails
 	@for threads in 1 2 4 8; do NT_SIMD_THREADS=$$threads ./tests/test_simd_tails --exact || exit $$?; done
 
 # RRPRAM low-rank attention finite-difference grad check
-tests/test_rrpram_lr: tests/test_rrpram_lr.c notorch.c notorch.h
+tests/test_rrpram_lr: tests/test_rrpram_lr.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o tests/test_rrpram_lr tests/test_rrpram_lr.c notorch.c -lm $(BLAS_LIBS)
 
 test_simd: tests/test_simd_correctness tests/test_simd_loss test_simd_tails
@@ -664,13 +688,13 @@ test_simd: tests/test_simd_correctness tests/test_simd_loss test_simd_tails
 	./tests/test_simd_loss
 
 # SIMD vs OpenBLAS micro-benchmark at hot-path shapes
-bench/bench_simd: bench/bench_simd.c notorch.c notorch.h notorch_simd.h
+bench/bench_simd: bench/bench_simd.c notorch.c notorch.h notorch_simd.h $(CHUCK_HEADERS)
 	$(CC) -O2 -mavx2 -mfma -DUSE_SIMD -I. -o bench/bench_simd bench/bench_simd.c notorch.c -lm -lpthread
 
-bench/bench_simd_tails: bench/bench_simd_tails.c notorch.c notorch.h notorch_simd.h
+bench/bench_simd_tails: bench/bench_simd_tails.c notorch.c notorch.h notorch_simd.h $(CHUCK_HEADERS)
 	$(CC) -O2 -mavx2 -mfma -DUSE_SIMD -I. -o bench/bench_simd_tails bench/bench_simd_tails.c notorch.c -lm -lpthread
 
-bench/bench_blas: bench/bench_simd.c notorch.c notorch.h
+bench/bench_blas: bench/bench_simd.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) -O2 -mavx2 -mfma $(BLAS_FLAGS) -I. -o bench/bench_blas bench/bench_simd.c notorch.c -lm $(BLAS_LIBS)
 
 bench: bench/bench_simd bench/bench_blas
@@ -681,6 +705,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
+	rm -f test_chuck_architect chuck_architect_train
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
 		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual test_gemma3 test_smollm_tokenizer \
 		notorch_test notorch_test_gpu notorch.o gguf.o libnotorch.a notorch_cuda.o \
@@ -706,6 +731,7 @@ help:
 	@echo "    make infer_llama3_bpe LLaMA 3 BPE chat (vocab 2048)"
 	@echo ""
 	@echo "  training:"
+	@echo "    make chuck_architect_train  Loss Architect on SimpleLLM / HeVLM"
 	@echo "    make train_q          PostGPT-Q 1.65M (char-level research)"
 	@echo "    make train_yent       Yent 9.8M char-level"
 	@echo "    make train_llama3_char LLaMA 3 char-level (GQA, ~9.5M)"

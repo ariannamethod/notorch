@@ -1,0 +1,103 @@
+{
+  "source_commit": "d5103e89797b47920f76c730cf5a24613791d04d",
+  "source_sha256": {
+    "notorch.c": "59602a8980cc897b5d806fdf4f4cd8a50a296e31f4857b3186da3cc38f297418",
+    "notorch.h": "d5bf639381a146174d612ff81b700bca2d358e06c34e51825d7722c6f9a93f2d",
+    "chuck_architect.h": "8aad1ac006537c0156f1353cb9025ce83dc8bb79809b8e88fb4296d611d475c9",
+    "chuck_architect_impl.h": "53c8f0e704abd24173add465e721124ab06a08b52d8f96fb5b717072ae9d2e7a",
+    "tests/test_chuck_architect.c": "1ecf25b69621387a085bf8263571a9d3985f966395f76cb4bac167ed7a2f95d6"
+  },
+  "core_scalar": {
+    "command": "make -j2 test BLAS_FLAGS= BLAS_LIBS=",
+    "status": "PASS",
+    "core_tests": 51,
+    "architect_groups": 8,
+    "log_sha256": "3cd703edadd3aa414e4a6c5014b37b37743aedef398fab55006f065e45f10451",
+    "log": "verification/full-suite-final.log"
+  },
+  "core_simd": {
+    "command": "make simd && NT_SIMD_THREADS=2 ./notorch_test_simd",
+    "status": "PASS",
+    "core_tests": 51,
+    "log_sha256": "422bd8db3a7629257f7666becbdc87c57e761ab9830fa31a801e4081b4af2c0e"
+  },
+  "architect_simd": {
+    "compiler": "cc -O2 -std=gnu11 -pthread -DUSE_SIMD -march=native -I. tests/test_chuck_architect.c notorch.c -lm",
+    "threads": 2,
+    "status": "PASS",
+    "groups": 8,
+    "log_sha256": "e2d06ba3a39411d5acbc78e62daa90c7fcb08a07d8390a10c697a306e22da5a3"
+  },
+  "archive_consumer": {
+    "command": "make chuck_architect_train BLAS_FLAGS= BLAS_LIBS=",
+    "status": "PASS",
+    "log_sha256": "72f8d92daf340e2f8708f4d8ecadb522457aca265f3979ca448a2abbba14c826"
+  },
+  "canonical_legacy": {
+    "baseline_commit": "097fc062418bc9f29de8f0a89d781608680aef4d",
+    "command": "make test_chuck_legacy_parity",
+    "steps": 6000,
+    "status": "PASS",
+    "trajectory_sha256": "306275db6c3e8b72d5a1d767fb573c443d300a9a8959363f5e76c8fe37a82601"
+  },
+  "independent_legacy_audit": {
+    "baseline_commit": "097fc062418bc9f29de8f0a89d781608680aef4d",
+    "steps": 8000,
+    "bytes_compared": 5024000,
+    "status": "PASS",
+    "trajectory_sha256": "efa2cb39839a016db49e62eb9bf2bbb1821cececfad222bcb404a3e85888101c",
+    "provenance": "Independent pre-commit review of the unchanged canonical arithmetic; the 6000-step committed gate and full suite above were also run on the recorded source commit."
+  },
+  "mutations": [
+    {
+      "name": "brake_executes_push",
+      "gate": "actions",
+      "file": "notorch.c",
+      "mutant_sha256": "518db2591a397624407a22d9c77e8bbdd1e94de1a150553f672f94e20b571a94",
+      "build_exit": 0,
+      "test_exit": 1,
+      "failure": "FAIL actions:219: primitive has its declared direction",
+      "caught": true
+    },
+    {
+      "name": "selected_action_replaced",
+      "gate": "credit",
+      "file": "chuck_architect_impl.h",
+      "mutant_sha256": "8f2085dbd7d300c03d510567343c064c69a865a8820479d78ff482af49261151",
+      "build_exit": 0,
+      "test_exit": 1,
+      "failure": "FAIL credit:425: initial learned action follows pinned HOLD weight trajectory",
+      "caught": true
+    },
+    {
+      "name": "consequence_sign_reversed",
+      "gate": "credit",
+      "file": "chuck_architect_impl.h",
+      "mutant_sha256": "e30c6db177f6302d0685915a09873020045dde0f69e07d5ac77e5053d1295258",
+      "build_exit": 0,
+      "test_exit": 1,
+      "failure": "FAIL credit:435: credit sign reaches the selected learned head",
+      "caught": true
+    },
+    {
+      "name": "consequence_learning_suppressed",
+      "gate": "credit",
+      "file": "chuck_architect_impl.h",
+      "mutant_sha256": "6518509772bf2f9b2e8151498c27afba64ab5dffe38b2f777749a1ad275aac4f",
+      "build_exit": 0,
+      "test_exit": 1,
+      "failure": "FAIL credit:435: credit sign reaches the selected learned head",
+      "caught": true
+    }
+  ],
+  "mutation_working_sources_unchanged": true,
+  "focused_sanitizers": {
+    "address_undefined_groups": 8,
+    "malformed_json_cases": 5227,
+    "status": "PASS",
+    "leak_detection": false,
+    "log_sha256": "e2d06ba3a39411d5acbc78e62daa90c7fcb08a07d8390a10c697a306e22da5a3",
+    "log": "verification/sanitized-final.log",
+    "malformed_json_provenance": "Independent pre-commit audit; final eight-group sanitizer gate rerun on the recorded source commit."
+  }
+}

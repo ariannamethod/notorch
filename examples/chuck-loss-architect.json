@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "mode": "learned",
+  "life_id": "chuck-training-v1",
+  "enabled_actions": ["hold", "brake", "push"],
+  "dampen_min": 0.3,
+  "dampen_max": 2.0,
+  "lr_scale_min": 0.05,
+  "lr_scale_max": 2.0,
+  "noise_min": 0.0,
+  "noise_max": 0.01,
+  "learning_rate": 0.03,
+  "exploration": 0.15,
+  "seed": 1
+}

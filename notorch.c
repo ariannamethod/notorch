@@ -2511,6 +2511,15 @@ static float chuck_ring_avg(const float* buf, int pos, int full, int start, int 
 }
 
 static uint32_t chuck_rng = 2463534242u;
+
+uint32_t nt_chuck_rng_get(void) { return chuck_rng; }
+
+int nt_chuck_rng_set(uint32_t state) {
+    if (!state) return NT_CHUCK_E_ARGUMENT;
+    chuck_rng = state;
+    return NT_CHUCK_OK;
+}
+
 static float chuck_randn(void) {
     chuck_rng ^= chuck_rng << 13;
     chuck_rng ^= chuck_rng >> 17;
@@ -2518,13 +2527,13 @@ static float chuck_randn(void) {
     return 2.0f * (float)(chuck_rng) / 4294967296.0f - 1.0f;
 }
 
-// In-house per-param Chuck; lineage and CPU golden-vector test in notorch.h.
-// θ -= (α × S × λ × λ_l) × m̂/(√v̂ + ε) + η
-void nt_tape_chuck_step(float lr, float loss_val) {
-    float beta1 = 0.9f, beta2 = 0.999f, eps = 1e-8f;
-
+// State advances before policy acts. The legacy branch preserves the original
+// expression order, including its stagnation resets and mean reversion.
+static void chuck_state_step(nt_chuck_state *cs, float loss_val, int legacy,
+                             float *trend_out) {
+    const float eps = 1e-8f;
+    if (trend_out) *trend_out = 0.0f;
     // ── Level 1: Global loss trend → λ (dampen) ──
-    nt_chuck_state* cs = &g_tape.chuck;
     if (!cs->initialized) {
         cs->dampen = 1.0f;
         cs->noise = 0.0f;
@@ -2548,27 +2557,30 @@ void nt_tape_chuck_step(float lr, float loss_val) {
         float recent_avg = chuck_ring_avg(cs->loss_hist, cs->pos, cs->full, recent_start, q);
         if (old_avg > eps) {
             float trend = (recent_avg - old_avg) / old_avg;
+            if (trend_out) *trend_out = trend;
             // Symmetric thresholds (synced with PyTorch: 0.02 / -0.02)
-            if (trend > NT_CHUCK_TREND_BRAKE) cs->dampen *= NT_CHUCK_DAMP_DOWN;
-            if (trend < NT_CHUCK_TREND_PUSH)  cs->dampen *= NT_CHUCK_DAMP_UP;
+            if (legacy && trend > NT_CHUCK_TREND_BRAKE) cs->dampen *= NT_CHUCK_DAMP_DOWN;
+            if (legacy && trend < NT_CHUCK_TREND_PUSH)  cs->dampen *= NT_CHUCK_DAMP_UP;
 
             // ── Level 3: Stagnation escape ──
             if (fabsf(trend) < NT_CHUCK_STAG_THRESH) {
-                cs->stag++;
-                if (cs->stag >= NT_CHUCK_STAG_STEPS) {
+                if (legacy || cs->stag < INT_MAX) cs->stag++;
+                if (legacy && cs->stag >= NT_CHUCK_STAG_STEPS) {
                     cs->noise = NT_CHUCK_NOISE_MAG;
                     cs->stag = 0;  // reset counter (PyTorch behavior)
                 }
             } else {
                 cs->stag = 0;
-                cs->noise *= NT_CHUCK_NOISE_DECAY;  // exponential decay (was: reset to 0)
+                if (legacy) cs->noise *= NT_CHUCK_NOISE_DECAY;  // exponential decay (was: reset to 0)
             }
         }
     }
-    // Mean reversion: pull dampen toward 1.0 (prevents drift)
-    cs->dampen = NT_CHUCK_MEAN_REVERT * cs->dampen + (1.0f - NT_CHUCK_MEAN_REVERT) * 1.0f;
-    if (cs->dampen < NT_CHUCK_DAMP_LO) cs->dampen = NT_CHUCK_DAMP_LO;
-    if (cs->dampen > NT_CHUCK_DAMP_HI) cs->dampen = NT_CHUCK_DAMP_HI;
+    // Mean reversion belongs to the legacy global policy.
+    if (legacy) {
+        cs->dampen = NT_CHUCK_MEAN_REVERT * cs->dampen + (1.0f - NT_CHUCK_MEAN_REVERT) * 1.0f;
+        if (cs->dampen < NT_CHUCK_DAMP_LO) cs->dampen = NT_CHUCK_DAMP_LO;
+        if (cs->dampen > NT_CHUCK_DAMP_HI) cs->dampen = NT_CHUCK_DAMP_HI;
+    }
 
     // ── Level 9: Multi-scale awareness (macro patience) ──
     cs->global_step++;
@@ -2576,8 +2588,8 @@ void nt_tape_chuck_step(float lr, float loss_val) {
     else cs->macro_ema = 0.999f * cs->macro_ema + 0.001f * loss_val;
     if (cs->global_step % NT_CHUCK_MACRO_INT == 0 && cs->global_step > NT_CHUCK_WINDOW) {
         if (cs->macro_ema > cs->best_macro * 0.999f) {
-            cs->macro_stag++;
-            if (cs->macro_stag >= NT_CHUCK_MACRO_PAT) {
+            if (legacy || cs->macro_stag < INT_MAX) cs->macro_stag++;
+            if (legacy && cs->macro_stag >= NT_CHUCK_MACRO_PAT) {
                 cs->lr_scale *= NT_CHUCK_MACRO_DECAY;
                 if (cs->lr_scale < 0.05f) cs->lr_scale = 0.05f;
                 cs->macro_stag = 0;
@@ -2586,12 +2598,161 @@ void nt_tape_chuck_step(float lr, float loss_val) {
             cs->best_macro = cs->macro_ema;
             cs->macro_stag = 0;
             // LR recovery when improving (PyTorch: lr_scale *= 1.2)
-            if (cs->lr_scale < 1.0f) {
+            if (legacy && cs->lr_scale < 1.0f) {
                 cs->lr_scale *= 1.2f;
                 if (cs->lr_scale > 1.0f) cs->lr_scale = 1.0f;
             }
         }
     }
+
+}
+
+void nt_chuck_action_limits_default(nt_chuck_action_limits *limits) {
+    if (!limits) return;
+    limits->enabled_actions = NT_CHUCK_ALL_ACTIONS;
+    limits->dampen_min = NT_CHUCK_DAMP_LO;
+    limits->dampen_max = NT_CHUCK_DAMP_HI;
+    limits->lr_scale_min = NT_CHUCK_LR_SCALE_LO;
+    limits->lr_scale_max = NT_CHUCK_LR_SCALE_HI;
+    limits->noise_min = NT_CHUCK_NOISE_LO;
+    limits->noise_max = NT_CHUCK_NOISE_HI;
+}
+
+int nt_chuck_action_limits_validate(const nt_chuck_action_limits *limits) {
+    if (!limits) return NT_CHUCK_E_ARGUMENT;
+    if (limits->enabled_actions & ~NT_CHUCK_ALL_ACTIONS)
+        return NT_CHUCK_E_ACTION;
+    if (!isfinite(limits->dampen_min) || !isfinite(limits->dampen_max) ||
+        !isfinite(limits->lr_scale_min) || !isfinite(limits->lr_scale_max) ||
+        !isfinite(limits->noise_min) || !isfinite(limits->noise_max))
+        return NT_CHUCK_E_BOUNDS;
+    if (limits->dampen_min < NT_CHUCK_DAMP_LO ||
+        limits->dampen_max > NT_CHUCK_DAMP_HI ||
+        limits->dampen_min > limits->dampen_max ||
+        limits->lr_scale_min < NT_CHUCK_LR_SCALE_LO ||
+        limits->lr_scale_max > NT_CHUCK_LR_SCALE_HI ||
+        limits->lr_scale_min > limits->lr_scale_max ||
+        limits->noise_min < NT_CHUCK_NOISE_LO ||
+        limits->noise_max > NT_CHUCK_NOISE_HI ||
+        limits->noise_min > limits->noise_max)
+        return NT_CHUCK_E_BOUNDS;
+    return NT_CHUCK_OK;
+}
+
+static int chuck_state_valid(const nt_chuck_state *cs) {
+    if (cs->initialized != 0 && cs->initialized != 1) return 0;
+    if (cs->pos < 0 || cs->pos >= NT_CHUCK_WINDOW ||
+        (cs->full != 0 && cs->full != 1) ||
+        cs->global_step < 0 || cs->stag < 0 || cs->macro_stag < 0)
+        return 0;
+    if (!isfinite(cs->dampen) || !isfinite(cs->noise) ||
+        !isfinite(cs->lr_scale) || !isfinite(cs->loss_ema) ||
+        !isfinite(cs->macro_ema) || !isfinite(cs->best_macro)) return 0;
+    for (int i = 0; i < NT_CHUCK_WINDOW; i++)
+        if (!isfinite(cs->loss_hist[i])) return 0;
+    return 1;
+}
+
+static void chuck_apply_action(nt_chuck_state *cs, const nt_chuck_action *action,
+                               const nt_chuck_action_limits *limits) {
+    switch (action->kind) {
+    case NT_CHUCK_ACTION_BRAKE:
+        cs->dampen *= NT_CHUCK_DAMP_DOWN;
+        if (cs->dampen < limits->dampen_min) cs->dampen = limits->dampen_min;
+        if (cs->dampen > limits->dampen_max) cs->dampen = limits->dampen_max;
+        break;
+    case NT_CHUCK_ACTION_PUSH:
+        cs->dampen *= NT_CHUCK_DAMP_UP;
+        if (cs->dampen < limits->dampen_min) cs->dampen = limits->dampen_min;
+        if (cs->dampen > limits->dampen_max) cs->dampen = limits->dampen_max;
+        break;
+    case NT_CHUCK_ACTION_SET_DAMPEN: cs->dampen = action->value; break;
+    case NT_CHUCK_ACTION_SET_LR_SCALE: cs->lr_scale = action->value; break;
+    case NT_CHUCK_ACTION_SET_NOISE: cs->noise = action->value; break;
+    case NT_CHUCK_ACTION_HOLD:
+    case NT_CHUCK_ACTION_LEGACY:
+    case NT_CHUCK_ACTION_COUNT: break;
+    }
+}
+
+static int chuck_controls_within(const nt_chuck_state *cs,
+                                 const nt_chuck_action_limits *limits) {
+    return cs->dampen >= limits->dampen_min && cs->dampen <= limits->dampen_max &&
+           cs->lr_scale >= limits->lr_scale_min && cs->lr_scale <= limits->lr_scale_max &&
+           cs->noise >= limits->noise_min && cs->noise <= limits->noise_max;
+}
+
+int nt_tape_chuck_observe(float loss, nt_chuck_observation *out) {
+    if (!out || !isfinite(loss)) return NT_CHUCK_E_ARGUMENT;
+    if (!chuck_state_valid(&g_tape.chuck) || g_tape.chuck.global_step == INT_MAX)
+        return NT_CHUCK_E_STATE;
+    nt_chuck_state pending = g_tape.chuck;
+    nt_chuck_observation observation;
+    memset(&observation, 0, sizeof(observation));
+    chuck_state_step(&pending, loss, 0, &observation.loss_trend);
+    if (!chuck_state_valid(&pending) || !isfinite(observation.loss_trend))
+        return NT_CHUCK_E_STATE;
+    observation.loss = loss;
+    observation.loss_ema = pending.loss_ema;
+    observation.macro_ema = pending.macro_ema;
+    observation.best_macro = pending.best_macro;
+    observation.dampen = pending.dampen;
+    observation.lr_scale = pending.lr_scale;
+    observation.noise = pending.noise;
+    observation.step = pending.global_step;
+    observation.stag = pending.stag;
+    observation.macro_stag = pending.macro_stag;
+    observation.history_len = pending.full ? NT_CHUCK_WINDOW : pending.pos;
+
+    double sum = 0.0, previous = 0.0;
+    int frozen = 0;
+    for (int slot = 0; slot < g_tape.n_params; slot++) {
+        const nt_chuck_param_state *cp = &g_tape.chuck_params[slot];
+        if (cp->pos < 0 || cp->pos >= NT_CHUCK_WINDOW ||
+            (cp->full != 0 && cp->full != 1)) return NT_CHUCK_E_STATE;
+        if (cp->frozen) frozen++;
+    }
+    for (int i = 0; i < g_tape.count; i++) {
+        nt_tape_entry *e = &g_tape.entries[i];
+        if (!e->is_param || e->slot < 0 || e->slot >= g_tape.n_params || !e->grad)
+            continue;
+        const nt_adam_state *as = &g_tape.adam[e->slot];
+        const nt_chuck_param_state *cp = &g_tape.chuck_params[e->slot];
+        int n = e->output->len;
+        if (as->m && as->m->len < n) n = as->m->len;
+        if (e->grad->len < n) return NT_CHUCK_E_STATE;
+#ifdef USE_CUDA
+        nt_tensor_ensure_cpu(e->grad);
+#endif
+        for (int j = 0; j < n; j++) {
+            double g = e->grad->data[j];
+            sum += g * g;
+        }
+        if (cp->full || cp->pos) {
+            double gn = cp->grad_hist[(cp->pos + NT_CHUCK_WINDOW - 1) % NT_CHUCK_WINDOW];
+            previous += gn * gn;
+        }
+    }
+    observation.grad_norm = (float)sqrt(sum);
+    if (previous > 1e-16)
+        observation.grad_trend = (float)((sqrt(sum) - sqrt(previous)) / sqrt(previous));
+    observation.frozen_fraction = g_tape.n_params ? (float)frozen / g_tape.n_params : 0.0f;
+    if (!isfinite(observation.grad_norm) || !isfinite(observation.grad_trend))
+        return NT_CHUCK_E_STATE;
+    *out = observation;
+    return NT_CHUCK_OK;
+}
+
+// In-house per-param Chuck; lineage and CPU golden-vector test in notorch.h.
+// θ -= (α × S × λ × λ_l) × m̂/(√v̂ + ε) + η
+static void chuck_step_impl(float lr, float loss_val,
+                            const nt_chuck_action *action,
+                            const nt_chuck_action_limits *limits) {
+    float beta1 = 0.9f, beta2 = 0.999f, eps = 1e-8f;
+    nt_chuck_state *cs = &g_tape.chuck;
+    int legacy = !action || action->kind == NT_CHUCK_ACTION_LEGACY;
+    chuck_state_step(cs, loss_val, legacy, NULL);
+    if (!legacy) chuck_apply_action(cs, action, limits);
 
     float global_lambda = cs->dampen;
     float noise_mag = cs->noise;
@@ -2711,6 +2872,16 @@ void nt_tape_chuck_step(float lr, float loss_val) {
         }
 #endif
         if (!chuck_done_gpu) {
+#ifdef USE_CUDA
+            // A selected noise action can move an Architect step from the GPU
+            // to the CPU; bring its entire Adam state across before arithmetic.
+            if (!legacy && g_use_gpu) {
+                nt_tensor_ensure_cpu(e->output);
+                nt_tensor_ensure_cpu(e->grad);
+                nt_tensor_ensure_cpu(as->m);
+                nt_tensor_ensure_cpu(as->v);
+            }
+#endif
             for (int j = 0; j < n; j++) {
                 float g = e->grad->data[j];
                 as->m->data[j] = beta1 * as->m->data[j] + (1.0f - beta1) * g;
@@ -2725,6 +2896,10 @@ void nt_tape_chuck_step(float lr, float loss_val) {
             /* CPU just mutated param weights — invalidate GPU mirror so next
              * forward re-uploads. */
             nt_tensor_mark_cpu_dirty(e->output);
+            if (!legacy) {
+                nt_tensor_mark_cpu_dirty(as->m);
+                nt_tensor_mark_cpu_dirty(as->v);
+            }
 #endif
         }
     }
@@ -2735,6 +2910,43 @@ void nt_tape_chuck_step(float lr, float loss_val) {
      * harmless if empty. */
     if (g_use_gpu) gpu_mark_all_dirty();
 #endif
+}
+
+void nt_tape_chuck_step(float lr, float loss_val) {
+    chuck_step_impl(lr, loss_val, NULL, NULL);
+}
+
+int nt_tape_chuck_step_action(float lr, float loss,
+                              const nt_chuck_action *action,
+                              const nt_chuck_action_limits *limits) {
+    nt_chuck_action selected = {NT_CHUCK_ACTION_LEGACY, 0.0f};
+    nt_chuck_action_limits bound;
+    if (!isfinite(lr) || lr < 0.0f || !isfinite(loss)) return NT_CHUCK_E_ARGUMENT;
+    if (action) selected = *action;
+    if (limits) bound = *limits;
+    else nt_chuck_action_limits_default(&bound);
+    int status = nt_chuck_action_limits_validate(&bound);
+    if (status != NT_CHUCK_OK) return status;
+    if (selected.kind < NT_CHUCK_ACTION_LEGACY || selected.kind >= NT_CHUCK_ACTION_COUNT ||
+        !(bound.enabled_actions & NT_CHUCK_ACTION_BIT(selected.kind)))
+        return NT_CHUCK_E_ACTION;
+    if (!isfinite(selected.value)) return NT_CHUCK_E_ARGUMENT;
+    if (selected.kind <= NT_CHUCK_ACTION_PUSH && selected.value != 0.0f)
+        return NT_CHUCK_E_ARGUMENT;
+    if (!chuck_state_valid(&g_tape.chuck) || g_tape.chuck.global_step == INT_MAX ||
+        g_tape.chuck.stag == INT_MAX || g_tape.chuck.macro_stag == INT_MAX)
+        return NT_CHUCK_E_STATE;
+
+    // Validate the complete result on a copy. No history, moment, weight, or
+    // noise-RNG mutation occurs before every requested bound has been checked.
+    int legacy = selected.kind == NT_CHUCK_ACTION_LEGACY;
+    nt_chuck_state pending = g_tape.chuck;
+    chuck_state_step(&pending, loss, legacy, NULL);
+    if (!legacy) chuck_apply_action(&pending, &selected, &bound);
+    if (!chuck_state_valid(&pending)) return NT_CHUCK_E_STATE;
+    if (!legacy && !chuck_controls_within(&pending, &bound)) return NT_CHUCK_E_BOUNDS;
+    chuck_step_impl(lr, loss, &selected, &bound);
+    return NT_CHUCK_OK;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -9963,3 +10175,6 @@ void nt_lora_merge_into(float* W_dst, const float* W_frozen,
     }
     free(delta);
 }
+
+// Included here so the standalone notorch.c build also carries training lives.
+#include "chuck_architect_impl.h"

@@ -1,0 +1,2135 @@
+{
+  "schema": 1,
+  "measured_date_utc": "2026-10-06",
+  "manifest": {
+    "schema": 1,
+    "source_commit": "d5103e89797b47920f76c730cf5a24613791d04d",
+    "source_status": "",
+    "source_files_sha256": {
+      "notorch.c": "59602a8980cc897b5d806fdf4f4cd8a50a296e31f4857b3186da3cc38f297418",
+      "notorch.h": "d5bf639381a146174d612ff81b700bca2d358e06c34e51825d7722c6f9a93f2d",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect_impl.h": "53c8f0e704abd24173add465e721124ab06a08b52d8f96fb5b717072ae9d2e7a",
+      "chuck_architect.h": "8aad1ac006537c0156f1353cb9025ce83dc8bb79809b8e88fb4296d611d475c9",
+      "examples/chuck_architect_train.c": "055fb5846fa766ceb97968088e7c05d8c6d4706ba28d46ac16c747600661309d",
+      "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc"
+    },
+    "binary_sha256": "8fe3a5d082898dcbfccc7b90a7d17c1b28ddc704900af5cb165d93c4662e266f",
+    "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+    "build": {
+      "type": "compiled-current-tree",
+      "command": [
+        "cc",
+        "-O2",
+        "-std=gnu11",
+        "-DUSE_SIMD",
+        "-march=native",
+        "-pthread",
+        "-I.",
+        "examples/chuck_architect_train.c",
+        "notorch.c",
+        "-lm",
+        "-o",
+        "<output>/chuck_architect_train"
+      ]
+    },
+    "machine": {
+      "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+      "python": "3.12.14",
+      "cpu_count": 9,
+      "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+      "memory": {
+        "MemTotal": "10206508 kB",
+        "MemAvailable": "9439572 kB",
+        "SwapTotal": "0 kB",
+        "SwapFree": "0 kB"
+      },
+      "cpu.max": "800000 100000",
+      "memory.max": "8589934592"
+    },
+    "threads": 2,
+    "steps": 512,
+    "seeds": [
+      42,
+      73
+    ],
+    "bodies": [
+      "simple",
+      "hevlm"
+    ],
+    "arms": [
+      "adam",
+      "chuck",
+      "legacy",
+      "learned"
+    ],
+    "lr": 0.0003,
+    "datasets": {
+      "simple": {
+        "repository": "ariannamethod/notorch-simple-llm",
+        "commit": "80b3bd611ed8c937efdc481dc07895c8e13e345d",
+        "file": "dracula.txt",
+        "sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c",
+        "recipe": "train_dracula.py",
+        "parameters": 450688,
+        "tokenizer": "sorted Unicode codepoints; universal newlines; vocabulary 94",
+        "bytes": 852813,
+        "tokens": 843635,
+        "train_tokens": 759271,
+        "token_sha256": "a1876f953a5a306dea7cf9896ea4d634e52808ee7b61570387b590a5b2e0d7d8",
+        "vocab_sha256": "faad8eeec3efadd4b3f26bbeea45f18c4cacd52a990219c51681c5e7eaab2c82"
+      },
+      "hevlm": {
+        "repository": "ariannamethod/notorch-diffusion",
+        "commit": "1bc645071b3a0a3525fe89b8f45253f5faa28a1d",
+        "file": "hevlm.txt",
+        "sha256": "c00b8bcc31785798771aad5fb49f3b420b6a8eb3b7a20c28d0f09c967a52587e",
+        "recipe": "ariannamethod/train_hevlm.c",
+        "parameters": 1123456,
+        "tokenizer": "UTF-8 bytes; vocabulary 256",
+        "bytes": 69766,
+        "tokens": 69766,
+        "train_tokens": 62789,
+        "token_sha256": "4231823fb9cd54610541223c05222d186167c7633a8070a15d5888921573328b",
+        "vocab_sha256": "3e799c43339132e8709ebd0c566262d1893e3f30d4b94fa63014fff5229648a0"
+      }
+    },
+    "objective": {
+      "feedback": "same-window loss before minus after actual training step",
+      "evaluation": "eight fixed windows in final corpus tenth; initial and final",
+      "window_stream": "SplitMix64 seed, modulo train_tokens-context; context=64"
+    },
+    "config": {
+      "version": 1,
+      "mode": "learned",
+      "life_id": "chuck-training-v1",
+      "enabled_actions": [
+        "hold",
+        "brake",
+        "push"
+      ],
+      "dampen_min": 0.3,
+      "dampen_max": 2.0,
+      "lr_scale_min": 0.05,
+      "lr_scale_max": 2.0,
+      "noise_min": 0.0,
+      "noise_max": 0.01,
+      "learning_rate": 0.03,
+      "exploration": 0.15,
+      "seed": 1
+    },
+    "config_sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5"
+  },
+  "source_hashes_rechecked_after_run": true,
+  "training_steps_total": 8192,
+  "training_tokens_per_run": 32768,
+  "gates": [
+    {
+      "gate": "matched_initial_weights",
+      "body": "simple",
+      "seed": 42,
+      "result": "PASS"
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "gate": "canonical_legacy_parity",
+      "steps": 512,
+      "result": "PASS",
+      "final_weights_identical": true
+    },
+    {
+      "gate": "matched_initial_weights",
+      "body": "simple",
+      "seed": 73,
+      "result": "PASS"
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "gate": "canonical_legacy_parity",
+      "steps": 512,
+      "result": "PASS",
+      "final_weights_identical": true
+    },
+    {
+      "gate": "matched_initial_weights",
+      "body": "hevlm",
+      "seed": 42,
+      "result": "PASS"
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "gate": "canonical_legacy_parity",
+      "steps": 512,
+      "result": "PASS",
+      "final_weights_identical": true
+    },
+    {
+      "gate": "matched_initial_weights",
+      "body": "hevlm",
+      "seed": 73,
+      "result": "PASS"
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "gate": "canonical_legacy_parity",
+      "steps": 512,
+      "result": "PASS",
+      "final_weights_identical": true
+    }
+  ],
+  "runs": [
+    {
+      "name": "simple-adam-s42",
+      "body": "simple",
+      "arm": "adam",
+      "seed": 42,
+      "parameters": 450688,
+      "initial_weights_sha256": "751f9e72de90b02dc728a4d507c95e2f8c984e7cad65e407e68088a2fa520859",
+      "weights_sha256": "8409e09ad78e18b39014d6472017565e5776a36c170af6c50f2a182c5de2d5ea",
+      "receipts_sha256": "4c2acf0066f9bef29456855110224ab3c0f0a986d37457d85e7ea28cf1aef764",
+      "summary": {
+        "type": "summary",
+        "first_loss": 4.71068192,
+        "last_loss": 2.52923727,
+        "first_mean": 3.92923526,
+        "last_mean": 2.3678276,
+        "mean_count": 16,
+        "mean_improvement": 0.0419749264,
+        "eval_initial": 4.80649185,
+        "eval_final": 2.56893349,
+        "weight_dependent_choices": 0,
+        "seconds": 9.59662702,
+        "max_rss_kib": 37976,
+        "user_seconds": 8.998894,
+        "system_seconds": 1.393813
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 37976,
+        "wall_seconds": 9.59662702,
+        "user_seconds": 8.998894,
+        "system_seconds": 1.393813
+      },
+      "action_counts": {}
+    },
+    {
+      "name": "simple-chuck-s42",
+      "body": "simple",
+      "arm": "chuck",
+      "seed": 42,
+      "parameters": 450688,
+      "initial_weights_sha256": "751f9e72de90b02dc728a4d507c95e2f8c984e7cad65e407e68088a2fa520859",
+      "weights_sha256": "224e6857ebd2d2cf1edf5ec4ae0dcaae8e85091f7dffc95a3b4c58088063afab",
+      "receipts_sha256": "dc78670170e421144e0c6e81587b5773ba55771671879d4a8846191414d5c5ef",
+      "summary": {
+        "type": "summary",
+        "first_loss": 4.71068192,
+        "last_loss": 2.55315971,
+        "first_mean": 3.92812732,
+        "last_mean": 2.33048757,
+        "mean_count": 16,
+        "mean_improvement": 0.0595345695,
+        "eval_initial": 4.80649185,
+        "eval_final": 2.46557879,
+        "weight_dependent_choices": 0,
+        "seconds": 7.89819107,
+        "max_rss_kib": 37976,
+        "user_seconds": 7.599575,
+        "system_seconds": 1.366937
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 37976,
+        "wall_seconds": 7.89819107,
+        "user_seconds": 7.599575,
+        "system_seconds": 1.366937
+      },
+      "action_counts": {}
+    },
+    {
+      "name": "simple-legacy-s42",
+      "body": "simple",
+      "arm": "legacy",
+      "seed": 42,
+      "parameters": 450688,
+      "initial_weights_sha256": "751f9e72de90b02dc728a4d507c95e2f8c984e7cad65e407e68088a2fa520859",
+      "weights_sha256": "224e6857ebd2d2cf1edf5ec4ae0dcaae8e85091f7dffc95a3b4c58088063afab",
+      "receipts_sha256": "9e5a42ce3156f61f69621ef96f84f8bae4cf7b40c647468570aa60b28f0c7f14",
+      "summary": {
+        "type": "summary",
+        "first_loss": 4.71068192,
+        "last_loss": 2.55315971,
+        "first_mean": 3.92812732,
+        "last_mean": 2.33048757,
+        "mean_count": 16,
+        "mean_improvement": 0.0595345695,
+        "eval_initial": 4.80649185,
+        "eval_final": 2.46557879,
+        "weight_dependent_choices": 0,
+        "seconds": 8.06968443,
+        "max_rss_kib": 37976,
+        "user_seconds": 7.550245,
+        "system_seconds": 1.53848
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 37976,
+        "wall_seconds": 8.06968443,
+        "user_seconds": 7.550245,
+        "system_seconds": 1.53848
+      },
+      "policy.initial.bin_sha256": "7dc8b37c768312c4c50c97d4af1437fa06e2caa799a60e37c36e342dfd1f1cba",
+      "policy.final.bin_sha256": "7dc8b37c768312c4c50c97d4af1437fa06e2caa799a60e37c36e342dfd1f1cba",
+      "action_counts": {
+        "legacy": 512
+      }
+    },
+    {
+      "name": "simple-learned-s42",
+      "body": "simple",
+      "arm": "learned",
+      "seed": 42,
+      "parameters": 450688,
+      "initial_weights_sha256": "751f9e72de90b02dc728a4d507c95e2f8c984e7cad65e407e68088a2fa520859",
+      "weights_sha256": "8c681fd8b78b8d1a9c4affb6276139cc232c9ee5259d6d973eaf03e0e517e901",
+      "receipts_sha256": "44b86a45fa904c16c8beb582fdd617a1a29d03f1fcd4f76d02bd1245f7f05f00",
+      "summary": {
+        "type": "summary",
+        "first_loss": 4.71068192,
+        "last_loss": 2.56042218,
+        "first_mean": 3.92812732,
+        "last_mean": 2.35961748,
+        "mean_count": 16,
+        "mean_improvement": 0.0445954555,
+        "eval_initial": 4.80649185,
+        "eval_final": 2.5398736,
+        "weight_dependent_choices": 0,
+        "seconds": 7.59562845,
+        "max_rss_kib": 37976,
+        "user_seconds": 7.205095,
+        "system_seconds": 1.335559
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 37976,
+        "wall_seconds": 7.59562845,
+        "user_seconds": 7.205095,
+        "system_seconds": 1.335559
+      },
+      "policy.initial.bin_sha256": "f7a954172367d09ab5481d92dca22449ad49afe53e209f612cbbc280bccb7c6d",
+      "policy.final.bin_sha256": "353585a9c8b6ee7565a6d568230750195b8dd16ab015b4b00746c18094f8ce05",
+      "action_counts": {
+        "brake": 25,
+        "hold": 460,
+        "push": 27
+      }
+    },
+    {
+      "name": "simple-adam-s73",
+      "body": "simple",
+      "arm": "adam",
+      "seed": 73,
+      "parameters": 450688,
+      "initial_weights_sha256": "2afcf4f0050166e27be4cf11cc30cd24add7775669b7b8a9a88c8b51a5bd8248",
+      "weights_sha256": "11fd2901e76106e6ba896bf196eaed20cb6cf76068b0b6825aca0bb774031ca0",
+      "receipts_sha256": "7a1c19af02484424596b883165fc9a4e3d5b2bb0f4cd54f81b734f1a891cb634",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.2727809,
+        "last_loss": 3.73662066,
+        "first_mean": 3.98440236,
+        "last_mean": 2.68582448,
+        "mean_count": 16,
+        "mean_improvement": 0.0432716275,
+        "eval_initial": 5.20846462,
+        "eval_final": 2.5868299,
+        "weight_dependent_choices": 0,
+        "seconds": 9.39451238,
+        "max_rss_kib": 37976,
+        "user_seconds": 9.064199,
+        "system_seconds": 1.326877
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 37976,
+        "wall_seconds": 9.39451238,
+        "user_seconds": 9.064199,
+        "system_seconds": 1.326877
+      },
+      "action_counts": {}
+    },
+    {
+      "name": "simple-chuck-s73",
+      "body": "simple",
+      "arm": "chuck",
+      "seed": 73,
+      "parameters": 450688,
+      "initial_weights_sha256": "2afcf4f0050166e27be4cf11cc30cd24add7775669b7b8a9a88c8b51a5bd8248",
+      "weights_sha256": "31d17acce401da7df825965a8e148bcdea0936d77479d31b840aa39bf9e0f45c",
+      "receipts_sha256": "3d51937b101500bff1713576bfeb2fb9cc5a55f25cb43fcadb8b470c8ea69091",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.2727809,
+        "last_loss": 3.69180036,
+        "first_mean": 3.98088993,
+        "last_mean": 2.62231535,
+        "mean_count": 16,
+        "mean_improvement": 0.060986677,
+        "eval_initial": 5.20846462,
+        "eval_final": 2.53128004,
+        "weight_dependent_choices": 0,
+        "seconds": 7.53236674,
+        "max_rss_kib": 37976,
+        "user_seconds": 7.075113,
+        "system_seconds": 1.472003
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 37976,
+        "wall_seconds": 7.53236674,
+        "user_seconds": 7.075113,
+        "system_seconds": 1.472003
+      },
+      "action_counts": {}
+    },
+    {
+      "name": "simple-legacy-s73",
+      "body": "simple",
+      "arm": "legacy",
+      "seed": 73,
+      "parameters": 450688,
+      "initial_weights_sha256": "2afcf4f0050166e27be4cf11cc30cd24add7775669b7b8a9a88c8b51a5bd8248",
+      "weights_sha256": "31d17acce401da7df825965a8e148bcdea0936d77479d31b840aa39bf9e0f45c",
+      "receipts_sha256": "d838c942df3cf01cd1e22e2c6ac49db2452667b441c04c7d90021154ddd6bb75",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.2727809,
+        "last_loss": 3.69180036,
+        "first_mean": 3.98088993,
+        "last_mean": 2.62231535,
+        "mean_count": 16,
+        "mean_improvement": 0.060986677,
+        "eval_initial": 5.20846462,
+        "eval_final": 2.53128004,
+        "weight_dependent_choices": 0,
+        "seconds": 7.31227709,
+        "max_rss_kib": 37976,
+        "user_seconds": 7.009703,
+        "system_seconds": 1.346676
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 37976,
+        "wall_seconds": 7.31227709,
+        "user_seconds": 7.009703,
+        "system_seconds": 1.346676
+      },
+      "policy.initial.bin_sha256": "03592e7c50fb48b052893dad9f43552c825596f33d2c5c3285e0e6f0e5ffbb38",
+      "policy.final.bin_sha256": "03592e7c50fb48b052893dad9f43552c825596f33d2c5c3285e0e6f0e5ffbb38",
+      "action_counts": {
+        "legacy": 512
+      }
+    },
+    {
+      "name": "simple-learned-s73",
+      "body": "simple",
+      "arm": "learned",
+      "seed": 73,
+      "parameters": 450688,
+      "initial_weights_sha256": "2afcf4f0050166e27be4cf11cc30cd24add7775669b7b8a9a88c8b51a5bd8248",
+      "weights_sha256": "4bd409ee891f951073ef6e7cf127cbfb43c73b9ae4ba012880a2a0717773b206",
+      "receipts_sha256": "a4bff44d977461ff6688eeb8de849a848e81c3e14db2c099c03be71b24713df9",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.2727809,
+        "last_loss": 3.83198118,
+        "first_mean": 4.05566706,
+        "last_mean": 2.76001184,
+        "mean_count": 16,
+        "mean_improvement": 0.0243287878,
+        "eval_initial": 5.20846462,
+        "eval_final": 2.68184018,
+        "weight_dependent_choices": 426,
+        "seconds": 7.80492601,
+        "max_rss_kib": 37976,
+        "user_seconds": 7.432365,
+        "system_seconds": 1.360635
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 37976,
+        "wall_seconds": 7.80492601,
+        "user_seconds": 7.432365,
+        "system_seconds": 1.360635
+      },
+      "policy.initial.bin_sha256": "54db697620c462613a29a668bed2d86c8e8784ff21fb0c85f1b953761376a4d2",
+      "policy.final.bin_sha256": "6f880a30944b4152313392e27e98a4748072ef3de06751895b78b900d286464e",
+      "action_counts": {
+        "brake": 464,
+        "hold": 21,
+        "push": 27
+      }
+    },
+    {
+      "name": "hevlm-adam-s42",
+      "body": "hevlm",
+      "arm": "adam",
+      "seed": 42,
+      "parameters": 1123456,
+      "initial_weights_sha256": "db43aa0460b84e7e2226d4b85b61b9d2f3485280588ac8b4b13c61a162d4e87d",
+      "weights_sha256": "120391ef2745aa65a067507d1f673de78a9d06fa3f75e3eb1f2b91d2e90bf86f",
+      "receipts_sha256": "6d2487640c8ba2cc32a5a9f4f28db9449e01f0fd1575bde289fbc0327925be79",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.96171761,
+        "last_loss": 1.69210112,
+        "first_mean": 3.01837575,
+        "last_mean": 1.59226828,
+        "mean_count": 16,
+        "mean_improvement": 0.0371611614,
+        "eval_initial": 5.74468184,
+        "eval_final": 1.57143271,
+        "weight_dependent_choices": 0,
+        "seconds": 21.9768677,
+        "max_rss_kib": 37976,
+        "user_seconds": 21.512467,
+        "system_seconds": 3.187049
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 37976,
+        "wall_seconds": 21.9768677,
+        "user_seconds": 21.512467,
+        "system_seconds": 3.187049
+      },
+      "action_counts": {}
+    },
+    {
+      "name": "hevlm-chuck-s42",
+      "body": "hevlm",
+      "arm": "chuck",
+      "seed": 42,
+      "parameters": 1123456,
+      "initial_weights_sha256": "db43aa0460b84e7e2226d4b85b61b9d2f3485280588ac8b4b13c61a162d4e87d",
+      "weights_sha256": "b6615653722dbab2250f8d5e0267adfa58588008a72cb5f48e718acdb39d5b68",
+      "receipts_sha256": "c8d453c2c00fc22b002c29842097f077b92055734ad1d1b1a1ae4a0b6c00a73d",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.96171761,
+        "last_loss": 1.71770918,
+        "first_mean": 3.00505406,
+        "last_mean": 1.605231,
+        "mean_count": 16,
+        "mean_improvement": 0.0422086532,
+        "eval_initial": 5.74468184,
+        "eval_final": 1.57657683,
+        "weight_dependent_choices": 0,
+        "seconds": 16.2879544,
+        "max_rss_kib": 39356,
+        "user_seconds": 15.96372,
+        "system_seconds": 3.042109
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 39356,
+        "wall_seconds": 16.2879544,
+        "user_seconds": 15.96372,
+        "system_seconds": 3.042109
+      },
+      "action_counts": {}
+    },
+    {
+      "name": "hevlm-legacy-s42",
+      "body": "hevlm",
+      "arm": "legacy",
+      "seed": 42,
+      "parameters": 1123456,
+      "initial_weights_sha256": "db43aa0460b84e7e2226d4b85b61b9d2f3485280588ac8b4b13c61a162d4e87d",
+      "weights_sha256": "b6615653722dbab2250f8d5e0267adfa58588008a72cb5f48e718acdb39d5b68",
+      "receipts_sha256": "839788bbecbc705dbcd5b148a33cfaad3f2041533625a21e555fd3bf86b3ab16",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.96171761,
+        "last_loss": 1.71770918,
+        "first_mean": 3.00505406,
+        "last_mean": 1.605231,
+        "mean_count": 16,
+        "mean_improvement": 0.0422086532,
+        "eval_initial": 5.74468184,
+        "eval_final": 1.57657683,
+        "weight_dependent_choices": 0,
+        "seconds": 16.3610043,
+        "max_rss_kib": 39356,
+        "user_seconds": 15.775202,
+        "system_seconds": 3.033198
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 39356,
+        "wall_seconds": 16.3610043,
+        "user_seconds": 15.775202,
+        "system_seconds": 3.033198
+      },
+      "policy.initial.bin_sha256": "fa44f2b138540fa2bfb77646c630e056348e346344d7964a6d8196a162d04cc2",
+      "policy.final.bin_sha256": "fa44f2b138540fa2bfb77646c630e056348e346344d7964a6d8196a162d04cc2",
+      "action_counts": {
+        "legacy": 512
+      }
+    },
+    {
+      "name": "hevlm-learned-s42",
+      "body": "hevlm",
+      "arm": "learned",
+      "seed": 42,
+      "parameters": 1123456,
+      "initial_weights_sha256": "db43aa0460b84e7e2226d4b85b61b9d2f3485280588ac8b4b13c61a162d4e87d",
+      "weights_sha256": "bdcb158ab534a6411cb1da823cd2ac488197075e1f83d9f7a2dd7b7c141e317a",
+      "receipts_sha256": "ecf420ecac934d244567748db46cae87d6b6666a300d61ac33b833a742c180d6",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.96171761,
+        "last_loss": 1.68127298,
+        "first_mean": 3.01192892,
+        "last_mean": 1.58735824,
+        "mean_count": 16,
+        "mean_improvement": 0.0375708665,
+        "eval_initial": 5.74468184,
+        "eval_final": 1.5714525,
+        "weight_dependent_choices": 0,
+        "seconds": 16.7655017,
+        "max_rss_kib": 39356,
+        "user_seconds": 16.597428,
+        "system_seconds": 2.891371
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 39356,
+        "wall_seconds": 16.7655017,
+        "user_seconds": 16.597428,
+        "system_seconds": 2.891371
+      },
+      "policy.initial.bin_sha256": "f7a954172367d09ab5481d92dca22449ad49afe53e209f612cbbc280bccb7c6d",
+      "policy.final.bin_sha256": "6e70c77cf9dcc55f3c1c6e3da3f11ae985b1c7768451b12f1698378e77d4b346",
+      "action_counts": {
+        "brake": 25,
+        "hold": 460,
+        "push": 27
+      }
+    },
+    {
+      "name": "hevlm-adam-s73",
+      "body": "hevlm",
+      "arm": "adam",
+      "seed": 73,
+      "parameters": 1123456,
+      "initial_weights_sha256": "9d414edfcd827fc24ed6a7d12f34a6c6d6aa98809a5e20aed72999d510cc68a5",
+      "weights_sha256": "5ee9a53e9f79e41f40ffe1f09c0cd7e1c3c19c8c77cec20fc3743fc5b1dd1085",
+      "receipts_sha256": "1ee1c8ec47aab7d0c91248182b7de51ef4f549f14499d54d9dbe0e670683d206",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.90276909,
+        "last_loss": 1.56682777,
+        "first_mean": 3.02967875,
+        "last_mean": 1.60708648,
+        "mean_count": 16,
+        "mean_improvement": 0.0371749783,
+        "eval_initial": 6.1112113,
+        "eval_final": 1.52924156,
+        "weight_dependent_choices": 0,
+        "seconds": 21.9103037,
+        "max_rss_kib": 39356,
+        "user_seconds": 21.469348,
+        "system_seconds": 2.977804
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 39356,
+        "wall_seconds": 21.9103037,
+        "user_seconds": 21.469348,
+        "system_seconds": 2.977804
+      },
+      "action_counts": {}
+    },
+    {
+      "name": "hevlm-chuck-s73",
+      "body": "hevlm",
+      "arm": "chuck",
+      "seed": 73,
+      "parameters": 1123456,
+      "initial_weights_sha256": "9d414edfcd827fc24ed6a7d12f34a6c6d6aa98809a5e20aed72999d510cc68a5",
+      "weights_sha256": "91013fff895a00b452c18856ebf8efc5673327126b7ed04d34a1bb8e8610dbc7",
+      "receipts_sha256": "4d5e3897d78428e52bc81eae3fa7f6c28c8cc64329b23b810421154a535680d5",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.90276909,
+        "last_loss": 1.62225282,
+        "first_mean": 3.01375534,
+        "last_mean": 1.62648211,
+        "mean_count": 16,
+        "mean_improvement": 0.0401468298,
+        "eval_initial": 6.1112113,
+        "eval_final": 1.58722472,
+        "weight_dependent_choices": 0,
+        "seconds": 17.6172384,
+        "max_rss_kib": 39356,
+        "user_seconds": 16.33062,
+        "system_seconds": 2.954431
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 39356,
+        "wall_seconds": 17.6172384,
+        "user_seconds": 16.33062,
+        "system_seconds": 2.954431
+      },
+      "action_counts": {}
+    },
+    {
+      "name": "hevlm-legacy-s73",
+      "body": "hevlm",
+      "arm": "legacy",
+      "seed": 73,
+      "parameters": 1123456,
+      "initial_weights_sha256": "9d414edfcd827fc24ed6a7d12f34a6c6d6aa98809a5e20aed72999d510cc68a5",
+      "weights_sha256": "91013fff895a00b452c18856ebf8efc5673327126b7ed04d34a1bb8e8610dbc7",
+      "receipts_sha256": "70f72c3dff40dee370046185c3b282cbef7306c6cd6a5456fbfd7d19ffce66db",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.90276909,
+        "last_loss": 1.62225282,
+        "first_mean": 3.01375534,
+        "last_mean": 1.62648211,
+        "mean_count": 16,
+        "mean_improvement": 0.0401468298,
+        "eval_initial": 6.1112113,
+        "eval_final": 1.58722472,
+        "weight_dependent_choices": 0,
+        "seconds": 18.321402,
+        "max_rss_kib": 39356,
+        "user_seconds": 17.047792,
+        "system_seconds": 3.309653
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 39356,
+        "wall_seconds": 18.321402,
+        "user_seconds": 17.047792,
+        "system_seconds": 3.309653
+      },
+      "policy.initial.bin_sha256": "0e61c53a8417fd562cc03cafea2ba78a7128eaa2e705f1bda6c5d485d5dfb552",
+      "policy.final.bin_sha256": "0e61c53a8417fd562cc03cafea2ba78a7128eaa2e705f1bda6c5d485d5dfb552",
+      "action_counts": {
+        "legacy": 512
+      }
+    },
+    {
+      "name": "hevlm-learned-s73",
+      "body": "hevlm",
+      "arm": "learned",
+      "seed": 73,
+      "parameters": 1123456,
+      "initial_weights_sha256": "9d414edfcd827fc24ed6a7d12f34a6c6d6aa98809a5e20aed72999d510cc68a5",
+      "weights_sha256": "fe2b2cd2b4712b9d456d9868f52a040f318193772aa51f69a4aeacee829d0e42",
+      "receipts_sha256": "9e626c5b93f95ee37342e44e0ebc0941865396046f2f50ffacf7dcb0f04ff977",
+      "summary": {
+        "type": "summary",
+        "first_loss": 5.90276909,
+        "last_loss": 1.62819827,
+        "first_mean": 3.07907721,
+        "last_mean": 1.6330649,
+        "mean_count": 16,
+        "mean_improvement": 0.0277720296,
+        "eval_initial": 6.1112113,
+        "eval_final": 1.58826482,
+        "weight_dependent_choices": 426,
+        "seconds": 17.0558335,
+        "max_rss_kib": 39356,
+        "user_seconds": 16.783077,
+        "system_seconds": 3.021015
+      },
+      "resources": {
+        "source": "getrusage through final heldout evaluation",
+        "max_rss_kib": 39356,
+        "wall_seconds": 17.0558335,
+        "user_seconds": 16.783077,
+        "system_seconds": 3.021015
+      },
+      "policy.initial.bin_sha256": "54db697620c462613a29a668bed2d86c8e8784ff21fb0c85f1b953761376a4d2",
+      "policy.final.bin_sha256": "de05cfbe5e51e140ee2c10e9dddfd8b16c3d8ee5aa99d15c3cb6e57d03f5f6ef",
+      "action_counts": {
+        "brake": 464,
+        "hold": 21,
+        "push": 27
+      }
+    }
+  ],
+  "learned_diagnostics": [
+    {
+      "run": "simple-learned-s42",
+      "matched_feedback_updates": 512,
+      "weight_dependent_choices": 0,
+      "explored_choices": 89,
+      "nonfinite_consequences": 0,
+      "negative_consequence_steps": [],
+      "first_credited_transition": {
+        "type": "step",
+        "step": 1,
+        "offset": 629074,
+        "window_rng": "9e3779b97f4a7c3f",
+        "loss_before": 4.71068192,
+        "loss_after_same_window": 3.90564895,
+        "improvement": 0.805032969,
+        "gradient_norm_before_clip": 9.14546967,
+        "frozen_tensors": 0,
+        "pre_chuck": {
+          "initialized": 0,
+          "global_step": 0,
+          "dampen": 0,
+          "lr_scale": 0,
+          "noise": 0,
+          "loss_ema": 0,
+          "macro_ema": 0,
+          "best_macro": 0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 0,
+          "full": 0,
+          "loss_hist": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "post_chuck": {
+          "initialized": 1,
+          "global_step": 1,
+          "dampen": 1,
+          "lr_scale": 1,
+          "noise": 0,
+          "loss_ema": 4.71068192,
+          "macro_ema": 4.71068192,
+          "best_macro": 1000000000.0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 1,
+          "full": 0,
+          "loss_hist": [
+            4.71068192,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "architect": {
+          "sequence": 1,
+          "explored": 0,
+          "action": {
+            "type": "hold",
+            "kind": 1,
+            "value": 0
+          },
+          "policy_pre": "7da63c67c50ca658",
+          "policy_pending": "3c023044a12f0649",
+          "policy_post": "c7bfc34ee68151fd",
+          "observation": {
+            "loss": 4.71068192,
+            "loss_ema": 4.71068192,
+            "loss_trend": 0,
+            "macro_ema": 4.71068192,
+            "best_macro": 1000000000.0,
+            "dampen": 1,
+            "lr_scale": 1,
+            "noise": 0,
+            "grad_norm": 1.00043046,
+            "grad_trend": 0,
+            "frozen_fraction": 0,
+            "step": 1,
+            "stag": 0,
+            "macro_stag": 0,
+            "history_len": 1
+          },
+          "features": [
+            0.824889541,
+            0,
+            0,
+            -1,
+            0.5,
+            0.5,
+            0,
+            0.500107586,
+            0,
+            0,
+            0,
+            0,
+            0.000999000971,
+            0,
+            0,
+            0
+          ],
+          "scores": [
+            0,
+            0,
+            0
+          ],
+          "consequence": {
+            "before_loss": 4.71068192,
+            "after_loss": 3.90564895,
+            "loss_delta": 0.8050329685211182,
+            "reward": 0.170895174,
+            "predicted": 0,
+            "error": -0.170895174,
+            "decision": 1,
+            "learned": 1,
+            "nonfinite": 0
+          },
+          "initial_weights_action": {
+            "type": "hold",
+            "kind": 1,
+            "value": 0
+          },
+          "weight_dependent_choice": false
+        }
+      },
+      "first_weight_dependent_choice": null,
+      "final_dampen": 1.03728569
+    },
+    {
+      "run": "simple-learned-s73",
+      "matched_feedback_updates": 512,
+      "weight_dependent_choices": 426,
+      "explored_choices": 86,
+      "nonfinite_consequences": 0,
+      "negative_consequence_steps": [],
+      "first_credited_transition": {
+        "type": "step",
+        "step": 1,
+        "offset": 595614,
+        "window_rng": "9e3779b97f4a7c5e",
+        "loss_before": 5.2727809,
+        "loss_after_same_window": 4.46375465,
+        "improvement": 0.809026241,
+        "gradient_norm_before_clip": 9.62803459,
+        "frozen_tensors": 0,
+        "pre_chuck": {
+          "initialized": 0,
+          "global_step": 0,
+          "dampen": 0,
+          "lr_scale": 0,
+          "noise": 0,
+          "loss_ema": 0,
+          "macro_ema": 0,
+          "best_macro": 0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 0,
+          "full": 0,
+          "loss_hist": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "post_chuck": {
+          "initialized": 1,
+          "global_step": 1,
+          "dampen": 0.970000029,
+          "lr_scale": 1,
+          "noise": 0,
+          "loss_ema": 5.2727809,
+          "macro_ema": 5.2727809,
+          "best_macro": 1000000000.0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 1,
+          "full": 0,
+          "loss_hist": [
+            5.2727809,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "architect": {
+          "sequence": 1,
+          "explored": 1,
+          "action": {
+            "type": "brake",
+            "kind": 2,
+            "value": 0
+          },
+          "policy_pre": "4cda739636bc6563",
+          "policy_pending": "5d5c9be4e5504d66",
+          "policy_post": "a473ad1a81cfc693",
+          "observation": {
+            "loss": 5.2727809,
+            "loss_ema": 5.2727809,
+            "loss_trend": 0,
+            "macro_ema": 5.2727809,
+            "best_macro": 1000000000.0,
+            "dampen": 1,
+            "lr_scale": 1,
+            "noise": 0,
+            "grad_norm": 1.00042295,
+            "grad_trend": 0,
+            "frozen_fraction": 0,
+            "step": 1,
+            "stag": 0,
+            "macro_stag": 0,
+            "history_len": 1
+          },
+          "features": [
+            0.840581059,
+            0,
+            0,
+            -1,
+            0.5,
+            0.5,
+            0,
+            0.500105739,
+            0,
+            0,
+            0,
+            0,
+            0.000999000971,
+            0,
+            0,
+            0
+          ],
+          "scores": [
+            0,
+            0,
+            0
+          ],
+          "consequence": {
+            "before_loss": 5.2727809,
+            "after_loss": 4.46375465,
+            "loss_delta": 0.8090262413024902,
+            "reward": 0.153434426,
+            "predicted": 0,
+            "error": -0.153434426,
+            "decision": 1,
+            "learned": 1,
+            "nonfinite": 0
+          },
+          "initial_weights_action": {
+            "type": "brake",
+            "kind": 2,
+            "value": 0
+          },
+          "weight_dependent_choice": false
+        }
+      },
+      "first_weight_dependent_choice": {
+        "type": "step",
+        "step": 2,
+        "offset": 724252,
+        "window_rng": "3c6ef372fe94f873",
+        "loss_before": 4.89833832,
+        "loss_after_same_window": 4.27418518,
+        "improvement": 0.624153137,
+        "gradient_norm_before_clip": 10.7587175,
+        "frozen_tensors": 0,
+        "pre_chuck": {
+          "initialized": 1,
+          "global_step": 1,
+          "dampen": 0.970000029,
+          "lr_scale": 1,
+          "noise": 0,
+          "loss_ema": 5.2727809,
+          "macro_ema": 5.2727809,
+          "best_macro": 1000000000.0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 1,
+          "full": 0,
+          "loss_hist": [
+            5.2727809,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "post_chuck": {
+          "initialized": 1,
+          "global_step": 2,
+          "dampen": 0.940900028,
+          "lr_scale": 1,
+          "noise": 0,
+          "loss_ema": 5.26903629,
+          "macro_ema": 5.27240658,
+          "best_macro": 1000000000.0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 2,
+          "full": 0,
+          "loss_hist": [
+            5.2727809,
+            5.26903629,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "architect": {
+          "sequence": 2,
+          "explored": 0,
+          "action": {
+            "type": "brake",
+            "kind": 2,
+            "value": 0
+          },
+          "policy_pre": "a473ad1a81cfc693",
+          "policy_pending": "e4542f5e75ffb712",
+          "policy_post": "7aeb31ee35f49de6",
+          "observation": {
+            "loss": 4.89833832,
+            "loss_ema": 5.26903629,
+            "loss_trend": 0,
+            "macro_ema": 5.27240658,
+            "best_macro": 1000000000.0,
+            "dampen": 0.970000029,
+            "lr_scale": 1,
+            "noise": 0,
+            "grad_norm": 1.00044239,
+            "grad_trend": 2.20277652e-05,
+            "frozen_fraction": 0,
+            "step": 2,
+            "stag": 0,
+            "macro_stag": 0,
+            "history_len": 2
+          },
+          "features": [
+            0.830460727,
+            0,
+            -0.0591315739,
+            -1,
+            0.485000014,
+            0.5,
+            0,
+            0.500110567,
+            2.20277652e-05,
+            0,
+            0,
+            0,
+            0.00199600798,
+            -0.0596932322,
+            0,
+            0.153434426
+          ],
+          "scores": [
+            0,
+            0.00577885238,
+            0
+          ],
+          "consequence": {
+            "before_loss": 4.89833832,
+            "after_loss": 4.27418518,
+            "loss_delta": 0.6241531372070312,
+            "reward": 0.127421379,
+            "predicted": 0.00577885238,
+            "error": -0.12164253,
+            "decision": 2,
+            "learned": 1,
+            "nonfinite": 0
+          },
+          "initial_weights_action": {
+            "type": "hold",
+            "kind": 1,
+            "value": 0
+          },
+          "weight_dependent_choice": true
+        }
+      },
+      "final_dampen": 0.300000012
+    },
+    {
+      "run": "hevlm-learned-s42",
+      "matched_feedback_updates": 512,
+      "weight_dependent_choices": 0,
+      "explored_choices": 89,
+      "nonfinite_consequences": 0,
+      "negative_consequence_steps": [],
+      "first_credited_transition": {
+        "type": "step",
+        "step": 1,
+        "offset": 29688,
+        "window_rng": "9e3779b97f4a7c3f",
+        "loss_before": 5.96171761,
+        "loss_after_same_window": 3.61667109,
+        "improvement": 2.34504652,
+        "gradient_norm_before_clip": 31.088419,
+        "frozen_tensors": 0,
+        "pre_chuck": {
+          "initialized": 0,
+          "global_step": 0,
+          "dampen": 0,
+          "lr_scale": 0,
+          "noise": 0,
+          "loss_ema": 0,
+          "macro_ema": 0,
+          "best_macro": 0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 0,
+          "full": 0,
+          "loss_hist": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "post_chuck": {
+          "initialized": 1,
+          "global_step": 1,
+          "dampen": 1,
+          "lr_scale": 1,
+          "noise": 0,
+          "loss_ema": 5.96171761,
+          "macro_ema": 5.96171761,
+          "best_macro": 1000000000.0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 1,
+          "full": 0,
+          "loss_hist": [
+            5.96171761,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "architect": {
+          "sequence": 1,
+          "explored": 0,
+          "action": {
+            "type": "hold",
+            "kind": 1,
+            "value": 0
+          },
+          "policy_pre": "7da63c67c50ca658",
+          "policy_pending": "bcca755957863ba1",
+          "policy_post": "5212e1595060bdef",
+          "observation": {
+            "loss": 5.96171761,
+            "loss_ema": 5.96171761,
+            "loss_trend": 0,
+            "macro_ema": 5.96171761,
+            "best_macro": 1000000000.0,
+            "dampen": 1,
+            "lr_scale": 1,
+            "noise": 0,
+            "grad_norm": 1.00081599,
+            "grad_trend": 0,
+            "frozen_fraction": 0,
+            "step": 1,
+            "stag": 0,
+            "macro_stag": 0,
+            "history_len": 1
+          },
+          "features": [
+            0.856357276,
+            0,
+            0,
+            -1,
+            0.5,
+            0.5,
+            0,
+            0.500203907,
+            0,
+            0,
+            0,
+            0,
+            0.000999000971,
+            0,
+            0,
+            0
+          ],
+          "scores": [
+            0,
+            0,
+            0
+          ],
+          "consequence": {
+            "before_loss": 5.96171761,
+            "after_loss": 3.61667109,
+            "loss_delta": 2.3450465202331543,
+            "reward": 0.39335075,
+            "predicted": 0,
+            "error": -0.39335075,
+            "decision": 1,
+            "learned": 1,
+            "nonfinite": 0
+          },
+          "initial_weights_action": {
+            "type": "hold",
+            "kind": 1,
+            "value": 0
+          },
+          "weight_dependent_choice": false
+        }
+      },
+      "first_weight_dependent_choice": null,
+      "final_dampen": 1.03728569
+    },
+    {
+      "run": "hevlm-learned-s73",
+      "matched_feedback_updates": 512,
+      "weight_dependent_choices": 426,
+      "explored_choices": 86,
+      "nonfinite_consequences": 0,
+      "negative_consequence_steps": [
+        134
+      ],
+      "first_credited_transition": {
+        "type": "step",
+        "step": 1,
+        "offset": 53388,
+        "window_rng": "9e3779b97f4a7c5e",
+        "loss_before": 5.90276909,
+        "loss_after_same_window": 3.58802152,
+        "improvement": 2.31474757,
+        "gradient_norm_before_clip": 31.7873421,
+        "frozen_tensors": 0,
+        "pre_chuck": {
+          "initialized": 0,
+          "global_step": 0,
+          "dampen": 0,
+          "lr_scale": 0,
+          "noise": 0,
+          "loss_ema": 0,
+          "macro_ema": 0,
+          "best_macro": 0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 0,
+          "full": 0,
+          "loss_hist": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "post_chuck": {
+          "initialized": 1,
+          "global_step": 1,
+          "dampen": 0.970000029,
+          "lr_scale": 1,
+          "noise": 0,
+          "loss_ema": 5.90276909,
+          "macro_ema": 5.90276909,
+          "best_macro": 1000000000.0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 1,
+          "full": 0,
+          "loss_hist": [
+            5.90276909,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "architect": {
+          "sequence": 1,
+          "explored": 1,
+          "action": {
+            "type": "brake",
+            "kind": 2,
+            "value": 0
+          },
+          "policy_pre": "4cda739636bc6563",
+          "policy_pending": "6892cb1bf2cb93e0",
+          "policy_post": "71e132182a1eca50",
+          "observation": {
+            "loss": 5.90276909,
+            "loss_ema": 5.90276909,
+            "loss_trend": 0,
+            "macro_ema": 5.90276909,
+            "best_macro": 1000000000.0,
+            "dampen": 1,
+            "lr_scale": 1,
+            "noise": 0,
+            "grad_norm": 1.00078416,
+            "grad_trend": 0,
+            "frozen_fraction": 0,
+            "step": 1,
+            "stag": 0,
+            "macro_stag": 0,
+            "history_len": 1
+          },
+          "features": [
+            0.855130613,
+            0,
+            0,
+            -1,
+            0.5,
+            0.5,
+            0,
+            0.50019598,
+            0,
+            0,
+            0,
+            0,
+            0.000999000971,
+            0,
+            0,
+            0
+          ],
+          "scores": [
+            0,
+            0,
+            0
+          ],
+          "consequence": {
+            "before_loss": 5.90276909,
+            "after_loss": 3.58802152,
+            "loss_delta": 2.3147475719451904,
+            "reward": 0.392145991,
+            "predicted": 0,
+            "error": -0.392145991,
+            "decision": 1,
+            "learned": 1,
+            "nonfinite": 0
+          },
+          "initial_weights_action": {
+            "type": "brake",
+            "kind": 2,
+            "value": 0
+          },
+          "weight_dependent_choice": false
+        }
+      },
+      "first_weight_dependent_choice": {
+        "type": "step",
+        "step": 2,
+        "offset": 52860,
+        "window_rng": "3c6ef372fe94f873",
+        "loss_before": 4.56968927,
+        "loss_after_same_window": 3.36392713,
+        "improvement": 1.20576215,
+        "gradient_norm_before_clip": 25.2401276,
+        "frozen_tensors": 0,
+        "pre_chuck": {
+          "initialized": 1,
+          "global_step": 1,
+          "dampen": 0.970000029,
+          "lr_scale": 1,
+          "noise": 0,
+          "loss_ema": 5.90276909,
+          "macro_ema": 5.90276909,
+          "best_macro": 1000000000.0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 1,
+          "full": 0,
+          "loss_hist": [
+            5.90276909,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "post_chuck": {
+          "initialized": 1,
+          "global_step": 2,
+          "dampen": 0.940900028,
+          "lr_scale": 1,
+          "noise": 0,
+          "loss_ema": 5.88943815,
+          "macro_ema": 5.90143585,
+          "best_macro": 1000000000.0,
+          "stag": 0,
+          "macro_stag": 0,
+          "pos": 2,
+          "full": 0,
+          "loss_hist": [
+            5.90276909,
+            5.88943815,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "architect": {
+          "sequence": 2,
+          "explored": 0,
+          "action": {
+            "type": "brake",
+            "kind": 2,
+            "value": 0
+          },
+          "policy_pre": "71e132182a1eca50",
+          "policy_pending": "69fb171c4b329d57",
+          "policy_post": "ae79b354b6163052",
+          "observation": {
+            "loss": 4.56968927,
+            "loss_ema": 5.88943815,
+            "loss_trend": 0,
+            "macro_ema": 5.90143585,
+            "best_macro": 1000000000.0,
+            "dampen": 0.970000029,
+            "lr_scale": 1,
+            "noise": 0,
+            "grad_norm": 1.00084686,
+            "grad_trend": 6.42126543e-05,
+            "frozen_fraction": 0,
+            "step": 2,
+            "stag": 0,
+            "macro_stag": 0,
+            "history_len": 2
+          },
+          "features": [
+            0.820456743,
+            0,
+            -0.191561177,
+            -1,
+            0.485000014,
+            0.5,
+            0,
+            0.500211596,
+            6.42126543e-05,
+            0,
+            0,
+            0,
+            0.00199600798,
+            -0.193122476,
+            0,
+            0.392145991
+          ],
+          "scores": [
+            0,
+            0.0144009423,
+            0
+          ],
+          "consequence": {
+            "before_loss": 4.56968927,
+            "after_loss": 3.36392713,
+            "loss_delta": 1.2057621479034424,
+            "reward": 0.263860792,
+            "predicted": 0.0144009423,
+            "error": -0.249459848,
+            "decision": 2,
+            "learned": 1,
+            "nonfinite": 0
+          },
+          "initial_weights_action": {
+            "type": "hold",
+            "kind": 1,
+            "value": 0
+          },
+          "weight_dependent_choice": true
+        }
+      },
+      "final_dampen": 0.300000012
+    }
+  ],
+  "raw_archive": {
+    "filename": "chuck-loss-architect-d5103e8-raw.tar.gz",
+    "bytes": 186277616,
+    "sha256": "5536df21418b7303d0e12b53df76cda3d4441054112242e6cd103a61f9045612",
+    "format": "tar.gz",
+    "compiled_executables_included": false
+  },
+  "raw_artifact_index_sha256": "9d8f55dd0b0c15662381deb823cfd1cba457b75f2971194e977ad4288861eb53",
+  "verification_receipt_sha256": "b5b71ff21c018dbfb3adb7c065b5443e5030942fab1a9a1cb1e7d72b8d20c982",
+  "artifacts": {
+    "simple-adam-s42.final.bin": {
+      "bytes": 1802992,
+      "sha256": "8409e09ad78e18b39014d6472017565e5776a36c170af6c50f2a182c5de2d5ea"
+    },
+    "simple-adam-s42.initial.bin": {
+      "bytes": 1802992,
+      "sha256": "751f9e72de90b02dc728a4d507c95e2f8c984e7cad65e407e68088a2fa520859"
+    },
+    "simple-adam-s42.jsonl": {
+      "bytes": 327923,
+      "sha256": "4c2acf0066f9bef29456855110224ab3c0f0a986d37457d85e7ea28cf1aef764"
+    },
+    "simple-adam-s42.log": {
+      "bytes": 1373,
+      "sha256": "2b8ecd767fdc4f6b51cfcd4c28f1b42aaa69da5aba9fb84d94d005b8a18e6172"
+    },
+    "simple-adam-s42.moments.final.bin": {
+      "bytes": 3605848,
+      "sha256": "e5b72dc34b00b2836e3483cd78ceedcd61e7c8a9a25c475a51a8ce8d8dba934a"
+    },
+    "simple-adam-s42.optimizer.final.json": {
+      "bytes": 2789,
+      "sha256": "dccb067d167e6ce1c7d0e9f39fa311caebaa7059ee1b6d3968bfe864e64032fd"
+    },
+    "simple-chuck-s42.final.bin": {
+      "bytes": 1802992,
+      "sha256": "224e6857ebd2d2cf1edf5ec4ae0dcaae8e85091f7dffc95a3b4c58088063afab"
+    },
+    "simple-chuck-s42.initial.bin": {
+      "bytes": 1802992,
+      "sha256": "751f9e72de90b02dc728a4d507c95e2f8c984e7cad65e407e68088a2fa520859"
+    },
+    "simple-chuck-s42.jsonl": {
+      "bytes": 505506,
+      "sha256": "dc78670170e421144e0c6e81587b5773ba55771671879d4a8846191414d5c5ef"
+    },
+    "simple-chuck-s42.log": {
+      "bytes": 1391,
+      "sha256": "62fb67bab1e6c7438607b462d4ec008c3f888dbc7cd3d248650d47b3b8bc08a8"
+    },
+    "simple-chuck-s42.moments.final.bin": {
+      "bytes": 3605848,
+      "sha256": "61f948761bc51d722d03136ed37d1f4e98af4463c5ea9a48d83711f5303cf2c2"
+    },
+    "simple-chuck-s42.optimizer.final.json": {
+      "bytes": 6587,
+      "sha256": "d29ead205d30b7ca8b63306c707649e45fbdc64eba412bf78a510ac8d3018b1f"
+    },
+    "simple-legacy-s42.final.bin": {
+      "bytes": 1802992,
+      "sha256": "224e6857ebd2d2cf1edf5ec4ae0dcaae8e85091f7dffc95a3b4c58088063afab"
+    },
+    "simple-legacy-s42.initial.bin": {
+      "bytes": 1802992,
+      "sha256": "751f9e72de90b02dc728a4d507c95e2f8c984e7cad65e407e68088a2fa520859"
+    },
+    "simple-legacy-s42.jsonl": {
+      "bytes": 870734,
+      "sha256": "9e5a42ce3156f61f69621ef96f84f8bae4cf7b40c647468570aa60b28f0c7f14"
+    },
+    "simple-legacy-s42.log": {
+      "bytes": 1409,
+      "sha256": "9201e714863b69969fc47a4287f7e0bb709a8edb89db99862469c937a9df8acb"
+    },
+    "simple-legacy-s42.moments.final.bin": {
+      "bytes": 3605848,
+      "sha256": "61f948761bc51d722d03136ed37d1f4e98af4463c5ea9a48d83711f5303cf2c2"
+    },
+    "simple-legacy-s42.optimizer.final.json": {
+      "bytes": 6587,
+      "sha256": "d29ead205d30b7ca8b63306c707649e45fbdc64eba412bf78a510ac8d3018b1f"
+    },
+    "simple-legacy-s42.policy.final.bin": {
+      "bytes": 1016,
+      "sha256": "7dc8b37c768312c4c50c97d4af1437fa06e2caa799a60e37c36e342dfd1f1cba"
+    },
+    "simple-legacy-s42.policy.initial.bin": {
+      "bytes": 1016,
+      "sha256": "7dc8b37c768312c4c50c97d4af1437fa06e2caa799a60e37c36e342dfd1f1cba"
+    },
+    "simple-learned-s42.final.bin": {
+      "bytes": 1802992,
+      "sha256": "8c681fd8b78b8d1a9c4affb6276139cc232c9ee5259d6d973eaf03e0e517e901"
+    },
+    "simple-learned-s42.initial.bin": {
+      "bytes": 1802992,
+      "sha256": "751f9e72de90b02dc728a4d507c95e2f8c984e7cad65e407e68088a2fa520859"
+    },
+    "simple-learned-s42.jsonl": {
+      "bytes": 1010102,
+      "sha256": "44b86a45fa904c16c8beb582fdd617a1a29d03f1fcd4f76d02bd1245f7f05f00"
+    },
+    "simple-learned-s42.log": {
+      "bytes": 1427,
+      "sha256": "f795be84223a6b81d518514986e3ac8565900385812a71bfbc7fcf9e1b2ff33c"
+    },
+    "simple-learned-s42.moments.final.bin": {
+      "bytes": 3605848,
+      "sha256": "6db0be39122413420dda9da9f3de3de962addfc3f61c04dd273c87a39cf6411d"
+    },
+    "simple-learned-s42.optimizer.final.json": {
+      "bytes": 6585,
+      "sha256": "41c3580afe6b82bf914e0c05c5691d6711439aa7845757df383811d72236c9c9"
+    },
+    "simple-learned-s42.policy.final.bin": {
+      "bytes": 1016,
+      "sha256": "353585a9c8b6ee7565a6d568230750195b8dd16ab015b4b00746c18094f8ce05"
+    },
+    "simple-learned-s42.policy.initial.bin": {
+      "bytes": 1016,
+      "sha256": "f7a954172367d09ab5481d92dca22449ad49afe53e209f612cbbc280bccb7c6d"
+    },
+    "simple-adam-s73.final.bin": {
+      "bytes": 1802992,
+      "sha256": "11fd2901e76106e6ba896bf196eaed20cb6cf76068b0b6825aca0bb774031ca0"
+    },
+    "simple-adam-s73.initial.bin": {
+      "bytes": 1802992,
+      "sha256": "2afcf4f0050166e27be4cf11cc30cd24add7775669b7b8a9a88c8b51a5bd8248"
+    },
+    "simple-adam-s73.jsonl": {
+      "bytes": 327930,
+      "sha256": "7a1c19af02484424596b883165fc9a4e3d5b2bb0f4cd54f81b734f1a891cb634"
+    },
+    "simple-adam-s73.log": {
+      "bytes": 1373,
+      "sha256": "5473ff086de92f9e100292bb66e1cea2593ae6035384929b0e7420c03e73a98f"
+    },
+    "simple-adam-s73.moments.final.bin": {
+      "bytes": 3605848,
+      "sha256": "f6d88f6a61216ed6b1685f6088646e2f547c888ba70531a8c1df3cfec08f04cf"
+    },
+    "simple-adam-s73.optimizer.final.json": {
+      "bytes": 2789,
+      "sha256": "92d07cd095ad3d5642547df000e7aeca027c74550ed32f2288e497077b54d154"
+    },
+    "simple-chuck-s73.final.bin": {
+      "bytes": 1802992,
+      "sha256": "31d17acce401da7df825965a8e148bcdea0936d77479d31b840aa39bf9e0f45c"
+    },
+    "simple-chuck-s73.initial.bin": {
+      "bytes": 1802992,
+      "sha256": "2afcf4f0050166e27be4cf11cc30cd24add7775669b7b8a9a88c8b51a5bd8248"
+    },
+    "simple-chuck-s73.jsonl": {
+      "bytes": 501958,
+      "sha256": "3d51937b101500bff1713576bfeb2fb9cc5a55f25cb43fcadb8b470c8ea69091"
+    },
+    "simple-chuck-s73.log": {
+      "bytes": 1391,
+      "sha256": "d81afaff8cc9f64c8910597654293d25dc640836c8a54501f0d292e05eb34b6d"
+    },
+    "simple-chuck-s73.moments.final.bin": {
+      "bytes": 3605848,
+      "sha256": "dcf345289c95bc6a7eba83199345bc4991c0fb6b66695c5638a8d56469081baa"
+    },
+    "simple-chuck-s73.optimizer.final.json": {
+      "bytes": 6589,
+      "sha256": "8944bb20d05d44a12158c894b3b19014dc96e03c1f234d607b477a11d194e636"
+    },
+    "simple-legacy-s73.final.bin": {
+      "bytes": 1802992,
+      "sha256": "31d17acce401da7df825965a8e148bcdea0936d77479d31b840aa39bf9e0f45c"
+    },
+    "simple-legacy-s73.initial.bin": {
+      "bytes": 1802992,
+      "sha256": "2afcf4f0050166e27be4cf11cc30cd24add7775669b7b8a9a88c8b51a5bd8248"
+    },
+    "simple-legacy-s73.jsonl": {
+      "bytes": 865410,
+      "sha256": "d838c942df3cf01cd1e22e2c6ac49db2452667b441c04c7d90021154ddd6bb75"
+    },
+    "simple-legacy-s73.log": {
+      "bytes": 1409,
+      "sha256": "18c534d85aad60d6c06cad930a937756418694ea8e70b5d3c38294c83191a676"
+    },
+    "simple-legacy-s73.moments.final.bin": {
+      "bytes": 3605848,
+      "sha256": "dcf345289c95bc6a7eba83199345bc4991c0fb6b66695c5638a8d56469081baa"
+    },
+    "simple-legacy-s73.optimizer.final.json": {
+      "bytes": 6589,
+      "sha256": "8944bb20d05d44a12158c894b3b19014dc96e03c1f234d607b477a11d194e636"
+    },
+    "simple-legacy-s73.policy.final.bin": {
+      "bytes": 1016,
+      "sha256": "03592e7c50fb48b052893dad9f43552c825596f33d2c5c3285e0e6f0e5ffbb38"
+    },
+    "simple-legacy-s73.policy.initial.bin": {
+      "bytes": 1016,
+      "sha256": "03592e7c50fb48b052893dad9f43552c825596f33d2c5c3285e0e6f0e5ffbb38"
+    },
+    "simple-learned-s73.final.bin": {
+      "bytes": 1802992,
+      "sha256": "4bd409ee891f951073ef6e7cf127cbfb43c73b9ae4ba012880a2a0717773b206"
+    },
+    "simple-learned-s73.initial.bin": {
+      "bytes": 1802992,
+      "sha256": "2afcf4f0050166e27be4cf11cc30cd24add7775669b7b8a9a88c8b51a5bd8248"
+    },
+    "simple-learned-s73.jsonl": {
+      "bytes": 1014605,
+      "sha256": "a4bff44d977461ff6688eeb8de849a848e81c3e14db2c099c03be71b24713df9"
+    },
+    "simple-learned-s73.log": {
+      "bytes": 1427,
+      "sha256": "fe1210d08634c93851f40ed1297510e74f0d342175dd209a872cb88b82d0e15d"
+    },
+    "simple-learned-s73.moments.final.bin": {
+      "bytes": 3605848,
+      "sha256": "73361bc3ab54ab54f2affe36aced7aab4529314bc5e470baf6c451afa5bd4758"
+    },
+    "simple-learned-s73.optimizer.final.json": {
+      "bytes": 6589,
+      "sha256": "e21327c4d13569e9e06b1ef3760ffb1e614678771a4cd3441649c69978f3bd53"
+    },
+    "simple-learned-s73.policy.final.bin": {
+      "bytes": 1016,
+      "sha256": "6f880a30944b4152313392e27e98a4748072ef3de06751895b78b900d286464e"
+    },
+    "simple-learned-s73.policy.initial.bin": {
+      "bytes": 1016,
+      "sha256": "54db697620c462613a29a668bed2d86c8e8784ff21fb0c85f1b953761376a4d2"
+    },
+    "hevlm-adam-s42.final.bin": {
+      "bytes": 4494276,
+      "sha256": "120391ef2745aa65a067507d1f673de78a9d06fa3f75e3eb1f2b91d2e90bf86f"
+    },
+    "hevlm-adam-s42.initial.bin": {
+      "bytes": 4494276,
+      "sha256": "db43aa0460b84e7e2226d4b85b61b9d2f3485280588ac8b4b13c61a162d4e87d"
+    },
+    "hevlm-adam-s42.jsonl": {
+      "bytes": 327357,
+      "sha256": "6d2487640c8ba2cc32a5a9f4f28db9449e01f0fd1575bde289fbc0327925be79"
+    },
+    "hevlm-adam-s42.log": {
+      "bytes": 1366,
+      "sha256": "009203d800705462be267c4a41d6967c1707f123e80fbf3fe314f7e450e65f27"
+    },
+    "hevlm-adam-s42.moments.final.bin": {
+      "bytes": 8988296,
+      "sha256": "a68f3bdbdb709bcb2f3a24728ff028daf165b002d5caec39599ff5964e676347"
+    },
+    "hevlm-adam-s42.optimizer.final.json": {
+      "bytes": 5050,
+      "sha256": "fc3b1da8e3455a8901164d36806021896ee3aa6c42a1a5b812c836a9e5a3ac9c"
+    },
+    "hevlm-chuck-s42.final.bin": {
+      "bytes": 4494276,
+      "sha256": "b6615653722dbab2250f8d5e0267adfa58588008a72cb5f48e718acdb39d5b68"
+    },
+    "hevlm-chuck-s42.initial.bin": {
+      "bytes": 4494276,
+      "sha256": "db43aa0460b84e7e2226d4b85b61b9d2f3485280588ac8b4b13c61a162d4e87d"
+    },
+    "hevlm-chuck-s42.jsonl": {
+      "bytes": 501152,
+      "sha256": "c8d453c2c00fc22b002c29842097f077b92055734ad1d1b1a1ae4a0b6c00a73d"
+    },
+    "hevlm-chuck-s42.log": {
+      "bytes": 1382,
+      "sha256": "f4ba1bb3e4cc21620ae726b560695002b829f7a0778ca144cd11de368659bd6c"
+    },
+    "hevlm-chuck-s42.moments.final.bin": {
+      "bytes": 8988296,
+      "sha256": "0568a998c578256ae2b16eb539ee1cf3edaaa6b0e226078d3cf9cdcd2783a9ed"
+    },
+    "hevlm-chuck-s42.optimizer.final.json": {
+      "bytes": 12525,
+      "sha256": "2d2c346852f07c2bb9fe4f82d2fe8103f168a0c32c9528f662fa952ad1eb0045"
+    },
+    "hevlm-legacy-s42.final.bin": {
+      "bytes": 4494276,
+      "sha256": "b6615653722dbab2250f8d5e0267adfa58588008a72cb5f48e718acdb39d5b68"
+    },
+    "hevlm-legacy-s42.initial.bin": {
+      "bytes": 4494276,
+      "sha256": "db43aa0460b84e7e2226d4b85b61b9d2f3485280588ac8b4b13c61a162d4e87d"
+    },
+    "hevlm-legacy-s42.jsonl": {
+      "bytes": 866795,
+      "sha256": "839788bbecbc705dbcd5b148a33cfaad3f2041533625a21e555fd3bf86b3ab16"
+    },
+    "hevlm-legacy-s42.log": {
+      "bytes": 1400,
+      "sha256": "a96126560c5f8063f30fafa4fe16589c28dfbf0d42e883b6375b9f4020c5ae4a"
+    },
+    "hevlm-legacy-s42.moments.final.bin": {
+      "bytes": 8988296,
+      "sha256": "0568a998c578256ae2b16eb539ee1cf3edaaa6b0e226078d3cf9cdcd2783a9ed"
+    },
+    "hevlm-legacy-s42.optimizer.final.json": {
+      "bytes": 12525,
+      "sha256": "2d2c346852f07c2bb9fe4f82d2fe8103f168a0c32c9528f662fa952ad1eb0045"
+    },
+    "hevlm-legacy-s42.policy.final.bin": {
+      "bytes": 1016,
+      "sha256": "fa44f2b138540fa2bfb77646c630e056348e346344d7964a6d8196a162d04cc2"
+    },
+    "hevlm-legacy-s42.policy.initial.bin": {
+      "bytes": 1016,
+      "sha256": "fa44f2b138540fa2bfb77646c630e056348e346344d7964a6d8196a162d04cc2"
+    },
+    "hevlm-learned-s42.final.bin": {
+      "bytes": 4494276,
+      "sha256": "bdcb158ab534a6411cb1da823cd2ac488197075e1f83d9f7a2dd7b7c141e317a"
+    },
+    "hevlm-learned-s42.initial.bin": {
+      "bytes": 4494276,
+      "sha256": "db43aa0460b84e7e2226d4b85b61b9d2f3485280588ac8b4b13c61a162d4e87d"
+    },
+    "hevlm-learned-s42.jsonl": {
+      "bytes": 1019271,
+      "sha256": "ecf420ecac934d244567748db46cae87d6b6666a300d61ac33b833a742c180d6"
+    },
+    "hevlm-learned-s42.log": {
+      "bytes": 1418,
+      "sha256": "ce46b47c81407d8c771a3b76e48088416e76c72aaa941a4fe1121c109ad79353"
+    },
+    "hevlm-learned-s42.moments.final.bin": {
+      "bytes": 8988296,
+      "sha256": "c29aa37482f889165a45d173dd55be764f36eec8cd7a8307d2a4d85e622a6bfe"
+    },
+    "hevlm-learned-s42.optimizer.final.json": {
+      "bytes": 12447,
+      "sha256": "c93c8a3e4d4e82695b99fc254d3aec10c52123015de77db7605cf002a4cf2370"
+    },
+    "hevlm-learned-s42.policy.final.bin": {
+      "bytes": 1016,
+      "sha256": "6e70c77cf9dcc55f3c1c6e3da3f11ae985b1c7768451b12f1698378e77d4b346"
+    },
+    "hevlm-learned-s42.policy.initial.bin": {
+      "bytes": 1016,
+      "sha256": "f7a954172367d09ab5481d92dca22449ad49afe53e209f612cbbc280bccb7c6d"
+    },
+    "hevlm-adam-s73.final.bin": {
+      "bytes": 4494276,
+      "sha256": "5ee9a53e9f79e41f40ffe1f09c0cd7e1c3c19c8c77cec20fc3743fc5b1dd1085"
+    },
+    "hevlm-adam-s73.initial.bin": {
+      "bytes": 4494276,
+      "sha256": "9d414edfcd827fc24ed6a7d12f34a6c6d6aa98809a5e20aed72999d510cc68a5"
+    },
+    "hevlm-adam-s73.jsonl": {
+      "bytes": 327398,
+      "sha256": "1ee1c8ec47aab7d0c91248182b7de51ef4f549f14499d54d9dbe0e670683d206"
+    },
+    "hevlm-adam-s73.log": {
+      "bytes": 1366,
+      "sha256": "3b7f787122d8560c9ff067c6f54b0c72104db6d2a65e4d2b02c7875a61970197"
+    },
+    "hevlm-adam-s73.moments.final.bin": {
+      "bytes": 8988296,
+      "sha256": "f685f9bdb5e1537b8b1fa439261eeef4707a507eeda6818201884ade7d9724d8"
+    },
+    "hevlm-adam-s73.optimizer.final.json": {
+      "bytes": 5050,
+      "sha256": "475a0ab4a011012286a5665ce586df54333e9ea0917968aabb037616c1a7a9fe"
+    },
+    "hevlm-chuck-s73.final.bin": {
+      "bytes": 4494276,
+      "sha256": "91013fff895a00b452c18856ebf8efc5673327126b7ed04d34a1bb8e8610dbc7"
+    },
+    "hevlm-chuck-s73.initial.bin": {
+      "bytes": 4494276,
+      "sha256": "9d414edfcd827fc24ed6a7d12f34a6c6d6aa98809a5e20aed72999d510cc68a5"
+    },
+    "hevlm-chuck-s73.jsonl": {
+      "bytes": 500025,
+      "sha256": "4d5e3897d78428e52bc81eae3fa7f6c28c8cc64329b23b810421154a535680d5"
+    },
+    "hevlm-chuck-s73.log": {
+      "bytes": 1383,
+      "sha256": "de3206396efb86a0b22f6517ecac804ec3b56820dfda42984010d0180239f45e"
+    },
+    "hevlm-chuck-s73.moments.final.bin": {
+      "bytes": 8988296,
+      "sha256": "2c7f7fdb7990bc842c6cd7545e0344af98755616dad20b2e22570ecda32a1ca8"
+    },
+    "hevlm-chuck-s73.optimizer.final.json": {
+      "bytes": 12582,
+      "sha256": "04af1bd242ea8174147aebcab07970bc1f67a82541b5e145454fab6536741b6d"
+    },
+    "hevlm-legacy-s73.final.bin": {
+      "bytes": 4494276,
+      "sha256": "91013fff895a00b452c18856ebf8efc5673327126b7ed04d34a1bb8e8610dbc7"
+    },
+    "hevlm-legacy-s73.initial.bin": {
+      "bytes": 4494276,
+      "sha256": "9d414edfcd827fc24ed6a7d12f34a6c6d6aa98809a5e20aed72999d510cc68a5"
+    },
+    "hevlm-legacy-s73.jsonl": {
+      "bytes": 867472,
+      "sha256": "70f72c3dff40dee370046185c3b282cbef7306c6cd6a5456fbfd7d19ffce66db"
+    },
+    "hevlm-legacy-s73.log": {
+      "bytes": 1401,
+      "sha256": "20634ef251a3728c3e960e864b8020e7d6f7a57f00a8ecadcbb3e50367244f9d"
+    },
+    "hevlm-legacy-s73.moments.final.bin": {
+      "bytes": 8988296,
+      "sha256": "2c7f7fdb7990bc842c6cd7545e0344af98755616dad20b2e22570ecda32a1ca8"
+    },
+    "hevlm-legacy-s73.optimizer.final.json": {
+      "bytes": 12582,
+      "sha256": "04af1bd242ea8174147aebcab07970bc1f67a82541b5e145454fab6536741b6d"
+    },
+    "hevlm-legacy-s73.policy.final.bin": {
+      "bytes": 1016,
+      "sha256": "0e61c53a8417fd562cc03cafea2ba78a7128eaa2e705f1bda6c5d485d5dfb552"
+    },
+    "hevlm-legacy-s73.policy.initial.bin": {
+      "bytes": 1016,
+      "sha256": "0e61c53a8417fd562cc03cafea2ba78a7128eaa2e705f1bda6c5d485d5dfb552"
+    },
+    "hevlm-learned-s73.final.bin": {
+      "bytes": 4494276,
+      "sha256": "fe2b2cd2b4712b9d456d9868f52a040f318193772aa51f69a4aeacee829d0e42"
+    },
+    "hevlm-learned-s73.initial.bin": {
+      "bytes": 4494276,
+      "sha256": "9d414edfcd827fc24ed6a7d12f34a6c6d6aa98809a5e20aed72999d510cc68a5"
+    },
+    "hevlm-learned-s73.jsonl": {
+      "bytes": 1023759,
+      "sha256": "9e626c5b93f95ee37342e44e0ebc0941865396046f2f50ffacf7dcb0f04ff977"
+    },
+    "hevlm-learned-s73.log": {
+      "bytes": 1418,
+      "sha256": "d0a7ae332df1b1c82db01260ca5bccb0ed76f03ef4109e41679c228557c75203"
+    },
+    "hevlm-learned-s73.moments.final.bin": {
+      "bytes": 8988296,
+      "sha256": "e1ff8e1c65337f4e3c90c9863aef352ea424024969070ae3e3f784c49ebdc09b"
+    },
+    "hevlm-learned-s73.optimizer.final.json": {
+      "bytes": 12452,
+      "sha256": "8d4d5de89853ee0001455538a3c0e827f014381eb95a755151d4779fe5275abe"
+    },
+    "hevlm-learned-s73.policy.final.bin": {
+      "bytes": 1016,
+      "sha256": "de05cfbe5e51e140ee2c10e9dddfd8b16c3d8ee5aa99d15c3cb6e57d03f5f6ef"
+    },
+    "hevlm-learned-s73.policy.initial.bin": {
+      "bytes": 1016,
+      "sha256": "54db697620c462613a29a668bed2d86c8e8784ff21fb0c85f1b953761376a4d2"
+    }
+  }
+}

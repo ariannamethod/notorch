@@ -13,6 +13,61 @@ Newest entries on top.
 
 ---
 
+## 2026-10-06 — Loss Architect acquires consequences in two training bodies
+
+Source `d5103e89797b47920f76c730cf5a24613791d04d` trains SimpleLLM
+(450,688 parameters, Dracula) and HeVLM (1,123,456 parameters, Hebrew):
+two seeds, four optimizer arms, 512 steps each, 8192 body updates total.
+All four canonical Chuck/Architect-legacy pairs match every recorded step and
+final weight byte. All four groups begin from identical weights and windows.
+The complete held-out comparison, source/corpus/configuration hashes, raw-artifact
+identities and reproduction command are in `experiments/chuck_loss_architect/`.
+
+Each learned life receives 512 measured same-window consequences. With seed 73,
+the first exploratory brake earns positive credit; at step two, the updated
+policy selects brake without exploration while its initial weights select hold
+on the identical observation, history and RNG. Acquired weights change 426 of
+512 choices on each body. With seed 42, that count is zero on both bodies.
+The seed-73 policy repeatedly brakes to its configured lower bound. SimpleLLM's
+held-out loss is 2.681840 versus canonical Chuck's 2.531280. All outcomes remain
+recorded; comparing alternative actions from common body/optimizer states is
+the next policy-learning question.
+
+Verification on the recorded source: full CPU suite, 51 scalar and 51 SIMD
+core tests, eight scalar/SIMD/sanitized Architect groups, four caught mutations,
+and the 6000-step byte-identical canonical comparison. The compiled example also
+links against `libnotorch.a`. `verification.json` retains commands and hashes;
+full logs accompany saved bodies, optimizer state and Architect lives outside Git.
+
+## 2026-10-06 — Chuck: Loss Architect
+
+Separate Chuck's observation, policy and typed action surface. The canonical
+policy retains the original expression order; the learned policy selects global
+hold/brake/push actions, with local parameter history and updates preserved.
+The 163-parameter outcome MLP learns from the same window's measured loss before
+and after an executed step. Its versioned life carries weights, configuration,
+history, RNG and pending credit. A strict JSON schema and the core executor
+enforce enabled actions and bounds; contradictory legacy settings are refused.
+
+Proof: the original core suite passes 51/51. `make check_chuck_architect
+BLAS_FLAGS= BLAS_LIBS=` passes eight groups, including the immutable golden
+vectors through nine entry/configuration routes, unavailable/bounded actions,
+configuration refusals, opposite-consequence learning and exact CPU body + Adam
+moments + Chuck noise/history + pending policy save/resume. Four deliberate
+defects go red: brake executes push, selected action is replaced, credit sign is
+reversed, and learning is suppressed. ASan/UBSan pass the focused suite.
+
+`make test_chuck_legacy_parity` independently rebuilds `097fc06` and current
+Chuck: 6000 steps with noise, freezing and macro LR adjustment are byte-identical
+(SHA-256 `306275db6c3e8b72d5a1d767fb573c443d300a9a8959363f5e76c8fe37a82601`).
+An independent 8000-step audit also matches all 5,024,000 recorded bytes.
+`make -j2 test BLAS_FLAGS= BLAS_LIBS=` passes the complete CPU suite.
+
+The upstream runner connects SimpleLLM (450,688 parameters, Dracula) and HeVLM
+(1,123,456 parameters, Hebrew) to four matched arms. Source/corpus identities,
+the fixed experimental objective and reproduction commands live in
+`experiments/chuck_loss_architect/`; full traces and weights stay outside Git.
+
 ## 2026-10-05 — Pin the canonical C Chuck trajectory
 
 `test_chuck_golden_vector` records 25 deterministic steps from unmodified
