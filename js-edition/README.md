@@ -205,8 +205,11 @@ extension codes (100+). RELU is C op 35 in both runtimes.
 
 Self-aware Adam-shape optimizer with per-parameter dampening (ring
 buffer over the last 16 gradient norms) and a global macro-stagnation
-detector. Synced bit-for-bit with C `nt_tape_chuck_step` and the
-upstream PyTorch reference at `iamolegataeff/chuck.optimizer`.
+detector, based on the in-house C `nt_tape_chuck_step` variant derived
+from `iamolegataeff/chuck.optimizer`. JS uses Number intermediates and
+Gaussian noise from `Math.random`; C uses float intermediates and uniform
+xorshift noise. The C CPU trajectory is pinned by
+`tests/test_notorch.c:test_chuck_golden_vector`.
 
 ```js
 const opt = new Chuck(engine, /*lr*/1e-3);

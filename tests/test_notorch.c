@@ -215,6 +215,106 @@ static void test_adamw_step(void) {
     PASS("adamw_step");
 }
 
+// Canonical CPU vectors captured from unmodified notorch.c at
+// b14dd3633bc25ac9d92b4d45e8bd17f48fa79fff, GCC 13.3, -O2, no BLAS/SIMD.
+// Fixed inputs exercise brake/push, per-param boost/ease, ring wrap and freeze.
+// Loss never stagnates: noise stays zero, so the process-global RNG is unused.
+static void test_chuck_golden_vector(void) {
+    // Columns: p[0:2], m[0:2], v[0:2], global/param dampen, loss/macro EMA.
+    static const float expected[25][10] = {
+        { 0.74000001f, -1.24000001f, 0.012500003f, -0.025000006f, 1.56247988e-05f, 6.24991953e-05f, 1.0f, 1.0f, 1.0f, 1.0f }, /* 1 */
+        { 0.730348229f, -1.23034823f, 0.0362500101f, -0.0725000203f, 7.81083654e-05f, 0.000312433462f, 1.0f, 1.0f, 1.08000004f, 1.00800002f }, /* 2 */
+        { 0.720768213f, -1.22076821f, 0.0701250136f, -0.140250027f, 0.00021865344f, 0.000874613761f, 1.0f, 1.0f, 1.2392f, 1.02399194f }, /* 3 */
+        { 0.711164117f, -1.21116412f, 0.113112524f, -0.226225048f, 0.000468431565f, 0.00187372626f, 1.0f, 1.0f, 1.47680795f, 1.04796791f }, /* 4 */
+        { 0.701491773f, -1.20149171f, 0.164301276f, -0.328602552f, 0.000858583138f, 0.00343433255f, 1.0f, 1.0f, 1.79203987f, 1.07991993f }, /* 5 */
+        { 0.691727459f, -1.1917274f, 0.222871169f, -0.445742339f, 0.00142021733f, 0.00568086933f, 1.0f, 1.0f, 2.18411946f, 1.11984003f }, /* 6 */
+        { 0.681857347f, -1.18185723f, 0.28808409f, -0.57616818f, 0.00218441244f, 0.00873764977f, 1.0f, 1.0f, 2.65227818f, 1.1677202f }, /* 7 */
+        { 0.671881795f, -1.17188168f, 0.359275699f, -0.718551397f, 0.00318221515f, 0.0127288606f, 0.97003001f, 1.02996993f, 3.19575524f, 1.22355258f }, /* 8 */
+        { 0.66177839f, -1.16177821f, 0.423348159f, -0.846696317f, 0.00417902041f, 0.0167160816f, 0.940988183f, 1.06080818f, 3.16479754f, 1.22242904f }, /* 9 */
+        { 0.651594877f, -1.15159464f, 0.46851337f, -0.937026739f, 0.00494045671f, 0.0197618268f, 0.91284585f, 1.09253979f, 3.13414955f, 1.22130668f }, /* 10 */
+        { 0.641418934f, -1.1414187f, 0.49666205f, -0.993324101f, 0.00549800927f, 0.0219920371f, 0.885575056f, 1.1251905f, 3.10380793f, 1.2201854f }, /* 11 */
+        { 0.631351054f, -1.13135087f, 0.509495854f, -1.01899171f, 0.00588313118f, 0.0235325247f, 0.8591488f, 1.15878725f, 3.07376981f, 1.21906519f }, /* 12 */
+        { 0.621501148f, -1.12150097f, 0.508546233f, -1.01709247f, 0.00612724479f, 0.0245089792f, 0.833540976f, 1.19335723f, 3.0440321f, 1.21794617f }, /* 13 */
+        { 0.611990273f, -1.11199009f, 0.495191634f, -0.990383267f, 0.00626174081f, 0.0250469632f, 0.808726192f, 1.2289288f, 3.01459169f, 1.21682823f }, /* 14 */
+        { 0.602952957f, -1.10295284f, 0.470672458f, -0.941344917f, 0.00631797826f, 0.025271913f, 0.784679949f, 1.26553082f, 2.98544574f, 1.21571147f }, /* 15 */
+        { 0.594783425f, -1.09478331f, 0.436105192f, -0.872210383f, 0.00632728497f, 0.0253091399f, 0.761378407f, 1.26526523f, 2.95659113f, 1.21459579f }, /* 16 */
+        { 0.587806344f, -1.08780622f, 0.392594635f, -0.785189271f, 0.00632095849f, 0.025283834f, 0.738798559f, 1.22708011f, 2.92802525f, 1.21348119f }, /* 17 */
+        { 0.581841469f, -1.08184135f, 0.353435159f, -0.706870317f, 0.00631463854f, 0.0252585541f, 0.716917992f, 1.1900773f, 2.89974499f, 1.21236777f }, /* 18 */
+        { 0.576737583f, -1.07673752f, 0.318191618f, -0.636383235f, 0.0063083251f, 0.0252333004f, 0.69571507f, 1.15422082f, 2.87174749f, 1.21125543f }, /* 19 */
+        { 0.572367191f, -1.07236719f, 0.28647244f, -0.57294488f, 0.00630201772f, 0.0252080709f, 0.675168753f, 1.11947465f, 2.8440299f, 1.21014416f }, /* 20 */
+        { 0.568622649f, -1.06862259f, 0.257925183f, -0.515850365f, 0.00629571686f, 0.0251828674f, 0.655258834f, 1.08580446f, 2.81658959f, 1.20903409f }, /* 21 */
+        { 0.565214396f, -1.06521428f, 0.23223266f, -0.46446532f, 0.00628942205f, 0.0251576882f, 0.675241649f, 1.05317712f, 2.7894237f, 1.20792508f }, /* 22 */
+        { 0.562111139f, -1.06211102f, 0.209109396f, -0.418218791f, 0.00628313376f, 0.025132535f, 0.695803404f, 1.02156019f, 2.76252937f, 1.20681715f }, /* 23 */
+        { 0.559284806f, -1.05928469f, 0.188298449f, -0.376596898f, 0.00627685152f, 0.0251074061f, 0.716960788f, 0.990922451f, 2.73590398f, 1.20571041f }, /* 24 */
+        { 0.559284806f, -1.05928469f, 0.188298449f, -0.376596898f, 0.00627685152f, 0.0251074061f, 0.738731146f, 0.990922451f, 2.7095449f, 1.20460474f }, /* 25 */
+    };
+    static const char *fields[] = {
+        "p[0]", "p[1]", "m[0]", "m[1]", "v[0]", "v[1]",
+        "global dampen", "param dampen", "loss EMA", "macro EMA"
+    };
+    nt_tape_destroy();
+    nt_tape_start();
+    nt_tensor *p = nt_tensor_new(2);
+    p->data[0] = 0.75f;
+    p->data[1] = -1.25f;
+    int idx = nt_tape_param(p);
+    nt_tape *t = nt_tape_get();
+    t->entries[idx].grad = nt_tensor_new(2);
+    int ok = 1;
+    for (int step = 1; step <= 25; step++) {
+        float g = step <= 8 ? 0.125f * step :
+                  step <= 16 ? 0.125f * (17 - step) : 0.001f;
+        t->entries[idx].grad->data[0] = g;
+        t->entries[idx].grad->data[1] = -2.0f * g;
+        float loss = step <= 8 ? 1.0f + 8.0f * (step - 1) : 0.1f;
+        nt_tape_chuck_step(0.01f, loss);
+        nt_chuck_state *cs = &t->chuck;
+        nt_chuck_param_state *cp = &t->chuck_params[0];
+        nt_adam_state *as = &t->adam[0];
+        float actual[] = {
+            p->data[0], p->data[1], as->m->data[0], as->m->data[1],
+            as->v->data[0], as->v->data[1], cs->dampen, cp->dampen,
+            cs->loss_ema, cs->macro_ema
+        };
+        for (int j = 0; j < 10; j++) {
+            float want = expected[step - 1][j];
+            // Allow float/libm/FMA rounding across CPU builds; reject NaNs too.
+            float tol = 1e-7f + 2e-6f * fabsf(want);
+            if (!isfinite(actual[j]) || fabsf(actual[j] - want) > tol) {
+                printf("  Chuck step %d %s: got %.9g, expected %.9g\n",
+                       step, fields[j], actual[j], want);
+                ok = 0;
+            }
+        }
+        int param_steps = step < 25 ? step : 24;
+        int stag = step <= 16 ? 0 : param_steps - 16;
+        if (cs->global_step != step || cs->pos != step % 16 ||
+            cs->full != (step >= 16) || cs->initialized != 1 ||
+            cs->stag != 0 || cs->noise != 0.0f || cs->lr_scale != 1.0f ||
+            cs->macro_stag != 0 || cs->best_macro != 1e9f ||
+            cp->pos != param_steps % 16 || cp->full != (step >= 16) ||
+            cp->stag != stag || cp->frozen != (step >= 24) || as->t != param_steps) {
+            printf("  Chuck step %d: state/counter mismatch\n", step);
+            ok = 0;
+        }
+        // Pin every loss-history slot, including retained entries after wrap.
+        for (int h = 0; h < 16; h++) {
+            int last = h + 1;
+            if (last + 16 <= step) last += 16;
+            float want = last <= step ? expected[last - 1][8] : 0.0f;
+            if (!isfinite(cs->loss_hist[h]) ||
+                fabsf(cs->loss_hist[h] - want) > 1e-7f + 2e-6f * fabsf(want)) {
+                printf("  Chuck step %d: loss history slot %d mismatch\n", step, h);
+                ok = 0;
+            }
+        }
+    }
+    nt_tape_destroy();
+    nt_tensor_free(p);
+    ASSERT(ok, "canonical C Chuck golden vector");
+    PASS("chuck_golden_vector");
+}
+
 static void test_chuck_step(void) {
     nt_tape_start();
 
@@ -1448,6 +1548,7 @@ int main(void) {
     test_adam_step();
     test_adamw_step();
     test_chuck_step();
+    test_chuck_golden_vector();
     test_frozen_param_keeps_chuck_slots();
     test_grad_clip();
 

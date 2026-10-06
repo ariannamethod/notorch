@@ -163,7 +163,7 @@ typedef struct {
 // sync — it has diverged from the reference (the reference carries extra levels
 // and per-layer granularity that this C version intentionally drops/retunes).
 // This is the production-proven implementation (Arianna LoRA SFT 2026-05-11).
-// Golden-vector conformance test pinning C's actual behaviour: TODO.
+// CPU golden vectors: tests/test_notorch.c:test_chuck_golden_vector.
 #define NT_CHUCK_WINDOW      16
 #define NT_CHUCK_DAMP_LO     0.3f
 #define NT_CHUCK_DAMP_HI     2.0f

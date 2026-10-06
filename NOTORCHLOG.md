@@ -13,6 +13,32 @@ Newest entries on top.
 
 ---
 
+## 2026-10-05 — Pin the canonical C Chuck trajectory
+
+`test_chuck_golden_vector` records 25 deterministic steps from unmodified
+`b14dd3633bc25ac9d92b4d45e8bd17f48fa79fff` (`cc -O2 -std=gnu11 -pthread`,
+GCC 13.3, Linux x86_64, no BLAS/SIMD). Each step checks both weights,
+both Adam moments, global/per-parameter dampening, loss/macro EMA, loss
+history and state counters. Rising/falling trends cross the ring boundary;
+small gradients freeze the parameter at step 24 and step 25 preserves it.
+Noise stays zero throughout, so the fixture is independent of RNG history.
+Float checks reject non-finite values and allow `1e-7 + 2e-6 * abs(expected)`
+for CPU rounding; counters and flags are exact.
+
+Proof: changing the global brake multiplier from `NT_CHUCK_DAMP_DOWN` to
+`NT_CHUCK_DAMP_UP` fails at step 8: weight 0 is 0.671265423 instead of
+0.671881795, and global dampening is 1.02996993 instead of 0.97003001.
+The mutant reports 50 passed / 1 failed; the source was restored byte-for-byte
+before final builds. Scalar and SIMD core suites pass 51/51. Full
+`make -j4 test BLAS_FLAGS= BLAS_LIBS=` passes; `make simd` followed by
+`NT_SIMD_THREADS=2 ./notorch_test_simd` passes. `make test_js` passes its
+model-free gates; WASM end-to-end reports SKIPPED because no GGUF was supplied.
+
+Replace the conformance TODO and stale whole-optimizer sync claims in C,
+the Yent example and JS documentation. JS uses Number intermediates and
+Gaussian `Math.random` noise; C uses float intermediates and uniform xorshift
+noise. Optimizer arithmetic is unchanged.
+
 ## 2026-09-29 — A four-row training tail still gets the vector kernel
 
 JOVOVICH's 16-token batches split into 6/6/4 rows on the SIMD path. The last
