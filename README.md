@@ -487,6 +487,12 @@ selects global actions; per-parameter Chuck state and updates retain their local
 policy. Configuration is [inspectable JSON](examples/chuck-loss-architect.json),
 and the public C API is [chuck_architect.h](chuck_architect.h).
 
+The first recorded experiment trains SimpleLLM (450,688 parameters) and HeVLM
+(1,123,456) across two seeds and four arms, 512 steps each. All canonical/legacy
+pairs match through final weights. Acquired policy weights change 426/512
+decisions on each seed-73 run; seed 42 records zero. The receipts retain every
+comparison and the measured consequence that first changes the next choice.
+
 ```bash
 make check_chuck_architect BLAS_FLAGS= BLAS_LIBS=
 make test_chuck_architect_mutations

@@ -85,3 +85,53 @@ upstream tree. Vendored copies in the reference repositories remain untouched.
 
 Weights, corpus copies and complete receipts stay outside Git. Results committed
 here name the exact source and artifact identities used for the measurements.
+
+## Measured run — 2026-10-06 UTC
+
+Source `d5103e89797b47920f76c730cf5a24613791d04d`, clean tree, GCC 13.3,
+`-O2 -std=gnu11 -DUSE_SIMD -march=native -pthread`, Linux x86_64,
+AMD EPYC 9V74, eight-core CPU quota, `NT_SIMD_THREADS=2`, F32. The exact command
+above trained **16 runs × 512 updates**, 32,768 training tokens per run.
+Source hashes were checked again after the final run and remained identical.
+
+Final held-out cross entropy on the eight fixed windows:
+
+| Body | Seed | Initial | Adam | Canonical Chuck | Architect legacy | Learned Architect |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| SimpleLLM, 450,688 parameters | 42 | 4.806492 | 2.568933 | 2.465579 | 2.465579 | 2.539874 |
+| SimpleLLM, 450,688 parameters | 73 | 5.208465 | 2.586830 | 2.531280 | 2.531280 | 2.681840 |
+| HeVLM, 1,123,456 parameters | 42 | 5.744682 | 1.571433 | 1.576577 | 1.576577 | 1.571453 |
+| HeVLM, 1,123,456 parameters | 73 | 6.111211 | 1.529242 | 1.587225 | 1.587225 | 1.588265 |
+
+All four canonical/legacy pairs matched every recorded training step and final
+weight byte. All four initialization groups matched across optimizer arms.
+
+| Learned body | Seed | Hold | Brake | Push | Weight-dependent choices | Feedback updates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| SimpleLLM | 42 | 460 | 25 | 27 | 0 / 512 | 512 |
+| SimpleLLM | 73 | 21 | 464 | 27 | 426 / 512 | 512 |
+| HeVLM | 42 | 460 | 25 | 27 | 0 / 512 | 512 |
+| HeVLM | 73 | 21 | 464 | 27 | 426 / 512 | 512 |
+
+In seed 73, the first exploratory `brake` produces an actual same-window loss
+improvement. At step two, the updated policy selects `brake` without exploration;
+the initial-weight policy on exactly the same observation, history and RNG
+selects `hold`. For SimpleLLM the step-two outcome scores are
+`[0, 0.00577885238, 0]`. Both bodies preserve this acquired preference through
+426 non-exploratory choices. The initial and final policy lives and the first
+credited transition are retained in the receipts.
+
+The seed-42 readout records zero weight-dependent choices: its acquired outcome
+head keeps `hold` ahead throughout this run. The seed-73 preference repeatedly
+brakes to the configured lower dampening bound. Its measured SimpleLLM held-out
+loss is 2.681840 against canonical Chuck's 2.531280. These two observations are
+the next controlled-policy question: action comparisons from common starting
+body/optimizer states can teach the outcome heads the relative consequences of
+their alternatives. The current one-step credit target and all four learned
+results remain recorded unchanged.
+
+Across the sixteen processes, the recorded training/evaluation wall times sum
+to 211.500319 seconds. Process peak RSS is 37,976–39,356 KiB; the per-run values,
+CPU time, first/final 16-window means, exact losses, source identities and all
+artifact hashes are in [receipts.json](receipts.json). Raw receipts and saved
+bodies/optimizer/policy lives are in the archive identified there.
