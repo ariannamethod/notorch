@@ -13,6 +13,28 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Haiku gets native tanh and plain SGD
+
+Fresh main `bbc885d` supplies the baseline. `nt_tanh` preserves tensor shape
+and records append-only op 37; backward accumulates `dout * (1 - y*y)`.
+`nt_tape_sgd_step` updates trainable parameters directly, respects frozen and
+absent-gradient entries, and retains gradients and Adam/Chuck state. Both
+operations synchronize CPU mirrors when built with CUDA. Haiku owns its
+post-step `[-5,5]` parameter clamp. Scalar MSE uses existing add/scale/mul.
+
+`make check_tanh_sgd BLAS_FLAGS= BLAS_LIBS=` passes 5,122 checks: saturated
+and central tanh values, shape, branching gradients, finite differences,
+frozen/unused parameters, optimizer-state preservation, and 24-step
+double-reference trajectories for MathBrain/default RAE `5->8->1` plus
+configurable RAE `6->4->1`. Mutants replacing `1-y*y` with `1-y` and removing
+SGD's frozen check both fail the new gate. ASan/UBSan passes the same gate
+with `ASAN_OPTIONS=detect_leaks=0`; LeakSanitizer's first attempt cannot open
+`/proc/2/task` in this execution environment and exits before leak analysis.
+
+`make -j2 test BLAS_FLAGS= BLAS_LIBS=` completes all 44 CPU recipe commands
+with exit zero, including 51 core tests and the existing Chuck/SPA gates.
+CUDA execution is untested on this CPU runner.
+
 ## 2026-10-07 — SPA measures eight futures before assigning sentence-action credit
 
 Follow-up to merged PR #156, integrating fresh main `5eb709f` before real
