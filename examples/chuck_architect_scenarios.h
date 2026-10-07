@@ -197,6 +197,13 @@ static void scenario_diagnose(body *m, const uint32_t *data, size_t count, size_
     static const char *names[] = {"hold", "brake", "push"};
     scenario_snapshot *saved = scenario_capture(m, architect, *windows);
     uint64_t saved_hash = scenario_state_hash(m, architect, *windows);
+    nt_chuck_observation observation;
+    float features[NT_CHUCK_ARCHITECT_FEATURES];
+    if (nt_tape_chuck_observe(before, &observation) ||
+        nt_chuck_architect_capture(architect, &observation, features))
+        die("scenario pre-action feature capture failed");
+    if (scenario_state_hash(m, architect, *windows) != saved_hash)
+        die("scenario feature capture changed the source state");
     size_t offsets[SCENARIO_HORIZON + SCENARIO_PROBES];
     uint64_t states[SCENARIO_HORIZON + SCENARIO_PROBES];
     offsets[0] = offset; states[0] = *windows;
@@ -223,6 +230,17 @@ static void scenario_diagnose(body *m, const uint32_t *data, size_t count, size_
     fprintf(trace, "{\"type\":\"fork\",\"step\":%d,\"state_hash\":\"%016" PRIx64 "\",\"loss_before\":%.9g,"
             "\"future_probe_before\":%.9g,\"heldout_before\":%.9g,\"offsets\":[", step, saved_hash, before, future_before, heldout_before);
     for (int i = 0; i < SCENARIO_HORIZON + SCENARIO_PROBES; ++i) fprintf(trace, "%s%zu", i ? "," : "", offsets[i]);
+    fprintf(trace, "],\"policy_hash\":\"%016" PRIx64 "\",\"observation\":{"
+            "\"loss\":%.9g,\"loss_ema\":%.9g,\"loss_trend\":%.9g,\"macro_ema\":%.9g,"
+            "\"best_macro\":%.9g,\"dampen\":%.9g,\"lr_scale\":%.9g,\"noise\":%.9g,"
+            "\"grad_norm\":%.9g,\"grad_trend\":%.9g,\"frozen_fraction\":%.9g,"
+            "\"step\":%d,\"stag\":%d,\"macro_stag\":%d,\"history_len\":%d},\"features\":[",
+            nt_chuck_architect_hash(architect), observation.loss, observation.loss_ema, observation.loss_trend,
+            observation.macro_ema, observation.best_macro, observation.dampen, observation.lr_scale,
+            observation.noise, observation.grad_norm, observation.grad_trend, observation.frozen_fraction,
+            observation.step, observation.stag, observation.macro_stag, observation.history_len);
+    for (int i = 0; i < NT_CHUCK_ARCHITECT_FEATURES; ++i)
+        fprintf(trace, "%s%.9g", i ? "," : "", features[i]);
     fputs("]}\n", trace);
     for (int ai = 0; ai < 3; ++ai) {
         scenario_restore(saved, m, architect, windows);

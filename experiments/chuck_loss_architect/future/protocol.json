@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "name": "common-state-future-credit-v1",
+  "objective": "Three measured H16 future-probe losses, one common state: target[a]=clamp((loss[HOLD]-loss[a])/(abs(loss[HOLD])+1e-6),-1,1). HOLD target is zero. Mean three-head Huber delta=1, simultaneous update from pre-fit weights.",
+  "policy_parameters": 163,
+  "policy_seed": 1,
+  "policy_learning_rate": 0.03,
+  "epochs_per_stage": 512,
+  "replay_order": "ascending seed, then ascending checkpoint; identical order each epoch; all three heads fitted together",
+  "training": {
+    "body": "simple",
+    "seeds": [
+      42,
+      73
+    ],
+    "states": 8,
+    "life_id": "future-simple-h16-v1"
+  },
+  "adaptation": {
+    "body": "hevlm",
+    "seeds": [
+      42,
+      73
+    ],
+    "states": 8,
+    "life_id": "future-hevlm-h16-v1",
+    "initial_weights": "completed SimpleLLM life"
+  },
+  "evaluation": {
+    "bodies": [
+      "simple",
+      "hevlm"
+    ],
+    "seeds": [
+      101,
+      211
+    ],
+    "states": 16,
+    "exploration": 0,
+    "outcomes_generated_after_both_fitted_lives_are_saved_and_hashed": true
+  },
+  "checkpoints_before_updates": [
+    1,
+    32,
+    128,
+    384
+  ],
+  "host_steps": 512,
+  "context": 64,
+  "body_lr": 0.0003,
+  "gradient_clip": 1.0,
+  "threads": 2,
+  "dtype": "F32",
+  "intervention_actions": [
+    "hold",
+    "brake",
+    "push"
+  ],
+  "continuation_action": "hold",
+  "target_horizon_total_updates": 16,
+  "future_probe_window_indices_zero_based": [
+    16,
+    17,
+    18,
+    19
+  ],
+  "old_measurements_source": "0dea13331077d9c5da504c5c6608b4f804f345ed",
+  "old_results_sha256": "12f7e64a942d5f91acb30a352a6df64d62059dfb86715062a3658b1e3bac3a40",
+  "old_state_replay_gate": "Every old host_step, checkpoint state hash, branch step and measured outcome must reproduce before features are associated with old H16 targets. Final body, moments, controls and source policy bytes must match.",
+  "controls": {
+    "initial": "Does future experience alter weights, scores and selected actions at identical source history?",
+    "simple": "Frozen life after SimpleLLM future-credit fitting; transfer to new-seed HeVLM evaluation states.",
+    "adapted": "Does fitting separate HeVLM experience change the frozen parent's choices and measured future consequences?",
+    "source": "Greedy source life trained with the original immediate feedback at that exact state.",
+    "hold": "Zero relative-action baseline.",
+    "push": "Fixed action that won immediate loss in all sixteen development states."
+  },
+  "readout": "C loads exact source life, checks captured observation/features, copies only 163 fitted weights into that source history, disables exploration on the temporary copy and calls nt_chuck_architect_select. Chosen action is paired with its actually executed common-state branch.",
+  "metrics": [
+    "selected future loss",
+    "raw and normalized selected advantage versus HOLD",
+    "regret versus minimum measured future loss",
+    "tie-aware optimal action count",
+    "choice changes versus initial and frozen parent",
+    "immediate and held-out losses reported separately"
+  ],
+  "heldout_loss_used_for_training": false,
+  "evaluation_targets_used_for_training_or_tuning": false,
+  "fit_state": "Only network weights change. Online history/RNG/counters and v1 format remain intact; fitting steps and objective identity are external receipts.",
+  "tie_rule": "Exact recorded F32 loss equality; retain every tied minimum.",
+  "host_policy": "Unchanged original immediate-feedback Architect, seeds matched to each host run.",
+  "host_noninterference": "Independent control and probe hosts must match every step and final state bytes.",
+  "cpu_only": true,
+  "prior_smoke_exposure": {
+    "results_sha256": "44a127db52177f58f0331249b5b8e097143a4306d4dc735e94dd73dbc30a985f",
+    "protocol_sha256": "75e9d886375c9c237d5c2f4f44a6a2f33f67d6878e87e470dadb2f0a6adea9f9",
+    "source_commit": "48512d822a67043e0899a7ac6a2b87779250f42b",
+    "evaluation_seed": 101,
+    "checkpoints": [
+      1
+    ],
+    "bodies": [
+      "simple",
+      "hevlm"
+    ],
+    "exact_outcomes_exposed": 2,
+    "unit_for_untouched_confirmation": "whole seed trajectory",
+    "untouched_confirmation_seeds": [
+      211
+    ],
+    "learning_target_epochs_rate_order_capacity_changed_after_smoke": false,
+    "interpretation": "Seed101 remains fixed-protocol evaluation with prior smoke exposure. Seed211 is separately reported untouched confirmation. Final-run life sealing precedes final outcome generation."
+  },
+  "future_smoke_evaluation_seed": 907
+}

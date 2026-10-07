@@ -13,6 +13,47 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — The Architect learns measured future-action comparisons
+
+The next experience is a comparison of three executed futures from one saved
+training world. `nt_chuck_architect_capture` preserves that world's observation
+and temporal features; `scores` reads the three outcome heads without a decision;
+`fit_comparison` teaches their measured HOLD-relative future advantages. All
+three heads and the hidden layer use one pre-update weight snapshot and the
+mean Huber objective. The 163-parameter policy stays the same size.
+
+Replay changes weights only. Online history, RNG, counters, completed decision
+caches and the v1 life encoding remain intact. Pending credit refuses replay;
+all three actions must be available. Non-finite HOLD refuses the comparison;
+a non-finite alternative retains its failure status and receives target -1.
+Refusal leaves the life and output receipt untouched. Existing same-window
+feedback and canonical Chuck arithmetic are unchanged.
+
+The new gate uses the recorded SimpleLLM seed-42, pre-update-128 reversal with
+explicitly synthetic fixed test features: immediate losses prefer PUSH, H16
+future losses prefer BRAKE. Fitting acquires the latter preference. The suite
+covers finite-difference gradients, simultaneous head updates, reproducibility,
+transactional refusal, non-finite outcomes and save/resume. Three deliberate
+defects are caught: immediate loss wired into future credit, disabled learning,
+and exchanged BRAKE/PUSH targets. Rebuilding the pre-change `48512d8` emitter
+and current emitter produces identical initial, pending and completed online
+v1 files, each 1,016 bytes.
+
+`experiments/chuck_loss_architect/future/protocol.json` fixes the next training
+before evaluation: eight SimpleLLM states from seeds 42/73, then eight HeVLM
+states on a copy, 512 replay epochs per stage, LR .03. Both saved lives precede
+new-seed 101/211 outcome generation within the final run. An earlier runner
+smoke exposed seed 101's first checkpoint on both bodies; its receipts remain,
+settings receive no tuning, and seed 211 supplies untouched-run confirmation.
+Original-state replay and independent host-continuation gates bind features to
+their actual measured consequences. Results will retain source and artifact
+identities.
+
+`docs/chuck-learned-policy-research.md` records eleven primary sources on learned
+optimizers, executable training controllers, horizon bias and delayed credit.
+The readings supply concrete transfer and negative-control experiments. CUDA
+execution remains pending RunPod access; this phase runs on CPU.
+
 ## 2026-10-07 — SPA acquires sentence actions above unchanged perception
 
 Sentence Phonon Agent now lives in `spa_agent.c` / `spa_agent.h`: a native

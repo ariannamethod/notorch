@@ -26,7 +26,8 @@ typedef enum {
 enum {
     NT_CHUCK_E_CONFIG = -10,
     NT_CHUCK_E_IO = -11,
-    NT_CHUCK_E_FORMAT = -12
+    NT_CHUCK_E_FORMAT = -12,
+    NT_CHUCK_E_BASELINE = -13
 };
 
 typedef struct {
@@ -70,6 +71,28 @@ typedef struct {
     float pending_hidden[NT_CHUCK_ARCHITECT_HIDDEN];
 } nt_chuck_architect;
 
+// A measured common-state comparison; array order is HOLD, BRAKE, PUSH.
+// The caller retains the executed branch receipts, horizon/window identity,
+// and the protocol which binds these outcomes to the captured features.
+typedef struct {
+    float features[NT_CHUCK_ARCHITECT_FEATURES];
+    float future_loss[NT_CHUCK_ARCHITECT_HEADS];
+} nt_chuck_architect_comparison;
+
+typedef struct {
+    float future_loss[NT_CHUCK_ARCHITECT_HEADS];
+    double loss_delta[NT_CHUCK_ARCHITECT_HEADS]; // HOLD loss minus action loss
+    float target[NT_CHUCK_ARCHITECT_HEADS];
+    float predicted_before[NT_CHUCK_ARCHITECT_HEADS];
+    float predicted_after[NT_CHUCK_ARCHITECT_HEADS];
+    float error_before[NT_CHUCK_ARCHITECT_HEADS];
+    float huber_before, huber_after; // mean over the three measured actions
+    int nonfinite[NT_CHUCK_ARCHITECT_HEADS];
+    int fitted;
+    uint64_t hash_before, hash_after;
+    uint64_t decisions, updates; // unchanged online chronology
+} nt_chuck_architect_comparison_receipt;
+
 // Defaults: legacy, life_id="chuck", seed=1, learning_rate=.03, exploration=.15.
 // Strict flat JSON fields: mode ("disabled", "legacy", "learned"), life_id
 // ([A-Za-z0-9_.-], 1..63 bytes), enabled_actions (array of action names),
@@ -106,6 +129,33 @@ int nt_chuck_architect_step(nt_chuck_architect *architect, float lr, float loss,
 // Loss delta, reward, prediction and regression error are separate receipts.
 int nt_chuck_architect_feedback(nt_chuck_architect *architect, float after_loss,
     nt_chuck_architect_receipt *receipt);
+
+// Read-only replay interfaces. Capture uses the observation and this life's
+// actual history; scores reads the supplied finite features in [-1,1]. Both
+// require no pending action. Scores additionally requires learned mode and
+// returns all three heads in HOLD/BRAKE/PUSH order without exploration or RNG.
+// Refusal leaves output buffers unchanged.
+int nt_chuck_architect_capture(const nt_chuck_architect *architect,
+    const nt_chuck_observation *observation,
+    float features[NT_CHUCK_ARCHITECT_FEATURES]);
+int nt_chuck_architect_scores(const nt_chuck_architect *architect,
+    const float features[NT_CHUCK_ARCHITECT_FEATURES],
+    float scores[NT_CHUCK_ARCHITECT_HEADS]);
+
+// Replay fitting requires learned mode, all three actions enabled, no pending
+// action, and finite captured features in [-1,1]. A non-finite HOLD baseline
+// returns NT_CHUCK_E_BASELINE. Finite targets are
+// clamp((HOLD_loss-action_loss)/(abs(HOLD_loss)+1e-6),-1,1); non-finite
+// alternatives receive -1 with their separate raw outcome/status in receipt.
+// One mean-Huber update (delta=1) uses a single pre-update weight snapshot for
+// all heads and hidden gradients, then applies the existing [-16,16] bounds.
+// Only weights change. RNG, configuration, online counters/history and cached
+// decisions remain intact. The caller records replay fit_step and binds life_id
+// to its fixed external protocol. Existing feedback and life format are intact.
+// Any refusal leaves both the life and optional receipt unchanged.
+int nt_chuck_architect_fit_comparison(nt_chuck_architect *architect,
+    const nt_chuck_architect_comparison *sample,
+    nt_chuck_architect_comparison_receipt *receipt);
 
 // Versioned, little-endian IEEE-754 policy life with canonical field encoding,
 // FNV-1a checksum, strict size/range validation and transactional load. Includes

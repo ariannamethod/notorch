@@ -497,6 +497,7 @@ comparison and the measured consequence that first changes the next choice.
 ```bash
 make check_chuck_architect BLAS_FLAGS= BLAS_LIBS=
 make check_chuck_scenarios BLAS_FLAGS= BLAS_LIBS=
+make check_chuck_future BLAS_FLAGS= BLAS_LIBS=
 make test_chuck_architect_mutations
 make chuck_architect_train BLAS_FLAGS= BLAS_LIBS=
 ```
@@ -515,6 +516,16 @@ The [two-body action comparison](experiments/chuck_loss_architect/scenarios/READ
 records 16 common snapshots: PUSH wins immediate loss at all 16, while another
 action wins or ties for best future-probe loss after 16 updates at seven snapshots.
 All 2,048 corresponding host steps and final saved states match after restoration.
+
+The Architect can now acquire **future-action comparisons** through
+`nt_chuck_architect_fit_comparison`: measured HOLD/BRAKE/PUSH outcomes from one
+saved world train all three heads against their HOLD-relative advantage.
+Replay changes policy weights while preserving online history, counters and the
+v1 saved-life format. The [fixed two-body experiment](experiments/chuck_loss_architect/future/README.md)
+teaches a SimpleLLM life, adapts a copy on HeVLM, and freezes both before new-seed
+evaluation. [Research notes](docs/chuck-learned-policy-research.md) connect the
+experiment to learned optimizers, executable training controllers and delayed
+credit, with primary sources and their recorded failures.
 
 ---
 
