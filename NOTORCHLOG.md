@@ -13,6 +13,33 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Haiku owns its next draw
+
+Fresh main `ce7dfa0` supplies the baseline. Six allocation-free APIs add
+caller-owned PCG32 state, uniform float32 draws, unbiased bounded indices,
+stable positive-temperature categorical sampling, and explicit-draw replay.
+The fixed stream is 54; its state is one `uint64_t`. Tensor initialization,
+Chuck, and libc keep their existing streams. Invalid checked calls preserve
+state and output, and weights remain borrowed and unchanged. Haiku's AML
+binding calls this canonical implementation.
+
+`make check_sampling BLAS_FLAGS= BLAS_LIBS=` passes **7,215 checks** on Linux
+x86_64 / GCC 13.3. The published PCG vector and **384 independent Python integer
+/ 80-digit Decimal reference steps** cover mixed operations and complete state.
+The C gate needs no Python. It includes rejected raw words, singleton draws,
+exact cumulative ties, zero-weight holes, extreme float32 weights/temperatures,
+invalid-input preservation, copied continuations, and legacy-stream isolation.
+
+ASan/UBSan pass the same 7,215 checks with `ASAN_OPTIONS=detect_leaks=0`.
+Three isolated mutations fail the gate: bypassing bounded rejection, replacing
+strict `<` with `<=` at a cumulative boundary, and publishing state before
+categorical validation. An initially mistyped raw state in the max-output
+test failed its expected word and was corrected to `0x07fffe0000000000`.
+PCG's adapted portions retain their Apache 2.0 attribution and full license.
+See [sampling](docs/SAMPLING.md) for the API and reproducible reference generator.
+The rebuilt scalar archive links into AML's optional runner; existing NoTorch
+core tests pass **51/51** after `make cpu X86_SIMD=0 ARM_SIMD=0`.
+
 ## 2026-10-07 — Lived Chuck and repeated-consequence SPA share the verified build
 
 Fresh main `bbc885d` arrived during publication. Integrated its SPA repeated
