@@ -310,6 +310,8 @@ int nt_chuck_action_limits_validate(const nt_chuck_action_limits *limits);
 // with the preceding per-slot gradient norms. frozen_fraction counts slots.
 // Local ring/counter/shape state and finite gradient norms are checked. CUDA
 // observes device reductions; CPU observation reads the authoritative mirror.
+// Each present gradient/moment tensor must cover its complete parameter, even
+// when another absent buffer causes that parameter's update to be skipped.
 int nt_tape_chuck_observe(float loss, nt_chuck_observation *out);
 // NULL/zero action selects canonical legacy; NULL limits uses the hard bounds.
 // Other actions replace the global policy while retaining the per-slot policy.

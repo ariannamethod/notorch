@@ -2674,12 +2674,12 @@ static int chuck_tape_state_valid(void) {
         if (e->slot < 0 || e->slot >= g_tape.n_params || !e->output ||
             !e->output->data || e->output->len < 0) return 0;
         const nt_adam_state *as = &g_tape.adam[e->slot];
-        if (!e->grad || !as->m || !as->v) continue;
-        if (!e->grad->data || !as->m->data || !as->v->data ||
-            e->grad->len < 0 || as->m->len < 0 || as->v->len < 0) return 0;
+        // Every present buffer must cover the complete parameter, independently
+        // of missing buffers that cause the update loop to skip this slot.
         int n = e->output->len;
-        if (as->m->len < n) n = as->m->len;
-        if (e->grad->len < n || as->v->len < n) return 0;
+        if (e->grad && (!e->grad->data || e->grad->len < n)) return 0;
+        if (as->m && (!as->m->data || as->m->len < n)) return 0;
+        if (as->v && (!as->v->data || as->v->len < n)) return 0;
     }
     return 1;
 }

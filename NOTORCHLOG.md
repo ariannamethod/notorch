@@ -13,6 +13,41 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Checked Chuck refuses truncated parameter state
+
+PR #151's first-moment finding reproduces on merged `9766bb7`: a two-element
+parameter with one-element gradient, first moment and second moment is accepted
+by observation and checked HOLD. The step changes `[1, 2]` to
+`[0.99000001, 2]` and advances both Adam and global counters. The validator had
+reduced the required length to the first moment's length.
+
+Every present gradient, first moment and second moment must now cover the full
+parameter. These checks are independent: an absent buffer still skips that
+parameter's update, but cannot hide another present buffer's invalid shape.
+Larger buffers remain valid and their padding stays untouched. The optimizer's
+arithmetic is unchanged.
+
+The regression puts malformed state in the last slot and verifies whole-step
+refusal before an earlier slot, global/local history or RNG changes. It covers
+all seven short-buffer combinations, six absent/short pairs, all seven valid
+absence combinations and larger buffers. On old source it is RED (5/6 groups);
+after the fix it is GREEN (6/6, 5196 assertions), also under ASan/UBSan. Core
+passes 51/51; the canonical 6000-step SHA-256 remains
+`306275db6c3e8b72d5a1d767fb573c443d300a9a8959363f5e76c8fe37a82601`.
+
+An independent probe covers 132 cases and 2,279 assertions, passes scalar and
+ASan/UBSan, and fails on the merged pre-fix source. All 34 commands from the
+Makefile's CPU test recipe pass individually, and the host-device gate passes
+7,830 checks. Actual CUDA remains pending RunPod API access.
+Raw reproduction, independent probes and all command logs are retained in
+`chuck-full-state-contract-9766bb7-receipts.tar.gz` (362,408 bytes, SHA-256
+`4f2714c909e23c64546918d9bed56d1ae42e6e63dea99b94be7332528c593d46`).
+
+The commit-metadata review was checked against the actual objects: source commits
+`0dea133` and `0796843` both contain `Quote:` and `Method:`; GitHub merge commit
+`9766bb7` contains only its title. The follow-up PR supplies distinct merge-message
+lines alongside the source commit's required lines.
+
 ## 2026-10-07 — Common-state action forks separate immediate and future consequences
 
 Clean source `0dea13331077d9c5da504c5c6608b4f804f345ed` runs SimpleLLM
