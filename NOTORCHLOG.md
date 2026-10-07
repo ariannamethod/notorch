@@ -13,6 +13,34 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Common-state action forks separate immediate and future consequences
+
+Clean source `0dea13331077d9c5da504c5c6608b4f804f345ed` runs SimpleLLM
+(450,688 parameters) and HeVLM (1,123,456), seeds 42 and 73, with 512 host
+updates each. Independent processes with and without diagnostic forks match
+all 2,048 corresponding host steps and every final body, moment, optimizer-control
+and policy byte. Sixteen common snapshots produce 48 action rollouts, 768 branch
+updates and 144 action/horizon measurements. The fixed protocol uses one
+hold/brake/push intervention followed by hold, with horizons 1, 4 and 16.
+
+PUSH wins immediate same-window loss at all 16 snapshots. At horizon 16, future
+probe winners are PUSH at nine, BRAKE at four and tied HOLD/BRAKE at three.
+In SimpleLLM seed 42 before update 128, BRAKE increases immediate loss against
+HOLD by 0.00144196 and reduces horizon-16 future loss by 0.00329280; PUSH
+reduces immediate loss by 0.00143242 and increases that future loss by
+0.00342154. The 163-parameter policy and its original learning objective remain
+unchanged. These measured alternative consequences establish the next learning
+question. Dampening-floor states retain exact HOLD/BRAKE ties in the receipts.
+
+The experiment's parameter-restore defect fails with exit 1, bringing the
+scenario round to twelve caught deliberate mutations. Its actual post-action
+NaN receives reward -1 exactly once, saves decisions/updates/pending = 1/1/0
+and exits 3; an insufficient held-out corpus is refused before evaluation.
+`experiments/chuck_loss_architect/scenarios/` retains all 48 comparisons,
+source/corpus/configuration hashes and consolidated CPU/SIMD/sanitizer evidence.
+Full traces, fork snapshots and saved lives are in the separately hashed archive.
+Actual CUDA remains SKIPPED locally; the executable hardware gate is ready.
+
 ## 2026-10-07 — Chuck keeps state, credit and device transitions coherent
 
 PR #150's locale finding reproduces under a private `de_DE.UTF-8` fixture:
