@@ -13,6 +13,30 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Preregister credit on the Architect's own visited states
+
+Start the next Chuck branch from merged `5eb709f`. The frozen protocol
+`experiments/chuck_loss_architect/lived/protocol.json`, SHA-256
+`790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5`,
+binds one acquisition round before new body outcomes. The previous sealed
+163-parameter Simple-trained life supplies every source action and the policy
+continuation. Two bodies at development seeds 42/73 provide thirty-two worlds
+at eight fixed checkpoints on their own acquired-action trajectories.
+
+Each world supplies three interventions and two continuations: fifteen HOLD
+updates, or fifteen further parent-policy selections. Both advance actual
+branch history. Two independent students begin at the same parent and fit the
+same thirty-two source feature vectors with their respective measured H16
+outcomes, 512 epochs and learning rate .03. The parent and students are sealed
+before evaluation seeds 701/907. Common-state comparisons, six full deployment
+arms and four exact policy-continuation repeats retain separate consequences.
+
+The selected parent-policy branch must reproduce the ordinary parent's next
+sixteen transitions; probe-on/off hosts must keep exact trajectories. Every
+branch restores its complete source before ordinary continuation. Failed or
+non-finite branches retain their actual receipts and stop the fixed run. This
+entry records the design; measured results follow after its execution.
+
 ## 2026-10-07 — Conditional Chuck and SPA future credit share the final build
 
 Fresh main `b289119` arrived before publication. Integrated its SPA future
