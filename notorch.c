@@ -2653,6 +2653,98 @@ static int chuck_state_valid(const nt_chuck_state *cs) {
     return 1;
 }
 
+static int chuck_tape_state_valid(void) {
+    if (g_tape.count < 0 || g_tape.count > NT_TAPE_MAX_ENTRIES ||
+        g_tape.n_params < 0 || g_tape.n_params > NT_TAPE_MAX_PARAMS) return 0;
+    for (int slot = 0; slot < g_tape.n_params; slot++) {
+        const nt_chuck_param_state *cp = &g_tape.chuck_params[slot];
+        if (cp->pos < 0 || cp->pos >= NT_CHUCK_WINDOW ||
+            (cp->full != 0 && cp->full != 1) ||
+            (cp->frozen != 0 && cp->frozen != 1) ||
+            cp->stag < 0 || cp->stag == INT_MAX || !isfinite(cp->dampen) ||
+            (cp->dampen != 0.0f &&
+             (cp->dampen < NT_CHUCK_DAMP_LO || cp->dampen > NT_CHUCK_DAMP_HI))) return 0;
+        for (int j = 0; j < NT_CHUCK_WINDOW; j++)
+            if (!isfinite(cp->grad_hist[j]) || cp->grad_hist[j] < 0.0f) return 0;
+        if (g_tape.adam[slot].t < 0 || g_tape.adam[slot].t == INT_MAX) return 0;
+    }
+    for (int i = 0; i < g_tape.count; i++) {
+        const nt_tape_entry *e = &g_tape.entries[i];
+        if (!e->is_param || e->slot == -1) continue;
+        if (e->slot < 0 || e->slot >= g_tape.n_params || !e->output ||
+            !e->output->data || e->output->len < 0) return 0;
+        const nt_adam_state *as = &g_tape.adam[e->slot];
+        if (!e->grad || !as->m || !as->v) continue;
+        if (!e->grad->data || !as->m->data || !as->v->data ||
+            e->grad->len < 0 || as->m->len < 0 || as->v->len < 0) return 0;
+        int n = e->output->len;
+        if (as->m->len < n) n = as->m->len;
+        if (e->grad->len < n || as->v->len < n) return 0;
+    }
+    return 1;
+}
+
+// Check gradient inputs before any slot changes. The CPU reduction has the
+// update loop's float order; its result is reused by that loop. CUDA returns
+// one scalar per slot and keeps the gradient tensors on the device.
+static int chuck_gradient_norms(float *norms, double *sum_out, int include_frozen) {
+    double sum = 0.0;
+    for (int slot = 0; slot < g_tape.n_params; slot++) norms[slot] = 0.0f;
+#ifdef USE_CUDA
+    const float *device_grads[NT_TAPE_MAX_PARAMS];
+    int lengths[NT_TAPE_MAX_PARAMS];
+    if (g_use_gpu) {
+        for (int slot = 0; slot < g_tape.n_params; slot++) {
+            device_grads[slot] = NULL;
+            lengths[slot] = 0;
+        }
+        for (int i = 0; i < g_tape.count; i++) {
+            nt_tape_entry *e = &g_tape.entries[i];
+            if (!e->is_param || e->slot < 0 || !e->grad ||
+                (!include_frozen && g_tape.chuck_params[e->slot].frozen)) continue;
+            const nt_adam_state *as = &g_tape.adam[e->slot];
+            if (!as->m || !as->v) continue;
+            int n = e->output->len;
+            if (as->m->len < n) n = as->m->len;
+            device_grads[e->slot] = nt_tensor_ensure_gpu(e->grad);
+            lengths[e->slot] = n;
+            if (n && !device_grads[e->slot]) return 0;
+        }
+        extern void gpu_nrm2_batch(const float**, const int*, int, float*);
+        gpu_nrm2_batch(device_grads, lengths, g_tape.n_params, norms);
+        for (int slot = 0; slot < g_tape.n_params; slot++) {
+            double norm = norms[slot];
+            if (!isfinite(norm) || norm * norm > FLT_MAX) return 0;
+            sum += norm * norm;
+        }
+        if (sum_out) *sum_out = sum;
+        return 1;
+    }
+#endif
+    for (int i = 0; i < g_tape.count; i++) {
+        nt_tape_entry *e = &g_tape.entries[i];
+        if (!e->is_param || e->slot < 0 || !e->grad ||
+            (!include_frozen && g_tape.chuck_params[e->slot].frozen)) continue;
+        const nt_adam_state *as = &g_tape.adam[e->slot];
+        if (!as->m || !as->v) continue;
+        int n = e->output->len;
+        if (as->m->len < n) n = as->m->len;
+#ifdef USE_CUDA
+        nt_tensor_ensure_cpu(e->grad);
+#endif
+        float norm_squared = 0.0f;
+        for (int j = 0; j < n; j++) {
+            float g = e->grad->data[j];
+            norm_squared += g * g;
+            if (sum_out) sum += (double)g * g;
+        }
+        if (!isfinite(norm_squared)) return 0;
+        norms[e->slot] = sqrtf(norm_squared);
+    }
+    if (sum_out) *sum_out = sum;
+    return 1;
+}
+
 static void chuck_apply_action(nt_chuck_state *cs, const nt_chuck_action *action,
                                const nt_chuck_action_limits *limits) {
     switch (action->kind) {
@@ -2684,7 +2776,8 @@ static int chuck_controls_within(const nt_chuck_state *cs,
 
 int nt_tape_chuck_observe(float loss, nt_chuck_observation *out) {
     if (!out || !isfinite(loss)) return NT_CHUCK_E_ARGUMENT;
-    if (!chuck_state_valid(&g_tape.chuck) || g_tape.chuck.global_step == INT_MAX)
+    if (!chuck_state_valid(&g_tape.chuck) || g_tape.chuck.global_step == INT_MAX ||
+        !chuck_tape_state_valid())
         return NT_CHUCK_E_STATE;
     nt_chuck_state pending = g_tape.chuck;
     nt_chuck_observation observation;
@@ -2705,29 +2798,18 @@ int nt_tape_chuck_observe(float loss, nt_chuck_observation *out) {
     observation.history_len = pending.full ? NT_CHUCK_WINDOW : pending.pos;
 
     double sum = 0.0, previous = 0.0;
+    float norms[NT_TAPE_MAX_PARAMS];
+    if (!chuck_gradient_norms(norms, &sum, 1)) return NT_CHUCK_E_STATE;
     int frozen = 0;
     for (int slot = 0; slot < g_tape.n_params; slot++) {
         const nt_chuck_param_state *cp = &g_tape.chuck_params[slot];
-        if (cp->pos < 0 || cp->pos >= NT_CHUCK_WINDOW ||
-            (cp->full != 0 && cp->full != 1)) return NT_CHUCK_E_STATE;
         if (cp->frozen) frozen++;
     }
     for (int i = 0; i < g_tape.count; i++) {
         nt_tape_entry *e = &g_tape.entries[i];
         if (!e->is_param || e->slot < 0 || e->slot >= g_tape.n_params || !e->grad)
             continue;
-        const nt_adam_state *as = &g_tape.adam[e->slot];
         const nt_chuck_param_state *cp = &g_tape.chuck_params[e->slot];
-        int n = e->output->len;
-        if (as->m && as->m->len < n) n = as->m->len;
-        if (e->grad->len < n) return NT_CHUCK_E_STATE;
-#ifdef USE_CUDA
-        nt_tensor_ensure_cpu(e->grad);
-#endif
-        for (int j = 0; j < n; j++) {
-            double g = e->grad->data[j];
-            sum += g * g;
-        }
         if (cp->full || cp->pos) {
             double gn = cp->grad_hist[(cp->pos + NT_CHUCK_WINDOW - 1) % NT_CHUCK_WINDOW];
             previous += gn * gn;
@@ -2747,7 +2829,8 @@ int nt_tape_chuck_observe(float loss, nt_chuck_observation *out) {
 // θ -= (α × S × λ × λ_l) × m̂/(√v̂ + ε) + η
 static void chuck_step_impl(float lr, float loss_val,
                             const nt_chuck_action *action,
-                            const nt_chuck_action_limits *limits) {
+                            const nt_chuck_action_limits *limits,
+                            const float *checked_norms) {
     float beta1 = 0.9f, beta2 = 0.999f, eps = 1e-8f;
     nt_chuck_state *cs = &g_tape.chuck;
     int legacy = !action || action->kind == NT_CHUCK_ACTION_LEGACY;
@@ -2766,7 +2849,7 @@ static void chuck_step_impl(float lr, float loss_val,
      * chuck_gnorms[e->slot] aligns. n matches the loop's min(output,m) for the
      * params that use it → bit-identical norms. */
     float chuck_gnorms[NT_TAPE_MAX_PARAMS]; int chuck_gn_have = 0;
-    if (g_use_gpu) {
+    if (g_use_gpu && !checked_norms) {
         extern void gpu_nrm2_batch(const float**, const int*, int, float*);
         const float* d_gs[NT_TAPE_MAX_PARAMS]; int ns_arr[NT_TAPE_MAX_PARAMS];
         /* Indexed by optimizer slot, exactly as the update loop below reads
@@ -2799,6 +2882,8 @@ static void chuck_step_impl(float lr, float loss_val,
         int n = e->output->len;
         if (as->m->len < n) n = as->m->len;
         float gnorm = 0.0f;
+        if (checked_norms) gnorm = checked_norms[e->slot];
+        else {
 #ifdef USE_CUDA
         if (g_use_gpu) {
             float* d_g = nt_tensor_ensure_gpu(e->grad);
@@ -2812,8 +2897,12 @@ static void chuck_step_impl(float lr, float loss_val,
         } else
 #endif
         {
+#ifdef USE_CUDA
+            nt_tensor_ensure_cpu(e->grad);
+#endif
             for (int j = 0; j < n; j++) gnorm += e->grad->data[j] * e->grad->data[j];
             gnorm = sqrtf(gnorm);
+        }
         }
 
         cp->grad_hist[cp->pos] = gnorm;
@@ -2873,14 +2962,11 @@ static void chuck_step_impl(float lr, float loss_val,
 #endif
         if (!chuck_done_gpu) {
 #ifdef USE_CUDA
-            // A selected noise action can move an Architect step from the GPU
-            // to the CPU; bring its entire Adam state across before arithmetic.
-            if (!legacy && g_use_gpu) {
-                nt_tensor_ensure_cpu(e->output);
-                nt_tensor_ensure_cpu(e->grad);
-                nt_tensor_ensure_cpu(as->m);
-                nt_tensor_ensure_cpu(as->v);
-            }
+            // Noise and runtime mode changes can move either policy to the CPU.
+            nt_tensor_ensure_cpu(e->output);
+            nt_tensor_ensure_cpu(e->grad);
+            nt_tensor_ensure_cpu(as->m);
+            nt_tensor_ensure_cpu(as->v);
 #endif
             for (int j = 0; j < n; j++) {
                 float g = e->grad->data[j];
@@ -2896,10 +2982,8 @@ static void chuck_step_impl(float lr, float loss_val,
             /* CPU just mutated param weights — invalidate GPU mirror so next
              * forward re-uploads. */
             nt_tensor_mark_cpu_dirty(e->output);
-            if (!legacy) {
-                nt_tensor_mark_cpu_dirty(as->m);
-                nt_tensor_mark_cpu_dirty(as->v);
-            }
+            nt_tensor_mark_cpu_dirty(as->m);
+            nt_tensor_mark_cpu_dirty(as->v);
 #endif
         }
     }
@@ -2913,7 +2997,7 @@ static void chuck_step_impl(float lr, float loss_val,
 }
 
 void nt_tape_chuck_step(float lr, float loss_val) {
-    chuck_step_impl(lr, loss_val, NULL, NULL);
+    chuck_step_impl(lr, loss_val, NULL, NULL, NULL);
 }
 
 int nt_tape_chuck_step_action(float lr, float loss,
@@ -2934,18 +3018,22 @@ int nt_tape_chuck_step_action(float lr, float loss,
     if (selected.kind <= NT_CHUCK_ACTION_PUSH && selected.value != 0.0f)
         return NT_CHUCK_E_ARGUMENT;
     if (!chuck_state_valid(&g_tape.chuck) || g_tape.chuck.global_step == INT_MAX ||
-        g_tape.chuck.stag == INT_MAX || g_tape.chuck.macro_stag == INT_MAX)
+        g_tape.chuck.stag == INT_MAX || g_tape.chuck.macro_stag == INT_MAX ||
+        !chuck_tape_state_valid())
         return NT_CHUCK_E_STATE;
 
     // Validate the complete result on a copy. No history, moment, weight, or
     // noise-RNG mutation occurs before every requested bound has been checked.
     int legacy = selected.kind == NT_CHUCK_ACTION_LEGACY;
     nt_chuck_state pending = g_tape.chuck;
-    chuck_state_step(&pending, loss, legacy, NULL);
+    float trend;
+    chuck_state_step(&pending, loss, legacy, &trend);
     if (!legacy) chuck_apply_action(&pending, &selected, &bound);
-    if (!chuck_state_valid(&pending)) return NT_CHUCK_E_STATE;
+    if (!chuck_state_valid(&pending) || !isfinite(trend)) return NT_CHUCK_E_STATE;
     if (!legacy && !chuck_controls_within(&pending, &bound)) return NT_CHUCK_E_BOUNDS;
-    chuck_step_impl(lr, loss, &selected, &bound);
+    float norms[NT_TAPE_MAX_PARAMS];
+    if (!chuck_gradient_norms(norms, NULL, 0)) return NT_CHUCK_E_STATE;
+    chuck_step_impl(lr, loss, &selected, &bound, norms);
     return NT_CHUCK_OK;
 }
 
@@ -3357,6 +3445,10 @@ int nt_seq_linear(int w_idx, int x_idx, int T) {
     }
 #endif
     if (!done_gpu) {
+#ifdef USE_CUDA
+        nt_tensor_ensure_cpu(pw->output);
+        nt_tensor_ensure_cpu(px->output);
+#endif
         float* W = pw->output->data;
         float* X = px->output->data;
         float* Y = out->data;

@@ -144,6 +144,11 @@ static float read_loss(int index) {
     return loss;
 }
 
+static void json_number(char *out, size_t size, double value, int precision) {
+    if (isfinite(value)) snprintf(out, size, "%.*g", precision, value);
+    else snprintf(out, size, "null");
+}
+
 static float evaluate(body *m, const uint32_t *data, size_t split, size_t count) {
     double total = 0;
     size_t width = count - split - CTX;
@@ -235,6 +240,9 @@ static void write_architect(FILE *f, const nt_chuck_architect_decision *d,
         const nt_chuck_action *initial_weights_action) {
     static const char *names[] = {"legacy", "hold", "brake", "push", "set_dampen", "set_lr_scale", "set_noise"};
     const nt_chuck_observation *o = &d->observation;
+    char after_json[64], delta_json[64];
+    json_number(after_json, sizeof(after_json), r->after_loss, 9);
+    json_number(delta_json, sizeof(delta_json), r->loss_delta, 17);
     fprintf(f, "{\"sequence\":%" PRIu64 ",\"explored\":%d,\"action\":{\"type\":\"%s\",\"kind\":%d,\"value\":%.9g},"
             "\"policy_pre\":\"%016" PRIx64 "\",\"policy_pending\":\"%016" PRIx64 "\",\"policy_post\":\"%016" PRIx64 "\","
             "\"observation\":{\"loss\":%.9g,\"loss_ema\":%.9g,\"loss_trend\":%.9g,\"macro_ema\":%.9g,"
@@ -247,9 +255,9 @@ static void write_architect(FILE *f, const nt_chuck_architect_decision *d,
     for (int i = 0; i < NT_CHUCK_ARCHITECT_FEATURES; i++) fprintf(f, "%s%.9g", i ? "," : "", d->features[i]);
     fputs("],\"scores\":[", f);
     for (int i = 0; i < NT_CHUCK_ARCHITECT_HEADS; i++) fprintf(f, "%s%.9g", i ? "," : "", d->scores[i]);
-    fprintf(f, "],\"consequence\":{\"before_loss\":%.9g,\"after_loss\":%.9g,\"loss_delta\":%.17g,"
+    fprintf(f, "],\"consequence\":{\"before_loss\":%.9g,\"after_loss\":%s,\"loss_delta\":%s,"
             "\"reward\":%.9g,\"predicted\":%.9g,\"error\":%.9g,\"decision\":%" PRIu64 ",\"learned\":%d,\"nonfinite\":%d}",
-            r->before_loss, r->after_loss, r->loss_delta, r->reward, r->predicted, r->error,
+            r->before_loss, after_json, delta_json, r->reward, r->predicted, r->error,
             r->decision, r->learned, r->nonfinite);
     if (initial_weights_action) {
         fprintf(f, ",\"initial_weights_action\":{\"type\":\"%s\",\"kind\":%d,\"value\":%.9g},\"weight_dependent_choice\":%s",
@@ -267,7 +275,10 @@ static long parse_integer(const char *text, long low, long high) {
     return v;
 }
 
+#include "chuck_architect_scenarios.h"
+
 int main(int argc, char **argv) {
+    if (argc > 1 && !strcmp(argv[1], "--scenarios")) return scenario_main(argc, argv);
     if (argc != 8 && argc != 9) {
         fprintf(stderr, "usage: %s simple|hevlm adam|chuck|legacy|learned TOKENS OUT_PREFIX STEPS SEED LR [ARCHITECT_JSON]\n", argv[0]);
         return 2;
@@ -373,19 +384,24 @@ int main(int argc, char **argv) {
         nt_chuck_state post = nt_tape_get()->chuck;
         int frozen = 0;
         for (int i = 0; i < m.count; i++) frozen += nt_tape_get()->chuck_params[i].frozen;
-        float after = read_loss(body_forward(&m, data, offset, 0));
+        int after_idx = body_forward(&m, data, offset, 0);
+        float after = nt_tape_get()->entries[after_idx].output->data[0];
         if (learned) {
             if (nt_chuck_architect_feedback(&architect, after, &receipt)) die("Architect consequence refused");
         } else {
             receipt.before_loss = before; receipt.after_loss = after;
             receipt.loss_delta = (double)before - after;
             receipt.action = decision.action; receipt.decision = decision.sequence;
+            receipt.nonfinite = !isfinite(after);
         }
         if (has_architect) policy_post = nt_chuck_architect_hash(&architect);
+        char after_json[64], improvement_json[64];
+        json_number(after_json, sizeof(after_json), after, 9);
+        json_number(improvement_json, sizeof(improvement_json), before - after, 9);
         fprintf(trace, "{\"type\":\"step\",\"step\":%d,\"offset\":%zu,\"window_rng\":\"%016" PRIx64 "\","
-                "\"loss_before\":%.9g,\"loss_after_same_window\":%.9g,\"improvement\":%.9g,"
+                "\"loss_before\":%.9g,\"loss_after_same_window\":%s,\"improvement\":%s,"
                 "\"gradient_norm_before_clip\":%.9g,\"frozen_tensors\":%d,\"pre_chuck\":",
-                step + 1, offset, windows, before, after, before - after, grad_norm, frozen);
+                step + 1, offset, windows, before, after_json, improvement_json, grad_norm, frozen);
         write_chuck(trace, &pre);
         fputs(",\"post_chuck\":", trace); write_chuck(trace, &post);
         if (has_architect) {
@@ -394,6 +410,23 @@ int main(int argc, char **argv) {
                             learned ? &initial_weights_action : NULL);
         }
         fputs("}\n", trace);
+        if (!isfinite(after)) {
+            fprintf(trace, "{\"type\":\"failure\",\"step\":%d,\"reason\":\"nonfinite_post_action_loss\","
+                    "\"learned_feedback_recorded\":%s,\"stopped\":true}\n", step + 1, learned ? "true" : "false");
+            if (ferror(trace) || fclose(trace)) die("failure receipt write failed");
+            path_for(path, sizeof(path), prefix, ".final.bin");
+            if (nt_save(path, m.param, m.count)) die("cannot save failed body");
+            save_optimizer(prefix, windows, step + 1);
+            if (has_architect) {
+                path_for(path, sizeof(path), prefix, ".policy.final.bin");
+                if (nt_chuck_architect_save(&architect, path)) die("cannot save failed Architect life");
+            }
+            fprintf(stderr, "non-finite post-action loss: consequence and final state saved at step %d\n", step + 1);
+            nt_tape_destroy();
+            for (int i = 0; i < m.count; i++) nt_tensor_free(m.param[i]);
+            free(data);
+            return 3;
+        }
         if (!step) first_loss = before;
         last_loss = before;
         if (step < average_count) first_sum += before;

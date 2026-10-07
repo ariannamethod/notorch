@@ -78,6 +78,7 @@ typedef struct {
 // bounds and non-finite numbers are refused. Learned mode requires HOLD.
 // Legacy/disabled modes require LEGACY and the default numerical envelope;
 // contradictory masks or custom bounds are refused before canonical execution.
+// JSON numbers use a private C numeric locale; caller locales remain unchanged.
 // NULL, whitespace, and {} select defaults. Refusal leaves *out unchanged.
 void nt_chuck_architect_config_default(nt_chuck_architect_config *out);
 int nt_chuck_architect_config_parse_json(nt_chuck_architect_config *out,
@@ -109,6 +110,8 @@ int nt_chuck_architect_feedback(nt_chuck_architect *architect, float after_loss,
 // Versioned, little-endian IEEE-754 policy life with canonical field encoding,
 // FNV-1a checksum, strict size/range validation and transactional load. Includes
 // configuration, weights, RNG, counters, temporal features and pending credit.
+// Pending caches must agree with their observation/history/network within
+// 1e-6 + 1e-5*abs(expected); recorded values are preserved during validation.
 // The training body separately checkpoints its parameters, optimizer and RNG.
 int nt_chuck_architect_save(const nt_chuck_architect *architect, const char *path);
 int nt_chuck_architect_load(nt_chuck_architect *architect, const char *path);

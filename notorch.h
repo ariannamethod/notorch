@@ -308,12 +308,16 @@ int nt_chuck_action_limits_validate(const nt_chuck_action_limits *limits);
 // a copy of loss/history/macro state, before any action. Controls are pre-action;
 // a cold tape observes dampen=lr_scale=1. grad_trend compares this gradient norm
 // with the preceding per-slot gradient norms. frozen_fraction counts slots.
+// Local ring/counter/shape state and finite gradient norms are checked. CUDA
+// observes device reductions; CPU observation reads the authoritative mirror.
 int nt_tape_chuck_observe(float loss, nt_chuck_observation *out);
 // NULL/zero action selects canonical legacy; NULL limits uses the hard bounds.
 // Other actions replace the global policy while retaining the per-slot policy.
 // HOLD retains controls; BRAKE/PUSH scale dampen by 0.97/1.03 and saturate within
 // the supplied bounds; SET_* refuses out-of-bounds values. All request validation
-// precedes mutation. Existing nt_tape_chuck_step retains its original behavior.
+// precedes mutation: arguments, local rings/counters/shapes and finite gradient
+// square sums in the float range. Validated norms are reused by the update.
+// Existing nt_tape_chuck_step retains its original CPU arithmetic.
 int nt_tape_chuck_step_action(float lr, float loss,
                              const nt_chuck_action *action,
                              const nt_chuck_action_limits *limits);

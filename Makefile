@@ -514,7 +514,8 @@ endif
 
 # ── Chuck: Loss Architect ──
 
-.PHONY: check_chuck_architect test_chuck_architect_mutations test_chuck_legacy_parity
+.PHONY: check_chuck_architect test_chuck_architect_mutations test_chuck_legacy_parity \
+	check_chuck_scenarios test_chuck_scenario_mutations check_chuck_device_host check_chuck_device_cuda
 
 test_chuck_architect: tests/test_chuck_architect.c tests/test_notorch.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ tests/test_chuck_architect.c notorch.c -lm $(BLAS_LIBS)
@@ -528,7 +529,31 @@ test_chuck_architect_mutations:
 test_chuck_legacy_parity:
 	sh tests/test_chuck_legacy_parity.sh
 
-chuck_architect_train: examples/chuck_architect_train.c libnotorch.a $(CHUCK_HEADERS)
+test_chuck_actions_edge: tests/test_chuck_actions_edge.c notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ $< notorch.c -lm $(BLAS_LIBS)
+
+test_chuck_architect_state: tests/test_chuck_architect_state.c notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ $< notorch.c -lm $(BLAS_LIBS)
+
+test_chuck_architect_scenarios: tests/test_chuck_architect_scenarios.c notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ $< notorch.c -lm $(BLAS_LIBS)
+
+check_chuck_scenarios: test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios
+	./test_chuck_architect
+	./test_chuck_actions_edge
+	sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state
+	./test_chuck_architect_scenarios
+
+test_chuck_scenario_mutations:
+	python3 tests/test_chuck_scenario_mutations.py
+
+check_chuck_device_host:
+	sh tests/run_chuck_architect_device.sh host
+
+check_chuck_device_cuda:
+	sh tests/run_chuck_architect_device.sh cuda
+
+chuck_architect_train: examples/chuck_architect_train.c examples/chuck_architect_scenarios.h libnotorch.a $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ examples/chuck_architect_train.c ./libnotorch.a -lm $(BLAS_LIBS)
 
 # ── Test & Clean ──
@@ -622,9 +647,12 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_chuck_architect test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
+test: notorch_test test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
 	./notorch_test
 	./test_chuck_architect
+	./test_chuck_actions_edge
+	sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state
+	./test_chuck_architect_scenarios
 	./test_vision
 	./test_conv1d
 	./test_logmel
@@ -705,7 +733,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
-	rm -f test_chuck_architect chuck_architect_train
+	rm -f test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios chuck_architect_train
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
 		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual test_gemma3 test_smollm_tokenizer \
 		notorch_test notorch_test_gpu notorch.o gguf.o libnotorch.a notorch_cuda.o \
@@ -732,6 +760,9 @@ help:
 	@echo ""
 	@echo "  training:"
 	@echo "    make chuck_architect_train  Loss Architect on SimpleLLM / HeVLM"
+	@echo "    make check_chuck_scenarios  Chuck state, actions, locale and continuation gates"
+	@echo "    make check_chuck_device_host  Chuck host/device mirror emulation"
+	@echo "    make check_chuck_device_cuda  Chuck native CUDA gate (toolkit/device required)"
 	@echo "    make train_q          PostGPT-Q 1.65M (char-level research)"
 	@echo "    make train_yent       Yent 9.8M char-level"
 	@echo "    make train_llama3_char LLaMA 3 char-level (GQA, ~9.5M)"

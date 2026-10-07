@@ -9,11 +9,16 @@
 #include <errno.h>
 #include <float.h>
 #include <limits.h>
+#include <locale.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <xlocale.h>
+#endif
 
 #define NT_CA_VERSION UINT32_C(1)
 #define NT_CA_PAYLOAD_BYTES 992
@@ -139,7 +144,17 @@ static int nt_ca_json_string(nt_ca_json *j, char *out, size_t cap) {
     return 1;
 }
 
-// Recognize the JSON grammar before strtod: NaN, infinity, hex, leading zeros,
+// libc keeps decimal conversion/rounding; the explicit C locale keeps JSON's
+// decimal point independent of the caller's process or thread locale. This
+// immutable locale is shared after pthread_once and lives with the library.
+static locale_t nt_ca_numeric_locale;
+static pthread_once_t nt_ca_numeric_once = PTHREAD_ONCE_INIT;
+
+static void nt_ca_numeric_init(void) {
+    nt_ca_numeric_locale = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);
+}
+
+// Recognize the JSON grammar before strtod_l: NaN, infinity, hex, leading zeros,
 // missing fraction digits and incomplete exponents never reach the schema.
 static int nt_ca_json_number(nt_ca_json *j, double *out) {
     const char *begin, *end;
@@ -168,8 +183,10 @@ static int nt_ca_json_number(nt_ca_json *j, double *out) {
         do { ++j->at; } while (*j->at >= '0' && *j->at <= '9');
     }
     end = j->at;
+    if (pthread_once(&nt_ca_numeric_once, nt_ca_numeric_init) || !nt_ca_numeric_locale)
+        return nt_ca_json_error(j, "C numeric locale unavailable");
     errno = 0;
-    *out = strtod(begin, &parsed);
+    *out = strtod_l(begin, &parsed, nt_ca_numeric_locale);
     if (parsed != end || errno == ERANGE || !isfinite(*out))
         return nt_ca_json_error(j, "number out of range");
     return 1;
@@ -339,6 +356,8 @@ static int nt_ca_floats_valid(const float *p, size_t n, float bound) {
     return 1;
 }
 
+static int nt_ca_pending_coherent(const nt_chuck_architect *a);
+
 static int nt_ca_state_valid(const nt_chuck_architect *a) {
     if (!a || a->version != NT_CA_VERSION || !nt_ca_config_valid(&a->config) ||
         !a->rng || (a->pending != 0 && a->pending != 1) ||
@@ -368,6 +387,7 @@ static int nt_ca_state_valid(const nt_chuck_architect *a) {
     } else if (d->sequence || d->action.kind != NT_CHUCK_ACTION_LEGACY) return 0;
     if (a->pending && (a->config.mode != NT_CHUCK_ARCHITECT_LEARNED ||
         !(a->config.limits.enabled_actions & NT_CHUCK_ACTION_BIT(d->action.kind)))) return 0;
+    if (a->pending && !nt_ca_pending_coherent(a)) return 0;
     return 1;
 }
 
@@ -408,6 +428,35 @@ static void nt_ca_forward(const nt_chuck_architect *a, const float *f,
         for (int h = 0; h < NT_CHUCK_ARCHITECT_HIDDEN; ++h) sum += a->w2[k][h] * hidden[h];
         scores[k] = sum;
     }
+}
+
+static int nt_ca_cache_near(const float *cached, const float *expected, size_t n) {
+    // Preserve recorded values for exact continuation. Recomputed caches may
+    // differ across CPU/libm implementations by this absolute+relative bound.
+    for (size_t i = 0; i < n; ++i)
+        if (fabsf(cached[i] - expected[i]) > 1e-6f + 1e-5f * fabsf(expected[i])) return 0;
+    return 1;
+}
+
+static int nt_ca_pending_coherent(const nt_chuck_architect *a) {
+    const nt_chuck_architect_decision *d = &a->pending_decision;
+    float features[NT_CHUCK_ARCHITECT_FEATURES], hidden[NT_CHUCK_ARCHITECT_HIDDEN];
+    float scores[NT_CHUCK_ARCHITECT_HEADS];
+    // Before feedback, the acquired weights and temporal history are exactly
+    // those which made this pending decision. Completed caches are historical.
+    nt_ca_features(a, &d->observation, features);
+    if (!nt_ca_cache_near(d->features, features, NT_CHUCK_ARCHITECT_FEATURES)) return 0;
+    nt_ca_forward(a, d->features, hidden, scores);
+    if (!nt_ca_cache_near(a->pending_hidden, hidden, NT_CHUCK_ARCHITECT_HIDDEN) ||
+        !nt_ca_cache_near(d->scores, scores, NT_CHUCK_ARCHITECT_HEADS)) return 0;
+    int best = -1, allowed = 0;
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k) {
+        if (!(a->config.limits.enabled_actions & NT_CHUCK_ACTION_BIT(k + NT_CHUCK_ACTION_HOLD))) continue;
+        ++allowed;
+        if (best < 0 || d->scores[k] > d->scores[best]) best = k;
+    }
+    if (d->explored) return a->config.exploration > 0 && allowed > 1;
+    return best >= 0 && d->action.kind == (nt_chuck_action_kind)(best + NT_CHUCK_ACTION_HOLD);
 }
 
 static int nt_ca_choose(nt_chuck_architect *a, const nt_chuck_observation *o,

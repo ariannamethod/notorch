@@ -100,3 +100,7 @@ bench_cuda_decode
 /test_chuck_architect
 /chuck_architect_train
 !tests/test_chuck_architect_mutations.py
+/test_chuck_actions_edge
+/test_chuck_architect_state
+/test_chuck_architect_scenarios
+!tests/test_chuck_scenario_mutations.py
