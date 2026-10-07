@@ -13,6 +13,37 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — each learner carries its own weights
+
+Fresh main `beccbdb` supplies the baseline. Seven allocation-free CPU value
+APIs give AML canonical linear/tanh forward and reverse arithmetic, mean squared
+error with gradient, functional SGD, and owned standard normals. The caller
+owns all arrays and publishes successful outputs. Arithmetic failure can leave
+unpublished output partially written; inputs stay unchanged. No operation
+reads or changes the global tape, optimizer state, or legacy random stream.
+
+Normals consume exactly two owned PCG32 words per value through a specified
+Box–Muller transform, with no spare cache and state publication after complete
+success. Dimension products use a division cap before multiplication. Review
+caught the first implementation's 32-bit `65,536 × 65,536` wraparound; direct
+linear/VJP regressions retain that case. Native 32-bit execution could not run
+on this host because its 32-bit libc headers are absent.
+
+`make check_numerical_values BLAS_FLAGS= BLAS_LIBS= X86_SIMD=0 ARM_SIMD=0`
+passes **7,140 checks** on Linux x86_64 / GCC 13.3: all **57** finite-difference
+gradients, **32** independent Python training steps, **256** normal/state
+reference vectors, fixed **65,536**-sample moments, and eight parallel learners
+matching serial results while a live legacy tape remains byte-unchanged.
+Reference-header regeneration is byte-identical. Three isolated mutations fail:
+lost linear bias, reversed tanh derivative sign, and premature RNG advancement.
+
+ASan/UBSan pass the same gate with `detect_leaks=0`; this environment blocks
+LeakSanitizer's `/proc` task inspection. Existing tanh/SGD **5,122** checks,
+sampling **7,215** checks, and all **51** core tests pass against rebuilt scalar
+sources. The rebuilt archive supplies AML's complete optional bridge.
+See [numerical values](docs/NUMERICAL_VALUES.md) for layouts, ownership,
+arithmetic, reference reproduction, and the mutation command.
+
 ## 2026-10-07 — Haiku owns its next draw
 
 Fresh main `ce7dfa0` supplies the baseline. Six allocation-free APIs add

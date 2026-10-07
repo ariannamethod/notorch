@@ -717,6 +717,15 @@ check_sampling: test_sampling
 
 test: test_sampling
 
+.PHONY: check_numerical_values
+test_numerical_values: tests/test_numerical_values.c tests/numerical_values_reference.h notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_numerical_values.c notorch.c -lm $(BLAS_LIBS)
+
+check_numerical_values: test_numerical_values
+	./test_numerical_values
+
+test: test_numerical_values
+
 test_qpool: tests/test_qpool.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qpool tests/test_qpool.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qpool (threading determinism, $(BLAS_NAME))"
@@ -810,6 +819,7 @@ test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability
 	./notorch_test
 	./test_tanh_sgd
 	./test_sampling
+	./test_numerical_values
 	./test_bitnet_ops
 	./test_spa_agent
 	./test_spa_agent_state
@@ -904,6 +914,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
+	rm -f test_numerical_values
 	rm -f test_sampling
 	rm -f test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
