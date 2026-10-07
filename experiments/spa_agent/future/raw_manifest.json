@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "encoding": "byte concatenation in listed order; no recompression",
+  "archive": {
+    "path": "raw_traces.jsonl.gz",
+    "bytes": 24000308,
+    "sha256": "359d2983c0c58d35ca025d7bfbcb26e55b0556beff3a4eb4ac95859ea3c95cf5",
+    "git_blob": "d03df89b5c31692433c04550552743583d0e3102"
+  },
+  "parts": [
+    {
+      "path": "raw_traces.jsonl.gz.part-00",
+      "bytes": 8011776,
+      "sha256": "120229c17223578466c9a1fc62f4d980b9695a9ba688a53792b482645e21e41e",
+      "git_blob": "3944f87e78612b62b597b64d6939e16f707baa5c"
+    },
+    {
+      "path": "raw_traces.jsonl.gz.part-01",
+      "bytes": 8011776,
+      "sha256": "82853c5fd8a72c5a4bf517caf51499da0c477f412793d7716c319ed6978c9f12",
+      "git_blob": "d163c7daf5e1a1adf7d6a26b096fc8fe36083f80"
+    },
+    {
+      "path": "raw_traces.jsonl.gz.part-02",
+      "bytes": 7976756,
+      "sha256": "ba45877ae416bf08152339dbfb51fab8435620386a2ea5fb7d77551dbc002361",
+      "git_blob": "605c11569a0a694fd2c1743a48dd9456059bf998"
+    }
+  ],
+  "publication": "The MCP transport accepts request bodies up to 16 MiB. Each binary part fits that bound after base64 encoding. Concatenation recovers the original measured archive exactly."
+}

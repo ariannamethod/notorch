@@ -23,6 +23,8 @@ extern "C" {
 #define NT_SPA_AGENT_MAX_SENTENCES 4096u
 #define NT_SPA_AGENT_MAX_DIM 4096u
 #define NT_SPA_AGENT_NO_SOURCE UINT32_MAX
+#define NT_SPA_EXPERIENCE_VERSION 1u
+#define NT_SPA_COMPARISON_MAX_HORIZON 4096u
 
 typedef enum {
     NT_SPA_AGENT_DISABLED = 0,
@@ -47,7 +49,9 @@ enum {
     NT_SPA_E_SEQUENCE = -26,
     NT_SPA_E_IO = -27,
     NT_SPA_E_FORMAT = -28,
-    NT_SPA_E_MEMORY = -29
+    NT_SPA_E_MEMORY = -29,
+    NT_SPA_E_EXPERIENCE = -30,
+    NT_SPA_E_COMPARISON = -31
 };
 
 typedef struct {
@@ -135,6 +139,43 @@ typedef struct {
     nt_spa_decision pending_decision;
 } nt_spa_agent;
 
+// A frozen policy input, captured before choosing an action. Raw scenario
+// records may construct this value directly using their original 29 features.
+// The host records source_life_hash as provenance and retains the source-row
+// association; this module checks compact feature geometry and action bounds.
+typedef struct {
+    uint32_t version, sentence_index, sentence_count;
+    uint64_t source_life_hash;
+    float features[NT_SPA_AGENT_FEATURES];
+} nt_spa_experience;
+
+typedef struct {
+    nt_spa_action action;
+    nt_spa_consequence consequence;
+} nt_spa_alternative;
+
+typedef struct {
+    uint64_t source_life_hash; // Identifies the associated FEATURE source.
+    uint32_t horizon; // Host-named continuation horizon, 0..4096 inclusive.
+    uint32_t action_mask; // Exactly all valid actions at experience coordinates.
+    nt_spa_alternative alternatives[NT_SPA_AGENT_ACTIONS]; // Indexed by kind.
+} nt_spa_comparison;
+
+typedef struct {
+    nt_spa_action action; // Greedy valid argmax, deterministic KEEP-first ties.
+    uint32_t action_mask;
+    float scores[NT_SPA_AGENT_ACTIONS]; // All raw heads; mask governs selection.
+} nt_spa_readout;
+
+typedef struct {
+    uint64_t source_life_hash;
+    uint32_t horizon, action_mask;
+    float learning_rate;
+    float rewards[NT_SPA_AGENT_ACTIONS], targets[NT_SPA_AGENT_ACTIONS];
+    float scores_before[NT_SPA_AGENT_ACTIONS], scores_after[NT_SPA_AGENT_ACTIONS];
+    double loss_before, loss_after; // Mean Huber loss over valid actions, delta1.
+} nt_spa_comparison_receipt;
+
 // Defaults: LEGACY; seed1; learning_rate=.03; imitation_rate=.05;
 // exploration=.1; memory_decay=.8; reward weights .15,.15,.2,.2,.15,.1,.05;
 // cost_weight=.05. Every refused mutating call leaves state/output unchanged.
@@ -190,6 +231,27 @@ int nt_spa_agent_imitate(nt_spa_agent *agent,
 // set_policy preserves all other state; both refuse a pending decision.
 int nt_spa_agent_reset_memory(nt_spa_agent *agent);
 int nt_spa_agent_set_policy(nt_spa_agent *agent, const nt_spa_policy *policy);
+
+// Comparison learning reuses the 267 policy parameters. Capture and readout
+// are pure; replay changes only policy bytes. Config, RNG, online counters,
+// temporal memory, checkpoint schema and ordinary choose/observe stay intact.
+// Agent-facing calls require a validated idle LEARNED life. Readout uses the captured
+// features directly and consumes no exploration RNG. Output buffers must not
+// overlap their agent or inputs; replay inputs must not overlap the agent.
+int nt_spa_experience_validate(const nt_spa_experience *experience);
+int nt_spa_agent_capture_experience(const nt_spa_agent *agent,
+    const nt_spa_observation *observation, nt_spa_experience *experience);
+int nt_spa_agent_score_experience(const nt_spa_agent *agent,
+    const nt_spa_experience *experience, nt_spa_readout *readout);
+// Every available action occurs exactly once, at its indexed slot, with the
+// same before metrics. Inactive slots are zero. Rewards use the life's frozen
+// reward coefficients; target[a]=reward[a]-reward[KEEP]. All valid heads fit
+// their mean Huber loss in one simultaneous step from the same old weights.
+// Rate is explicit [0,1]; zero evaluates without changing any policy byte.
+// Receipt is optional. All refusals leave state, inputs and outputs unchanged.
+int nt_spa_agent_fit_comparison(nt_spa_agent *agent,
+    const nt_spa_experience *experience, const nt_spa_comparison *comparison,
+    float learning_rate, nt_spa_comparison_receipt *receipt);
 
 // Versioned canonical little-endian IEEE binary32 with checksum, exact length,
 // strict structural/range/cache checks, transactional load and atomic save

@@ -166,20 +166,23 @@ lib: libnotorch.a $(if $(filter 1,$(USE_CUDA)),libnotorch_gpu.a)
 spa_agent.o: spa_agent.c spa_agent.h notorch.h
 	$(CC) $(CFLAGS) -c spa_agent.c -o $@
 
-libnotorch.a: notorch.c notorch.h gguf.c gguf.h spa_agent.o Makefile $(CHUCK_HEADERS)
+spa_binding.o: spa_binding.c spa_binding.h spa_agent.h notorch.h
+	$(CC) $(CFLAGS) -c spa_binding.c -o $@
+
+libnotorch.a: notorch.c notorch.h gguf.c gguf.h spa_agent.o spa_binding.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf.o
 	rm -f libnotorch.a
-	$(AR) rcs libnotorch.a notorch.o gguf.o spa_agent.o
+	$(AR) rcs libnotorch.a notorch.o gguf.o spa_agent.o spa_binding.o
 	@echo "Built: libnotorch.a (CPU + BLAS)"
 
 # GPU-enabled library — only when USE_CUDA=1. SFT trainer links this +
 # -lcudart -lcublas. Compiled with -DUSE_CUDA so #ifdef blocks activate.
-libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h spa_agent.o Makefile $(CHUCK_HEADERS)
+libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h spa_agent.o spa_binding.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -DUSE_CUDA -I/usr/local/cuda/include -c notorch.c -o notorch_gpu.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf_gpu.o
 	nvcc -O2 -DUSE_CUDA -c notorch_cuda.cu -o notorch_cuda.o
-	$(AR) rcs libnotorch_gpu.a notorch_gpu.o gguf_gpu.o notorch_cuda.o spa_agent.o
+	$(AR) rcs libnotorch_gpu.a notorch_gpu.o gguf_gpu.o notorch_cuda.o spa_agent.o spa_binding.o
 	@echo "Built: libnotorch_gpu.a (CPU + BLAS + CUDA)"
 
 # ── Python binding gate ──
@@ -191,6 +194,10 @@ test_python: shared
 	/tmp/gguf_layout > /tmp/gguf_layout.txt
 	python3 python/test_binding.py /tmp/gguf_layout.txt $(MODEL)
 
+.PHONY: test_spa_python
+test_spa_python: shared libnotorch.a
+	python3 python/test_spa_binding.py
+
 # ── Shared library — for callers that dlopen rather than link ──
 # ctypes, Node's ffi bindings, Ruby's Fiddle, anything with a C FFI. The static
 # library is what organisms link; this is what a script loads at runtime.
@@ -201,8 +208,8 @@ endif
 
 shared: libnotorch.$(SOEXT)
 
-libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h spa_agent.c spa_agent.h Makefile $(CHUCK_HEADERS)
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c spa_agent.c -lm $(BLAS_LIBS)
+libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h spa_agent.c spa_agent.h spa_binding.c spa_binding.h Makefile $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c spa_agent.c spa_binding.c -lm $(BLAS_LIBS)
 	@echo "Built: libnotorch.$(SOEXT) ($(BLAS_NAME)) — load it with any FFI"
 
 # ── The harness as a linkable surface ──────────────────────────────────────
@@ -250,6 +257,7 @@ install: lib lib_harness
 	install -m 0644 libnotorch_harness.a $(PREFIX)/lib/libnotorch_harness.a
 	install -m 0644 notorch.h    $(PREFIX)/include/ariannamethod/notorch.h
 	install -m 0644 spa_agent.h  $(PREFIX)/include/ariannamethod/spa_agent.h
+	install -m 0644 spa_binding.h $(PREFIX)/include/ariannamethod/spa_binding.h
 	install -m 0644 chuck_architect.h $(PREFIX)/include/ariannamethod/chuck_architect.h
 	install -m 0644 gguf.h       $(PREFIX)/include/ariannamethod/gguf.h
 	# The harness headers include each other as "harness/arch.h", so they are
@@ -621,6 +629,23 @@ check_spa_scenarios:
 spa_agent_demo: examples/spa_agent_demo.c examples/spa_agent_scenarios.h spa_agent.h libnotorch.a
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch.a -lm $(BLAS_LIBS)
 
+# SPA future comparisons keep their build wiring in this independent block.
+.PHONY: check_spa_future test_spa_future_mutations
+test_spa_agent_future: tests/test_spa_agent_future.c spa_agent.c spa_agent.h notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_spa_agent_future.c spa_agent.c notorch.c -lm $(BLAS_LIBS)
+
+check_spa_future: test_spa_agent_future
+	./test_spa_agent_future
+	python3 tests/test_spa_future.py
+
+test_spa_future_mutations:
+	python3 tests/test_spa_future_mutations.py
+
+spa_agent_future: examples/spa_agent_future.c spa_agent.h libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch.a -lm $(BLAS_LIBS)
+
+test: test_spa_agent_future
+
 # ── Test & Clean ──
 
 test_qpool: tests/test_qpool.c notorch.c notorch.h $(CHUCK_HEADERS)
@@ -718,6 +743,7 @@ test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability
 	./test_spa_agent
 	./test_spa_agent_state
 	./test_spa_agent_durability
+	./test_spa_agent_future
 	./test_chuck_architect
 	./test_chuck_actions_edge
 	sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state
@@ -803,6 +829,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
+	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o
 	rm -f test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future chuck_architect_train chuck_architect_future
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \

@@ -584,9 +584,19 @@ float conn = nt_spa_connectedness(emb, dim, history_embeds, n_history);
 nt_spa_modulate_logits(logits, V, conn, 0.3f);
 ```
 
-no tape, no gradients — purely a post-hoc modulation of the logit distribution with the current sentence's position in the manifold of recent sentences. the `0.85` α is a recency bias (larger α = more recent tokens dominate the sentence embedding); the `0.3` strength caps how aggressively connectedness can sharpen the distribution. both are just parameters — pick what works for your generation style.
+No tape or gradients enter these helpers. Token `i` receives weight
+`alpha^(n_tokens - 1 - i)`: smaller alpha gives stronger recency bias;
+alpha 1 gives a uniform mean. Connectedness is the maximum softmax attention
+weight over the supplied sentence history. Logit modulation divides by
+`max(0.001, 1 - strength * connectedness)`; positive strength sharpens sampling.
 
-originated in [ariannamethod/q](https://github.com/ariannamethod/q) (`postgpt_q.c`) and [ariannamethod/postgpt](https://github.com/ariannamethod/postgpt), ported here as a reusable helper. used in [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) to cut "word salad" artifacts without retraining. SPA as a *trained* forward operation with gradient flow is an open direction — currently only the inference helpers are here.
+Originated in the [PostGPT](https://github.com/ariannamethod/postgpt) lineage
+and developed through [Q](https://github.com/ariannamethod/q) (`postgpt_q.c`),
+then ported here as reusable perception. These three functions remain
+inference-only. [Sentence Phonon Agent](#spa--sentence-phonon-agent) adds
+persistent action selection and consequence learning above this sensory field.
+Gradient flow through the sensory operations remains an open direction.
+SPA is also used in [microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit).
 
 ---
 
@@ -622,6 +632,28 @@ make spa_agent_demo BLAS_FLAGS= BLAS_LIBS=
 The native experiment host can fork each valid sentence action from one saved
 state and measure immediate and later consequences. Its optional diagnostics
 preserve the ordinary trajectory and saved Agent life byte for byte.
+
+`capture_experience`, `score_experience`, and `fit_comparison` let the same
+policy learn from measured alternatives at a host-defined future horizon.
+Each action learns its reward relative to paired KEEP, with separate raw axes
+and mean Huber loss. Replay changes policy weights while preserving the
+captured sentence/history input and the life's online state. The
+[future-credit experiment](experiments/spa_agent/future/README.md) records
+training, new-state evaluation, shuffled credit, and fixed-action controls.
+
+Python uses the same native engine and canonical saved life:
+
+```python
+import SPA
+
+agent = SPA.Agent(SPA.Config.default(mode=SPA.Mode.LEARNED))
+# Host supplies observations, executes choose(...).action, then calls observe(...).
+```
+
+Build `make shared`, put `python/` on `PYTHONPATH`, and run
+`python3 examples/spa_python.py`. [Python API and host loop](docs/spa-python.md)
+cover perception, action execution, comparison learning, and C/Python resume.
+`make test_spa_python` checks the loaded C ABI and byte-identical continuation.
 
 ---
 
