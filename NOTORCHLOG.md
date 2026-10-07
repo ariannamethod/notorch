@@ -13,6 +13,177 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Conditional Chuck and SPA future credit share the final build
+
+Fresh main `b289119` arrived before publication. Integrated its SPA future
+comparisons and Python binding, preserving both Makefile target families,
+shared/static binding objects, cleanup lists and complete log entries. All
+seventeen measured Chuck sources remain identical to `ff9d3f4`; all twenty-eight
+incoming non-shared SPA files remain identical to `b289119`. The measured
+conditional-credit experiment and its frozen archive retain their original
+source identity.
+
+Forced rebuilds cover shared/static libraries, both agents' hosts and every
+aggregate prerequisite. Narrow gates pass: Chuck conditioned 2,474, durability
+111, future 647; SPA future 6,277 plus fixture checks; Python eight groups.
+All 42 current CPU recipe commands are verified. The first pass completes
+41 and refuses the scenario executable before running any of its checks:
+mode 0644, exit 126. Rebuilding only that target produces byte-identical
+202,544-byte content at mode 0755, SHA-256
+`31dd41a0f1430acc3c1b56036b1e3cb197ea3dd3a4ca60a563d8e0988d1fea39`.
+Its rerun passes six groups and 4,672 selected/executed transitions. The actor
+that changed the mode remains unknown; the original refusal is retained.
+
+Exact command outputs, retained-source hashes and the scoped recovery are in
+`experiments/chuck_loss_architect/conditional/merge_verification.json`, SHA-256
+`8ccfffa49448d212761c81913b1068451d1972f2b443a487e1df5b47e8019b1c`.
+This later integration receipt accompanies the already-frozen experiment
+archive. No body experiment or learned life is changed by the integration.
+
+## 2026-10-07 — Chuck acquires conditional choices and drives complete training loops
+
+Clean source `ff9d3f41c0b9826c3743a154aff6ddc2c899edfd` executes the fixed
+conditional-credit protocol, SHA
+`8b4e4292805950a066817f9b13018ab92a0d4dd9f7d4fae3a6020243c51796f2`.
+Two stages fit 8,192 measured comparisons to the same 163-parameter network.
+Five saved lives precede all new-seed 307/509 outcomes. F32 CPU measurements
+use SimpleLLM (450,688 parameters), HeVLM (1,123,456), AMD EPYC 9V74, GCC 13.3
+and two SIMD threads. The corpus identities and complete command are retained
+in `experiments/chuck_loss_architect/conditional/`.
+
+Conditionality appears on fresh common states. The old future lives select
+PUSH at all eight states of each body, optimal at 4/8. Conditioned SimpleLLM
+selects six PUSH/two BRAKE, optimal at 6/8; its adapted copy keeps those choices.
+On HeVLM, the first life selects four PUSH/three BRAKE/one HOLD, optimal at 5/8.
+Adaptation changes that HOLD to BRAKE and reaches 6/8. Mean regret falls from
+0.000982791185 to 0.000310242176 on SimpleLLM; from 0.000817790627 to
+0.0000748187304 before adaptation and 0.0000558793545 after it on HeVLM.
+The missed states, ties, fixed BRAKE/HOLD and source controls remain recorded.
+All 288 C readouts bind their selected consequence to the executed branch.
+Four paired source cohorts preserve all 2,048 compared host steps and final
+states while producing 48 new branches / 768 branch updates.
+
+The acquired lives then drive actual 512-step training loops. Twenty-four
+primary deployments plus four policy-continuation repeats perform 14,336
+body updates. Every conditioned run uses HOLD, BRAKE and PUSH. Frozen feedback
+advances real temporal history without changing the learned weights. The old
+future life stays at PUSH and matches the fixed-PUSH body trajectory and final
+body/moments/control bytes on all four body/seed combinations.
+
+The repeated-action outcomes are mixed. Both conditioned lives finish worse
+than PUSH and canonical Chuck on both SimpleLLM seeds. HeVLM seed 307 improves
+against PUSH, while seed 509 regresses. The Simple-trained life beats canonical
+Chuck on both HeVLM seeds; HeVLM adaptation makes both of those runs worse than
+the frozen parent. For SimpleLLM seed 307, the conditioned parent is ahead of
+PUSH at step 256 (held-out 2.60634041 versus 2.63895655) and behind at step 512
+(2.54674840 versus 2.48682046). All curves and action counts remain in the
+receipts. The next credit question is learning from the states reached through
+repeated acquired choices.
+
+Four independent deployments save/reload the complete Architect at step 256
+while their bodies remain in process. Every step, held-out evaluation and
+final body/moments/controls/policy byte reproduces the uninterrupted run.
+Final checks also preserve every sealed life, numerical source hash, fitting
+trace, readout and output artifact. The verified numerical archive has 420
+members and 372,856,293 bytes, SHA
+`adfcd981ffe6990cda483b46826aec5b3a01d67a2642ef0d10fb22a31c8faeaf`.
+Raw results SHA is
+`c18eae909ccbdd8f2bd62b752ab465a6c630da821033eef876c583d0a4626ce9`.
+
+The source-host processes report 185.0287185 seconds; all deployment processes
+report 582.2871297 seconds, with maximum process RSS 125,920 KiB. Build,
+fit/readout, verification and archive work are separate. The earlier three
+failed smoke artifact checks remain retained; staged smoke and final run pass
+all terminal gates and complete archive verification. No target, epoch, rate,
+capacity or source arithmetic changes follow the new-seed measurements.
+
+Independent final audit completes 126,920 checks. It authenticates all 416
+recorded artifacts and 420 archive members, replays both C fitting stages and
+all 288 readouts exactly, and reconstructs 8,192 policy-history transitions
+from their real observations and consequences. Every pre/pending/post life
+hash and final life byte matches. It recomputes the common-state and deployment
+summaries and confirms all four continuation pairs without rerunning bodies.
+
+Compact results and documentation pass 2,254 further independent checks.
+The complete raw phase is retained as
+`chuck-conditional-credit-ff9d3f4-receipts.tar.gz`: 962 verified members,
+482,540,391 bytes, SHA-256
+`94f802e20733c89d02cca9707b51d6e6824c1307beb6e8f325036a9903954e9a`.
+It includes development diagnosis, all smoke attempts, the full numerical
+archive, compatibility, mutations and audits. Its index and publication checks
+are recorded in the compact verification file.
+
+## 2026-10-07 — SPA learns future comparisons and opens the same life to Python
+
+Follow-up to merged PR #155, based on freshly fetched main `47cb6f8`.
+Added `capture_experience`, `score_experience` and `fit_comparison` to the
+existing 267-parameter SPA policy. Captured sentence/history features stay
+fixed; all valid action heads learn measured reward relative to paired KEEP
+with simultaneous mean-Huber gradients. Replay changes policy bytes only.
+Source association, action bounds, common before metrics, aliases and pending
+credit are checked before mutation. Original SPA arithmetic, online credit,
+temporal state and the 2,296-byte v1 life encoding remain unchanged. Chuck
+implementation and prior experiment files remain identical to main.
+
+Frozen protocol `experiments/spa_agent/future/protocol.json`, SHA-256
+`134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861`:
+48 retained SimpleLLM states at seeds 42/73 train H4, H0 and shuffled-H4
+policies for 512 epochs / 24,576 fits each. All four lives, including initial,
+are sealed before generating the 48 new states at seeds 101/211. The body
+is the same frozen 450,688-parameter Dracula transformer. The unchanged
+reference host supplies states; pure policy readout selects among actually
+executed same-state alternatives under the registered continuation.
+
+Acquired H4 weights change **17/48** new-state choices: 31 KEEP / 17 LEFT.
+Mean H4 advantage over KEEP is **−0.002473649**; regret is 0.009100622 and
+27/48 choices are measured-best. Initial/H0/KEEP select 48 KEEP, regret
+0.006626973, 32/48 best. Shuffled-H4 advantage is −0.001379491; fixed LEFT
+and RIGHT give −0.005310106 and −0.005267728. H4 utility loses to KEEP on
+both seeds. The separate training advantage is +0.000479821. Raw H4
+coherence increases by 0.002638487 relative to KEEP while novelty falls by
+0.009278271 and normalized generation cost rises by 0.054752602; collapse
+stays zero. All axes and the negative transfer result are retained. The
+registered target-3 continuation geometry, where later generation overwrites
+the initial intervention, remains explicit in the per-target results.
+
+Two complete executions reproduce **44 artifacts byte for byte**, including
+73,728 fit receipts per execution, all saved lives, datasets, 672 training
+and 672 evaluation readouts, and full paired ordinary/scenario trajectories.
+Independent audit checks all 138 execution artifacts, 22 measured sources,
+1,344 selected-outcome joins, 4,032 decoded-policy score components, 5,712
+raw metric values recomputed from token embeddings, and 720 rewards. The
+complete nine-stream archive is retained in three lossless transport parts;
+`traces.py` reconstructs the original 24,000,308 bytes and verifies its hash.
+Receipts, repeat manifests, source hashes and separate-axis tables live in
+`experiments/spa_agent/future/`.
+
+`python/SPA.py` now provides **`import SPA`** through stdlib ctypes over the
+same library: sensory helpers, perception, typed actions, online and comparison
+learning, memory reset and canonical save/resume. The loaded C library reports
+its ABI through two read-only queries; Python checks 252 coordinates across
+14 value types before passing a structure pointer. Eight binding groups pass,
+including 59 byte-exact C/Python records, pending-life C-to-Python continuation,
+and a compiled offset mutation. `examples/spa_python.py` runs a complete small
+token-host loop. The pinned Molequla inspection identifies CGO over the same
+`spa_agent.h` as its consumer boundary, preserving its existing host perception.
+
+Native future tests pass six groups / **6,277 checks**, including 1,602
+finite-difference comparisons covering all 267 parameters. The retained
+H0/H4 fixture learns RIGHT → KEEP with non-policy state fixed. Six compiled
+future-credit/source mutants are caught; four v1 lives match rebuilt `47cb6f8`
+exactly. The audit keeps an earlier source-stability FAIL caused by a concurrent
+header-comment edit, followed by the stable complete PASS.
+Existing SPA/Chuck and scenario gates pass;
+original SPA parity remains 1,024 steps / 114,688 bytes. Rebuilt shared/static
+libraries and both hosts, then all **40 CPU recipe commands** and both Python
+bindings pass. Exact commands and outputs are in `verification.json`,
+`audit.json`, `result_audit.json` and `python.json`.
+
+README now separates Attention's sensory helpers from Agent's learned actor,
+documents future comparisons and Python entry, and corrects the old alpha
+description: smaller alpha gives stronger recency weighting. Full architecture
+and host contracts remain in `docs/spa-agent.md` and `docs/spa-python.md`.
+
 ## 2026-10-07 — Conditional credit and frozen-weight experience
 
 The next Chuck branch starts from combined SPA/Chuck main `47cb6f8`. Six

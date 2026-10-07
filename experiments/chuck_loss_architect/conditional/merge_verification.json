@@ -1,0 +1,1072 @@
+{
+  "schema": 1,
+  "name": "chuck-conditional-spa-future-merge-verification",
+  "measured_chuck_source": "ff9d3f41c0b9826c3743a154aff6ddc2c899edfd",
+  "incoming_main": "b2891195abd0a318e50d7a445e48d3ed2e6dbcf9",
+  "common_base": "47cb6f8207b8ca2c3fc02be898eeb19d0f6bbad7",
+  "head_before_integration_commit": "ff9d3f41c0b9826c3743a154aff6ddc2c899edfd",
+  "chuck_sources_retained": {
+    "notorch.c": {
+      "measured": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "current": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96"
+    },
+    "notorch.h": {
+      "measured": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "current": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a"
+    },
+    "notorch_simd.h": {
+      "measured": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "current": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c"
+    },
+    "chuck_architect.h": {
+      "measured": "01e0969c176fa467930c05b1e85de0f8194814e8bb47d229aa60bde4a66a8caa",
+      "current": "01e0969c176fa467930c05b1e85de0f8194814e8bb47d229aa60bde4a66a8caa"
+    },
+    "chuck_architect_impl.h": {
+      "measured": "6a0d79fe46d1d6c2859ecf7dda52a2c37482aa259dec199445e0926f4514c3dc",
+      "current": "6a0d79fe46d1d6c2859ecf7dda52a2c37482aa259dec199445e0926f4514c3dc"
+    },
+    "examples/chuck_architect_train.c": {
+      "measured": "1b6261e25a64be5c5e8b7b421f52add85a4de92cc386da273d8b79909ffe4c10",
+      "current": "1b6261e25a64be5c5e8b7b421f52add85a4de92cc386da273d8b79909ffe4c10"
+    },
+    "examples/chuck_architect_scenarios.h": {
+      "measured": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "current": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa"
+    },
+    "examples/chuck_architect_rollout.h": {
+      "measured": "e6b3988e44cf10df3f4b51c882919cc7f2973b640195e8db4fd7655e0f38f6cd",
+      "current": "e6b3988e44cf10df3f4b51c882919cc7f2973b640195e8db4fd7655e0f38f6cd"
+    },
+    "examples/chuck_architect_future.c": {
+      "measured": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+      "current": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4"
+    },
+    "examples/chuck-loss-architect.json": {
+      "measured": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+      "current": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5"
+    },
+    "experiments/chuck_loss_architect/run.py": {
+      "measured": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+      "current": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc"
+    },
+    "experiments/chuck_loss_architect/scenarios/run.py": {
+      "measured": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+      "current": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24"
+    },
+    "experiments/chuck_loss_architect/scenarios/protocol.json": {
+      "measured": "90c49115d93cff3e636a5093aa5f6f177630d30eade5639df1b35fba307fd27f",
+      "current": "90c49115d93cff3e636a5093aa5f6f177630d30eade5639df1b35fba307fd27f"
+    },
+    "experiments/chuck_loss_architect/future/run.py": {
+      "measured": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+      "current": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391"
+    },
+    "experiments/chuck_loss_architect/conditional/run.py": {
+      "measured": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+      "current": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35"
+    },
+    "experiments/chuck_loss_architect/conditional/protocol.json": {
+      "measured": "8b4e4292805950a066817f9b13018ab92a0d4dd9f7d4fae3a6020243c51796f2",
+      "current": "8b4e4292805950a066817f9b13018ab92a0d4dd9f7d4fae3a6020243c51796f2"
+    },
+    "experiments/chuck_loss_architect/conditional/development_diagnosis.json": {
+      "measured": "1b5a096e1cf5ddffa82f8464c879ca664269747f6fd5b3a231a9886f8ecda023",
+      "current": "1b5a096e1cf5ddffa82f8464c879ca664269747f6fd5b3a231a9886f8ecda023"
+    }
+  },
+  "spa_files_retained": {
+    "docs/spa-agent.md": {
+      "incoming": "64197f756ac00a235d2f880b5cdfadae78a3c2d1d1cb80465bf5fac326e49c74",
+      "current": "64197f756ac00a235d2f880b5cdfadae78a3c2d1d1cb80465bf5fac326e49c74"
+    },
+    "docs/spa-python.md": {
+      "incoming": "d11e49eeb7efb7d8af2b176b69233fa15257f9a3f47dbd0756426124facdd2be",
+      "current": "d11e49eeb7efb7d8af2b176b69233fa15257f9a3f47dbd0756426124facdd2be"
+    },
+    "examples/spa_agent_future.c": {
+      "incoming": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661",
+      "current": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661"
+    },
+    "examples/spa_python.py": {
+      "incoming": "039b96f01ad4a174e23368ecbf339903a6b6c83901b4330018645f706e93483b",
+      "current": "039b96f01ad4a174e23368ecbf339903a6b6c83901b4330018645f706e93483b"
+    },
+    "experiments/spa_agent/future/README.md": {
+      "incoming": "043d1aa85d44f35707232c1dfe96f31485d4a4e837c2a1a9ec2d668f21427237",
+      "current": "043d1aa85d44f35707232c1dfe96f31485d4a4e837c2a1a9ec2d668f21427237"
+    },
+    "experiments/spa_agent/future/audit.json": {
+      "incoming": "7f59374904dc7d37897fb5aa29f39efbaf384d7d7cf9e709a0e740c3862b56a3",
+      "current": "7f59374904dc7d37897fb5aa29f39efbaf384d7d7cf9e709a0e740c3862b56a3"
+    },
+    "experiments/spa_agent/future/protocol.json": {
+      "incoming": "134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861",
+      "current": "134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861"
+    },
+    "experiments/spa_agent/future/python.json": {
+      "incoming": "9b575a21ad2f6f82d921ffc1605ec55f23a9d25e9826c28c123eb07e2143098f",
+      "current": "9b575a21ad2f6f82d921ffc1605ec55f23a9d25e9826c28c123eb07e2143098f"
+    },
+    "experiments/spa_agent/future/raw_manifest.json": {
+      "incoming": "7c42b5039fffbd97e9d553eb06d74474e7bcc2d8671021efcb3bcb88e72fd86c",
+      "current": "7c42b5039fffbd97e9d553eb06d74474e7bcc2d8671021efcb3bcb88e72fd86c"
+    },
+    "experiments/spa_agent/future/raw_traces.jsonl.gz.part-00": {
+      "incoming": "120229c17223578466c9a1fc62f4d980b9695a9ba688a53792b482645e21e41e",
+      "current": "120229c17223578466c9a1fc62f4d980b9695a9ba688a53792b482645e21e41e"
+    },
+    "experiments/spa_agent/future/raw_traces.jsonl.gz.part-01": {
+      "incoming": "82853c5fd8a72c5a4bf517caf51499da0c477f412793d7716c319ed6978c9f12",
+      "current": "82853c5fd8a72c5a4bf517caf51499da0c477f412793d7716c319ed6978c9f12"
+    },
+    "experiments/spa_agent/future/raw_traces.jsonl.gz.part-02": {
+      "incoming": "ba45877ae416bf08152339dbfb51fab8435620386a2ea5fb7d77551dbc002361",
+      "current": "ba45877ae416bf08152339dbfb51fab8435620386a2ea5fb7d77551dbc002361"
+    },
+    "experiments/spa_agent/future/receipts.json": {
+      "incoming": "b2caeead7ca5c3a02234f60a37d28e81dec2f6feb6f694a0d069bbf79d4c8dbf",
+      "current": "b2caeead7ca5c3a02234f60a37d28e81dec2f6feb6f694a0d069bbf79d4c8dbf"
+    },
+    "experiments/spa_agent/future/result_audit.json": {
+      "incoming": "4e9024918b0aa7535e13f02d2ac076e8f495246dd7ed8b93cb304b8879998eba",
+      "current": "4e9024918b0aa7535e13f02d2ac076e8f495246dd7ed8b93cb304b8879998eba"
+    },
+    "experiments/spa_agent/future/run.py": {
+      "incoming": "6131057ffe1f25c42f4888af644012a91f21ad6adfb93b32f5be5ada223a7df1",
+      "current": "6131057ffe1f25c42f4888af644012a91f21ad6adfb93b32f5be5ada223a7df1"
+    },
+    "experiments/spa_agent/future/traces.py": {
+      "incoming": "4b7af6a084affca8636e4d0d2c7f98a5dd6e4b8aa78d1812faf5bb2ea3fc558e",
+      "current": "4b7af6a084affca8636e4d0d2c7f98a5dd6e4b8aa78d1812faf5bb2ea3fc558e"
+    },
+    "experiments/spa_agent/future/verification.json": {
+      "incoming": "fd6c372172a41703c38c6e7f502f3a88169ab9b53889266d565100d90e8f05e2",
+      "current": "fd6c372172a41703c38c6e7f502f3a88169ab9b53889266d565100d90e8f05e2"
+    },
+    "python/SPA.py": {
+      "incoming": "4945ab752aa8bf9115e1539f4c2ee0cdb2bd0343750a594778271e399ac14567",
+      "current": "4945ab752aa8bf9115e1539f4c2ee0cdb2bd0343750a594778271e399ac14567"
+    },
+    "python/test_spa_binding.py": {
+      "incoming": "9dda1e6f2d18f216e37e679b6be74a2966fa32cd1743bc31d8fe985401233def",
+      "current": "9dda1e6f2d18f216e37e679b6be74a2966fa32cd1743bc31d8fe985401233def"
+    },
+    "spa_agent.c": {
+      "incoming": "a039bc04644b094c16ada64f0c08f08d853a1ffca8f750c830d9e1cd4acf00ea",
+      "current": "a039bc04644b094c16ada64f0c08f08d853a1ffca8f750c830d9e1cd4acf00ea"
+    },
+    "spa_agent.h": {
+      "incoming": "f47b2bb9347b9613c96a4ef56a101f9c28a9253fccf2bc2a61781a1401d1d19d",
+      "current": "f47b2bb9347b9613c96a4ef56a101f9c28a9253fccf2bc2a61781a1401d1d19d"
+    },
+    "spa_binding.c": {
+      "incoming": "3e314877d9c31d250de64e02f5022065a48720cb87ac2383b478ac94bff79c82",
+      "current": "3e314877d9c31d250de64e02f5022065a48720cb87ac2383b478ac94bff79c82"
+    },
+    "spa_binding.h": {
+      "incoming": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+      "current": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55"
+    },
+    "tests/spa_layout.c": {
+      "incoming": "5a65e78fff4db18297dbd6586fa5e5ad34c762563fee92c07f9d2f1693cf226b",
+      "current": "5a65e78fff4db18297dbd6586fa5e5ad34c762563fee92c07f9d2f1693cf226b"
+    },
+    "tests/spa_python_parity.c": {
+      "incoming": "0063dd77b34aff02c7a5aa56e1fa6b843f2be51e68b3d20cd13365e2f84a055a",
+      "current": "0063dd77b34aff02c7a5aa56e1fa6b843f2be51e68b3d20cd13365e2f84a055a"
+    },
+    "tests/test_spa_agent_future.c": {
+      "incoming": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+      "current": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682"
+    },
+    "tests/test_spa_future.py": {
+      "incoming": "87fbed5560d6d89c3918fb32e7a9fa9c10e58056677c32d83cddc40bb069784e",
+      "current": "87fbed5560d6d89c3918fb32e7a9fa9c10e58056677c32d83cddc40bb069784e"
+    },
+    "tests/test_spa_future_mutations.py": {
+      "incoming": "d3d583ed2640ccf73d62e1d100b05fee3a190d2c1e5d091c0709bc605686744e",
+      "current": "d3d583ed2640ccf73d62e1d100b05fee3a190d2c1e5d091c0709bc605686744e"
+    }
+  },
+  "shared_merge_files": {
+    "NOTORCHLOG.md": "8779f0bec1a686f68f2cfacc9b61858b655a7076eaf93a114f0fabda4b70f1ed",
+    "README.md": "1a6c439113c5dd65e3cd85d40793dda6893dca447c250a12b5c6f616ac64ef05",
+    ".gitignore": "df1f9ef594bef5938ea657447ec69cd0ae7b91c2b29c5244069452adb49b70ad",
+    "Makefile": "e66eaa14e95af99e91c58b800b6868a9245c857e6a13fc122c485cf54d16f2dc"
+  },
+  "source_before": {
+    "Makefile": "e66eaa14e95af99e91c58b800b6868a9245c857e6a13fc122c485cf54d16f2dc",
+    "chuck_architect.h": "01e0969c176fa467930c05b1e85de0f8194814e8bb47d229aa60bde4a66a8caa",
+    "chuck_architect_impl.h": "6a0d79fe46d1d6c2859ecf7dda52a2c37482aa259dec199445e0926f4514c3dc",
+    "examples/bench_gguf_metal.sh": "0da14e22beed7a6797e0bde1ccb219fec430543f909d083800baad1f374a86bc",
+    "examples/bpe.c": "f89e648cb10ae2b7f93af9a31eafe5537a974fab11d9d960d7884355cccba9c5",
+    "examples/bpe.h": "2e5769426da001c944851a876724de40ed481f44f2ce13669fbde13c1c0aa32f",
+    "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+    "examples/chuck_architect_rollout.h": "e6b3988e44cf10df3f4b51c882919cc7f2973b640195e8db4fd7655e0f38f6cd",
+    "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+    "examples/chuck_architect_train.c": "1b6261e25a64be5c5e8b7b421f52add85a4de92cc386da273d8b79909ffe4c10",
+    "examples/infer_gemma.c": "fef9d64f9b36577925d2625f99562f99fedc298b32f9012789e9efb7b30e6533",
+    "examples/infer_gguf_metal.c": "fcda92e219fefe4ae7e1974b7be8c4fde00b7a1b6e64bd64d15c0766cd94cff9",
+    "examples/infer_janus.c": "adc4fa228fb69ab1f8387e18a15a26236b9e658d57e0be22bc52913f77f52439",
+    "examples/infer_llama.c": "907b18af3b7e9df7990b4082057f4d0a1f06f43fd06ee1669ee9a8f3846e40a5",
+    "examples/infer_llama3_bpe.c": "8305ac44642716be453dd7cb37a56f82ed39b9050eb05fc3e0070ccfa11ed7d3",
+    "examples/infer_llama3_char.c": "ebcea67ac9dffaaf9234443c64aeeac94c03b481d5d3caaf944b2e63d58eb9f1",
+    "examples/spa_agent_demo.c": "23ec38602e902ffa50d2d3ac191848edb1e048ddf2f8357c7d35a3ee6fb11d31",
+    "examples/spa_agent_future.c": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661",
+    "examples/spa_agent_scenarios.h": "9f6fadfaceb1b10148742deb1d5887b0fd02eb9b24d271af90de48fa27aaae28",
+    "examples/spa_python.py": "039b96f01ad4a174e23368ecbf339903a6b6c83901b4330018645f706e93483b",
+    "examples/train_distillation.c": "ebb97751d359b3b9983178cc09993566df4547fe31270a54522ab7da602da1e6",
+    "examples/train_dpo.c": "511c12c0b3d9a7e95bbac4b5589dfd89b944dd61cd3de2fd21aa44dcaea0da4c",
+    "examples/train_grpo.c": "dd91669897458c8f8f29886af85de9e5068ce16bc828eac80d5017270f6f463f",
+    "examples/train_llama3_bpe.c": "5a949c422773d131b32a42d9a710c18051eadb91c5ab9b99e5034b46d0d3028f",
+    "examples/train_llama3_char.c": "7689607c1cd67e8b91626ca38fa2bd4c4957f242d80ebb7078c8bd51c97e47ce",
+    "examples/train_q.c": "0f4fe321c0d22677046739789aa7bfe60bc4076af4e4eef1064255bcffb38639",
+    "examples/train_resonance_lora.c": "47cfe412ec9057208c39ce353af82cd858f18f8ac7ebebb5f91ab1604801499a",
+    "examples/train_yent.c": "c54ba2adb9021bc71580a0b307b18d336466f6fa24f22ac9d80d0131a04f2a17",
+    "examples/unicode_numbers.h": "c77829428be33a7d0e71d3c851cea86ca8121e34c969d4744fcb6279e759944c",
+    "gguf.c": "39bfb68692bb025b23844bb8e56eef8add56a2660bc9f731ab9c9ef15d5879e9",
+    "gguf.h": "cc657d588e2ef47e3cdaf0e3ea017ef422cbbd5ab394730b6bc412bd3adb6589",
+    "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+    "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+    "notorch_cuda.h": "8fb573ec4182586d7bc83fc02164a74d804763540cc71060dbb139eb1d2daac4",
+    "notorch_metal.h": "735f2feb3293ac13bd7360d1e97cfbcfbab984a3333944d4b34175401cead737",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "notorch_simd_scalar.h": "c3fa8f3ec388f7398bfbcb5fba7f67055354873775398c306e2340d42d50dc86",
+    "notorch_vision.h": "7f00d29a9c9c9318638ad38110ee850c95d7d26bc081f4f4295ad98e70a48363",
+    "python/SPA.py": "4945ab752aa8bf9115e1539f4c2ee0cdb2bd0343750a594778271e399ac14567",
+    "python/__init__.py": "6abc2f96fd7f91e26527c99f0163bfe54a82bf4b431799d16081e43393acfd87",
+    "python/notorch.py": "1e8d3551fe45fc5b6e4321ff036dac46198dd19b1feda7d4638352cf8e1031d1",
+    "python/test_binding.py": "07b7bfdf94a18a8b9a8f800389f383535678b07e6293c72942c2af92a72b3303",
+    "python/test_spa_binding.py": "9dda1e6f2d18f216e37e679b6be74a2966fa32cd1743bc31d8fe985401233def",
+    "spa_agent.c": "a039bc04644b094c16ada64f0c08f08d853a1ffca8f750c830d9e1cd4acf00ea",
+    "spa_agent.h": "f47b2bb9347b9613c96a4ef56a101f9c28a9253fccf2bc2a61781a1401d1d19d",
+    "spa_binding.c": "3e314877d9c31d250de64e02f5022065a48720cb87ac2383b478ac94bff79c82",
+    "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+    "stb_image.h": "fd0e815d15ee3f7c0fc516db7ad067454d2bee37311974cab6d83a7f1ed0512b",
+    "tests/bench_claim.c": "317a98ec763d0f2a3a8aeacecae9aa280ee50bbae9b941204398745821b477b2",
+    "tests/bench_dtype.c": "48eceae0af429b57a4ca76cad6bb24d3043b6e3e0c28ffc7c9cf699acc68ec6c",
+    "tests/bench_metal_batch.c": "8939dea91793f760156f0247282abe01d6842b84ee02bfa779624f767ce80175",
+    "tests/bench_multi_decode.c": "31ff6e7b2370aab59eb9b1e4ebeb2634c60fdbcccc0b44842d95e3cad377b1d2",
+    "tests/bench_qmatmul.c": "4d2f83d3b882ebf1e26b4dca703eb10e955551554be436c46d5199cedcf4d561",
+    "tests/bench_qmatvec.c": "8ce7a5d9e574305f569a56af091c07d580503b959b450348ecb108426e61f383",
+    "tests/check_requant.c": "cc599657faf754e479640cc08483a15a06416f9512cd44d180be770620c26486",
+    "tests/chuck_device_host_backend.c": "8f0adbdb5093889c1da1ba555e66a39deef4704f4ffb27ad773551696b4b9be9",
+    "tests/chuck_legacy_parity.c": "1816bdbbc48aa439bc81ae7e6b4723d5f21d7427c084fefb8d90f1d930abebee",
+    "tests/consumer_link.c": "d74aa239e414109ae993a6d0db6bd6d0ed6b470e7e0d94222a262dfd962158c7",
+    "tests/decode_fixtures.h": "68cce552d7e46987add54aae0577c738d31bf01cceb6de65e055b7651100526b",
+    "tests/gguf_dequant_ref.c": "fb5eb28c442cd8aacf23ad0c958656b253d9b2b4886e7332f51ee5a896726312",
+    "tests/gguf_layout.c": "a482aae472bdf85052664a1784539345660ec4fa4d6f326c8e6b87ae33afe6a5",
+    "tests/js_qmatvec_ref.c": "ec8db7ec9ee3ed3606b72f3f7a1bce568350c77a91d354baba3989da766cc60b",
+    "tests/run_chuck_architect_device.sh": "3e6768f2d29df4e310fde8304fbed17f62c84265c1ecd567b452c14c85c846c4",
+    "tests/run_chuck_architect_state.sh": "dac0d7f59608ec9db340c15a41fe20b765032ce4726c7b63e70bbffcb4f79292",
+    "tests/spa_layout.c": "5a65e78fff4db18297dbd6586fa5e5ad34c762563fee92c07f9d2f1693cf226b",
+    "tests/spa_python_parity.c": "0063dd77b34aff02c7a5aa56e1fa6b843f2be51e68b3d20cd13365e2f84a055a",
+    "tests/test_affinity.c": "11dbab2f93f79a24eeca3e86adcf469fdd8c62e74f56348ff54ed2693a2e178c",
+    "tests/test_bitnet_ops.c": "50e27e83401463122caa80afa20d856e98e991f8542cf004aa831b49b6df96a9",
+    "tests/test_chuck_actions_edge.c": "fca423cf4d4b34d95763e7285db50c70ce187f55111fb353576107d120df89ae",
+    "tests/test_chuck_architect.c": "1ecf25b69621387a085bf8263571a9d3985f966395f76cb4bac167ed7a2f95d6",
+    "tests/test_chuck_architect_conditioned.c": "f0e6c7931e8df265ed73c0edef7dc89a1a3b7118534ef25eaac40db3ccdb73c3",
+    "tests/test_chuck_architect_device.c": "144c82d9d4343f040f85cc0d5e68d9580e9b8a763b2bfa285604cfc6a81c8886",
+    "tests/test_chuck_architect_durability.c": "991e7501703c6c8737450004111c027c507ac59ce92cb9fc3783aab51a9d98a3",
+    "tests/test_chuck_architect_future.c": "0d31b5abd3bbc76cce7db76fa08040dcbf4828e10f44027ba60487116396ff86",
+    "tests/test_chuck_architect_mutations.py": "5bbe42317c201303ce87bcc11b5166e34bb1bc3b4ccac57720cbd84ce67523d6",
+    "tests/test_chuck_architect_scenarios.c": "7c2dfd524d6ed86a2518186e21fb934cb60f056977d5558b4c4c091d9314c298",
+    "tests/test_chuck_architect_state.c": "171ae259562c5e2a1a527cfb18debdb558183e20be7a3a19ff0869668da9d9c5",
+    "tests/test_chuck_conditioned_mutations.py": "01827e6f27c53c44db01c9e956dfb4d8fc53eeb9f5cbb19c232e641573b0ccb5",
+    "tests/test_chuck_future_mutations.py": "23852b2421e679061c89dcbde5912aff4bfbc9613d31fd16d3ac23be16cb8de7",
+    "tests/test_chuck_legacy_parity.sh": "4cf353249fbaf175a0df9c7c8b684f47b5b6dba0fccd53a90b1fac80b6042183",
+    "tests/test_chuck_scenario_mutations.py": "9c1909ccba509e70e1cb92c59eeb230f03a958fe9b50880055087545a120b23d",
+    "tests/test_conv1d.c": "aa6fecf173d3b2fb96274ec23c1327688689e5ba6e4cb4f2d67033d52d184f67",
+    "tests/test_cuda_decode.c": "0cc29e404945e3ded99a1b81b535ce6f1b95c3eaf6698c013b966b0c081ca1b0",
+    "tests/test_f16_matvec.c": "fa0ac33fc0abdfe25004c8cac8d36ea7a0a21bf26b20482e1b0d4e062bdb6c28",
+    "tests/test_gemma3.c": "23450dca37332f548229c05d530479eca2eb619afd99eabb873a4a212f6ff47c",
+    "tests/test_gguf.c": "e3f5e4d636a377e24f98a08885711d52e892e43a4b8f6998eecffe2e24a2d259",
+    "tests/test_gguf_keys.c": "e5089011374ab9be1de114941ef8a979e3a2ccea28901f1cd733d905113fac68",
+    "tests/test_gguf_q4k_real.c": "8eef4e87c030e1136ff54c0d5b120c641859e42aba4fc1e002312d7d485d82d7",
+    "tests/test_gguf_tokens.c": "97a625ae9168b4fc70e935f4465fb8c55b7a2d13bc34f89a69593c70016a8386",
+    "tests/test_gguf_write.c": "ecac0ca1cde7b4f14bafd7455f33ed260e1c4e96511be6cf4fdbae2a1e98b890",
+    "tests/test_janus_parity.c": "7967633574d10c12870261d156ab359e888b99d5d5a885b143315b0263e157ca",
+    "tests/test_libnotorch_lib.sh": "7a8c7713b120d2d1f6407f29c4ec032c10fd6323211eb4587d4311128ad1452b",
+    "tests/test_logmel.c": "8656241a1f9396b977170a53e95387d50ca1f9e84acdf6d0f98198761ee68e6f",
+    "tests/test_metal_f16.c": "4be64d36fbbf51cb349aa706d47e629b16eb2fd1c629309039c465d01d04a51f",
+    "tests/test_metal_q4k.c": "83a2834897faed758b259a1675a7d5c28dc07c6b0bf6aaf89af5048b75f5db79",
+    "tests/test_multi_decode.c": "483da0eaf39a12d384ab39558d45fe1044adae4f0d662d5b94e11501b2e45fa2",
+    "tests/test_notorch.c": "ba7e01dada38781d85afa54ee1c6312d1c423a4ceed053a8668805f12e96029a",
+    "tests/test_parliament_elect.c": "14de5cba4af0e09ea65a4a1f21a3f0326a7e5a43083c0687ea4177b427dd379b",
+    "tests/test_parliament_inject.c": "c011c90df51fd801d7d0a028d1a58c9e22c097975b0234c6e625a7f27bea4bd1",
+    "tests/test_plan_race.c": "f6e96cd7a5d44027ba76616080b53cb1d053f1db04285bcb1321d2c8dfe83b59",
+    "tests/test_q8_0_rows.c": "d5d8b0537e78b37d0e4c44d79fca5f917a27ad30d875392c4e2a101dffab9a47",
+    "tests/test_qgather.c": "70a6d2c05e437eea352f6b9b5451a7b936b25ce40aaea45168079a48eec97790",
+    "tests/test_qmatmul.c": "2c8f4a3af85f7cd767813e4f196446783b7751f66bf8b41b8bbe53795c574d98",
+    "tests/test_qmatvec.c": "529a180f96ff26437c848a91be430fdbd621822a1c67c43a75f871fe037c9c9c",
+    "tests/test_qmatvec_leak.c": "da70b9a29109fa2906b509adfff2495eca155600de43fddc54a3000e3837eb38",
+    "tests/test_qpool.c": "233371910be8cc65439a5495b76d33e4edaf4af0c993c711b0f5559e6265dce5",
+    "tests/test_quantize.c": "6e2418922ee3330bf969d2fddbb2cf3f75302f4dbfcd4faa63f17cc20691a55a",
+    "tests/test_repeat.c": "c47e38362100effea8013695fc3b631261d5f0aaf0d9de6cc9e5cd82e361bc70",
+    "tests/test_residual.c": "7662da34af81d140cdbc00320c991d64b155c03398ebdbe07b92a12ac87e4433",
+    "tests/test_resonance_parity.c": "00297808a947c3577f9159a52a5858ed2f2da01bcae4d74997a3891afdcbba4c",
+    "tests/test_rrpram_broadcast.c": "65c9f978b31337eda1043804fa87f61cda1ffef7790050ac88a992a69e749f49",
+    "tests/test_rrpram_lr.c": "27e2ac6a805adc35a24f5d746ba09fcbf092c1225f25c5578e3ae01cb7c8e2c1",
+    "tests/test_sigmoid_scale.c": "1d69d4d7810b11fb899df2b60ef86e9156104b5cd82ce2bf69ce6ce6b7d31ed6",
+    "tests/test_simd_correctness.c": "f5675e676332c0bfc547880649b02f4ae3f8fac1d034ceccb8a220f0faf4a079",
+    "tests/test_simd_loss.c": "ccd0da69e2cdc3aa4693ff56e03147a41bd90da789f50d73775c7872b232e1ec",
+    "tests/test_simd_tails.c": "32db6b873ea8f5c39c2e6a0d24359e490767614fb08cd5d41dec34cd092faba7",
+    "tests/test_smollm_tokenizer.c": "e33e8f9b3076094217af98a0d4ffce8a939229f382f2afc6e65fbad5f286b29c",
+    "tests/test_spa_agent.c": "69c448800225511db7f66a3959de98cd366640234c23647bd43767ec9ba86345",
+    "tests/test_spa_agent_durability.c": "49855ecfa9324eaf28ba1b69d1837734b6684fcb014d8bfb980c4db8a3d330ab",
+    "tests/test_spa_agent_future.c": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+    "tests/test_spa_agent_mutations.py": "47c1166aa293f1bfd56f9af3a7afaee3801175bdf07196f5e5e5e3850e512905",
+    "tests/test_spa_agent_state.c": "82c217a802a1a2711cc1781ccbe992688abd7f8e3c06792fa9d65b894dedbaed",
+    "tests/test_spa_future.py": "87fbed5560d6d89c3918fb32e7a9fa9c10e58056677c32d83cddc40bb069784e",
+    "tests/test_spa_future_mutations.py": "d3d583ed2640ccf73d62e1d100b05fee3a190d2c1e5d091c0709bc605686744e",
+    "tests/test_spa_legacy_parity.c": "4d8f0589cf8562e36540bafdfb4aabfacedaf58fa078a6930130e8bac60dc01c",
+    "tests/test_spa_legacy_parity.sh": "e2275989ffa7253d1e967601ae207d4e1ff3069da9a32229c50af6223e40a193",
+    "tests/test_spa_scenarios.py": "465e2d910f2be06fc97c8e92bdcb7a7c4021e9bae8e59bb659f1c3804e2eb6a2",
+    "tests/test_spa_trace_io.py": "f4cc9893b03d641653a5ca8e4efb7ca37e90fa0717d9b98db2f3980df18c288d",
+    "tests/test_vision.c": "328350ccbddac4257eb36b564faa2f0ec36a2c519b7da4c98859ef2c69adc0eb",
+    "tests/test_wt_expert.c": "5b9b41743e2f8a00c4fa7747780a9a328808cfb3b2df4fd19b0bf89a2f6a7ffb"
+  },
+  "started_utc": "2026-10-07T02:50:10Z",
+  "builds": [
+    {
+      "command": [
+        "make",
+        "-j2",
+        "-B",
+        "shared",
+        "lib",
+        "chuck_architect_train",
+        "chuck_architect_future",
+        "spa_agent_demo",
+        "spa_agent_future",
+        "test_spa_agent_future",
+        "notorch_test",
+        "test_spa_agent",
+        "test_spa_agent_state",
+        "test_spa_agent_durability",
+        "test_bitnet_ops",
+        "test_chuck_architect",
+        "test_chuck_actions_edge",
+        "test_chuck_architect_state",
+        "test_chuck_architect_scenarios",
+        "test_chuck_architect_future",
+        "test_chuck_architect_conditioned",
+        "test_chuck_architect_durability",
+        "test_vision",
+        "test_qpool",
+        "test_qmatmul",
+        "test_quantize",
+        "test_gguf_write",
+        "test_gguf_keys",
+        "test_qmatvec_leak",
+        "test_affinity",
+        "test_plan_race",
+        "test_wt_expert",
+        "test_qgather",
+        "test_f16_matvec",
+        "test_q8_0_rows",
+        "test_conv1d",
+        "test_logmel",
+        "test_residual",
+        "test_multi_decode",
+        "test_gemma3",
+        "test_smollm_tokenizer",
+        "BLAS_FLAGS=",
+        "BLAS_LIBS="
+      ],
+      "returncode": 0,
+      "seconds": 69.60330072700162,
+      "log": "forced-build.log",
+      "log_bytes": 68685,
+      "log_sha256": "e74d8279ff4bf32c7ec6862026c9a503ada61206605939569b28f245f3892668",
+      "result_lines": [
+        "notorch.c:7169:47: warning: unused variable \u2018ones\u2019 [-Wunused-variable]",
+        "notorch.c:7549:48: warning: unused variable \u2018ones\u2019 [-Wunused-variable]",
+        "notorch.c:7548:23: warning: unused variable \u2018nsub\u2019 [-Wunused-variable]",
+        "notorch.c:7910:9: warning: missing initializer for field \u2018fnn\u2019 of \u2018nt_qjob_i8\u2019 [-Wmissing-field-initializers]",
+        "notorch.c:8192:48: warning: unused variable \u2018ones\u2019 [-Wunused-variable]",
+        "notorch.c:7169:47: warning: unused variable \u2018ones\u2019 [-Wunused-variable]",
+        "notorch.c:7549:48: warning: unused variable \u2018ones\u2019 [-Wunused-variable]",
+        "notorch.c:7548:23: warning: unused variable \u2018nsub\u2019 [-Wunused-variable]",
+        "notorch.c:7910:9: warning: missing initializer for field \u2018fnn\u2019 of \u2018nt_qjob_i8\u2019 [-Wmissing-field-initializers]",
+        "notorch.c:8192:48: warning: unused variable \u2018ones\u2019 [-Wunused-variable]",
+        "examples/bpe.c:454:48: warning: \u2018%s\u2019 directive output may be truncated writing up to 510 bytes into a region of size between 1 and 511 [-Wformat-truncation=]",
+        "notorch.c:7169:47: warning: unused variable \u2018ones\u2019 [-Wunused-variable]",
+        "notorch.c:7549:48: warning: unused variable \u2018ones\u2019 [-Wunused-variable]",
+        "notorch.c:7548:23: warning: unused variable \u2018nsub\u2019 [-Wunused-variable]",
+        "notorch.c:7910:9: warning: missing initializer for field \u2018fnn\u2019 of \u2018nt_qjob_i8\u2019 [-Wmissing-field-initializers]",
+        "notorch.c:8192:48: warning: unused variable \u2018ones\u2019 [-Wunused-variable]",
+        "Built: libnotorch_harness.a (families, runtime, tokenizer \u2014 link with -lnotorch)",
+        "gguf.c:777:26: warning: format \u2018%llu\u2019 expects argument of type \u2018long long unsigned int\u2019, but argument 3 has type \u2018uint64_t\u2019 {aka \u2018long unsigned int\u2019} [-Wformat=]",
+        "gguf.c:777:40: warning: format \u2018%llu\u2019 expects argument of type \u2018long long unsigned int\u2019, but argument 4 has type \u2018uint64_t\u2019 {aka \u2018long unsigned int\u2019} [-Wformat=]",
+        "gguf.c:790:24: warning: format \u2018%llu\u2019 expects argument of type \u2018long long unsigned int\u2019, but argument 2 has type \u2018uint64_t\u2019 {aka \u2018long unsigned int\u2019} [-Wformat=]",
+        "gguf.c:792:24: warning: format \u2018%llu\u2019 expects argument of type \u2018long long unsigned int\u2019, but argument 2 has type \u2018uint64_t\u2019 {aka \u2018long unsigned int\u2019} [-Wformat=]",
+        "gguf.c:796:25: warning: format \u2018%llu\u2019 expects argument of type \u2018long long unsigned int\u2019, but argument 2 has type \u2018uint64_t\u2019 {aka \u2018long unsigned int\u2019} [-Wformat=]",
+        "gguf.c:129:13: warning: \u2018__builtin___strncpy_chk\u2019 output may be truncated copying 127 bytes from a string of length 511 [-Wstringop-truncation]",
+        "Built: libnotorch.a (CPU + BLAS)"
+      ]
+    }
+  ],
+  "narrow_gates": [
+    {
+      "command": [
+        "make",
+        "check_chuck_conditioned",
+        "check_chuck_durability",
+        "check_chuck_future",
+        "check_spa_future",
+        "test_spa_python",
+        "BLAS_FLAGS=",
+        "BLAS_LIBS="
+      ],
+      "returncode": 0,
+      "seconds": 13.795916088000013,
+      "log": "narrow-gates.log",
+      "log_bytes": 2789,
+      "log_sha256": "9387680e465549ece25eb41f247e692f550050f665bc733252624f0f96e28590",
+      "output": "./test_chuck_architect_conditioned\nPASS conditioned_scale\nCONDITIONED_CHOICES early=0,-0.999999821,0.98775816 late=0,0.962371826,-0.99999994\nPASS conditioned_choice\nPASS conditioned_refusals\nPASS nonfinite_alternatives\nPASS frozen_feedback\nPASS frozen_refusals_and_nonfinite\nPASS deterministic_fit_resume\nCHUCK_CONDITIONED groups=7/7 checks=2474\n./test_chuck_architect_durability\nPASS durable successful replacement\nPASS directory open failure before mutation\nPASS directory stat failure before mutation\nPASS non-directory refused before mutation\nPASS temporary creation failure\nPASS file sync failure preserves prior file\nPASS rename failure preserves prior file\nPASS directory sync failure reports installed replacement\nPASS directory close failure reports installed replacement\nPASS relative path uses current parent directory\nCHUCK_ARCHITECT_DURABILITY 10/10 cases, 111 checks\n./test_chuck_architect_future\nMEASURED_REVERSAL scores=0,0.00103792001,-0.00107850216\nPASS measured_reversal\nPASS refusals\nPASS nonfinite_alternatives\nPASS gradient_and_determinism\nPASS pending_and_online\nPASS save_resume\nCHUCK_FUTURE groups=6/6 checks=647\n./test_spa_agent_future\nPASS capture\nPASS validation\ngradient: comparisons=1602 nonzero_parameters=267 maximum_absolute_error=2.80579572e-05\nPASS gradient\nPASS masks\ncredit: H0 RIGHT advantage=0.0086092921; H4 RIGHT advantage=-0.100602373; acquired RIGHT -> KEEP\nPASS credit\nPASS persistence\nPASS SPA future: 6 groups, 6277 checks\npython3 tests/test_spa_future.py\nSPA_FUTURE_GATES_OK retained=48 association_mutations=8 native_parser_mutations=7 fits=73728 readouts=672\npython3 python/test_spa_binding.py\ntest_abi_every_struct_and_field (__main__.BindingTests.test_abi_every_struct_and_field) ... ok\ntest_abi_mutation_and_old_library_refused_before_state_call (__main__.BindingTests.test_abi_mutation_and_old_library_refused_before_state_call) ... ok\ntest_checkpoint_refusal_is_transactional (__main__.BindingTests.test_checkpoint_refusal_is_transactional) ... ok\ntest_comparison_weight_only_learning_and_rejections (__main__.BindingTests.test_comparison_weight_only_learning_and_rejections) ... ok\ntest_disabled_legacy_memory_and_detached_state (__main__.BindingTests.test_disabled_legacy_memory_and_detached_state) ... ok\ntest_native_oracle_sensory_actions_learning_checkpoint_continuation (__main__.BindingTests.test_native_oracle_sensory_actions_learning_checkpoint_continuation) ... ok\ntest_native_status_pending_bad_enum_and_exact_action_witness (__main__.BindingTests.test_native_status_pending_bad_enum_and_exact_action_witness) ... ok\ntest_shapes_and_integer_bounds_refused (__main__.BindingTests.test_shapes_and_integer_bounds_refused) ... ok\n\n----------------------------------------------------------------------\nRan 8 tests in 0.182s\n\nOK\n"
+    }
+  ],
+  "cpu_recipe_commands": [
+    "./notorch_test",
+    "./test_bitnet_ops",
+    "./test_spa_agent",
+    "./test_spa_agent_state",
+    "./test_spa_agent_durability",
+    "./test_spa_agent_future",
+    "./test_chuck_architect",
+    "./test_chuck_actions_edge",
+    "sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state",
+    "./test_chuck_architect_scenarios",
+    "./test_vision",
+    "./test_chuck_architect_future",
+    "./test_chuck_architect_conditioned",
+    "./test_chuck_architect_durability",
+    "./test_conv1d",
+    "./test_logmel",
+    "NT_LOGMEL_THREADS=1 ./test_logmel",
+    "./test_qpool",
+    "NT_QMV_CHUNKS=1 ./test_qpool",
+    "NT_QMV_CHUNKS=64 ./test_qpool",
+    "NT_QMV_SPIN=0 ./test_qpool",
+    "./test_qmatmul",
+    "./test_quantize",
+    "./test_gguf_write",
+    "./test_gguf_write rss19",
+    "./test_gguf_write rss91",
+    "./test_gguf_keys",
+    "./test_qmatvec_leak",
+    "./test_affinity",
+    "NT_QMV_BIG_ONLY=0 ./test_affinity off",
+    "./test_affinity narrowed",
+    "NT_QMV_PIN=0 ./test_affinity nopin",
+    "./test_plan_race",
+    "./test_wt_expert",
+    "./test_residual",
+    "./test_multi_decode",
+    "./test_gemma3",
+    "./test_smollm_tokenizer",
+    "./test_qgather",
+    "NT_QMV_CHUNKS=1 ./test_qgather",
+    "./test_f16_matvec",
+    "./test_q8_0_rows"
+  ],
+  "cpu_recipe": [
+    {
+      "command": "./notorch_test",
+      "returncode": 0,
+      "seconds": 0.004190749001281802,
+      "log": "cpu-01.log",
+      "log_bytes": 2068,
+      "log_sha256": "5ef88967cde36ce668f15eeb6b9a6f55e83f3a278d62bf44006c30ce04effba6",
+      "output": "notorch tests\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\n[Tensor]\n  PASS: tensor_create\n  PASS: tensor_2d\n  PASS: tensor_clone\n  PASS: tensor_reshape\n  PASS: tensor_xavier\n  PASS: tensor_refcount\n\n[Ops]\n  PASS: silu\n  PASS: relu\n  PASS: seq_gate\n  PASS: softmax\n  PASS: rmsnorm\n\n[Tape + Forward/Backward]\n  PASS: tape_basic\n  PASS: forward_backward_linear\n  PASS: causal_attention\n  PASS: mh_causal_attention\n  PASS: seq_cross_entropy\n  PASS: seq_linear\n\n[Optimizers]\n  PASS: adam_step\n  PASS: adamw_step\n  PASS: chuck_step\n  PASS: chuck_golden_vector\n  PASS: frozen_param_keeps_chuck_slots\n  PASS: grad_clip\n\n[Hebbian]\n  PASS: hebbian\n\n[Save/Load]\n  PASS: save_load\n\n[Gradient Accumulation]\n  PASS: grad_accumulation\n\n[LR Schedules]\n  PASS: schedule_cosine\n  PASS: schedule_step\n  PASS: schedule_with_training\n\n[NaN Guard]\n  PASS: nan_guard_clean\n  PASS: nan_guard_detect\n\n[Dropout]\n  PASS: dropout\n\n[LayerNorm]\n  PASS: layernorm\n    layernorm training: loss 2.3087 \u2192 0.0083\n  PASS: gradcheck_layernorm\n\n[GELU]\n  PASS: gradcheck_gelu\n\n[Profiler]\n\u2500\u2500 notorch profiler \u2500\u2500\n  ops: 0, params: 0 (0 elements, 0.00 MB)\n  forward:   0.00 ms\n  backward:  0.00 ms\n  optimizer: 0.00 ms\n  peak mem:  0.00 MB\n  PASS: profiler\n\n[Training]\n    training: loss 1.4477 \u2192 -0.0000\n  PASS: training_loop\n    seq training: loss 1.9747 \u2192 0.0007\n  PASS: seq_training_loop\n    attn training: loss 1.8249 \u2192 0.4661\n  PASS: attention_training\n    chuck: loss 1.4936 \u2192 0.0199\n  PASS: chuck_convergence\n\n[Numerical Gradient Checks]\n  PASS: gradcheck_cross_entropy\n  PASS: gradcheck_silu\n  PASS: gradcheck_rmsnorm\n  PASS: gradcheck_softmax\n  PASS: gradcheck_linear\n  PASS: gradcheck_seq_linear\n  PASS: gradcheck_causal_attention\n  PASS: gradcheck_embedding\n  PASS: gradcheck_rope\n  PASS: gradcheck_geglu\n  PASS: gradcheck_arithmetic\n\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nResults: 51 passed, 0 failed\n"
+    },
+    {
+      "command": "./test_bitnet_ops",
+      "returncode": 0,
+      "seconds": 0.0022942079995118547,
+      "log": "cpu-02.log",
+      "log_bytes": 299,
+      "log_sha256": "6b1615ffba99e2c39e4486e982cf407901f21e70fba8ddf4bcd265848a6a1469",
+      "output": "\u2550\u2550\u2550 BitNet/SwiGLU/SPA grad + smoke tests \u2550\u2550\u2550\n[swiglu] forward+backward gradient check\n[bit_seq_linear] forward+backward (STE) gradient check\n[bit_linear] forward+backward (STE) gradient check\n[spa] smoke test (embed + connectedness + modulate)\n\n\u2550\u2550\u2550 118 tests, 0 failures \u2550\u2550\u2550\n"
+    },
+    {
+      "command": "./test_spa_agent",
+      "returncode": 0,
+      "seconds": 0.027320262001012452,
+      "log": "cpu-03.log",
+      "log_bytes": 338,
+      "log_sha256": "e6c7f57f7e6efcc6da2bc0497d8c7013027adc7e6738df6f9849139eb1907ef0",
+      "output": "PASS legacy\nPASS config\nPASS actions\nPASS perception\nPASS deterministic\nPASS credit\nPASS sequence\nSPA_IMITATION_HELDOUT matched=108 total=108 score_ratio_margin=.2\nSPA_IMITATION labels=9 matched=9 updates=10800 first_loss=0.830604666 last_loss=0.000535224142\nPASS imitation\nPASS memory\nPASS persistence\nSPA_AGENT_OK gates=10 checks=12618\n"
+    },
+    {
+      "command": "./test_spa_agent_state",
+      "returncode": 0,
+      "seconds": 0.004535617001238279,
+      "log": "cpu-04.log",
+      "log_bytes": 196,
+      "log_sha256": "8fbec4f97b0e4e1e0c608d94ff8c0f0ecb7f20643749561085503e20a181ceaa",
+      "output": "PASS checksum-valid malformed lives\nPASS output aliases and exact reset\nPASS counter limits\nPASS native allocation failure\nPASS atomic failed save\nSPA_AGENT_STATE 5/5 groups, 78 checks, 0 skipped\n"
+    },
+    {
+      "command": "./test_spa_agent_durability",
+      "returncode": 0,
+      "seconds": 0.005088051000711857,
+      "log": "cpu-05.log",
+      "log_bytes": 495,
+      "log_sha256": "0ca6316d2479dcb8e40bf7b0abad5d59fe67323d5b1198990e44e0772724be94",
+      "output": "PASS durable successful replacement\nPASS directory open failure before mutation\nPASS directory stat failure before mutation\nPASS non-directory refused before mutation\nPASS temporary creation failure\nPASS file sync failure preserves prior file\nPASS rename failure preserves prior file\nPASS directory sync failure reports installed replacement\nPASS directory close failure reports installed replacement\nPASS relative path uses current parent directory\nSPA_AGENT_DURABILITY 10/10 cases, 111 checks\n"
+    },
+    {
+      "command": "./test_spa_agent_future",
+      "returncode": 0,
+      "seconds": 0.008226316000218503,
+      "log": "cpu-06.log",
+      "log_bytes": 307,
+      "log_sha256": "4f7c95c178c12f642ef5b4d11860fad3443837eb33d97d4391e399f72cb11579",
+      "output": "PASS capture\nPASS validation\ngradient: comparisons=1602 nonzero_parameters=267 maximum_absolute_error=2.80579572e-05\nPASS gradient\nPASS masks\ncredit: H0 RIGHT advantage=0.0086092921; H4 RIGHT advantage=-0.100602373; acquired RIGHT -> KEEP\nPASS credit\nPASS persistence\nPASS SPA future: 6 groups, 6277 checks\n"
+    },
+    {
+      "command": "./test_chuck_architect",
+      "returncode": 0,
+      "seconds": 0.003050268998777028,
+      "log": "cpu-07.log",
+      "log_bytes": 168,
+      "log_sha256": "e2d06ba3a39411d5acbc78e62daa90c7fcb08a07d8390a10c697a306e22da5a3",
+      "output": "PASS legacy\nPASS observation\nPASS actions\nPASS action_rejection\nPASS configuration\nPASS policy_transactions\nPASS credit\nPASS resume\nChuck Architect: 8 passed, 0 failed\n"
+    },
+    {
+      "command": "./test_chuck_actions_edge",
+      "returncode": 0,
+      "seconds": 0.002989967999383225,
+      "log": "cpu-08.log",
+      "log_bytes": 191,
+      "log_sha256": "970d74a11d1a5e5b2b78a623912ff5089f97b2d96f6f9e787588d76cc97edf6a",
+      "output": "PASS empty-and-frozen\nPASS gradient-refusals\nPASS local-state-refusals\nPASS controls-and-noise\nPASS boundary-counters\nPASS full-parameter-shapes\nCHUCK_ACTIONS_EDGE groups=6/6 assertions=5196\n"
+    },
+    {
+      "command": "sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state",
+      "returncode": 0,
+      "seconds": 1.0531883370003925,
+      "log": "cpu-09.log",
+      "log_bytes": 174,
+      "log_sha256": "a99f7f187408167fad8bbbcd28c43d4736a3998339b2f6e898349fda2b025454",
+      "output": "numeric locale fixture: de_DE.UTF-8 (decimal comma)\nPASS numeric_locales\nPASS hostile_lives\nPASS pending_feedback\nChuck state: 3 passed, 0 failed, 106 checks, 0 locale skips\n"
+    },
+    {
+      "command": "./test_chuck_architect_scenarios",
+      "returncode": 126,
+      "seconds": 0.001110473998778616,
+      "log": "cpu-10.log",
+      "log_bytes": 64,
+      "log_sha256": "d446e2353694207f747a9b6e808765b3acbdb7f2f165f77aa95bdb3220695688",
+      "output": "/bin/sh: 1: ./test_chuck_architect_scenarios: Permission denied\n"
+    },
+    {
+      "command": "./test_vision",
+      "returncode": 0,
+      "seconds": 0.003489892000288819,
+      "log": "cpu-11.log",
+      "log_bytes": 3165,
+      "log_sha256": "ead5065d8106990b4c3f8c0a553d0b8e1df258df3d25fa7176a564078d0c3b51",
+      "output": "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n  notorch vision + BPE tests\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\n\u2500\u2500 image loading \u2500\u2500\n  PASS: load BMP\n  PASS: width == 4\n  PASS: height == 4\n  PASS: channels == 3\n  PASS: all pixels in [0, 1]\n  PASS: load grayscale\n  PASS: gray channels == 1\n  PASS: gray size 4x4\n  PASS: nonexistent file returns NULL\n\n\u2500\u2500 resize \u2500\u2500\n  PASS: resize width == 16\n  PASS: resize height == 16\n  PASS: resize keeps 3 channels\n  PASS: resized pixels in [0, 1]\n  PASS: downscale width == 2\n  PASS: downscale height == 2\n  PASS: resize to same size preserves values\n\n\u2500\u2500 center crop \u2500\u2500\n  PASS: crop width == 2\n  PASS: crop height == 2\n  PASS: crop keeps channels\n  PASS: overcrop clamped to 4\n  PASS: overcrop clamped to 4\n\n\u2500\u2500 normalize \u2500\u2500\n  PASS: normalized pixels in [-1, 1]\n  PASS: normalize produces both negative and positive\n\n\u2500\u2500 horizontal flip \u2500\u2500\n  PASS: hflip swaps corners (R)\n  PASS: hflip swaps corners (R) reverse\n  PASS: double hflip = identity\n\n\u2500\u2500 grayscale \u2500\u2500\n  PASS: starts as RGB\n  PASS: converted to 1 channel\n  PASS: gray pixels in [0, 1]\n\n\u2500\u2500 patch extraction \u2500\u2500\n  PASS: patches ndim == 2\n  PASS: 4 patches from 4x4 / 2x2\n  PASS: patch dim = 3*2*2 = 12\n  PASS: patch values in [0, 1]\n  PASS: 1 patch for full image\n  PASS: full patch dim = 3*4*4 = 48\n\n\u2500\u2500 ViT preprocess \u2500\u2500\n  PASS: vit_preprocess returns non-NULL\n  PASS: vit: 4 patches from 8x8 / 4x4\n  PASS: vit: patch_dim = 3*4*4 = 48\n  PASS: vit_preprocess NULL on bad file\n\n\u2500\u2500 gray preprocess \u2500\u2500\n  PASS: gray_preprocess returns non-NULL\n  PASS: gray 8x8 = 64 values\n  PASS: gray preprocess values in [0, 1]\n\n\u2500\u2500 BPE tokenizer \u2500\u2500\n  PASS: bpe vocab = 256 + 3\n  PASS: bpe 3 merges\n  PASS: bpe compresses text\n  PASS: bpe decode length matches\n  PASS: bpe roundtrip exact match\n  PASS: bpe encode empty = 0 tokens\n\n-- conv2d (im2col + GEMM) --\n  PASS: nt_conv2d returns 0\n  PASS: conv out[0,0] = 1+2+4+5 = 12\n  PASS: conv out[0,1] = 2+3+5+6 = 16\n  PASS: conv out[1,0] = 4+5+7+8 = 24\n  PASS: conv out[1,1] = 5+6+8+9 = 28\n  PASS: conv + bias 10 -> out[0,0] = 22\n\n-- group_norm --\n  PASS: nt_group_norm returns 0\n  PASS: gn 2grp ch0[0] ~ -1\n  PASS: gn 2grp ch0[1] ~ +1\n  PASS: gn 2grp ch1[0] ~ -1\n  PASS: gn 2grp ch1[1] ~ +1\n  PASS: gn 1grp affine [0] = -1.683\n  PASS: gn 1grp affine [3] =  3.683\n\n-- upsample (nearest) --\n  PASS: up[0,0] = 1\n  PASS: up[0,3] = 2\n  PASS: up[1,1] = 1\n  PASS: up[2,0] = 3\n  PASS: up[3,3] = 4\n\n-- attention (scaled dot-product) --\n  PASS: nt_attention returns 0\n  PASS: attn out[0,0]\n  PASS: attn out[0,1]\n  PASS: attn out[1,0]\n  PASS: attn out[1,1]\n  PASS: cross-attn out[0]\n  PASS: cross-attn out[1]\n\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nResults: 73 passed, 0 failed\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n"
+    },
+    {
+      "command": "./test_chuck_architect_future",
+      "returncode": 0,
+      "seconds": 0.00361551099922508,
+      "log": "cpu-12.log",
+      "log_bytes": 227,
+      "log_sha256": "5ec0b6e92a8620a7dcb434047fee25a31838fb0515a2ba2e92d7701c3693a800",
+      "output": "MEASURED_REVERSAL scores=0,0.00103792001,-0.00107850216\nPASS measured_reversal\nPASS refusals\nPASS nonfinite_alternatives\nPASS gradient_and_determinism\nPASS pending_and_online\nPASS save_resume\nCHUCK_FUTURE groups=6/6 checks=647\n"
+    },
+    {
+      "command": "./test_chuck_architect_conditioned",
+      "returncode": 0,
+      "seconds": 0.009936230000676005,
+      "log": "cpu-13.log",
+      "log_bytes": 311,
+      "log_sha256": "0d7bc35251934f58b5b306e60d9b21dc6c1b89b3627e382c17a5391355633559",
+      "output": "PASS conditioned_scale\nCONDITIONED_CHOICES early=0,-0.999999821,0.98775816 late=0,0.962371826,-0.99999994\nPASS conditioned_choice\nPASS conditioned_refusals\nPASS nonfinite_alternatives\nPASS frozen_feedback\nPASS frozen_refusals_and_nonfinite\nPASS deterministic_fit_resume\nCHUCK_CONDITIONED groups=7/7 checks=2474\n"
+    },
+    {
+      "command": "./test_chuck_architect_durability",
+      "returncode": 0,
+      "seconds": 0.003219624000848853,
+      "log": "cpu-14.log",
+      "log_bytes": 501,
+      "log_sha256": "ec29baa8a4c3a676c1d051b542e614b987c86b85d1de4a24af544f7980ab1aae",
+      "output": "PASS durable successful replacement\nPASS directory open failure before mutation\nPASS directory stat failure before mutation\nPASS non-directory refused before mutation\nPASS temporary creation failure\nPASS file sync failure preserves prior file\nPASS rename failure preserves prior file\nPASS directory sync failure reports installed replacement\nPASS directory close failure reports installed replacement\nPASS relative path uses current parent directory\nCHUCK_ARCHITECT_DURABILITY 10/10 cases, 111 checks\n"
+    },
+    {
+      "command": "./test_conv1d",
+      "returncode": 0,
+      "seconds": 0.8756967829995119,
+      "log": "cpu-15.log",
+      "log_bytes": 2187,
+      "log_sha256": "a79b7bf64c16c03caaedc509580e4f132384289eaa57af097a8da57134302ddb",
+      "output": "nt_conv1d \u2014 im2col + one GEMM against the definition\n\n  PASS conv1d Cin=1 Lin=16 Cout=1 K=3 s=1 p=1 bias=0 vs the triple loop \u2014 max|d| = 5.960e-08 at 6, limit 3.000e-07 (3 terms)\n  PASS conv1d Cin=4 Lin=32 Cout=8 K=3 s=1 p=1 bias=1 vs the triple loop \u2014 max|d| = 4.768e-07 at 18, limit 1.200e-06 (12 terms)\n  PASS conv1d Cin=4 Lin=32 Cout=8 K=3 s=2 p=1 bias=1 vs the triple loop \u2014 max|d| = 4.768e-07 at 29, limit 1.200e-06 (12 terms)\n  PASS conv1d Cin=3 Lin=17 Cout=5 K=5 s=1 p=2 bias=1 vs the triple loop \u2014 max|d| = 2.980e-07 at 4, limit 1.500e-06 (15 terms)\n  PASS conv1d Cin=3 Lin=17 Cout=5 K=5 s=3 p=2 bias=0 vs the triple loop \u2014 max|d| = 2.384e-07 at 4, limit 1.500e-06 (15 terms)\n  PASS conv1d Cin=8 Lin=64 Cout=16 K=1 s=1 p=0 bias=1 vs the triple loop \u2014 max|d| = 2.980e-07 at 540, limit 8.000e-07 (8 terms)\n  PASS conv1d Cin=16 Lin=100 Cout=32 K=7 s=2 p=3 bias=1 vs the triple loop \u2014 max|d| = 3.815e-06 at 156, limit 1.120e-05 (112 terms)\n  PASS conv1d Cin=80 Lin=300 Cout=384 K=3 s=1 p=1 bias=1 vs the triple loop \u2014 max|d| = 1.526e-05 at 83183, limit 2.400e-05 (240 terms)\n  PASS conv1d Cin=384 Lin=300 Cout=384 K=3 s=2 p=1 bias=1 vs the triple loop \u2014 max|d| = 5.341e-05 at 14925, limit 1.152e-04 (1152 terms)\n  PASS conv1d_f16cols Cin=4 Lin=32 Cout=8 K=3 s=1 p=1 bias=1 vs the triple loop \u2014 max|d| = 4.768e-07 at 146, limit 1.200e-06 (12 terms)\n  PASS conv1d_f16cols Cin=80 Lin=300 Cout=384 K=3 s=1 p=1 bias=1 vs the triple loop \u2014 max|d| = 1.717e-05 at 75757, limit 2.400e-05 (240 terms)\n  PASS conv1d_f16cols Cin=384 Lin=300 Cout=384 K=3 s=2 p=1 bias=1 vs the triple loop \u2014 max|d| = 6.485e-05 at 44946, limit 1.152e-04 (1152 terms)\n  PASS f16 columns change the result \u2014 max|d| vs f32 columns = 8.316e-04 at 60 (zero would mean the rounding never ran)\n  PASS f16 columns stay within an f16 mantissa of the f32 path \u2014 8.316e-04 < 1e-2\n  PASS nt_im2col_1d lays taps out as row (c*K + k) across output positions\n  PASS nt_im2col_1d zeroes the taps that fall outside the signal\n  PASS a kernel longer than the signal is refused\n  PASS stride 0 is refused\n  PASS negative padding is refused\n  PASS a NULL weight is refused\n\nResults: 20 passed, 0 failed\n"
+    },
+    {
+      "command": "./test_logmel",
+      "returncode": 0,
+      "seconds": 0.08547681500022009,
+      "log": "cpu-16.log",
+      "log_bytes": 2040,
+      "log_sha256": "dfae60404e9610cb45e1535df55d899db6261301e9ba34670e46a0baf604e22d",
+      "output": "nt_stft / nt_logmel \u2014 the front end, at 4 thread(s)\n\n  PASS periodic Hann starts at zero\n  PASS periodic Hann peaks at 1 in the middle \u2014 w[200] = 1.000000\n  PASS periodic Hann is symmetric about n/2 \u2014 w[i] == w[n-i]\n  PASS periodic Hann does NOT return to zero at n-1 (w[399] = 6.169081e-05); the symmetric window does, and is a different window\n  PASS nt_stft n_fft=400 hop=160 frames=12 window=1 vs a direct DFT \u2014 worst relative 3.779e-07 at frame 1 bin 48, limit 1e-05\n  PASS nt_stft n_fft=400 hop=160 frames=12 window=0 vs a direct DFT \u2014 worst relative 3.410e-07 at frame 7 bin 191, limit 1e-05\n  PASS nt_stft n_fft=512 hop=256 frames=8 window=1 vs a direct DFT \u2014 worst relative 3.168e-07 at frame 5 bin 49, limit 1e-05\n  PASS nt_stft n_fft=256 hop=128 frames=8 window=1 vs a direct DFT \u2014 worst relative 2.685e-07 at frame 1 bin 62, limit 1e-05\n  PASS nt_stft n_fft=480 hop=160 frames=6 window=1 vs a direct DFT \u2014 worst relative 2.341e-07 at frame 0 bin 202, limit 1e-05\n  PASS nt_stft n_fft=64 hop=32 frames=4 window=1 vs a direct DFT \u2014 worst relative 3.034e-07 at frame 0 bin 5, limit 1e-05\n  PASS nt_stft n_fft=400 hop=160 frames=8 window=1 vs a direct DFT \u2014 worst relative 2.747e-07 at frame 0 bin 64, limit 1e-05\n  PASS n_len over the padded signal \u2014 300, expected 300\n  PASS n_len_org counts only frames carrying audio \u2014 99, expected 99\n  PASS the silence tail adds frames \u2014 99 real of 300\n  PASS clamp eight decades under the peak then (x+4)/4 gives a range of exactly 2 \u2014 2.0000000\n  PASS every bin of the last silent frame sits on the floor\n  PASS no NaN or inf anywhere in 24000 values\n  PASS nt_mel_free clears the struct it frees\n  PASS 1 thread and 6 threads agree bit for bit over 12000 values (0 differ)\n  PASS nt_stft is bit-identical at 1 and 6 threads over 12864 values\n  PASS a filter bank that is not 1 + n_fft/2 wide is refused\n  PASS a NULL signal is refused\n  PASS hop 0 is refused\n  PASS nt_stft refuses n_fft 0\n  PASS nt_stft refuses a zero frame count\n\nResults: 25 passed, 0 failed\n"
+    },
+    {
+      "command": "NT_LOGMEL_THREADS=1 ./test_logmel",
+      "returncode": 0,
+      "seconds": 0.08995549499923072,
+      "log": "cpu-17.log",
+      "log_bytes": 2040,
+      "log_sha256": "137df1ab13e3fcc72381b34008b24960f529a36b31892a8319be9d8068f3371e",
+      "output": "nt_stft / nt_logmel \u2014 the front end, at 1 thread(s)\n\n  PASS periodic Hann starts at zero\n  PASS periodic Hann peaks at 1 in the middle \u2014 w[200] = 1.000000\n  PASS periodic Hann is symmetric about n/2 \u2014 w[i] == w[n-i]\n  PASS periodic Hann does NOT return to zero at n-1 (w[399] = 6.169081e-05); the symmetric window does, and is a different window\n  PASS nt_stft n_fft=400 hop=160 frames=12 window=1 vs a direct DFT \u2014 worst relative 3.779e-07 at frame 1 bin 48, limit 1e-05\n  PASS nt_stft n_fft=400 hop=160 frames=12 window=0 vs a direct DFT \u2014 worst relative 3.410e-07 at frame 7 bin 191, limit 1e-05\n  PASS nt_stft n_fft=512 hop=256 frames=8 window=1 vs a direct DFT \u2014 worst relative 3.168e-07 at frame 5 bin 49, limit 1e-05\n  PASS nt_stft n_fft=256 hop=128 frames=8 window=1 vs a direct DFT \u2014 worst relative 2.685e-07 at frame 1 bin 62, limit 1e-05\n  PASS nt_stft n_fft=480 hop=160 frames=6 window=1 vs a direct DFT \u2014 worst relative 2.341e-07 at frame 0 bin 202, limit 1e-05\n  PASS nt_stft n_fft=64 hop=32 frames=4 window=1 vs a direct DFT \u2014 worst relative 3.034e-07 at frame 0 bin 5, limit 1e-05\n  PASS nt_stft n_fft=400 hop=160 frames=8 window=1 vs a direct DFT \u2014 worst relative 2.747e-07 at frame 0 bin 64, limit 1e-05\n  PASS n_len over the padded signal \u2014 300, expected 300\n  PASS n_len_org counts only frames carrying audio \u2014 99, expected 99\n  PASS the silence tail adds frames \u2014 99 real of 300\n  PASS clamp eight decades under the peak then (x+4)/4 gives a range of exactly 2 \u2014 2.0000000\n  PASS every bin of the last silent frame sits on the floor\n  PASS no NaN or inf anywhere in 24000 values\n  PASS nt_mel_free clears the struct it frees\n  PASS 1 thread and 6 threads agree bit for bit over 12000 values (0 differ)\n  PASS nt_stft is bit-identical at 1 and 6 threads over 12864 values\n  PASS a filter bank that is not 1 + n_fft/2 wide is refused\n  PASS a NULL signal is refused\n  PASS hop 0 is refused\n  PASS nt_stft refuses n_fft 0\n  PASS nt_stft refuses a zero frame count\n\nResults: 25 passed, 0 failed\n"
+    },
+    {
+      "command": "./test_qpool",
+      "returncode": 0,
+      "seconds": 0.10949939799866115,
+      "log": "cpu-18.log",
+      "log_bytes": 419,
+      "log_sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+      "output": "Q4_0  f32  threaded vs single  identical\nQ4_0  i8   threaded vs single  identical\nQ5_0  f32  threaded vs single  identical\nQ5_0  i8   threaded vs single  identical\nQ8_0  f32  threaded vs single  identical\nQ8_0  i8   threaded vs single  identical\nQ4_K  f32  threaded vs single  identical\nQ4_K  i8   threaded vs single  identical\nQ6_K  f32  threaded vs single  identical\nQ6_K  i8   threaded vs single  identical\nALL PASS\n"
+    },
+    {
+      "command": "NT_QMV_CHUNKS=1 ./test_qpool",
+      "returncode": 0,
+      "seconds": 0.10815844600074342,
+      "log": "cpu-19.log",
+      "log_bytes": 419,
+      "log_sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+      "output": "Q4_0  f32  threaded vs single  identical\nQ4_0  i8   threaded vs single  identical\nQ5_0  f32  threaded vs single  identical\nQ5_0  i8   threaded vs single  identical\nQ8_0  f32  threaded vs single  identical\nQ8_0  i8   threaded vs single  identical\nQ4_K  f32  threaded vs single  identical\nQ4_K  i8   threaded vs single  identical\nQ6_K  f32  threaded vs single  identical\nQ6_K  i8   threaded vs single  identical\nALL PASS\n"
+    },
+    {
+      "command": "NT_QMV_CHUNKS=64 ./test_qpool",
+      "returncode": 0,
+      "seconds": 0.1328696630007471,
+      "log": "cpu-20.log",
+      "log_bytes": 419,
+      "log_sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+      "output": "Q4_0  f32  threaded vs single  identical\nQ4_0  i8   threaded vs single  identical\nQ5_0  f32  threaded vs single  identical\nQ5_0  i8   threaded vs single  identical\nQ8_0  f32  threaded vs single  identical\nQ8_0  i8   threaded vs single  identical\nQ4_K  f32  threaded vs single  identical\nQ4_K  i8   threaded vs single  identical\nQ6_K  f32  threaded vs single  identical\nQ6_K  i8   threaded vs single  identical\nALL PASS\n"
+    },
+    {
+      "command": "NT_QMV_SPIN=0 ./test_qpool",
+      "returncode": 0,
+      "seconds": 0.10802443899956415,
+      "log": "cpu-21.log",
+      "log_bytes": 419,
+      "log_sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+      "output": "Q4_0  f32  threaded vs single  identical\nQ4_0  i8   threaded vs single  identical\nQ5_0  f32  threaded vs single  identical\nQ5_0  i8   threaded vs single  identical\nQ8_0  f32  threaded vs single  identical\nQ8_0  i8   threaded vs single  identical\nQ4_K  f32  threaded vs single  identical\nQ4_K  i8   threaded vs single  identical\nQ6_K  f32  threaded vs single  identical\nQ6_K  i8   threaded vs single  identical\nALL PASS\n"
+    },
+    {
+      "command": "./test_qmatmul",
+      "returncode": 0,
+      "seconds": 0.7202396220000082,
+      "log": "cpu-22.log",
+      "log_bytes": 3207,
+      "log_sha256": "2f061c48ef9daeac405d6e74fcc1fb1e63e2420176116b648dc6465feef8c2ee",
+      "output": "notorch batched packed matmul (Q4_0 = dtype 2, Q4_K = dtype 12)\n  PASS dtype= 2 m=  64 k= 256 n=  1: 64 outputs identical\n  PASS dtype= 2 m=  64 k= 256 n=  3: 192 outputs identical\n  PASS dtype= 2 m= 128 k= 512 n= 31: 3968 outputs identical\n  PASS dtype= 2 m= 128 k= 512 n= 32: 4096 outputs identical\n  PASS dtype= 2 m= 128 k= 512 n= 33: 4224 outputs identical\n  PASS dtype= 2 m=2048 k=4096 n=  8: 16384 outputs identical\n  PASS dtype= 2 m= 127 k= 512 n= 32: 4064 outputs identical\n  PASS dtype= 2 m= 127 k= 512 n= 31: 3937 outputs identical\n  PASS dtype= 2 m=   1 k= 512 n=  8: 8 outputs identical\n  PASS dtype=12 m=  64 k= 256 n=  1: 64 outputs identical\n  PASS dtype=12 m=  64 k= 256 n=  3: 192 outputs identical\n  PASS dtype=12 m= 128 k= 512 n= 31: 3968 outputs identical\n  PASS dtype=12 m= 128 k= 512 n= 32: 4096 outputs identical\n  PASS dtype=12 m= 128 k= 512 n= 33: 4224 outputs identical\n  PASS dtype=12 m=2048 k=4096 n=  8: 16384 outputs identical\n  PASS dtype=12 m= 256 k=1024 n= 17: 4352 outputs identical\n  PASS dtype= 6 m=  64 k= 256 n=  3: 192 outputs identical\n  PASS dtype= 6 m= 128 k= 512 n= 32: 4096 outputs identical\n  PASS dtype= 6 m= 128 k= 512 n= 33: 4224 outputs identical\n  PASS dtype= 6 m=2048 k=4096 n=  8: 16384 outputs identical\n  PASS dtype= 6 m=4864 k= 896 n= 32: 155648 outputs identical\n  PASS dtype= 8 m=  64 k= 256 n=  3: 192 outputs identical\n  PASS dtype= 8 m= 128 k= 512 n= 33: 4224 outputs identical\n  PASS dtype= 8 m=2048 k=4096 n=  8: 16384 outputs identical\n  PASS dtype=14 m=  64 k= 256 n=  3: 192 outputs identical\n  PASS dtype=14 m= 128 k= 512 n= 32: 4096 outputs identical\n  PASS dtype=14 m= 128 k= 512 n= 33: 4224 outputs identical\n  PASS dtype=14 m=2048 k=4096 n=  8: 16384 outputs identical\n  PASS dtype=14 m= 896 k=4864 n= 17: 15232 outputs identical\n  PASS dtype= 1 m=  64 k= 256 n=  1: 64 outputs identical\n  PASS dtype= 1 m=  64 k= 256 n=  3: 192 outputs identical\n  PASS dtype= 1 m= 128 k= 512 n=  7: 896 outputs identical\n  PASS dtype= 1 m= 128 k= 512 n=  8: 1024 outputs identical\n  PASS dtype= 1 m= 128 k= 512 n=  9: 1152 outputs identical\n  PASS dtype= 1 m= 128 k= 512 n= 33: 4224 outputs identical\n  PASS dtype= 1 m=2048 k=4096 n=  8: 16384 outputs identical\n  PASS dtype= 1 m= 127 k= 517 n=  9: 1143 outputs identical\n  PASS dtype= 1 m=   1 k= 515 n=  8: 8 outputs identical\n  PASS dtype= 1 m=  64 k=   5 n=  8: 512 outputs identical\n  PASS dtype= 0 batched entry refuses and writes nothing\n  PASS a null weight is refused\n  PASS dtype= 6 m= 127 k= 512 n= 32: 4064 outputs identical\n  PASS dtype= 8 m= 127 k= 512 n= 32: 4064 outputs identical\n  PASS dtype=12 m= 127 k= 512 n= 32: 4064 outputs identical\n  PASS dtype=14 m= 127 k= 512 n= 32: 4064 outputs identical\n  PASS dtype=14 m= 127 k= 512 n= 31: 3937 outputs identical\n  timing dtype= 2 m=2048 k=4096 n=32: per-token 2.8 ms, batched 3.2 ms (0.87x)\n  timing dtype= 6 m=2048 k=4096 n=32: per-token 8.4 ms, batched 3.5 ms (2.37x)\n  timing dtype= 8 m=2048 k=4096 n=32: per-token 7.1 ms, batched 5.8 ms (1.22x)\n  timing dtype=12 m=2048 k=4096 n=32: per-token 3.7 ms, batched 1.7 ms (2.23x)\n  timing dtype=14 m=2048 k=4096 n=32: per-token 5.4 ms, batched 2.5 ms (2.18x)\n\nResults: 46 passed, 0 failed\n"
+    },
+    {
+      "command": "./test_quantize",
+      "returncode": 0,
+      "seconds": 0.0019040619990846608,
+      "log": "cpu-23.log",
+      "log_bytes": 330,
+      "log_sha256": "dd64c7c9fe108efba63299c64e04074022dcdb8eb5ebb38b282a15004fe2b200",
+      "output": "notorch weight quantizer\n  PASS Q4_0: round-trip worst error 5.637e-03, bound 6.526e-03\n  PASS Q5_0: round-trip worst error 2.667e-03, bound 3.263e-03\n  PASS Q8_0: round-trip worst error 1.947e-04, bound 2.056e-04\n  (no files given \u2014 pass ours.gguf and a llama-quantize reference for the byte gate)\n\nResults: 3 passed, 0 failed\n"
+    },
+    {
+      "command": "./test_gguf_write",
+      "returncode": 0,
+      "seconds": 0.09874374999890279,
+      "log": "cpu-24.log",
+      "log_bytes": 5150,
+      "log_sha256": "4b451ac6ba661cda1113f2794e6a0e8f30f827fdcc10d2395680d7dbc17e5b01",
+      "output": "gguf write: duplicate tensor name: dup\ngguf write: tensor data out of declaration order: expected 'a', got 'b'\ngguf write: tensor short of its declared size: a: 60 bytes of a declared 64\ngguf write: tensor data longer than declared: a: 68 bytes past the declared 64\ngguf write: metadata added after the first tensor byte: too.late\ngguf write: declared tensors never written: 1 of 2 delivered, next is 'b'\ngguf write: packed tensor whose element count is not a whole number of blocks: q\ngguf write: dtype this library cannot size: unknown\ngguf write: tensor dimension of zero: zero\ngguf write: tensor needs 1 to 4 dimensions: many\ngguf write: tensor name longer than GGUF_MAX_NAME, which the reader drops: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ngguf write: metadata key longer than GGUF_MAX_NAME, which the reader truncates: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ngguf writer \u2014 everything written here is read back by gguf.c's own reader\n\n  PASS twelve metadata keys of nine types accepted\n  PASS file closed clean\n  PASS version 3 (got 3)\n  PASS header counts survive \u2014 1 tensors, 12 keys\n  PASS data section is 32-byte aligned at 768\n  PASS general.architecture -> gf->arch = 'molequla'\n  PASS block_count and embedding_length reach gf->n_layers=5 gf->embed_dim=224\n  PASS rms_epsilon f32 exact: 1.24999997e-05\n  PASS string value byte-equal\n  PASS int32 keeps its sign: -12345\n  PASS uint64 keeps all 64 bits: 0x123456789abcdef\n  PASS bool true\n  PASS bool false is a written 0, not an absent key\n  PASS the f32 tensor comes back byte-equal\n  PASS gguf_read_str_kv finds it without opening the data\n  PASS gguf_read_uint_kv agrees\n  PASS string array of 7 round-trips, empty string and multibyte included (n=7)\n  PASS int32 array round-trips (n=7)\n  PASS float array round-trips bit-exact, -0.0 and FLT_MAX included (n=5)\n  PASS 19 tensors of awkward shape declared\n  PASS 19 tensors written and closed\n  PASS every one of 19 tensor offsets is a multiple of 32 (first bad: -1)\n  PASS every odd-length F32 tensor is byte-equal after the padding it needed\n  PASS every odd-length F16 tensor is inside its half-ULP budget \u2014 worst 0.987 of it\n  PASS rank and shape survive: rank4 comes back 4-D with 1155 elements\n  PASS 18 f16 edge cases written\n  PASS declared F16 is stored as F16, two bytes each\n  PASS all 18 land on the half the format would choose, ties to even and both round-ups included\n  PASS 1.0001234 changed on the way through f16 (1.00012338 -> 1); equality here would mean the rounding never ran\n  PASS nt_quantize_row produced 204 bytes of Q8_0 for 192 values\n  PASS a dtype the writer does not understand goes through as bytes of the right size\n  PASS the blocks are in the file byte for byte\n  PASS the reader dequantizes what the writer stored \u2014 max|d| 0.0117\n  PASS gguf_dequant_row finds row 1 at the offset we wrote \u2014 max|d| 0.0112\n  PASS the fake stage-4 set is 4834408 parameters, 19337632 bytes of f32 \u2014 the design's numbers\n  stage-4: 53 tensors, 4834408 parameters, 19337632 bytes of f32\n  PASS 19.3 MB written a tensor at a time\n  PASS the file is 19341056 bytes \u2014 19337632 of tensor data plus metadata, directory and padding\n  PASS 53 tensors read back\n  PASS the reader recovers L=5 V=750 D=224 from the metadata\n  PASS all 4834408 parameters are byte-equal through the mapping\n  PASS every one of the 53 tensor offsets is 32-byte aligned\n  PASS the last row of the embedding table reads back exactly, in place\n  streamed: 20 tensors of 1137500 f32 plus one of 100000 f16, 65536-float window\n  PASS 91 MB written through begin/chunk/end\n  PASS the file is 91201344 bytes\n  PASS every chunk boundary of every streamed tensor holds the value written there\n  PASS streamed tensors are aligned too\n  PASS the streamed F16 tensor is inside its half-ULP budget across 100000 values \u2014 worst 1.000 of it\n\n  (the writer's own diagnostics follow \u2014 each line is a gate being exercised)\n  PASS a duplicate tensor name is refused\n  PASS the refusal poisons the writer: close says no as well\n  PASS and removes the file rather than leaving a partial GGUF to load\n  PASS tensor data out of declaration order is refused\n  PASS gguf_write_abort leaves no file behind\n  PASS a tensor short of its declared size is refused\n  PASS a tensor longer than declared is refused\n  PASS the same tensor at its declared size is accepted\n  PASS metadata after the header is refused\n  PASS closing with a declared tensor undelivered is refused\n  PASS and that file is removed too\n  PASS 48 values of Q8_0 \u2014 not a whole number of blocks \u2014 is refused at declaration\n  PASS 64 values of Q8_0 is two whole blocks and is accepted\n  PASS a dtype nothing can size is refused\n  PASS a zero dimension is refused\n  PASS a fifth dimension is refused\n  PASS a tensor name the reader would drop is refused here instead\n  PASS a key the reader would truncate is refused too\n  PASS nothing of any of that is left on disk\n\nResults: 66 passed, 0 failed\n"
+    },
+    {
+      "command": "./test_gguf_write rss19",
+      "returncode": 0,
+      "seconds": 0.013404418999925838,
+      "log": "cpu-25.log",
+      "log_bytes": 191,
+      "log_sha256": "60c2cff9a55b11e71b7717cc5f7a7101da438d6c6ccd1396877daa4b869c1036",
+      "output": "  PASS rss19: wrote 19341056 bytes\n  peak RSS: 2340 kB after the write (920 kB before it), file 18.4 MB \u2014 the writer holds the caller's buffer and nothing else\n\nResults: 1 passed, 0 failed\n"
+    },
+    {
+      "command": "./test_gguf_write rss91",
+      "returncode": 0,
+      "seconds": 0.04947324299973843,
+      "log": "cpu-26.log",
+      "log_bytes": 191,
+      "log_sha256": "2d49d94ccbbbf83af3492b8d5af8aa61e060d1d00347150e1ad9753268003b24",
+      "output": "  PASS rss91: wrote 91201344 bytes\n  peak RSS: 1172 kB after the write (920 kB before it), file 87.0 MB \u2014 the writer holds the caller's buffer and nothing else\n\nResults: 1 passed, 0 failed\n"
+    },
+    {
+      "command": "./test_gguf_keys",
+      "returncode": 0,
+      "seconds": 0.002743678000115324,
+      "log": "cpu-27.log",
+      "log_bytes": 108,
+      "log_sha256": "2b2fc7d9b6fbf1b70d42b9685dfe8d2ce38b0398d89a2c0ad77ccb099d0178b2",
+      "output": "gguf: unreadable metadata value 1 ('odd.key', type 13) in <temporary-file>\nGGUF_KEYS_OK (16 checks)\n"
+    },
+    {
+      "command": "./test_qmatvec_leak",
+      "returncode": 0,
+      "seconds": 0.07779669400042621,
+      "log": "cpu-28.log",
+      "log_bytes": 219,
+      "log_sha256": "04dd2ac6199921908709079a41bcbb23427b07dd176b3566b3237a8a3c52367d",
+      "output": "packed matvec \u2014 allocation balance\n  PASS NULL weight returns -1\n  PASS NULL activation returns -1\n  PASS NULL output returns -1\n  PASS nothing retained per call \u2014 0 bytes held after 2000 calls\n\nResults: all passed\n"
+    },
+    {
+      "command": "./test_affinity",
+      "returncode": 0,
+      "seconds": 0.003911710000465973,
+      "log": "cpu-29.log",
+      "log_bytes": 429,
+      "log_sha256": "c7520a55a2ca6baf2b382a6f4e91f83a6dc1da72b110db7337a69d2034b6721b",
+      "output": "core selection [default]\n  PASS thread count matches the core plan \u2014 planned 9, expected 9 over cpus 0 1 2 3 4 5 6 7 8 \n  PASS the driving thread holds the whole chosen set \u2014 on cpus 0 1 2 3 4 5 6 7 8 , expected the plan's cores 0 1 2 3 4 5 6 7 8 \n  PASS a thread born after the pool inherits every chosen core \u2014 a thread opened after the pool sees cpus 0 1 2 3 4 5 6 7 8 , expected 0 1 2 3 4 5 6 7 8 \n\nResults: all passed\n"
+    },
+    {
+      "command": "NT_QMV_BIG_ONLY=0 ./test_affinity off",
+      "returncode": 0,
+      "seconds": 0.011248365999563248,
+      "log": "cpu-30.log",
+      "log_bytes": 425,
+      "log_sha256": "db9d95cd96bfd409952179027d24a40c40969bea9f2bc5c188f2995f415be468",
+      "output": "core selection [off]\n  PASS thread count matches the core plan \u2014 planned 9, expected 9 over cpus 0 1 2 3 4 5 6 7 8 \n  PASS the driving thread holds the whole chosen set \u2014 on cpus 0 1 2 3 4 5 6 7 8 , expected the plan's cores 0 1 2 3 4 5 6 7 8 \n  PASS a thread born after the pool inherits every chosen core \u2014 a thread opened after the pool sees cpus 0 1 2 3 4 5 6 7 8 , expected 0 1 2 3 4 5 6 7 8 \n\nResults: all passed\n"
+    },
+    {
+      "command": "./test_affinity narrowed",
+      "returncode": 0,
+      "seconds": 0.0020856160008406732,
+      "log": "cpu-31.log",
+      "log_bytes": 360,
+      "log_sha256": "1df1d0597102c9693cc6089838f44dd7b7f68bcb17d3283603eac162706fe8c7",
+      "output": "core selection [narrowed]\n  PASS thread count matches the core plan \u2014 planned 2, expected 2 over cpus 0 1 \n  PASS the driving thread holds the whole chosen set \u2014 on cpus 0 1 , expected the plan's cores 0 1 \n  PASS a thread born after the pool inherits every chosen core \u2014 a thread opened after the pool sees cpus 0 1 , expected 0 1 \n\nResults: all passed\n"
+    },
+    {
+      "command": "NT_QMV_PIN=0 ./test_affinity nopin",
+      "returncode": 0,
+      "seconds": 0.0023111259997676825,
+      "log": "cpu-32.log",
+      "log_bytes": 418,
+      "log_sha256": "a0d9ea89005a77bb4ab0488f526a0a12f6e97b11e526f44afbf3a50f58de393f",
+      "output": "core selection [nopin]\n  PASS thread count matches the core plan \u2014 planned 9, expected 9 over cpus 0 1 2 3 4 5 6 7 8 \n  PASS nothing touched the affinity mask \u2014 on cpus 0 1 2 3 4 5 6 7 8 , expected the mask untouched: 0 1 2 3 4 5 6 7 8 \n  PASS a thread born after the pool inherits every chosen core \u2014 a thread opened after the pool sees cpus 0 1 2 3 4 5 6 7 8 , expected 0 1 2 3 4 5 6 7 8 \n\nResults: all passed\n"
+    },
+    {
+      "command": "./test_plan_race",
+      "returncode": 0,
+      "seconds": 0.013970622998385807,
+      "log": "cpu-33.log",
+      "log_bytes": 195,
+      "log_sha256": "e8f29340659a55a20d8c313fd5393f87ae6432ac56fe391aec8c8a5c477a6983",
+      "output": "plan under concurrent first use\n  PASS both pools agree on the plan \u2014 9 threads\n  PASS float path matches its own serial run\n  PASS integer path matches its own serial run\n\nResults: all passed\n"
+    },
+    {
+      "command": "./test_wt_expert",
+      "returncode": 0,
+      "seconds": 0.0020022999997308943,
+      "log": "cpu-34.log",
+      "log_bytes": 657,
+      "log_sha256": "39db24b7a687ef3b4652b02ea161b58fc9d68b173fc0f32200392e90ef7d6eae",
+      "output": "expert slice out of a stacked tensor\n  PASS packed slice has the right base and height\n  PASS packed slice has the right base and height\n  PASS packed slice has the right base and height\n  PASS packed slice has the right base and height\n  PASS packed slice has the right base and height\n  PASS f32 slice has the right base and height\n  PASS f32 slice has the right base and height\n  PASS f32 slice has the right base and height\n  PASS f32 slice has the right base and height\n  PASS f32 slice has the right base and height\n  PASS a slice past the end is refused\n  PASS a negative index is refused\n  PASS a weight with no data is refused\n\nResults: all passed\n"
+    },
+    {
+      "command": "./test_residual",
+      "returncode": 0,
+      "seconds": 0.002238767001472297,
+      "log": "cpu-35.log",
+      "log_bytes": 382,
+      "log_sha256": "0cfcbe76efa9099b03f7e96122ef7739ee26d64fcc568e339d7b1f0da9d203b6",
+      "output": "llama: E=4 H=2 KV=1 FFN=8 V=5 L=2 HD=2 Q=4\n  (has attention bias \u2014 qwen-style)\n  (tied embeddings)\n  rope: neox | weights: packed\nllama: E=4 H=2 KV=1 FFN=8 V=5 L=2 HD=2 Q=4\n  (has attention bias \u2014 qwen-style)\n  (tied embeddings)\n  rope: neox | weights: packed\nllama: E=4 H=2 KV=1 FFN=8 V=5 L=2 HD=2 Q=4\nllama: invalid FFN down bias 'blk.0.ffn_down.bias'\nRESIDUAL_OK (19 checks)\n"
+    },
+    {
+      "command": "./test_multi_decode",
+      "returncode": 0,
+      "seconds": 0.6559969970003294,
+      "log": "cpu-36.log",
+      "log_bytes": 653,
+      "log_sha256": "b10babb7ef8c415c1d4a809ed2bd01c5096d498873853289318932bcffadf4b0",
+      "output": "llama: E=64 H=2 KV=1 FFN=128 V=40 L=2 HD=32 Q=64\n  (has attention bias \u2014 qwen-style)\n  (tied embeddings)\n  rope: neox | weights: packed (int8 dot)\nllama: E=64 H=2 KV=1 FFN=128 V=40 L=2 HD=32 Q=64\n  (has attention bias \u2014 qwen-style)\n  (tied embeddings)\n  rope: neox | weights: packed\nllama: E=64 H=2 KV=1 FFN=128 V=40 L=2 HD=32 Q=64\n  (tied embeddings)\n  rope: neox | weights: packed (int8 dot)\nllama: E=64 H=2 KV=1 FFN=128 V=40 L=2 HD=32 Q=64\n  (tied embeddings)\n  rope: neox | weights: packed\ngemma3: E=64 H=2 KV=1 HD=32 FF=128 V=40 L=6 window=4 pattern=6\ngemma3: E=64 H=2 KV=1 HD=32 FF=128 V=40 L=6 window=4 pattern=6\nMULTI_DECODE_OK (753 checks)\n"
+    },
+    {
+      "command": "./test_gemma3",
+      "returncode": 0,
+      "seconds": 0.004377712999485084,
+      "log": "cpu-37.log",
+      "log_bytes": 374,
+      "log_sha256": "09aebce44db22a26f79d1beba6c11a91456ce78bb7c50262b17b3e8d3aa5c1f3",
+      "output": "gemma3: E=4 H=2 KV=1 HD=4 FF=8 V=5 L=6 window=2 pattern=6\ngemma3: invalid tensor shape or unsupported model metadata\ngemma3: invalid tensor shape or unsupported model metadata\ngemma3: E=4 H=2 KV=1 HD=4 FF=8 V=5 L=6 window=2 pattern=6\ngemma3: invalid tensor shape or unsupported model metadata\ngemma3: invalid tensor shape or unsupported model metadata\nGEMMA3_OK (42 checks)\n"
+    },
+    {
+      "command": "./test_smollm_tokenizer",
+      "returncode": 0,
+      "seconds": 0.0027907349995075492,
+      "log": "cpu-38.log",
+      "log_bytes": 40,
+      "log_sha256": "e480a50b3a996dbb32b7ae451660aed8cbb3e67a27d85b0051a6ab06670da87e",
+      "output": "SmolLM tokenizer: 92 checks, 0 failures\n"
+    },
+    {
+      "command": "./test_qgather",
+      "returncode": 0,
+      "seconds": 0.7405847299996822,
+      "log": "cpu-39.log",
+      "log_bytes": 511,
+      "log_sha256": "1a004e68984aff7d2a865d55540c4a76284344788c08c619fc447d40d91bd34e",
+      "output": "gathered matvec against the loop it replaces\n  PASS Q4_0\n  PASS gathered result is identical to the loop\n  PASS Q5_0\n  PASS gathered result is identical to the loop\n  PASS Q8_0\n  PASS gathered result is identical to the loop\n  PASS Q4_K\n  PASS gathered result is identical to the loop\n  PASS Q6_K\n  PASS gathered result is identical to the loop\n  PASS Q4_0 at the OLMoE shape\n  PASS gathered result is identical to the loop\n  PASS a NULL slice is refused\n  PASS no slices at all is refused\n\nResults: all passed\n"
+    },
+    {
+      "command": "NT_QMV_CHUNKS=1 ./test_qgather",
+      "returncode": 0,
+      "seconds": 0.7315457750009955,
+      "log": "cpu-40.log",
+      "log_bytes": 511,
+      "log_sha256": "1a004e68984aff7d2a865d55540c4a76284344788c08c619fc447d40d91bd34e",
+      "output": "gathered matvec against the loop it replaces\n  PASS Q4_0\n  PASS gathered result is identical to the loop\n  PASS Q5_0\n  PASS gathered result is identical to the loop\n  PASS Q8_0\n  PASS gathered result is identical to the loop\n  PASS Q4_K\n  PASS gathered result is identical to the loop\n  PASS Q6_K\n  PASS gathered result is identical to the loop\n  PASS Q4_0 at the OLMoE shape\n  PASS gathered result is identical to the loop\n  PASS a NULL slice is refused\n  PASS no slices at all is refused\n\nResults: all passed\n"
+    },
+    {
+      "command": "./test_f16_matvec",
+      "returncode": 0,
+      "seconds": 0.022603589000937063,
+      "log": "cpu-41.log",
+      "log_bytes": 5198,
+      "log_sha256": "b7bf5f79a022e32d8d6cbfe92a4c14d44e5cbf6ee3008e80749bac47cccee322",
+      "output": "unpacked matvec against a double accumulation\n  PASS f16 matvec matches a double accumulation \u2014 k=1 worst relative error 5.47e-08 at row 6, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=2 worst relative error 2.18e-08 at row 6, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=3 worst relative error 3.89e-08 at row 5, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=4 worst relative error 4.34e-08 at row 5, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=5 worst relative error 3.82e-08 at row 5, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=6 worst relative error 4.57e-08 at row 5, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=7 worst relative error 3.23e-08 at row 6, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=8 worst relative error 3.91e-08 at row 6, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=9 worst relative error 3.4e-08 at row 6, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=10 worst relative error 2.86e-08 at row 6, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=11 worst relative error 2.24e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=12 worst relative error 3.79e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=13 worst relative error 1.59e-08 at row 3, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=14 worst relative error 2.97e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=15 worst relative error 3.52e-08 at row 3, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=16 worst relative error 3.66e-08 at row 3, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=17 worst relative error 3.41e-08 at row 3, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=18 worst relative error 3.83e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=19 worst relative error 4.53e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=20 worst relative error 5.05e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=21 worst relative error 6.66e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=22 worst relative error 6.66e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=23 worst relative error 6.99e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=24 worst relative error 6.73e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=25 worst relative error 7.32e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=26 worst relative error 6.18e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=27 worst relative error 4.1e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=28 worst relative error 3.82e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=29 worst relative error 4.22e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=30 worst relative error 4.24e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=31 worst relative error 5.27e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=32 worst relative error 4.58e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=33 worst relative error 4.16e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=34 worst relative error 3.74e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=35 worst relative error 4.14e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=36 worst relative error 5.7e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=37 worst relative error 3.92e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=38 worst relative error 4.8e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=39 worst relative error 4.13e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=40 worst relative error 5.37e-08 at row 4, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=2048 worst relative error 6.04e-08 at row 45, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=2049 worst relative error 6e-08 at row 45, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=2055 worst relative error 6.25e-08 at row 45, limit 1e-05\n  PASS f16 matvec matches a double accumulation \u2014 k=2048 worst relative error 6.04e-08 at row 45, limit 1e-05\n  PASS f32 matvec matches a double accumulation \u2014 k=33 worst relative error 1.04e-07, limit 1e-05\n  PASS f32 matvec matches a double accumulation \u2014 k=2053 worst relative error 1.94e-07, limit 1e-05\n  PASS f32 matvec matches a double accumulation \u2014 k=2048 worst relative error 2.38e-07, limit 1e-05\n  PASS an unknown dtype is refused\n\nResults: all passed\n"
+    },
+    {
+      "command": "./test_q8_0_rows",
+      "returncode": 0,
+      "seconds": 0.014854125000056229,
+      "log": "cpu-42.log",
+      "log_bytes": 2149,
+      "log_sha256": "2295ff94313b3864e936d50afb70b7d6147bd8c3ef10ffe69f9297025e6916a8",
+      "output": "test_q8_0_rows \u2014 AVX2+FMA kernel, 32 partial sums\n  PASS threaded and single-thread results are bit-identical \u2014 rows=7 k=32\n  PASS q8_0 matvec matches a double accumulation \u2014 k=32 worst 4.95e-08 at row 1 (scalar order 8.72e-08), limit 1e-05\n  PASS q8_0 matvec reproduces its documented summation order \u2014 k=32 7/7 rows\n  PASS threaded and single-thread results are bit-identical \u2014 rows=7 k=64\n  PASS q8_0 matvec matches a double accumulation \u2014 k=64 worst 3.96e-08 at row 1 (scalar order 1.09e-07), limit 1e-05\n  PASS q8_0 matvec reproduces its documented summation order \u2014 k=64 7/7 rows\n  PASS threaded and single-thread results are bit-identical \u2014 rows=7 k=96\n  PASS q8_0 matvec matches a double accumulation \u2014 k=96 worst 4.24e-08 at row 1 (scalar order 1.05e-07), limit 1e-05\n  PASS q8_0 matvec reproduces its documented summation order \u2014 k=96 7/7 rows\n  PASS threaded and single-thread results are bit-identical \u2014 rows=64 k=1152\n  PASS q8_0 matvec matches a double accumulation \u2014 k=1152 worst 1.71e-07 at row 42 (scalar order 1.45e-06), limit 1e-05\n  PASS q8_0 matvec reproduces its documented summation order \u2014 k=1152 64/64 rows\n  PASS threaded and single-thread results are bit-identical \u2014 rows=64 k=2048\n  PASS q8_0 matvec matches a double accumulation \u2014 k=2048 worst 1.73e-07 at row 0 (scalar order 8.12e-07), limit 1e-05\n  PASS q8_0 matvec reproduces its documented summation order \u2014 k=2048 64/64 rows\n  PASS threaded and single-thread results are bit-identical \u2014 rows=64 k=6912\n  PASS q8_0 matvec matches a double accumulation \u2014 k=6912 worst 3.42e-07 at row 16 (scalar order 1.54e-06), limit 1e-05\n  PASS q8_0 matvec reproduces its documented summation order \u2014 k=6912 64/64 rows\n  PASS large finite products cancel without SIMD overflow\n  PASS scalar retry is bit-identical across thread counts\n  PASS genuine overflow remains positive infinity\n  PASS NaN input remains NaN\n  PASS q8_0 batched matmul takes float activations\n  PASS q8_0 batched matmul equals per-vector matvec bit for bit \u2014 m=67 k=1152 n=2..11, threaded and not\n  PASS q8_0 batched matmul keeps the overflow retry\nALL PASS (0 failed)\n"
+    }
+  ],
+  "notes": [
+    "The clean Chuck numerical experiment remains bound to ff9d3f4; no target-body experiment rerun during this merge.",
+    "Incoming SPA files match b289119 exactly except shared Makefile, README, NOTORCHLOG and ignore rules, which retain both branches.",
+    "Two test prerequisite declarations are combined; the single complete test recipe now has 42 commands.",
+    "CPU recipe is executed command by command after forced rebuilds; narrow future/Python gates add explicit native ABI and fixture checks."
+  ],
+  "source_after": {
+    "Makefile": "e66eaa14e95af99e91c58b800b6868a9245c857e6a13fc122c485cf54d16f2dc",
+    "chuck_architect.h": "01e0969c176fa467930c05b1e85de0f8194814e8bb47d229aa60bde4a66a8caa",
+    "chuck_architect_impl.h": "6a0d79fe46d1d6c2859ecf7dda52a2c37482aa259dec199445e0926f4514c3dc",
+    "examples/bench_gguf_metal.sh": "0da14e22beed7a6797e0bde1ccb219fec430543f909d083800baad1f374a86bc",
+    "examples/bpe.c": "f89e648cb10ae2b7f93af9a31eafe5537a974fab11d9d960d7884355cccba9c5",
+    "examples/bpe.h": "2e5769426da001c944851a876724de40ed481f44f2ce13669fbde13c1c0aa32f",
+    "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+    "examples/chuck_architect_rollout.h": "e6b3988e44cf10df3f4b51c882919cc7f2973b640195e8db4fd7655e0f38f6cd",
+    "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+    "examples/chuck_architect_train.c": "1b6261e25a64be5c5e8b7b421f52add85a4de92cc386da273d8b79909ffe4c10",
+    "examples/infer_gemma.c": "fef9d64f9b36577925d2625f99562f99fedc298b32f9012789e9efb7b30e6533",
+    "examples/infer_gguf_metal.c": "fcda92e219fefe4ae7e1974b7be8c4fde00b7a1b6e64bd64d15c0766cd94cff9",
+    "examples/infer_janus.c": "adc4fa228fb69ab1f8387e18a15a26236b9e658d57e0be22bc52913f77f52439",
+    "examples/infer_llama.c": "907b18af3b7e9df7990b4082057f4d0a1f06f43fd06ee1669ee9a8f3846e40a5",
+    "examples/infer_llama3_bpe.c": "8305ac44642716be453dd7cb37a56f82ed39b9050eb05fc3e0070ccfa11ed7d3",
+    "examples/infer_llama3_char.c": "ebcea67ac9dffaaf9234443c64aeeac94c03b481d5d3caaf944b2e63d58eb9f1",
+    "examples/spa_agent_demo.c": "23ec38602e902ffa50d2d3ac191848edb1e048ddf2f8357c7d35a3ee6fb11d31",
+    "examples/spa_agent_future.c": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661",
+    "examples/spa_agent_scenarios.h": "9f6fadfaceb1b10148742deb1d5887b0fd02eb9b24d271af90de48fa27aaae28",
+    "examples/spa_python.py": "039b96f01ad4a174e23368ecbf339903a6b6c83901b4330018645f706e93483b",
+    "examples/train_distillation.c": "ebb97751d359b3b9983178cc09993566df4547fe31270a54522ab7da602da1e6",
+    "examples/train_dpo.c": "511c12c0b3d9a7e95bbac4b5589dfd89b944dd61cd3de2fd21aa44dcaea0da4c",
+    "examples/train_grpo.c": "dd91669897458c8f8f29886af85de9e5068ce16bc828eac80d5017270f6f463f",
+    "examples/train_llama3_bpe.c": "5a949c422773d131b32a42d9a710c18051eadb91c5ab9b99e5034b46d0d3028f",
+    "examples/train_llama3_char.c": "7689607c1cd67e8b91626ca38fa2bd4c4957f242d80ebb7078c8bd51c97e47ce",
+    "examples/train_q.c": "0f4fe321c0d22677046739789aa7bfe60bc4076af4e4eef1064255bcffb38639",
+    "examples/train_resonance_lora.c": "47cfe412ec9057208c39ce353af82cd858f18f8ac7ebebb5f91ab1604801499a",
+    "examples/train_yent.c": "c54ba2adb9021bc71580a0b307b18d336466f6fa24f22ac9d80d0131a04f2a17",
+    "examples/unicode_numbers.h": "c77829428be33a7d0e71d3c851cea86ca8121e34c969d4744fcb6279e759944c",
+    "gguf.c": "39bfb68692bb025b23844bb8e56eef8add56a2660bc9f731ab9c9ef15d5879e9",
+    "gguf.h": "cc657d588e2ef47e3cdaf0e3ea017ef422cbbd5ab394730b6bc412bd3adb6589",
+    "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+    "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+    "notorch_cuda.h": "8fb573ec4182586d7bc83fc02164a74d804763540cc71060dbb139eb1d2daac4",
+    "notorch_metal.h": "735f2feb3293ac13bd7360d1e97cfbcfbab984a3333944d4b34175401cead737",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "notorch_simd_scalar.h": "c3fa8f3ec388f7398bfbcb5fba7f67055354873775398c306e2340d42d50dc86",
+    "notorch_vision.h": "7f00d29a9c9c9318638ad38110ee850c95d7d26bc081f4f4295ad98e70a48363",
+    "python/SPA.py": "4945ab752aa8bf9115e1539f4c2ee0cdb2bd0343750a594778271e399ac14567",
+    "python/__init__.py": "6abc2f96fd7f91e26527c99f0163bfe54a82bf4b431799d16081e43393acfd87",
+    "python/notorch.py": "1e8d3551fe45fc5b6e4321ff036dac46198dd19b1feda7d4638352cf8e1031d1",
+    "python/test_binding.py": "07b7bfdf94a18a8b9a8f800389f383535678b07e6293c72942c2af92a72b3303",
+    "python/test_spa_binding.py": "9dda1e6f2d18f216e37e679b6be74a2966fa32cd1743bc31d8fe985401233def",
+    "spa_agent.c": "a039bc04644b094c16ada64f0c08f08d853a1ffca8f750c830d9e1cd4acf00ea",
+    "spa_agent.h": "f47b2bb9347b9613c96a4ef56a101f9c28a9253fccf2bc2a61781a1401d1d19d",
+    "spa_binding.c": "3e314877d9c31d250de64e02f5022065a48720cb87ac2383b478ac94bff79c82",
+    "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+    "stb_image.h": "fd0e815d15ee3f7c0fc516db7ad067454d2bee37311974cab6d83a7f1ed0512b",
+    "tests/bench_claim.c": "317a98ec763d0f2a3a8aeacecae9aa280ee50bbae9b941204398745821b477b2",
+    "tests/bench_dtype.c": "48eceae0af429b57a4ca76cad6bb24d3043b6e3e0c28ffc7c9cf699acc68ec6c",
+    "tests/bench_metal_batch.c": "8939dea91793f760156f0247282abe01d6842b84ee02bfa779624f767ce80175",
+    "tests/bench_multi_decode.c": "31ff6e7b2370aab59eb9b1e4ebeb2634c60fdbcccc0b44842d95e3cad377b1d2",
+    "tests/bench_qmatmul.c": "4d2f83d3b882ebf1e26b4dca703eb10e955551554be436c46d5199cedcf4d561",
+    "tests/bench_qmatvec.c": "8ce7a5d9e574305f569a56af091c07d580503b959b450348ecb108426e61f383",
+    "tests/check_requant.c": "cc599657faf754e479640cc08483a15a06416f9512cd44d180be770620c26486",
+    "tests/chuck_device_host_backend.c": "8f0adbdb5093889c1da1ba555e66a39deef4704f4ffb27ad773551696b4b9be9",
+    "tests/chuck_legacy_parity.c": "1816bdbbc48aa439bc81ae7e6b4723d5f21d7427c084fefb8d90f1d930abebee",
+    "tests/consumer_link.c": "d74aa239e414109ae993a6d0db6bd6d0ed6b470e7e0d94222a262dfd962158c7",
+    "tests/decode_fixtures.h": "68cce552d7e46987add54aae0577c738d31bf01cceb6de65e055b7651100526b",
+    "tests/gguf_dequant_ref.c": "fb5eb28c442cd8aacf23ad0c958656b253d9b2b4886e7332f51ee5a896726312",
+    "tests/gguf_layout.c": "a482aae472bdf85052664a1784539345660ec4fa4d6f326c8e6b87ae33afe6a5",
+    "tests/js_qmatvec_ref.c": "ec8db7ec9ee3ed3606b72f3f7a1bce568350c77a91d354baba3989da766cc60b",
+    "tests/run_chuck_architect_device.sh": "3e6768f2d29df4e310fde8304fbed17f62c84265c1ecd567b452c14c85c846c4",
+    "tests/run_chuck_architect_state.sh": "dac0d7f59608ec9db340c15a41fe20b765032ce4726c7b63e70bbffcb4f79292",
+    "tests/spa_layout.c": "5a65e78fff4db18297dbd6586fa5e5ad34c762563fee92c07f9d2f1693cf226b",
+    "tests/spa_python_parity.c": "0063dd77b34aff02c7a5aa56e1fa6b843f2be51e68b3d20cd13365e2f84a055a",
+    "tests/test_affinity.c": "11dbab2f93f79a24eeca3e86adcf469fdd8c62e74f56348ff54ed2693a2e178c",
+    "tests/test_bitnet_ops.c": "50e27e83401463122caa80afa20d856e98e991f8542cf004aa831b49b6df96a9",
+    "tests/test_chuck_actions_edge.c": "fca423cf4d4b34d95763e7285db50c70ce187f55111fb353576107d120df89ae",
+    "tests/test_chuck_architect.c": "1ecf25b69621387a085bf8263571a9d3985f966395f76cb4bac167ed7a2f95d6",
+    "tests/test_chuck_architect_conditioned.c": "f0e6c7931e8df265ed73c0edef7dc89a1a3b7118534ef25eaac40db3ccdb73c3",
+    "tests/test_chuck_architect_device.c": "144c82d9d4343f040f85cc0d5e68d9580e9b8a763b2bfa285604cfc6a81c8886",
+    "tests/test_chuck_architect_durability.c": "991e7501703c6c8737450004111c027c507ac59ce92cb9fc3783aab51a9d98a3",
+    "tests/test_chuck_architect_future.c": "0d31b5abd3bbc76cce7db76fa08040dcbf4828e10f44027ba60487116396ff86",
+    "tests/test_chuck_architect_mutations.py": "5bbe42317c201303ce87bcc11b5166e34bb1bc3b4ccac57720cbd84ce67523d6",
+    "tests/test_chuck_architect_scenarios.c": "7c2dfd524d6ed86a2518186e21fb934cb60f056977d5558b4c4c091d9314c298",
+    "tests/test_chuck_architect_state.c": "171ae259562c5e2a1a527cfb18debdb558183e20be7a3a19ff0869668da9d9c5",
+    "tests/test_chuck_conditioned_mutations.py": "01827e6f27c53c44db01c9e956dfb4d8fc53eeb9f5cbb19c232e641573b0ccb5",
+    "tests/test_chuck_future_mutations.py": "23852b2421e679061c89dcbde5912aff4bfbc9613d31fd16d3ac23be16cb8de7",
+    "tests/test_chuck_legacy_parity.sh": "4cf353249fbaf175a0df9c7c8b684f47b5b6dba0fccd53a90b1fac80b6042183",
+    "tests/test_chuck_scenario_mutations.py": "9c1909ccba509e70e1cb92c59eeb230f03a958fe9b50880055087545a120b23d",
+    "tests/test_conv1d.c": "aa6fecf173d3b2fb96274ec23c1327688689e5ba6e4cb4f2d67033d52d184f67",
+    "tests/test_cuda_decode.c": "0cc29e404945e3ded99a1b81b535ce6f1b95c3eaf6698c013b966b0c081ca1b0",
+    "tests/test_f16_matvec.c": "fa0ac33fc0abdfe25004c8cac8d36ea7a0a21bf26b20482e1b0d4e062bdb6c28",
+    "tests/test_gemma3.c": "23450dca37332f548229c05d530479eca2eb619afd99eabb873a4a212f6ff47c",
+    "tests/test_gguf.c": "e3f5e4d636a377e24f98a08885711d52e892e43a4b8f6998eecffe2e24a2d259",
+    "tests/test_gguf_keys.c": "e5089011374ab9be1de114941ef8a979e3a2ccea28901f1cd733d905113fac68",
+    "tests/test_gguf_q4k_real.c": "8eef4e87c030e1136ff54c0d5b120c641859e42aba4fc1e002312d7d485d82d7",
+    "tests/test_gguf_tokens.c": "97a625ae9168b4fc70e935f4465fb8c55b7a2d13bc34f89a69593c70016a8386",
+    "tests/test_gguf_write.c": "ecac0ca1cde7b4f14bafd7455f33ed260e1c4e96511be6cf4fdbae2a1e98b890",
+    "tests/test_janus_parity.c": "7967633574d10c12870261d156ab359e888b99d5d5a885b143315b0263e157ca",
+    "tests/test_libnotorch_lib.sh": "7a8c7713b120d2d1f6407f29c4ec032c10fd6323211eb4587d4311128ad1452b",
+    "tests/test_logmel.c": "8656241a1f9396b977170a53e95387d50ca1f9e84acdf6d0f98198761ee68e6f",
+    "tests/test_metal_f16.c": "4be64d36fbbf51cb349aa706d47e629b16eb2fd1c629309039c465d01d04a51f",
+    "tests/test_metal_q4k.c": "83a2834897faed758b259a1675a7d5c28dc07c6b0bf6aaf89af5048b75f5db79",
+    "tests/test_multi_decode.c": "483da0eaf39a12d384ab39558d45fe1044adae4f0d662d5b94e11501b2e45fa2",
+    "tests/test_notorch.c": "ba7e01dada38781d85afa54ee1c6312d1c423a4ceed053a8668805f12e96029a",
+    "tests/test_parliament_elect.c": "14de5cba4af0e09ea65a4a1f21a3f0326a7e5a43083c0687ea4177b427dd379b",
+    "tests/test_parliament_inject.c": "c011c90df51fd801d7d0a028d1a58c9e22c097975b0234c6e625a7f27bea4bd1",
+    "tests/test_plan_race.c": "f6e96cd7a5d44027ba76616080b53cb1d053f1db04285bcb1321d2c8dfe83b59",
+    "tests/test_q8_0_rows.c": "d5d8b0537e78b37d0e4c44d79fca5f917a27ad30d875392c4e2a101dffab9a47",
+    "tests/test_qgather.c": "70a6d2c05e437eea352f6b9b5451a7b936b25ce40aaea45168079a48eec97790",
+    "tests/test_qmatmul.c": "2c8f4a3af85f7cd767813e4f196446783b7751f66bf8b41b8bbe53795c574d98",
+    "tests/test_qmatvec.c": "529a180f96ff26437c848a91be430fdbd621822a1c67c43a75f871fe037c9c9c",
+    "tests/test_qmatvec_leak.c": "da70b9a29109fa2906b509adfff2495eca155600de43fddc54a3000e3837eb38",
+    "tests/test_qpool.c": "233371910be8cc65439a5495b76d33e4edaf4af0c993c711b0f5559e6265dce5",
+    "tests/test_quantize.c": "6e2418922ee3330bf969d2fddbb2cf3f75302f4dbfcd4faa63f17cc20691a55a",
+    "tests/test_repeat.c": "c47e38362100effea8013695fc3b631261d5f0aaf0d9de6cc9e5cd82e361bc70",
+    "tests/test_residual.c": "7662da34af81d140cdbc00320c991d64b155c03398ebdbe07b92a12ac87e4433",
+    "tests/test_resonance_parity.c": "00297808a947c3577f9159a52a5858ed2f2da01bcae4d74997a3891afdcbba4c",
+    "tests/test_rrpram_broadcast.c": "65c9f978b31337eda1043804fa87f61cda1ffef7790050ac88a992a69e749f49",
+    "tests/test_rrpram_lr.c": "27e2ac6a805adc35a24f5d746ba09fcbf092c1225f25c5578e3ae01cb7c8e2c1",
+    "tests/test_sigmoid_scale.c": "1d69d4d7810b11fb899df2b60ef86e9156104b5cd82ce2bf69ce6ce6b7d31ed6",
+    "tests/test_simd_correctness.c": "f5675e676332c0bfc547880649b02f4ae3f8fac1d034ceccb8a220f0faf4a079",
+    "tests/test_simd_loss.c": "ccd0da69e2cdc3aa4693ff56e03147a41bd90da789f50d73775c7872b232e1ec",
+    "tests/test_simd_tails.c": "32db6b873ea8f5c39c2e6a0d24359e490767614fb08cd5d41dec34cd092faba7",
+    "tests/test_smollm_tokenizer.c": "e33e8f9b3076094217af98a0d4ffce8a939229f382f2afc6e65fbad5f286b29c",
+    "tests/test_spa_agent.c": "69c448800225511db7f66a3959de98cd366640234c23647bd43767ec9ba86345",
+    "tests/test_spa_agent_durability.c": "49855ecfa9324eaf28ba1b69d1837734b6684fcb014d8bfb980c4db8a3d330ab",
+    "tests/test_spa_agent_future.c": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+    "tests/test_spa_agent_mutations.py": "47c1166aa293f1bfd56f9af3a7afaee3801175bdf07196f5e5e5e3850e512905",
+    "tests/test_spa_agent_state.c": "82c217a802a1a2711cc1781ccbe992688abd7f8e3c06792fa9d65b894dedbaed",
+    "tests/test_spa_future.py": "87fbed5560d6d89c3918fb32e7a9fa9c10e58056677c32d83cddc40bb069784e",
+    "tests/test_spa_future_mutations.py": "d3d583ed2640ccf73d62e1d100b05fee3a190d2c1e5d091c0709bc605686744e",
+    "tests/test_spa_legacy_parity.c": "4d8f0589cf8562e36540bafdfb4aabfacedaf58fa078a6930130e8bac60dc01c",
+    "tests/test_spa_legacy_parity.sh": "e2275989ffa7253d1e967601ae207d4e1ff3069da9a32229c50af6223e40a193",
+    "tests/test_spa_scenarios.py": "465e2d910f2be06fc97c8e92bdcb7a7c4021e9bae8e59bb659f1c3804e2eb6a2",
+    "tests/test_spa_trace_io.py": "f4cc9893b03d641653a5ca8e4efb7ca37e90fa0717d9b98db2f3980df18c288d",
+    "tests/test_vision.c": "328350ccbddac4257eb36b564faa2f0ec36a2c519b7da4c98859ef2c69adc0eb",
+    "tests/test_wt_expert.c": "5b9b41743e2f8a00c4fa7747780a9a328808cfb3b2df4fd19b0bf89a2f6a7ffb"
+  },
+  "source_changes": [],
+  "all_chuck_sources_retained": true,
+  "all_spa_files_retained": true,
+  "finished_utc": "2026-10-07T02:51:39Z",
+  "passed": true,
+  "runner_sha256": "bc00a2bb7506303b41ce2f6222a6db11961a68d2bdba9130338b8cab427e946d",
+  "permission_recovery": {
+    "affected_command": "./test_chuck_architect_scenarios",
+    "first_returncode": 126,
+    "first_failure": "Permission denied before test execution",
+    "before": {
+      "path": "test_chuck_architect_scenarios",
+      "bytes": 202544,
+      "sha256": "31dd41a0f1430acc3c1b56036b1e3cb197ea3dd3a4ca60a563d8e0988d1fea39",
+      "mode": "0o644",
+      "inode": 533159,
+      "mtime_ns": 1791341434473698230,
+      "ctime_ns": 1791341436730046562
+    },
+    "after": {
+      "path": "test_chuck_architect_scenarios",
+      "bytes": 202544,
+      "sha256": "31dd41a0f1430acc3c1b56036b1e3cb197ea3dd3a4ca60a563d8e0988d1fea39",
+      "mode": "0o755",
+      "inode": 533159,
+      "mtime_ns": 1791341581554319177,
+      "ctime_ns": 1791341581554332757
+    },
+    "unchanged_binary_bytes": true,
+    "rebuild": {
+      "command": [
+        "make",
+        "-B",
+        "test_chuck_architect_scenarios",
+        "BLAS_FLAGS=",
+        "BLAS_LIBS="
+      ],
+      "returncode": 0,
+      "seconds": 4.241213303999757,
+      "log": "permission-rebuild.log",
+      "log_bytes": 1524,
+      "log_sha256": "450d257582e6b4b4eeb8910f8989dcf6278c8735841f0dd2eb0076d6c22dd338",
+      "output": "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect_scenarios tests/test_chuck_architect_scenarios.c notorch.c -lm \nnotorch.c: In function \u2018nt_q6_k_rows_i8\u2019:\nnotorch.c:7169:47: warning: unused variable \u2018ones\u2019 [-Wunused-variable]\n 7169 |                   b32 = _mm256_set1_epi8(32), ones = _mm256_set1_epi16(1);\n      |                                               ^~~~\nnotorch.c: In function \u2018nt_q4_k_rows_i8\u2019:\nnotorch.c:7549:48: warning: unused variable \u2018ones\u2019 [-Wunused-variable]\n 7549 |     const __m256i m4 = _mm256_set1_epi8(0x0F), ones = _mm256_set1_epi16(1);\n      |                                                ^~~~\nnotorch.c:7548:23: warning: unused variable \u2018nsub\u2019 [-Wunused-variable]\n 7548 |     int nb = k / 256, nsub = k / 32;\n      |                       ^~~~\nnotorch.c: In function \u2018nt_qmatvec_i8_gather\u2019:\nnotorch.c:7910:9: warning: missing initializer for field \u2018fnn\u2019 of \u2018nt_qjob_i8\u2019 [-Wmissing-field-initializers]\n 7910 |         jobs[t] = (nt_qjob_i8){ fn, out, NULL, qa, da, asum, r0, r1, k, slices, rows_each };\n      |         ^~~~\nnotorch.c:7340:22: note: \u2018fnn\u2019 declared here\n 7340 |     nt_qmmrows_i8_fn fnn; int m, n;\n      |                      ^~~\nnotorch.c: In function \u2018nt_q4_k_rows_i8n\u2019:\nnotorch.c:8192:48: warning: unused variable \u2018ones\u2019 [-Wunused-variable]\n 8192 |     const __m256i m4 = _mm256_set1_epi8(0x0F), ones = _mm256_set1_epi16(1);\n      |                                                ^~~~\n"
+    },
+    "rerun": {
+      "command": [
+        "./test_chuck_architect_scenarios"
+      ],
+      "returncode": 0,
+      "seconds": 0.047947107999789296,
+      "log": "permission-scenarios-rerun.log",
+      "log_bytes": 512,
+      "log_sha256": "694c6c2ffbc94f0ef76172c7ff4e3d12b84f6712712b865bdb3cd20a25a2fa26",
+      "output": "  mixed: 1200 steps, split=613, every action >= 171 executions\nPASS mixed_replay\n  interruption: 8 cuts x 3 stages, 96-step reference\nPASS interruptions\n  lives: two independent identities, 192 interleaved saved wakes\nPASS interleaved_lives\nPASS mode_transitions\n  temporal: identical observation/weights, hold scores 0.0159934908 / 0.0160961244\nPASS temporal_readout\n  masked exploration: hold=265 brake=247 push=0\nPASS masked_exploration\nChuck scenarios: 6 passed, 0 failed, 4672 selected/executed transitions\n"
+    },
+    "numerical_sources_unchanged": true,
+    "cause": "The observed test binary lacked its execute bits. The actor that changed its mode is unknown; the original refused execution is retained.",
+    "scope": "Rebuilt and reran only the refused command; the other 41 CPU commands already passed."
+  },
+  "first_cpu_attempt_passed_commands": 41,
+  "first_cpu_attempt_failed_commands": [
+    "./test_chuck_architect_scenarios"
+  ],
+  "final_cpu_passed_commands": 42,
+  "recovery_runner_sha256": "3fd513e22683c9cdf9fafd891a185493768fe34374f0e2567ed208f5a9937904",
+  "verbatim_raw_receipt_sha256": "6ccf68e0b83ab5a8501e81afe3819f6053fee79b365452b0bcc2972cc39ec90e",
+  "output_normalization": {
+    "rule": "Only machine-local repository, workspace, home and temporary fixture paths are replaced in embedded output. Commands otherwise retain their exact arguments; raw log hashes bind the full verbatim output.",
+    "placeholders": {
+      "<repo>": "repository root",
+      "<integration>": "external integration log directory",
+      "<workspace-file>": "other execution-workspace path",
+      "<home-file>": "execution-home path",
+      "<temporary-file>": "temporary fixture path"
+    },
+    "replacement_counts": {
+      "<temporary-file>": 1
+    }
+  }
+}

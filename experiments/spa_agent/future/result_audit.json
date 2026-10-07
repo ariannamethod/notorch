@@ -1,0 +1,869 @@
+{
+  "schema": 1,
+  "name": "Independent read-only future-credit result audit",
+  "status": "PASS",
+  "command": [
+    "python3",
+    "audit_results.py",
+    "<authoritative>",
+    "<repository>",
+    "<output>/result_audit.json"
+  ],
+  "gates": {
+    "published_measurements_unchanged": {
+      "status": "PASS",
+      "path_only_edits": [
+        {
+          "path": [
+            "metadata",
+            "commands",
+            4,
+            "command",
+            0
+          ],
+          "before": "<runtime-python>",
+          "after": "python3"
+        }
+      ]
+    },
+    "artifact_source_body_identity": {
+      "status": "PASS",
+      "execution_artifacts": 138,
+      "immutable_source_files": 22,
+      "binaries": 3,
+      "inputs": 4
+    },
+    "two_execution_exact_repeat": {
+      "status": "PASS",
+      "byte_identical_artifacts": [
+        "evaluation.raw_traces.jsonl.gz",
+        "evaluation.readout.jsonl",
+        "evaluation.txt",
+        "off-s101.disabled.life.bin",
+        "off-s101.frozen.life.bin",
+        "off-s101.jsonl",
+        "off-s101.learned.life.bin",
+        "off-s101.legacy.life.bin",
+        "off-s101.random.life.bin",
+        "off-s101.verified.jsonl.gz",
+        "off-s211.disabled.life.bin",
+        "off-s211.frozen.life.bin",
+        "off-s211.jsonl",
+        "off-s211.learned.life.bin",
+        "off-s211.legacy.life.bin",
+        "off-s211.random.life.bin",
+        "off-s211.verified.jsonl.gz",
+        "on-s101.disabled.life.bin",
+        "on-s101.frozen.life.bin",
+        "on-s101.jsonl",
+        "on-s101.learned.life.bin",
+        "on-s101.legacy.life.bin",
+        "on-s101.random.life.bin",
+        "on-s101.verified.jsonl.gz",
+        "on-s211.disabled.life.bin",
+        "on-s211.frozen.life.bin",
+        "on-s211.jsonl",
+        "on-s211.learned.life.bin",
+        "on-s211.legacy.life.bin",
+        "on-s211.random.life.bin",
+        "on-s211.verified.jsonl.gz",
+        "policy.fit.jsonl",
+        "policy.h0.life.bin",
+        "policy.h4.life.bin",
+        "policy.initial.life.bin",
+        "policy.seal",
+        "policy.shuffled_h4.life.bin",
+        "raw_traces.jsonl.gz",
+        "scenarios-s101.jsonl",
+        "scenarios-s101.verified.jsonl.gz",
+        "scenarios-s211.jsonl",
+        "scenarios-s211.verified.jsonl.gz",
+        "training.readout.jsonl",
+        "training.txt"
+      ]
+    },
+    "complete_archive_line_identity": {
+      "status": "PASS",
+      "streams": [
+        {
+          "seed": 0,
+          "stream": "evaluation_readout",
+          "records": 723,
+          "sha256": "9b864c0361886a536b9938e824b064fa41db6933769ec6201247290e09b03035",
+          "bytes": 1127286
+        },
+        {
+          "seed": 0,
+          "stream": "fit",
+          "records": 73786,
+          "sha256": "10e744e62611bbe710dd676de4944e06e3fca61cc075518e5ffd8d8f7bce4e90",
+          "bytes": 104426735
+        },
+        {
+          "seed": 0,
+          "stream": "training_readout",
+          "records": 723,
+          "sha256": "d7f4b54b8ea54489212921766cc31493bc4eda3828c191eaa4b01ea1a7abdda0",
+          "bytes": 1128314
+        },
+        {
+          "seed": 101,
+          "stream": "ordinary_off",
+          "records": 128,
+          "sha256": "793d2bc5d5667e1a4f909ada9792ea1452c52b3a8f4c1907aafb6594e7558176",
+          "bytes": 218940
+        },
+        {
+          "seed": 101,
+          "stream": "ordinary_on",
+          "records": 128,
+          "sha256": "793d2bc5d5667e1a4f909ada9792ea1452c52b3a8f4c1907aafb6594e7558176",
+          "bytes": 218940
+        },
+        {
+          "seed": 101,
+          "stream": "scenarios",
+          "records": 253,
+          "sha256": "e673ac6b58a9307ef5fd5044624c76fe5b942b3a385dd46deeaad92cc84af819",
+          "bytes": 410894
+        },
+        {
+          "seed": 211,
+          "stream": "ordinary_off",
+          "records": 128,
+          "sha256": "3bc4f1e2a4d8defa83c7a5d0bf0de8b20732b39ea64c2b389b1e9b805fcc0d82",
+          "bytes": 216978
+        },
+        {
+          "seed": 211,
+          "stream": "ordinary_on",
+          "records": 128,
+          "sha256": "3bc4f1e2a4d8defa83c7a5d0bf0de8b20732b39ea64c2b389b1e9b805fcc0d82",
+          "bytes": 216978
+        },
+        {
+          "seed": 211,
+          "stream": "scenarios",
+          "records": 253,
+          "sha256": "8feed97d8a129258cb7e4075cd645c2b2bb502543bc5ce6a6c40093557392ebf",
+          "bytes": 409226
+        }
+      ]
+    },
+    "complete_source_feature_outcome_joins": {
+      "status": "PASS",
+      "training_snapshots": 48,
+      "evaluation_snapshots": 48,
+      "training_seeds": [
+        42,
+        73
+      ],
+      "evaluation_seeds": [
+        101,
+        211
+      ],
+      "horizons": [
+        0,
+        1,
+        4
+      ],
+      "ordinary_records_per_seed_mode": 128,
+      "scenario_measurements_per_seed": 180
+    },
+    "sealed_policy_only_lives": {
+      "status": "PASS",
+      "lives": [
+        {
+          "execution": 1,
+          "label": "initial",
+          "life_hash": "a860088f913c7cde",
+          "sha256": "1bc29793c6cef28761f18f0e55645e8e5d59abaab60f6915c3a51eb25c1edf63",
+          "bytes": 2296
+        },
+        {
+          "execution": 1,
+          "label": "h4",
+          "life_hash": "eaf732191c780118",
+          "sha256": "3f8fa08f331a1c34d50201e0c5c567ca1b2b1853e6c9b54de265c9886b0d02cb",
+          "bytes": 2296
+        },
+        {
+          "execution": 1,
+          "label": "h0",
+          "life_hash": "351d56d1d92ac7a3",
+          "sha256": "8811005cdc9af72b9a1b97c1f7ed9f83fc3dc0ed55f953721fa695cba2844c4f",
+          "bytes": 2296
+        },
+        {
+          "execution": 1,
+          "label": "shuffled_h4",
+          "life_hash": "d117103a31492acb",
+          "sha256": "d3c6fbaec73b28a931b2239e7f037277acd9395769ad909779f517bcf456f151",
+          "bytes": 2296
+        },
+        {
+          "execution": 2,
+          "label": "initial",
+          "life_hash": "a860088f913c7cde",
+          "sha256": "1bc29793c6cef28761f18f0e55645e8e5d59abaab60f6915c3a51eb25c1edf63",
+          "bytes": 2296
+        },
+        {
+          "execution": 2,
+          "label": "h4",
+          "life_hash": "eaf732191c780118",
+          "sha256": "3f8fa08f331a1c34d50201e0c5c567ca1b2b1853e6c9b54de265c9886b0d02cb",
+          "bytes": 2296
+        },
+        {
+          "execution": 2,
+          "label": "h0",
+          "life_hash": "351d56d1d92ac7a3",
+          "sha256": "8811005cdc9af72b9a1b97c1f7ed9f83fc3dc0ed55f953721fa695cba2844c4f",
+          "bytes": 2296
+        },
+        {
+          "execution": 2,
+          "label": "shuffled_h4",
+          "life_hash": "d117103a31492acb",
+          "sha256": "d3c6fbaec73b28a931b2239e7f037277acd9395769ad909779f517bcf456f151",
+          "bytes": 2296
+        }
+      ],
+      "seal_sha256": [
+        "95c8419ddbd496ca537c9868a770f9252567b6a483cc27d566493cc17ea4663c",
+        "95c8419ddbd496ca537c9868a770f9252567b6a483cc27d566493cc17ea4663c"
+      ],
+      "policy_byte_interval": [
+        88,
+        1156
+      ],
+      "non_policy_bytes_exact": true,
+      "canonical_checksum_verified": true,
+      "phase_order_verified": true
+    },
+    "all_future_credit_receipts": {
+      "status": "PASS",
+      "fits": 73728,
+      "fits_per_arm": 24576,
+      "h4_horizon": 4,
+      "h0_horizon": 0,
+      "shuffled_horizon": 4,
+      "epochs_per_arm": 512,
+      "checks": {
+        "complete": true,
+        "source_donor_association": true,
+        "raw_targets_recomputed": true,
+        "all_head_losses_recomputed": true,
+        "policy_only": true,
+        "saved_resume": true
+      }
+    },
+    "saved_weight_predictions_and_selected_branches": {
+      "status": "PASS",
+      "selected_action_joins": 1344,
+      "score_components": 4032,
+      "maximum_absolute_score_error": 7.45558319248385e-09,
+      "score_tolerance": 2e-06,
+      "outcome_independent_choices": true,
+      "training_readouts": 672,
+      "evaluation_readouts": 672
+    },
+    "all_reported_metrics_recomputed": {
+      "status": "PASS",
+      "summary_rows_per_split": 147,
+      "splits": [
+        "training",
+        "evaluation"
+      ],
+      "groupings": [
+        "combined",
+        "seed",
+        "target"
+      ],
+      "horizons": [
+        0,
+        1,
+        4
+      ],
+      "labels": [
+        "initial",
+        "h4",
+        "h0",
+        "shuffled_h4",
+        "keep",
+        "left",
+        "right"
+      ],
+      "exact_receipt_equality": true
+    },
+    "independent_token_embedding_metrics": {
+      "status": "PASS",
+      "axis_values_checked": 5712,
+      "unique_sentences": 914,
+      "maximum_absolute_error_by_axis": {
+        "local_connectedness": 5.955430126824979e-08,
+        "global_connectedness": 3.8024157211768994e-08,
+        "coherence": 1.0102590319860383e-07,
+        "novelty": 5.2365669689358185e-08,
+        "repetition": 8.129032225134836e-09,
+        "collapse": 0.0,
+        "continuity": 4.6816306276120656e-08
+      },
+      "metric_tolerance": 2e-06,
+      "reward_values_checked": 720,
+      "maximum_absolute_reward_error": 4.3792725001878807e-10,
+      "reward_tolerance": 2e-07,
+      "minimum_cosine_distance_to_collapse_threshold": 0.04900749478848898,
+      "method": "Python scalar double weighted means and cosine/softmax from frozen checkpoint token embeddings; f32 fixed reward coefficients/deltas. No generation, fitting or native binaries."
+    },
+    "later_published_artifact_recheck": {
+      "status": "PASS",
+      "unchanged": true
+    },
+    "lossless_archive_publication": {
+      "status": "PASS",
+      "manifest_sha256": "7c42b5039fffbd97e9d553eb06d74474e7bcc2d8671021efcb3bcb88e72fd86c",
+      "reassembler_sha256": "4b7af6a084affca8636e4d0d2c7f98a5dd6e4b8aa78d1812faf5bb2ea3fc558e",
+      "parts": [
+        {
+          "path": "raw_traces.jsonl.gz.part-00",
+          "bytes": 8011776,
+          "sha256": "120229c17223578466c9a1fc62f4d980b9695a9ba688a53792b482645e21e41e",
+          "git_blob": "3944f87e78612b62b597b64d6939e16f707baa5c"
+        },
+        {
+          "path": "raw_traces.jsonl.gz.part-01",
+          "bytes": 8011776,
+          "sha256": "82853c5fd8a72c5a4bf517caf51499da0c477f412793d7716c319ed6978c9f12",
+          "git_blob": "d163c7daf5e1a1adf7d6a26b096fc8fe36083f80"
+        },
+        {
+          "path": "raw_traces.jsonl.gz.part-02",
+          "bytes": 7976756,
+          "sha256": "ba45877ae416bf08152339dbfb51fab8435620386a2ea5fb7d77551dbc002361",
+          "git_blob": "605c11569a0a694fd2c1743a48dd9456059bf998"
+        }
+      ],
+      "reconstructed_archive": {
+        "path": "raw_traces.jsonl.gz",
+        "bytes": 24000308,
+        "sha256": "359d2983c0c58d35ca025d7bfbcb26e55b0556beff3a4eb4ac95859ea3c95cf5",
+        "git_blob": "d03df89b5c31692433c04550552743583d0e3102"
+      },
+      "part_sha256_and_git_blob_ids_verified": true,
+      "byte_concatenation_matches_audited_archive": true,
+      "reassembler_command": [
+        "python3",
+        "<future>/traces.py",
+        "--output",
+        "<temporary>/reassembled.jsonl.gz"
+      ],
+      "reassembler_returncode": 0,
+      "existing_output_refusal_returncode": 1,
+      "existing_output_preserved": true,
+      "measurements_and_previous_11_gates_unchanged": true
+    }
+  },
+  "reproducibility": {
+    "script_sha256": "4ce3fc99ceb836a7630a5d4e73fd863bf708591fb599f5f087bc2bfcb046f522",
+    "script": "#!/usr/bin/env python3\n\"\"\"Read-only independent audit of final SPA future-credit experiment artifacts.\n\nUsage: python3 audit_results.py AUTHORITATIVE_DIRECTORY REPOSITORY OUTPUT_JSON\nNo native binary, model generation or training is executed. The registered\nvalidator is loaded from the immutable source snapshot; additional checks below\ndecode canonical lives, reconstruct predictions, and recompute raw token metrics.\n\"\"\"\nimport collections\nimport copy\nimport gc\nimport gzip\nimport hashlib\nimport importlib.util\nimport json\nimport math\nfrom pathlib import Path\nimport struct\nimport sys\nimport traceback\n\nPROTOCOL_SHA = \"134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861\"\n# Fixed before inspecting numerical discrepancies; covers scalar float rounding.\nMETRIC_TOLERANCE = 2e-6\nSCORE_TOLERANCE = 2e-6\nREWARD_TOLERANCE = 2e-7\nAXES = (\"local_connectedness\", \"global_connectedness\", \"coherence\", \"novelty\", \"repetition\", \"collapse\", \"continuity\")\nLABELS = (\"initial\", \"h4\", \"h0\", \"shuffled_h4\", \"keep\", \"left\", \"right\")\nPOLICIES = LABELS[:4]\n\n\ndef require(condition, message):\n    if not condition:\n        raise AssertionError(message)\n\n\ndef sha(raw):\n    return hashlib.sha256(raw).hexdigest()\n\n\ndef file_sha(path):\n    h = hashlib.sha256()\n    with path.open(\"rb\") as stream:\n        for chunk in iter(lambda: stream.read(1024 * 1024), b\"\"):\n            h.update(chunk)\n    return h.hexdigest()\n\n\ndef identity(path):\n    return {\"sha256\": file_sha(path), \"bytes\": path.stat().st_size}\n\n\ndef fnv(raw):\n    value = 14695981039346656037\n    for byte in raw:\n        value = ((value ^ byte) * 1099511628211) & ((1 << 64) - 1)\n    return value\n\n\ndef f32(value):\n    return struct.unpack(\"<f\", struct.pack(\"<f\", value))[0]\n\n\ndef json_file(path):\n    return json.loads(path.read_bytes())\n\n\ndef differences(a, b, path=()):\n    if isinstance(a, dict) and isinstance(b, dict):\n        require(a.keys() == b.keys(), \"published receipt keys changed at \" + repr(path))\n        return sum((differences(a[k], b[k], path + (k,)) for k in a), [])\n    if isinstance(a, list) and isinstance(b, list):\n        require(len(a) == len(b), \"published receipt array size changed\")\n        return sum((differences(x, y, path + (i,)) for i, (x, y) in enumerate(zip(a, b))), [])\n    return [] if a == b else [{\"path\": list(path), \"before\": a, \"after\": b}]\n\n\ndef saved_policy(path):\n    raw = path.read_bytes()\n    require(raw[:8] == b\"NTSPA001\" and len(raw) == 2296 and struct.unpack_from(\"<I\", raw, 8)[0] == len(raw), \"canonical life framing\")\n    require(fnv(raw[:-8]) == struct.unpack_from(\"<Q\", raw, len(raw) - 8)[0], \"canonical life checksum\")\n    weights = struct.unpack_from(\"<267f\", raw, 88)\n    require(all(math.isfinite(w) and abs(w) <= 8 for w in weights), \"policy float bounds\")\n    return raw, weights\n\n\ndef predict(weights, features):\n    features = list(map(f32, features))\n    hidden = []\n    for i in range(8):\n        start = i * 30\n        value = weights[start + 29]\n        for j, x in enumerate(features):\n            value = f32(value + f32(weights[start + j] * x))\n        hidden.append(f32(math.tanh(value)))\n    scores = []\n    for i in range(3):\n        start = 240 + i * 9\n        value = weights[start + 8]\n        for j, h in enumerate(hidden):\n            value = f32(value + f32(weights[start + j] * h))\n        scores.append(value)\n    return scores\n\n\ndef token_table(path):\n    raw = path.read_bytes()\n    magic, count = struct.unpack_from(\"<II\", raw)\n    require(magic == 0x4E544F52 and count == 21, \"checkpoint framing\")\n    offset, total, table = 8, 0, None\n    for index in range(count):\n        ndim = struct.unpack_from(\"<i\", raw, offset)[0]; offset += 4\n        require(1 <= ndim <= 4, \"checkpoint ndim\")\n        shape = struct.unpack_from(\"<\" + \"i\" * ndim, raw, offset); offset += 4 * ndim\n        require(all(n > 0 for n in shape), \"checkpoint shape\")\n        n = math.prod(shape)\n        if index == 0:\n            require(shape == (94, 128), \"embedding table geometry\")\n            data = struct.unpack_from(\"<\" + str(n) + \"f\", raw, offset)\n            table = [data[i * 128:(i + 1) * 128] for i in range(94)]\n        total += n; offset += n * 4\n    require(offset == len(raw) and total == 450688, \"checkpoint tensor coverage\")\n    return table\n\n\nclass Metrics:\n    def __init__(self, table):\n        self.table, self.cache = table, {}\n        self.maximum_error = dict.fromkeys(AXES, 0.0)\n        self.checks = self.rewards = 0\n        self.reward_maximum_error = 0.0\n        self.collapse_threshold_distance = 1.0\n\n    def embedding(self, sentence):\n        tokens = tuple(sentence[\"tokens\"])\n        require(len(tokens) == sentence[\"length\"] and 1 <= len(tokens) <= 64 and all(type(t) is int and 0 <= t < 94 for t in tokens), \"sentence token bounds\")\n        if tokens not in self.cache:\n            weights = [f32(0.85) ** (len(tokens) - 1 - i) for i in range(len(tokens))]\n            total = sum(weights)\n            self.cache[tokens] = [sum(w * self.table[t][d] for t, w in zip(tokens, weights)) / total for d in range(128)]\n        return self.cache[tokens]\n\n    @staticmethod\n    def cosine(a, b):\n        aa, bb = sum(x*x for x in a), sum(x*x for x in b)\n        return 0.0 if aa == 0 or bb == 0 else max(-1.0, min(1.0, sum(x*y for x, y in zip(a, b)) / math.sqrt(aa*bb)))\n\n    def measure(self, chain, target):\n        require(len(chain) == 4 and 0 <= target < 4, \"measurement geometry\")\n        e = [self.embedding(s) for s in chain]\n        c = {(i, j): self.cosine(e[i], e[j]) for i in range(4) for j in range(i + 1, 4)}\n        adjacent = [(c[i, i + 1] + 1) / 2 for i in range(3)]\n        local = [adjacent[i] for i in range(3) if target in (i, i + 1)]\n        other = [sum(x*y for x, y in zip(e[target], e[j])) / math.sqrt(128) for j in range(4) if j != target]\n        maximum = max(other); exp = [math.exp(x - maximum) for x in other]\n        tokens = chain[target][\"tokens\"]; trigrams = list(zip(tokens, tokens[1:], tokens[2:]))\n        self.collapse_threshold_distance = min(self.collapse_threshold_distance, *(abs(x - f32(.98)) for x in c.values()))\n        return dict(zip(AXES, [sum(local)/len(local), max(exp)/sum(exp), sum(adjacent)/3,\n            1-max([0.0]+[c[min(target, j), max(target, j)] for j in range(4) if j != target]),\n            (len(trigrams)-len(set(trigrams)))/len(trigrams) if trigrams else 0,\n            sum(x >= f32(.98) for x in c.values())/6, min(adjacent)]))\n\n    def check(self, chain, target, recorded):\n        actual = self.measure(chain, target)\n        for key in AXES:\n            delta = abs(actual[key] - recorded[key])\n            self.maximum_error[key] = max(self.maximum_error[key], delta)\n            require(delta <= METRIC_TOLERANCE, \"raw metric mismatch: \" + key + \" \" + str(delta))\n            self.checks += 1\n\n    def reward(self, before, after, cost, recorded):\n        weights = (.15, .15, .20, .20, -.15, -.10, .05)\n        value = sum(f32(w) * f32(f32(after[a])-f32(before[a])) for a, w in zip(AXES, weights)) - f32(.05)*f32(cost)\n        actual = f32(max(-1, min(1, value)))\n        delta = abs(actual-recorded)\n        self.reward_maximum_error = max(delta, self.reward_maximum_error)\n        require(delta <= REWARD_TOLERANCE, \"raw reward recomputation\")\n        self.rewards += 1\n\n\ndef stream_archive(path, directory):\n    names = {(0, \"fit\"): \"policy.fit.jsonl\", (0, \"training_readout\"): \"training.readout.jsonl\", (0, \"evaluation_readout\"): \"evaluation.readout.jsonl\"}\n    for seed in (101, 211):\n        names.update({(seed, \"ordinary_off\"): f\"off-s{seed}.jsonl\", (seed, \"ordinary_on\"): f\"on-s{seed}.jsonl\", (seed, \"scenarios\"): f\"scenarios-s{seed}.jsonl\"})\n    handles = {key: (directory/name).open(\"rb\") for key, name in names.items()}\n    counts = collections.Counter(); order = []\n    try:\n        with gzip.open(path, \"rb\") as archive:\n            for line in archive:\n                require(line.endswith(b\"\\n\"), \"archive truncated envelope\")\n                row = json.loads(line)\n                require(set(row) == {\"seed\", \"stream\", \"raw\"}, \"archive envelope keys\")\n                key = row[\"seed\"], row[\"stream\"]\n                require(key in handles, \"unknown archive stream\")\n                raw = row[\"raw\"].encode()\n                require(raw.endswith(b\"\\n\") and raw == handles[key].readline(), \"archive/source line mismatch\")\n                if not order or key != order[-1]: order.append(key)\n                counts[key] += 1\n        require(order == sorted(names) and set(counts) == set(names), \"archive stream order/coverage\")\n        require(all(stream.read(1) == b\"\" for stream in handles.values()), \"archive omitted source tail\")\n    finally:\n        for stream in handles.values(): stream.close()\n    return [{\"seed\": key[0], \"stream\": key[1], \"records\": counts[key], **identity(directory/names[key])} for key in sorted(names)]\n\n\ndef execute(root, repo, report):\n    source = root/\"source_snapshot\"\n    published = repo/\"experiments/spa_agent/future\"\n    original, public = json_file(root/\"receipts.json\"), json_file(published/\"receipts.json\")\n    meta, protocol = original[\"metadata\"], original[\"metadata\"][\"protocol\"]\n    report[\"identities\"] = {\"original_receipts\": identity(root/\"receipts.json\"), \"published_receipts\": identity(published/\"receipts.json\"), \"published_archive\": identity(published/\"raw_traces.jsonl.gz\"), \"protocol_sha256\": PROTOCOL_SHA}\n\n    def gate(name, details):\n        report[\"gates\"][name] = {\"status\": \"PASS\", **details}\n        print(\"PASS\", name, flush=True)\n\n    original_public = copy.deepcopy(public); path_policy = original_public.pop(\"path_policy\")\n    edits = differences(original, original_public)\n    require(len(edits) == 1 and edits[0][\"after\"] == \"python3\" and edits[0][\"path\"][-1] == 0 and \"command\" in edits[0][\"path\"], \"publishing changes more than interpreter spelling\")\n    require(path_policy[\"original_receipts_sha256\"] == file_sha(root/\"receipts.json\") and path_policy[\"original_receipts_bytes\"] == (root/\"receipts.json\").stat().st_size, \"publishing origin identity\")\n    edits[0][\"before\"] = \"<runtime-python>\"\n    require(meta[\"protocol_sha256\"] == PROTOCOL_SHA == file_sha(source/\"experiments/spa_agent/future/protocol.json\") == file_sha(published/\"protocol.json\"), \"protocol immutable identity\")\n    gate(\"published_measurements_unchanged\", {\"path_only_edits\": edits})\n\n    artifacts_checked = 0\n    for index, result in enumerate(original[\"executions\"], 1):\n        directory = root/f\"execution-{index}\"\n        saved_result = json_file(directory/\"result.json\")\n        require(all(saved_result[k] == result[k] for k in result if k != \"commands\"), \"result receipt scientific mismatch\")\n        for name, expected in result[\"artifacts\"].items():\n            require(identity(directory/name) == expected, \"artifact changed: \" + name)\n            artifacts_checked += 1\n    for name, expected in meta[\"source_files_sha256\"].items():\n        require(file_sha(source/name) == expected, \"immutable source changed: \" + name)\n    for folder, section in ((root, \"binaries\"), (root/\"inputs\", \"inputs\")):\n        for name, expected in meta[section].items():\n            require(file_sha(folder/name) == expected[\"sha256\"], \"binary/input changed: \" + name)\n            if \"bytes\" in expected: require((folder/name).stat().st_size == expected[\"bytes\"], \"binary/input length\")\n    gate(\"artifact_source_body_identity\", {\"execution_artifacts\": artifacts_checked, \"immutable_source_files\": len(meta[\"source_files_sha256\"]), \"binaries\": len(meta[\"binaries\"]), \"inputs\": len(meta[\"inputs\"])})\n\n    repeats = original[\"repeat\"][\"byte_identical_artifacts\"]\n    require(len(repeats) == original[\"repeat\"][\"count\"] == 44 and original[\"repeat\"][\"all_passed\"] is True, \"repeat coverage\")\n    for name in repeats:\n        require(identity(root/\"execution-1\"/name) == identity(root/\"execution-2\"/name), \"repeat differs: \" + name)\n    for path in (root/\"raw_traces.jsonl.gz\", root/\"execution-1/raw_traces.jsonl.gz\", root/\"execution-2/raw_traces.jsonl.gz\", published/\"raw_traces.jsonl.gz\"):\n        require(identity(path) == original[\"artifacts\"][\"raw_traces.jsonl.gz\"], \"published archive changed\")\n    gate(\"two_execution_exact_repeat\", {\"byte_identical_artifacts\": repeats})\n    gate(\"complete_archive_line_identity\", {\"streams\": stream_archive(published/\"raw_traces.jsonl.gz\", root/\"execution-1\")})\n\n    spec = importlib.util.spec_from_file_location(\"spa_result_audit_frozen\", source/\"experiments/spa_agent/future/run.py\")\n    future = importlib.util.module_from_spec(spec); spec.loader.exec_module(future)\n    scenario_protocol = json_file(source/\"experiments/spa_agent/scenarios/protocol.json\")\n    train_archive = source/\"experiments/spa_agent/scenarios/raw_traces.jsonl.gz\"\n    train_sha = protocol[\"parents\"][\"raw_traces.jsonl.gz\"][\"sha256\"]\n    training = future.samples_from_streams(future.archive_streams(train_archive, train_sha), [42, 73], scenario_protocol)\n    directory = root/\"execution-1\"\n    eval_archive = directory/\"evaluation.raw_traces.jsonl.gz\"\n    eval_sha = file_sha(eval_archive)\n    evaluation = future.samples_from_streams(future.archive_streams(eval_archive, eval_sha), [101, 211], scenario_protocol)\n    for split, samples in ((\"training\", training), (\"evaluation\", evaluation)):\n        exported = json_file(directory/(split+\"_associations.json\"))\n        for sample in exported: sample[\"outcomes\"] = {int(k): v for k, v in sample[\"outcomes\"].items()}\n        future.verify_source_association(exported, samples)\n    gate(\"complete_source_feature_outcome_joins\", {\"training_snapshots\": len(training), \"evaluation_snapshots\": len(evaluation), \"training_seeds\": [42, 73], \"evaluation_seeds\": [101, 211], \"horizons\": [0, 1, 4], \"ordinary_records_per_seed_mode\": 128, \"scenario_measurements_per_seed\": 180})\n\n    policies = {}\n    seal_hashes = []\n    life_records = []\n    for index in (1, 2):\n        d = root/f\"execution-{index}\"; seal = json_file(d/\"sealed_lives.json\")\n        future.verify_seal(seal, d)\n        require(seal[\"source_files_sha256\"] == meta[\"source_files_sha256\"] and seal[\"binaries\"] == meta[\"binaries\"], \"seal source/binary drift\")\n        phases = json_file(d/\"phases.json\"); seal_sha = file_sha(d/\"sealed_lives.json\")\n        require([p[\"sequence\"] for p in phases] == list(range(1, 12)), \"phase coverage\")\n        require(phases[1][\"phase\"] == \"all_four_lives_sealed\" and phases[1][\"seal_sha256\"] == seal_sha and phases[1][\"fits\"] == 73728, \"pre-evaluation seal\")\n        starts = [p for p in phases if p[\"phase\"] == \"evaluation_generation_started\"]\n        require([(p[\"seed\"], p[\"diagnostics\"]) for p in starts] == [(101,\"off\"),(101,\"on\"),(211,\"off\"),(211,\"on\")], \"evaluation order\")\n        require(all(p[\"sequence\"] > 2 and p[\"seal_sha256\"] == seal_sha for p in starts), \"generation precedes seal\")\n        require(phases[-2][\"all_four_lives_unchanged\"] is True and phases[-1][\"phase\"] == \"later_artifact_recheck_complete\", \"post-evaluation recheck\")\n        initial, _ = saved_policy(d/\"policy.initial.life.bin\")\n        for label in POLICIES:\n            raw, weights = saved_policy(d/(\"policy.\"+label+\".life.bin\"))\n            require(raw[:88] == initial[:88] and raw[1156:-8] == initial[1156:-8], \"replay changed serialized non-policy life\")\n            require(f\"{fnv(raw):016x}\" == seal[\"life_hashes\"][label], \"saved life semantic hash\")\n            if index == 1: policies[label] = weights\n            life_records.append({\"execution\": index, \"label\": label, \"life_hash\": seal[\"life_hashes\"][label], **identity(d/(\"policy.\"+label+\".life.bin\"))})\n        seal_hashes.append(seal_sha)\n    gate(\"sealed_policy_only_lives\", {\"lives\": life_records, \"seal_sha256\": seal_hashes, \"policy_byte_interval\": [88,1156], \"non_policy_bytes_exact\": True, \"canonical_checksum_verified\": True, \"phase_order_verified\": True})\n\n    rows, _ = future.parse_raw((directory/\"policy.fit.jsonl\").read_bytes())\n    fit = future.validate_fit(rows, training, directory/\"training.txt\", protocol, train_sha)\n    require(fit == original[\"executions\"][0][\"fit\"] == original[\"executions\"][1][\"fit\"], \"recomputed full fit receipt\")\n    del rows; gc.collect()\n    gate(\"all_future_credit_receipts\", {\"fits\": fit[\"fits\"], \"fits_per_arm\": 24576, \"h4_horizon\": 4, \"h0_horizon\": 0, \"shuffled_horizon\": 4, \"epochs_per_arm\": fit[\"epochs_per_arm\"], \"checks\": fit[\"checks\"]})\n\n    score_maximum_error = 0.0; score_checks = 0; selections = 0; summaries = {}\n    for split, samples, archive_sha in ((\"training\", training, train_sha), (\"evaluation\", evaluation, eval_sha)):\n        rows, _ = future.parse_raw((directory/(split+\".readout.jsonl\")).read_bytes())\n        readouts = future.validate_readout(rows, samples, directory/(split+\".txt\"), archive_sha, fit[\"life_hashes\"], directory/\"training.txt\", train_sha)\n        summary = future.summarize_readouts(readouts, samples, split)\n        require(summary == original[\"executions\"][0][split] == original[\"executions\"][1][split], \"all summary groups recomputed: \" + split)\n        summaries[split] = summary\n        for row in readouts:\n            sample = samples[row[\"source\"][\"index\"]]; label = row[\"label\"]\n            expected = predict(policies[label if label in POLICIES else \"initial\"], sample[\"features\"])\n            for a, b in zip(expected, row[\"scores_before\"]):\n                error = abs(a-b); score_maximum_error = max(score_maximum_error, error); score_checks += 1\n                require(error <= SCORE_TOLERANCE, \"saved weights do not produce recorded prediction\")\n            valid = [o[\"action\"][\"kind\"] for o in sample[\"outcomes\"][row[\"horizon\"]]]\n            chosen = max(valid, key=lambda k: expected[k]) if label in POLICIES else {\"keep\":0,\"left\":1,\"right\":2}[label]\n            if chosen not in valid: chosen = 0\n            require(chosen == row[\"action\"][\"kind\"], \"independent decoded-weight action differs\")\n            branch = next(o for o in sample[\"outcomes\"][row[\"horizon\"]] if o[\"action\"][\"kind\"] == chosen)\n            require(row[\"action\"] == branch[\"action\"] and row[\"selected_outcome_sha256\"] == branch[\"raw_sha256\"], \"independent selected branch identity\")\n            selections += 1\n    gate(\"saved_weight_predictions_and_selected_branches\", {\"selected_action_joins\": selections, \"score_components\": score_checks, \"maximum_absolute_score_error\": score_maximum_error, \"score_tolerance\": SCORE_TOLERANCE, \"outcome_independent_choices\": True, \"training_readouts\": 672, \"evaluation_readouts\": 672})\n    gate(\"all_reported_metrics_recomputed\", {\"summary_rows_per_split\": len(summaries[\"evaluation\"][\"summaries\"]), \"splits\": [\"training\",\"evaluation\"], \"groupings\": [\"combined\",\"seed\",\"target\"], \"horizons\": [0,1,4], \"labels\": list(LABELS), \"exact_receipt_equality\": True})\n\n    metrics = Metrics(token_table(root/\"inputs/simple.weights\"))\n    for samples in (training, evaluation):\n        for sample in samples:\n            keep0 = next(o for o in sample[\"outcomes\"][0] if o[\"action\"][\"kind\"] == 0)\n            metrics.check(keep0[\"chain\"], sample[\"target\"], keep0[\"before\"])\n            for outcomes in sample[\"outcomes\"].values():\n                for outcome in outcomes:\n                    require(outcome[\"before\"] == keep0[\"before\"], \"branch before metrics drift\")\n                    metrics.check(outcome[\"chain\"], sample[\"target\"], outcome[\"after\"])\n                    metrics.reward(outcome[\"before\"], outcome[\"after\"], outcome[\"cost\"], outcome[\"reward\"])\n    gate(\"independent_token_embedding_metrics\", {\"axis_values_checked\": metrics.checks, \"unique_sentences\": len(metrics.cache), \"maximum_absolute_error_by_axis\": metrics.maximum_error, \"metric_tolerance\": METRIC_TOLERANCE, \"reward_values_checked\": metrics.rewards, \"maximum_absolute_reward_error\": metrics.reward_maximum_error, \"reward_tolerance\": REWARD_TOLERANCE, \"minimum_cosine_distance_to_collapse_threshold\": metrics.collapse_threshold_distance, \"method\": \"Python scalar double weighted means and cosine/softmax from frozen checkpoint token embeddings; f32 fixed reward coefficients/deltas. No generation, fitting or native binaries.\"})\n\n    report[\"primary_evaluation_h4\"] = [row for row in summaries[\"evaluation\"][\"summaries\"] if row[\"group\"] == \"combined\" and row[\"horizon\"] == 4]\n    report[\"causal_questions\"] = {\"h0\": \"Does delayed credit improve H4 selection over equal-budget immediate credit?\", \"shuffled_h4\": \"Does correct state/outcome association improve selection beyond learned action preferences?\", \"initial\": \"Do acquired weights change the action for the same source features?\", \"fixed_keep_left_right\": \"Does learned selection exceed each constant typed-action preference with the same boundary fallback?\", \"diagnostics_off_on\": \"Do measured forks leave ordinary token trajectories and all five original host lives unchanged?\", \"saved_weight_forward\": \"Do the sealed acquired weights themselves produce the recorded actions without access to outcome fields?\", \"repetition_and_novelty\": \"Which raw axes contribute when connectedness changes?\"}\n    learned = next(row for row in report[\"primary_evaluation_h4\"] if row[\"label\"] == \"h4\")\n    report[\"finding\"] = {\"acquired_choices_changed\": learned[\"changed_choices_from_initial\"], \"evaluation_states\": 48, \"utility_result\": \"FAIL: negative mean H4 advantage over KEEP under the frozen reward\", \"mean_advantage_over_keep\": learned[\"mean_advantage_over_keep\"], \"mean_oracle_regret\": learned[\"mean_oracle_regret\"], \"protocol_or_measurement_changed\": False}\n    # Recheck the externally visible anchors after reading all artifacts.\n    require(file_sha(published/\"receipts.json\") == report[\"identities\"][\"published_receipts\"][\"sha256\"] and file_sha(published/\"raw_traces.jsonl.gz\") == report[\"identities\"][\"published_archive\"][\"sha256\"], \"published artifact changed during audit\")\n    gate(\"later_published_artifact_recheck\", {\"unchanged\": True})\n\n\ndef main():\n    require(len(sys.argv) == 4, \"usage: audit_results.py AUTHORITATIVE_DIRECTORY REPOSITORY OUTPUT_JSON\")\n    root, repo, output = map(Path, sys.argv[1:])\n    report = {\"schema\": 1, \"name\": \"Independent read-only future-credit result audit\", \"status\": \"RUNNING\", \"command\": [\"python3\", \"audit_results.py\", \"<authoritative>\", \"<repository>\", \"<output>/result_audit.json\"], \"gates\": {}, \"reproducibility\": {\"script_sha256\": file_sha(Path(__file__)), \"script\": Path(__file__).read_text(), \"source\": \"The runner imported below is the hash-pinned immutable source_snapshot. Additional calculations in this script use Python standard library only.\"}, \"path_policy\": \"All audit paths are semantic CLI placeholders. Input artifact identities refer to their original bytes; no original experiment artifacts are written.\"}\n    code = 0\n    try:\n        execute(root, repo, report)\n        report[\"status\"] = \"PASS\"\n    except Exception as error:\n        report[\"status\"] = \"FAIL\"\n        report[\"error\"] = {\"type\": type(error).__name__, \"message\": str(error)}\n        traceback.print_exc(); code = 1\n    output.parent.mkdir(parents=True, exist_ok=True)\n    output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + \"\\n\")\n    print(\"audit\", report[\"status\"], \"gates\", len(report[\"gates\"]), \"sha256\", file_sha(output), flush=True)\n    return code\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n",
+    "source": "The runner imported below is the hash-pinned immutable source_snapshot. Additional calculations in this script use Python standard library only."
+  },
+  "path_policy": "All audit paths are semantic CLI placeholders. Input artifact identities refer to their original bytes; no original experiment artifacts are written.",
+  "identities": {
+    "original_receipts": {
+      "sha256": "f109086a252b68f468cdb731d576fe8ac92e4b6e771944c7158181006e1e230b",
+      "bytes": 2048676
+    },
+    "published_receipts": {
+      "sha256": "b2caeead7ca5c3a02234f60a37d28e81dec2f6feb6f694a0d069bbf79d4c8dbf",
+      "bytes": 2049094
+    },
+    "published_archive": {
+      "sha256": "359d2983c0c58d35ca025d7bfbcb26e55b0556beff3a4eb4ac95859ea3c95cf5",
+      "bytes": 24000308
+    },
+    "protocol_sha256": "134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861"
+  },
+  "primary_evaluation_h4": [
+    {
+      "split": "evaluation",
+      "group": "combined",
+      "group_value": "all",
+      "horizon": 4,
+      "label": "initial",
+      "states": 48,
+      "mean_selected_reward": -0.041825965104374994,
+      "mean_advantage_over_keep": 0.0,
+      "mean_oracle_regret": 0.00662697320625,
+      "optimal_count": 32,
+      "action_counts": {
+        "KEEP": 48,
+        "RESEED_LEFT": 0,
+        "RESEED_RIGHT": 0
+      },
+      "changed_choices_from_initial": 0,
+      "mean_normalized_cost": 0.7441406287500002,
+      "total_generated_characters": 11430,
+      "raw_axis_means": {
+        "local_connectedness": {
+          "before": 0.7649438331666669,
+          "after": 0.7594279323958331,
+          "delta": -0.005515900770833325,
+          "delta_vs_keep": 0.0
+        },
+        "global_connectedness": {
+          "before": 0.3340748411875,
+          "after": 0.33418882514583337,
+          "delta": 0.00011398395833333089,
+          "delta_vs_keep": 0.0
+        },
+        "coherence": {
+          "before": 0.769953500416667,
+          "after": 0.7613772923958334,
+          "delta": -0.008576208020833349,
+          "delta_vs_keep": 0.0
+        },
+        "novelty": {
+          "before": 0.3717657302708333,
+          "after": 0.3636200937624999,
+          "delta": -0.008145636508333328,
+          "delta_vs_keep": 0.0
+        },
+        "repetition": {
+          "before": 0.0714642686125,
+          "after": 0.06745786158333335,
+          "delta": -0.004006407029166668,
+          "delta_vs_keep": 0.0
+        },
+        "collapse": {
+          "before": 0.0,
+          "after": 0.0,
+          "delta": 0.0,
+          "delta_vs_keep": 0.0
+        },
+        "continuity": {
+          "before": 0.7149275838333335,
+          "after": 0.6936228325833332,
+          "delta": -0.021304751249999993,
+          "delta_vs_keep": 0.0
+        }
+      }
+    },
+    {
+      "split": "evaluation",
+      "group": "combined",
+      "group_value": "all",
+      "horizon": 4,
+      "label": "h4",
+      "states": 48,
+      "mean_selected_reward": -0.044299614056249985,
+      "mean_advantage_over_keep": -0.0024736489518750004,
+      "mean_oracle_regret": 0.009100622158125,
+      "optimal_count": 27,
+      "action_counts": {
+        "KEEP": 31,
+        "RESEED_LEFT": 17,
+        "RESEED_RIGHT": 0
+      },
+      "changed_choices_from_initial": 17,
+      "mean_normalized_cost": 0.7988932306666667,
+      "total_generated_characters": 12271,
+      "raw_axis_means": {
+        "local_connectedness": {
+          "before": 0.7649438331666669,
+          "after": 0.7697578705624998,
+          "delta": 0.0048140373958333385,
+          "delta_vs_keep": 0.010329938166666663
+        },
+        "global_connectedness": {
+          "before": 0.3340748411875,
+          "after": 0.33428801535416675,
+          "delta": 0.00021317416666666428,
+          "delta_vs_keep": 9.919020833333338e-05
+        },
+        "coherence": {
+          "before": 0.769953500416667,
+          "after": 0.7640157788958333,
+          "delta": -0.005937721520833353,
+          "delta_vs_keep": 0.002638486499999995
+        },
+        "novelty": {
+          "before": 0.3717657302708333,
+          "after": 0.35434182238124984,
+          "delta": -0.01742390788958333,
+          "delta_vs_keep": -0.009278271381250005
+        },
+        "repetition": {
+          "before": 0.0714642686125,
+          "after": 0.06736399311041667,
+          "delta": -0.0041002755020833346,
+          "delta_vs_keep": -9.386847291666647e-05
+        },
+        "collapse": {
+          "before": 0.0,
+          "after": 0.0,
+          "delta": 0.0,
+          "delta_vs_keep": 0.0
+        },
+        "continuity": {
+          "before": 0.7149275838333335,
+          "after": 0.6938926056874998,
+          "delta": -0.021034978145833327,
+          "delta_vs_keep": 0.00026977310416666694
+        }
+      }
+    },
+    {
+      "split": "evaluation",
+      "group": "combined",
+      "group_value": "all",
+      "horizon": 4,
+      "label": "h0",
+      "states": 48,
+      "mean_selected_reward": -0.041825965104374994,
+      "mean_advantage_over_keep": 0.0,
+      "mean_oracle_regret": 0.00662697320625,
+      "optimal_count": 32,
+      "action_counts": {
+        "KEEP": 48,
+        "RESEED_LEFT": 0,
+        "RESEED_RIGHT": 0
+      },
+      "changed_choices_from_initial": 0,
+      "mean_normalized_cost": 0.7441406287500002,
+      "total_generated_characters": 11430,
+      "raw_axis_means": {
+        "local_connectedness": {
+          "before": 0.7649438331666669,
+          "after": 0.7594279323958331,
+          "delta": -0.005515900770833325,
+          "delta_vs_keep": 0.0
+        },
+        "global_connectedness": {
+          "before": 0.3340748411875,
+          "after": 0.33418882514583337,
+          "delta": 0.00011398395833333089,
+          "delta_vs_keep": 0.0
+        },
+        "coherence": {
+          "before": 0.769953500416667,
+          "after": 0.7613772923958334,
+          "delta": -0.008576208020833349,
+          "delta_vs_keep": 0.0
+        },
+        "novelty": {
+          "before": 0.3717657302708333,
+          "after": 0.3636200937624999,
+          "delta": -0.008145636508333328,
+          "delta_vs_keep": 0.0
+        },
+        "repetition": {
+          "before": 0.0714642686125,
+          "after": 0.06745786158333335,
+          "delta": -0.004006407029166668,
+          "delta_vs_keep": 0.0
+        },
+        "collapse": {
+          "before": 0.0,
+          "after": 0.0,
+          "delta": 0.0,
+          "delta_vs_keep": 0.0
+        },
+        "continuity": {
+          "before": 0.7149275838333335,
+          "after": 0.6936228325833332,
+          "delta": -0.021304751249999993,
+          "delta_vs_keep": 0.0
+        }
+      }
+    },
+    {
+      "split": "evaluation",
+      "group": "combined",
+      "group_value": "all",
+      "horizon": 4,
+      "label": "shuffled_h4",
+      "states": 48,
+      "mean_selected_reward": -0.04320545634583333,
+      "mean_advantage_over_keep": -0.0013794912414583332,
+      "mean_oracle_regret": 0.008006464447708335,
+      "optimal_count": 28,
+      "action_counts": {
+        "KEEP": 44,
+        "RESEED_LEFT": 3,
+        "RESEED_RIGHT": 1
+      },
+      "changed_choices_from_initial": 4,
+      "mean_normalized_cost": 0.7616536493333336,
+      "total_generated_characters": 11699,
+      "raw_axis_means": {
+        "local_connectedness": {
+          "before": 0.7649438331666669,
+          "after": 0.7596488594999998,
+          "delta": -0.005294973666666658,
+          "delta_vs_keep": 0.00022092710416666642
+        },
+        "global_connectedness": {
+          "before": 0.3340748411875,
+          "after": 0.3342137318125,
+          "delta": 0.00013889062499999652,
+          "delta_vs_keep": 2.4906666666665623e-05
+        },
+        "coherence": {
+          "before": 0.769953500416667,
+          "after": 0.7607838474375,
+          "delta": -0.009169652979166684,
+          "delta_vs_keep": -0.0005934449583333348
+        },
+        "novelty": {
+          "before": 0.3717657302708333,
+          "after": 0.36181349434583326,
+          "delta": -0.009952235924999997,
+          "delta_vs_keep": -0.0018065994166666665
+        },
+        "repetition": {
+          "before": 0.0714642686125,
+          "after": 0.06712184008958334,
+          "delta": -0.004342428522916667,
+          "delta_vs_keep": -0.0003360214937500001
+        },
+        "collapse": {
+          "before": 0.0,
+          "after": 0.0,
+          "delta": 0.0,
+          "delta_vs_keep": 0.0
+        },
+        "continuity": {
+          "before": 0.7149275838333335,
+          "after": 0.6914006397916665,
+          "delta": -0.023526944041666675,
+          "delta_vs_keep": -0.0022221927916666676
+        }
+      }
+    },
+    {
+      "split": "evaluation",
+      "group": "combined",
+      "group_value": "all",
+      "horizon": 4,
+      "label": "keep",
+      "states": 48,
+      "mean_selected_reward": -0.041825965104374994,
+      "mean_advantage_over_keep": 0.0,
+      "mean_oracle_regret": 0.00662697320625,
+      "optimal_count": 32,
+      "action_counts": {
+        "KEEP": 48,
+        "RESEED_LEFT": 0,
+        "RESEED_RIGHT": 0
+      },
+      "changed_choices_from_initial": 0,
+      "mean_normalized_cost": 0.7441406287500002,
+      "total_generated_characters": 11430,
+      "raw_axis_means": {
+        "local_connectedness": {
+          "before": 0.7649438331666669,
+          "after": 0.7594279323958331,
+          "delta": -0.005515900770833325,
+          "delta_vs_keep": 0.0
+        },
+        "global_connectedness": {
+          "before": 0.3340748411875,
+          "after": 0.33418882514583337,
+          "delta": 0.00011398395833333089,
+          "delta_vs_keep": 0.0
+        },
+        "coherence": {
+          "before": 0.769953500416667,
+          "after": 0.7613772923958334,
+          "delta": -0.008576208020833349,
+          "delta_vs_keep": 0.0
+        },
+        "novelty": {
+          "before": 0.3717657302708333,
+          "after": 0.3636200937624999,
+          "delta": -0.008145636508333328,
+          "delta_vs_keep": 0.0
+        },
+        "repetition": {
+          "before": 0.0714642686125,
+          "after": 0.06745786158333335,
+          "delta": -0.004006407029166668,
+          "delta_vs_keep": 0.0
+        },
+        "collapse": {
+          "before": 0.0,
+          "after": 0.0,
+          "delta": 0.0,
+          "delta_vs_keep": 0.0
+        },
+        "continuity": {
+          "before": 0.7149275838333335,
+          "after": 0.6936228325833332,
+          "delta": -0.021304751249999993,
+          "delta_vs_keep": 0.0
+        }
+      }
+    },
+    {
+      "split": "evaluation",
+      "group": "combined",
+      "group_value": "all",
+      "horizon": 4,
+      "label": "left",
+      "states": 48,
+      "mean_selected_reward": -0.04713607121,
+      "mean_advantage_over_keep": -0.005310106105624999,
+      "mean_oracle_regret": 0.011937079311875001,
+      "optimal_count": 14,
+      "action_counts": {
+        "KEEP": 12,
+        "RESEED_LEFT": 36,
+        "RESEED_RIGHT": 0
+      },
+      "changed_choices_from_initial": 36,
+      "mean_normalized_cost": 0.8715494796666667,
+      "total_generated_characters": 13387,
+      "raw_axis_means": {
+        "local_connectedness": {
+          "before": 0.7649438331666669,
+          "after": 0.7679579108958333,
+          "delta": 0.003014077729166673,
+          "delta_vs_keep": 0.008529978499999999
+        },
+        "global_connectedness": {
+          "before": 0.3340748411875,
+          "after": 0.33429842377083335,
+          "delta": 0.00022358258333333067,
+          "delta_vs_keep": 0.00010959862499999977
+        },
+        "coherence": {
+          "before": 0.769953500416667,
+          "after": 0.7640638599791666,
+          "delta": -0.005889640437500021,
+          "delta_vs_keep": 0.002686567583333327
+        },
+        "novelty": {
+          "before": 0.3717657302708333,
+          "after": 0.3585623726312499,
+          "delta": -0.013203357639583338,
+          "delta_vs_keep": -0.005057721131250008
+        },
+        "repetition": {
+          "before": 0.0714642686125,
+          "after": 0.06635592862500002,
+          "delta": -0.005108339987500001,
+          "delta_vs_keep": -0.0011019329583333332
+        },
+        "collapse": {
+          "before": 0.0,
+          "after": 0.0,
+          "delta": 0.0,
+          "delta_vs_keep": 0.0
+        },
+        "continuity": {
+          "before": 0.7149275838333335,
+          "after": 0.695089642,
+          "delta": -0.019837941833333327,
+          "delta_vs_keep": 0.001466809416666666
+        }
+      }
+    },
+    {
+      "split": "evaluation",
+      "group": "combined",
+      "group_value": "all",
+      "horizon": 4,
+      "label": "right",
+      "states": 48,
+      "mean_selected_reward": -0.047093693432125,
+      "mean_advantage_over_keep": -0.00526772832775,
+      "mean_oracle_regret": 0.011894701534,
+      "optimal_count": 22,
+      "action_counts": {
+        "KEEP": 12,
+        "RESEED_LEFT": 0,
+        "RESEED_RIGHT": 36
+      },
+      "changed_choices_from_initial": 36,
+      "mean_normalized_cost": 0.8581380248333335,
+      "total_generated_characters": 13181,
+      "raw_axis_means": {
+        "local_connectedness": {
+          "before": 0.7649438331666669,
+          "after": 0.7544135376874999,
+          "delta": -0.010530295479166658,
+          "delta_vs_keep": -0.0050143947083333305
+        },
+        "global_connectedness": {
+          "before": 0.3340748411875,
+          "after": 0.3343183180625,
+          "delta": 0.00024347687500000012,
+          "delta_vs_keep": 0.00012949291666666923
+        },
+        "coherence": {
+          "before": 0.769953500416667,
+          "after": 0.7610183780833335,
+          "delta": -0.008935122333333356,
+          "delta_vs_keep": -0.0003589143125000069
+        },
+        "novelty": {
+          "before": 0.3717657302708333,
+          "after": 0.37357709429791663,
+          "delta": 0.0018113640270833256,
+          "delta_vs_keep": 0.009957000535416665
+        },
+        "repetition": {
+          "before": 0.0714642686125,
+          "after": 0.06891791036041667,
+          "delta": -0.0025463582520833324,
+          "delta_vs_keep": 0.001460048777083334
+        },
+        "collapse": {
+          "before": 0.0,
+          "after": 0.0,
+          "delta": 0.0,
+          "delta_vs_keep": 0.0
+        },
+        "continuity": {
+          "before": 0.7149275838333335,
+          "after": 0.6829081674999999,
+          "delta": -0.03201941633333334,
+          "delta_vs_keep": -0.010714665083333337
+        }
+      }
+    }
+  ],
+  "causal_questions": {
+    "h0": "Does delayed credit improve H4 selection over equal-budget immediate credit?",
+    "shuffled_h4": "Does correct state/outcome association improve selection beyond learned action preferences?",
+    "initial": "Do acquired weights change the action for the same source features?",
+    "fixed_keep_left_right": "Does learned selection exceed each constant typed-action preference with the same boundary fallback?",
+    "diagnostics_off_on": "Do measured forks leave ordinary token trajectories and all five original host lives unchanged?",
+    "saved_weight_forward": "Do the sealed acquired weights themselves produce the recorded actions without access to outcome fields?",
+    "repetition_and_novelty": "Which raw axes contribute when connectedness changes?"
+  },
+  "finding": {
+    "acquired_choices_changed": 17,
+    "evaluation_states": 48,
+    "utility_result": "FAIL: negative mean H4 advantage over KEEP under the frozen reward",
+    "mean_advantage_over_keep": -0.0024736489518750004,
+    "mean_oracle_regret": 0.009100622158125,
+    "protocol_or_measurement_changed": false
+  },
+  "publication_extension": {
+    "previous_audit_sha256": "38cf3949bbe211a3b2a655be2f98afb543292b7f2dabadce8d77982dc6186da8",
+    "command": [
+      "python3",
+      "audit_packaging.py",
+      "<prior-audit>/result-audit-first.json",
+      "<future>",
+      "<future>/result_audit.json"
+    ],
+    "script_sha256": "6b93e5b89f8748af867072097bac5527c948b32653a25ac9b75ba19195b2346a",
+    "script": "#!/usr/bin/env python3\n\"\"\"Append a lossless-publication gate to the completed read-only result audit.\n\nUsage: python3 audit_packaging.py PREVIOUS_AUDIT_JSON FUTURE_DIRECTORY OUTPUT_JSON\nThe earlier audit remains byte-identical; this script adds one packaging gate.\n\"\"\"\nimport hashlib\nimport json\nfrom pathlib import Path\nimport subprocess\nimport sys\nimport tempfile\n\n\ndef digest(raw):\n    return hashlib.sha256(raw).hexdigest()\n\n\ndef require(condition, message):\n    if not condition:\n        raise AssertionError(message)\n\n\ndef git_blob(raw):\n    return hashlib.sha1(b\"blob \" + str(len(raw)).encode() + b\"\\0\" + raw).hexdigest()\n\n\ndef main():\n    require(len(sys.argv) == 4, \"usage: audit_packaging.py PREVIOUS_AUDIT_JSON FUTURE_DIRECTORY OUTPUT_JSON\")\n    prior, future, output = map(Path, sys.argv[1:])\n    previous_bytes = prior.read_bytes()\n    report = json.loads(previous_bytes)\n    require(report[\"status\"] == \"PASS\" and len(report[\"gates\"]) == 11, \"prior result audit incomplete\")\n    manifest_bytes = (future/\"raw_manifest.json\").read_bytes()\n    manifest = json.loads(manifest_bytes)\n    require(manifest[\"schema\"] == 1 and len(manifest[\"parts\"]) == 3, \"part manifest geometry\")\n    archive = bytearray()\n    for part in manifest[\"parts\"]:\n        require(Path(part[\"path\"]).name == part[\"path\"], \"nonlocal part path\")\n        raw = (future/part[\"path\"]).read_bytes()\n        require(len(raw) == part[\"bytes\"] and digest(raw) == part[\"sha256\"] and git_blob(raw) == part[\"git_blob\"], \"part identity\")\n        archive.extend(raw)\n    expected = manifest[\"archive\"]\n    require(len(archive) == expected[\"bytes\"] and digest(archive) == expected[\"sha256\"] and git_blob(archive) == expected[\"git_blob\"], \"part concatenation identity\")\n    require({\"sha256\": digest(archive), \"bytes\": len(archive)} == report[\"identities\"][\"published_archive\"], \"parts differ from audited raw archive\")\n    with tempfile.TemporaryDirectory(prefix=\"spa-result-parts-\") as directory:\n        destination = Path(directory)/\"reassembled.jsonl.gz\"\n        command = [sys.executable, str(future/\"traces.py\"), \"--output\", str(destination)]\n        completed = subprocess.run(command, capture_output=True, text=True)\n        require(completed.returncode == 0 and json.loads(completed.stdout) == expected, \"actual reassembler invocation\")\n        require(destination.read_bytes() == archive, \"actual reassembler bytes\")\n        again = subprocess.run(command, capture_output=True, text=True)\n        require(again.returncode == 1 and \"FileExistsError\" in again.stderr and destination.read_bytes() == archive, \"existing output preservation\")\n    report[\"gates\"][\"lossless_archive_publication\"] = {\n        \"status\": \"PASS\", \"manifest_sha256\": digest(manifest_bytes),\n        \"reassembler_sha256\": digest((future/\"traces.py\").read_bytes()),\n        \"parts\": manifest[\"parts\"], \"reconstructed_archive\": expected,\n        \"part_sha256_and_git_blob_ids_verified\": True,\n        \"byte_concatenation_matches_audited_archive\": True,\n        \"reassembler_command\": [\"python3\", \"<future>/traces.py\", \"--output\", \"<temporary>/reassembled.jsonl.gz\"],\n        \"reassembler_returncode\": completed.returncode,\n        \"existing_output_refusal_returncode\": again.returncode,\n        \"existing_output_preserved\": True,\n        \"measurements_and_previous_11_gates_unchanged\": True,\n    }\n    report[\"publication_extension\"] = {\n        \"previous_audit_sha256\": digest(previous_bytes),\n        \"command\": [\"python3\", \"audit_packaging.py\", \"<prior-audit>/result-audit-first.json\", \"<future>\", \"<future>/result_audit.json\"],\n        \"script_sha256\": digest(Path(__file__).read_bytes()),\n        \"script\": Path(__file__).read_text(),\n        \"scope\": \"Appends one lossless packaging gate. All earlier numerical results and validation evidence are unchanged. No training or model generation.\",\n    }\n    require(prior.read_bytes() == previous_bytes, \"prior audit changed\")\n    output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + \"\\n\")\n    print(\"PASS lossless_archive_publication\")\n    print(\"audit PASS gates\", len(report[\"gates\"]), \"sha256\", digest(output.read_bytes()))\n\n\nif __name__ == \"__main__\":\n    main()\n",
+    "scope": "Appends one lossless packaging gate. All earlier numerical results and validation evidence are unchanged. No training or model generation."
+  }
+}
