@@ -529,7 +529,7 @@ endif
 .PHONY: check_chuck_architect test_chuck_architect_mutations test_chuck_legacy_parity \
 	check_chuck_scenarios test_chuck_scenario_mutations check_chuck_device_host check_chuck_device_cuda \
 	check_chuck_future test_chuck_future_mutations check_chuck_conditioned \
-	test_chuck_conditioned_mutations check_chuck_durability
+	test_chuck_conditioned_mutations check_chuck_durability check_chuck_lived test_chuck_lived_mutations
 
 test_chuck_architect: tests/test_chuck_architect.c tests/test_notorch.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ tests/test_chuck_architect.c notorch.c -lm $(BLAS_LIBS)
@@ -579,6 +579,17 @@ check_chuck_conditioned: test_chuck_architect_conditioned
 test_chuck_conditioned_mutations:
 	python3 tests/test_chuck_conditioned_mutations.py
 
+test_chuck_lived: tests/test_chuck_lived.c notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ $< notorch.c -lm $(BLAS_LIBS)
+
+check_chuck_lived: test_chuck_lived
+	./test_chuck_lived
+
+test: test_chuck_lived
+
+test_chuck_lived_mutations:
+	python3 tests/test_chuck_lived_mutations.py
+
 # Save syscall injection stays in this private object; production libc is intact.
 tests/chuck_durability_notorch.o: notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 \
@@ -598,7 +609,7 @@ check_chuck_device_host:
 check_chuck_device_cuda:
 	sh tests/run_chuck_architect_device.sh cuda
 
-chuck_architect_train: examples/chuck_architect_train.c examples/chuck_architect_scenarios.h examples/chuck_architect_rollout.h libnotorch.a $(CHUCK_HEADERS)
+chuck_architect_train: examples/chuck_architect_train.c examples/chuck_architect_scenarios.h examples/chuck_architect_rollout.h examples/chuck_architect_lived.h libnotorch.a $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ examples/chuck_architect_train.c ./libnotorch.a -lm $(BLAS_LIBS)
 
 chuck_architect_future: examples/chuck_architect_future.c libnotorch.a $(CHUCK_HEADERS)
@@ -803,6 +814,7 @@ test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability
 	./test_chuck_architect_future
 	./test_chuck_architect_conditioned
 	./test_chuck_architect_durability
+	./test_chuck_lived
 	./test_conv1d
 	./test_logmel
 	NT_LOGMEL_THREADS=1 ./test_logmel
@@ -886,7 +898,7 @@ clean:
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o
-	rm -f test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_chuck_architect_conditioned test_chuck_architect_durability tests/chuck_durability_notorch.o chuck_architect_train chuck_architect_future
+	rm -f test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_chuck_architect_conditioned test_chuck_architect_durability test_chuck_lived tests/chuck_durability_notorch.o chuck_architect_train chuck_architect_future
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
 		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual test_gemma3 test_smollm_tokenizer \
 		notorch_test notorch_test_gpu notorch.o gguf.o libnotorch.a notorch_cuda.o \
@@ -915,6 +927,7 @@ help:
 	@echo "    make chuck_architect_train  Loss Architect on SimpleLLM / HeVLM"
 	@echo "    make check_chuck_future    Measured future-credit and v1 state gates"
 	@echo "    make check_chuck_conditioned  Conditioned credit and frozen-feedback gates"
+	@echo "    make check_chuck_lived    Synchronous action/consequence and native-history gates"
 	@echo "    make check_chuck_durability   Checkpoint syscall and directory-durability gates"
 	@echo "    make check_chuck_scenarios  Chuck state, actions, locale and continuation gates"
 	@echo "    make check_chuck_device_host  Chuck host/device mirror emulation"

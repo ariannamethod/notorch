@@ -1,0 +1,247 @@
+{
+  "schema": 1,
+  "name": "lived-state-matched-continuation-v1",
+  "status": "preregistered-before-acquisition-and-new-evaluation",
+  "question": "What changes when Chuck learns measured alternative futures from states reached by its own repeated acquired actions, with its parent policy supplying the subsequent actions?",
+  "source_base": "5eb709f12eca7089551d349e93b07daec3c5e2c7",
+  "previous_source_commit": "ff9d3f41c0b9826c3743a154aff6ddc2c899edfd",
+  "previous_results_sha256": "c18eae909ccbdd8f2bd62b752ab465a6c630da821033eef876c583d0a4626ce9",
+  "previous_protocol_sha256": "8b4e4292805950a066817f9b13018ab92a0d4dd9f7d4fae3a6020243c51796f2",
+  "previous_numerical_archive": {
+    "file": "chuck-conditional-final-ff9d3f4-raw.tar.gz",
+    "bytes": 372856293,
+    "sha256": "adfcd981ffe6990cda483b46826aec5b3a01d67a2642ef0d10fb22a31c8faeaf"
+  },
+  "parent": {
+    "label": "parent",
+    "archived_label": "conditional-simple",
+    "file": "conditional-simple.policy.bin",
+    "bytes": 1016,
+    "sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb",
+    "policy_hash": "8d6fc088ba456746",
+    "policy_parameters": 163,
+    "frozen_during_acquisition_and_branch_continuation": true,
+    "exploration": 0
+  },
+  "bodies": {
+    "simple": 450688,
+    "hevlm": 1123456
+  },
+  "body_order": [
+    "simple",
+    "hevlm"
+  ],
+  "context": 64,
+  "body_lr": 0.0003,
+  "gradient_clip": 1.0,
+  "threads": 2,
+  "dtype": "F32",
+  "cpu_only": true,
+  "host_steps": 512,
+  "checkpoints_before_updates": [
+    1,
+    64,
+    128,
+    192,
+    256,
+    320,
+    384,
+    448
+  ],
+  "acquisition": {
+    "bodies": [
+      "simple",
+      "hevlm"
+    ],
+    "seeds": [
+      42,
+      73
+    ],
+    "states_per_body": 16,
+    "states": 32,
+    "source_policy": "parent",
+    "history": "Each host starts from its matched initial body and fresh policy history. It grafts only163 parent weights, then executes parent selections and frozen feedback for every real update. All captured states belong to this acquired-action trajectory.",
+    "paired_probe_on_off_hosts": true,
+    "policy_updates_during_host_or_forks": false
+  },
+  "intervention_actions": [
+    "hold",
+    "brake",
+    "push"
+  ],
+  "continuations": [
+    "hold",
+    "policy"
+  ],
+  "target_horizon_total_updates": 16,
+  "diagnostic_horizons_total_updates": [
+    1,
+    4,
+    16
+  ],
+  "future_probe_window_indices_zero_based": [
+    16,
+    17,
+    18,
+    19
+  ],
+  "fork": {
+    "common_source": "Clone parameters, gradients, moments, Chuck global/local state, complete Architect history/cache/RNG, current tape, current training mode and window/noise RNG before the first action. All six branches start from the exact same state.",
+    "first_action": "A synchronous native intervention validates the named HOLD/BRAKE/PUSH action, executes it, invokes exactly one same-window after-loss callback, and completes real frozen feedback. The receipt identifies the externally supplied intervention; original weights/config/RNG retain their actual identity.",
+    "hold": "Updates2..16 execute HOLD and complete actual frozen feedback on each branch, advancing its own history.",
+    "policy": "Updates2..16 select through the same sealed parent weights from each branch's actual new observation/history, execute the selected action and complete actual frozen feedback.",
+    "matched": "Every branch uses the same future window stream and same initial RNG state. Parent weights are identical throughout; subsequent selected actions may differ because earlier consequences changed branch state.",
+    "measurements": "At H1/H4/H16 retain same-origin, same-future-four-window and held-out losses separately. Only the H16 future-four-window loss supplies fitting targets.",
+    "host_restoration": "After diagnostics restore the exact original source state and continue the ordinary parent host.",
+    "selected_branch_gate": "The POLICY branch whose first intervention equals the ordinary parent selection must reproduce that parent's next16 action/observation/consequence transitions and training state. Compare persistent state at matching points before optional probe forwards.",
+    "hold_aliases": "Keep exact outcome ties, including action aliases at a control bound; record every executed action and post-action control.",
+    "nonfinite_branch": "Retain the actual nonfinite loss/gradient/callback failure and branch identity, restore the original source host, then stop the run. No world is silently excluded, no synthetic finite loss replaces a failed branch, and no incomplete comparison enters the finite sample table."
+  },
+  "objective": "state-span-huber-v1: delta[a]=double(loss[HOLD])-loss[a]; scale=max(max_abs_finite_delta,1e-6*(abs(double(loss[HOLD]))+1)); target[a]=delta[a]/scale. HOLD target0; nonfinite alternatives target-1; nonfinite HOLD refused. Mean three-head Huber delta1, simultaneous update from pre-fit weights.",
+  "students": {
+    "lived-hold": {
+      "initial_weights": "parent",
+      "continuation": "hold",
+      "life_id": "lived-hold-h16-v1"
+    },
+    "lived-policy": {
+      "initial_weights": "parent",
+      "continuation": "policy",
+      "life_id": "lived-policy-h16-v1"
+    }
+  },
+  "fitting": {
+    "parameters": 163,
+    "learning_rate": 0.03,
+    "epochs": 512,
+    "samples_per_student": 32,
+    "fits_per_student": 16384,
+    "total_fits": 32768,
+    "order": "body_order simple then hevlm, ascending seed, ascending checkpoint; identical order on each epoch",
+    "independent_initialization": true,
+    "separate_adaptation_stage": false,
+    "sample_pairing": "Both students receive the same32 captured features/source lives. Each receives only the three measured losses from its named continuation.",
+    "weights_only": true,
+    "history_rng_counters_format": "No fitting change to online chronology, history, RNG or saved-life encoding.",
+    "objective_identity": "The saved life_id, sample-table hashes, parent hash, continuation identity and protocol hash bind each acquired life.",
+    "nonfinite_experiment_boundary": "The generic conditioned API keeps its existing nonfinite contract. This experiment stops and retains a failed branch before fitting, because its measured binary sample tables require all three finite losses."
+  },
+  "evaluation": {
+    "bodies": [
+      "simple",
+      "hevlm"
+    ],
+    "seeds": [
+      701,
+      907
+    ],
+    "states_per_body": 16,
+    "states": 32,
+    "source_policy": "parent",
+    "continuations": [
+      "hold",
+      "policy"
+    ],
+    "source_checkpoints": "same fixed eight checkpoints",
+    "outcomes_generated_after_parent_and_both_students_saved_and_hashed": true,
+    "exploration": 0,
+    "target_or_capacity_or_recipe_changes_after_new_outcomes": false
+  },
+  "common_state_controls": {
+    "parent": "What does additional experience change from the exact frozen parent at the same source history?",
+    "lived-hold": "Learning on the parent's own states with15HOLD continuation controls the state-source change while retaining the previous continuation.",
+    "lived-policy": "Learning on identical source states with15parent-policy continuation tests the continuation change against lived-hold.",
+    "hold": "Zero intervention reference.",
+    "brake": "Fixed BRAKE comparison, including aliases at the dampening floor.",
+    "push": "Fixed PUSH comparison."
+  },
+  "common_state_readout": "Load exact parent source life, authenticate observation/features, graft only163 sealed weights into that history, exploration0, select through ordinary C API. For each continuation join the action to its actually measured branch. Report continuation-specific raw loss, advantage, exact-tie optimality and regret separately.",
+  "closed_loop": {
+    "bodies": [
+      "simple",
+      "hevlm"
+    ],
+    "seeds": [
+      701,
+      907
+    ],
+    "steps": 512,
+    "arms": [
+      "canonical",
+      "hold",
+      "push",
+      "parent",
+      "lived-hold",
+      "lived-policy"
+    ],
+    "initialization": "All independent arms initialize identical body/window/noise seeds. Policy arms graft their sealed163weights into fresh host policy history with body seed and exploration0.",
+    "history": "Every policy decision acts on the real body. Frozen feedback uses the actual same-window consequence, advances history/counters, and preserves all163weights. No online weight fitting.",
+    "history_reward": "clamp((before-after_same_window)/(abs(before)+1e-6),-1,1)",
+    "heldout_evaluations_after_updates": [
+      0,
+      128,
+      256,
+      384,
+      512
+    ],
+    "primary_comparisons": [
+      "lived-policy versus lived-hold: matched continuation effect",
+      "each student versus parent: additional own-state experience effect",
+      "all policy arms versus canonical/HOLD/PUSH trajectories"
+    ],
+    "policy_continuation": {
+      "arm": "lived-policy",
+      "save_load_after_step": 256,
+      "repeats": 4,
+      "scope": "Repeat independently for each body/seed, save/load complete Architect at256 while body stays in process, then compare every step/evaluation and final body/moments/control/policy bytes."
+    },
+    "metrics": [
+      "complete held-out loss trajectory",
+      "action counts and first divergence",
+      "same-window loss, gradient and controls over time",
+      "final body/optimizer/policy hashes",
+      "per-process elapsed seconds and peakRSS"
+    ]
+  },
+  "fixed_counts": {
+    "acquisition_worlds": 32,
+    "evaluation_worlds": 32,
+    "branches_per_world": 6,
+    "branches_total": 384,
+    "branch_updates_total": 6144,
+    "paired_source_host_processes": 16,
+    "source_host_updates_total": 8192,
+    "primary_deployment_processes": 24,
+    "policy_resume_processes": 4,
+    "deployment_updates_total": 14336,
+    "all_body_updates_total": 28672,
+    "student_fit_updates_total": 32768,
+    "readout_controls": 6,
+    "readout_continuation_tables_per_split": 2,
+    "development_readouts": 384,
+    "evaluation_readouts": 384,
+    "readouts_total": 768
+  },
+  "tie_rule": "Exact recorded F32 equality; every tied minimum remains optimal.",
+  "heldout_loss_used_for_fitting": false,
+  "new_evaluation_targets_used_for_fitting_or_tuning": false,
+  "no_capacity_or_hyperparameter_sweep": true,
+  "rounds": 1,
+  "noninterference": "Independent probe-off/probe-on parent hosts match all ordinary transitions and final complete states for every acquisition and evaluation cohort.",
+  "integrity": "Anchor and terminally reread source identities, saved lives, sample tables, fit/readout/branch/host/rollout traces and final body/optimizer/policy files. Require full expected identity and step sets, source restore, selected-policy-branch equality, sealed-weight invariance and policy-continuation parity before success.",
+  "smoke": {
+    "seeds": [
+      42
+    ],
+    "host_steps": 8,
+    "purpose": "Development-only wiring smoke with scheduled checkpoints within8steps. No701/907 outcomes before final lives are sealed. Smoke sample/fitting counts remain explicitly separate from the full fixed run."
+  },
+  "failure_recording": "Retain every measured regression, missed action, refusal, divergence and failed integrity gate. Raw artifacts remain separate from compact Git receipts.",
+  "lineage": {
+    "prior_relative_objective": "../future/protocol.json",
+    "prior_conditioned_objective_and_rollout": "../conditional/protocol.json",
+    "development_conditioning_diagnosis": "../conditional/development_diagnosis.json",
+    "historical_result": "../conditional/receipts.json"
+  },
+  "common_state_primary_measurement": "Selected H16 future loss, advantage and regret under parent-policy continuation; HOLD-continuation outcomes are retained as the parallel causal control. Action readout is independently bound to each named continuation table."
+}

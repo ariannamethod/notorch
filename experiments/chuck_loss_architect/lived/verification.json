@@ -1,0 +1,3155 @@
+{
+  "schema": 1,
+  "scope": "Native intervention, fixed lived-state experience and independent result verification",
+  "base_commit": "5eb709f12eca7089551d349e93b07daec3c5e2c7",
+  "preregistration_commit": "ab438c36c700d9086830100c7c273ea98ed043c2",
+  "protocol_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+  "raw_receipts": {
+    "implementation/cpu_suite.json": {
+      "bytes": 64160,
+      "sha256": "4b0a529c96e88a9f50639f1742ac88a2a3c98f6a961e79864307ea44579870fd"
+    },
+    "tests/manifest.json": {
+      "bytes": 3289,
+      "sha256": "76488e115d35d6bc293377d1d1c98870e88623bbe928d93b3ca6e539f044d7bb"
+    },
+    "tests/mutations.json": {
+      "bytes": 502275,
+      "sha256": "bbaccb91d1097db61550e5f7de4a16930bedc51f00da1dc9043735423d2dc572"
+    },
+    "tests/api-sanitizers.json": {
+      "bytes": 2457,
+      "sha256": "41307dc79c8eb2f63186feeb04c21d308d5e2f29b15ccfa99845b71c25112c6b"
+    },
+    "audit/api-audit.json": {
+      "bytes": 3359,
+      "sha256": "ee7426c720c8eb0d9edaa9bc78d3f4ab8ec8ead7d9dcec44eaafaf647286c753"
+    },
+    "compatibility/compatibility.json": {
+      "bytes": 12769,
+      "sha256": "0175d592b72b71e7e6cd176430fe2ed0a623731a468477f930f888f6a090540e"
+    },
+    "implementation/unchanged_functions.json": {
+      "bytes": 1685,
+      "sha256": "060dbf60dcc762fb7804ecde0ca250a00f111f2e83597ae48a7745ff8596bffa"
+    },
+    "audit/source-review.json": {
+      "bytes": 8005,
+      "sha256": "d50a575b84c531eeede3b2bf07df2e3394fdde71d3b8374d6953d2f1a3d596c2"
+    },
+    "audit/current-verifier-mutations.json": {
+      "bytes": 5581,
+      "sha256": "b2fb0c49f7ac6910585fa89d6b1dd9e8ae4786fe898a5762b96f54524fe27e10"
+    },
+    "audit/final-seal-anchor.json": {
+      "bytes": 2178,
+      "sha256": "988868caeca8b3953cb5bc0496856e8e0cce7ca3275d52a3d1a7f3872180efd4"
+    },
+    "audit/final-auditor-review.json": {
+      "bytes": 2564,
+      "sha256": "2ae9aff744c3e4a333ba234a3c8aed04ec0ae0e19b7575e3eeee4762ce01b344"
+    },
+    "audit/final-receipt.json": {
+      "bytes": 1222913,
+      "sha256": "992003c48d8a191b3b4ffb09c388042535cafaa301202563b6dd01fcb7b2e61a"
+    },
+    "interpretation/interpretation.json": {
+      "bytes": 152585,
+      "sha256": "488d3febacbf4b48ab2c6342a2e4f8d09b6f2fa167bbfa33564d27c4d20bb71b"
+    },
+    "interpretation/trajectory_findings.json": {
+      "bytes": 14566,
+      "sha256": "2b125e54e34843abcedb5b191880cae8095541cdbf041328c77192931694074d"
+    },
+    "interpretation/trajectory_source_points.json": {
+      "bytes": 35478,
+      "sha256": "953c73e615dfd2c709ef29d87081701a89761302d56ae24534986533f45fb783"
+    },
+    "tests/documentation_semantics_pre_results.json": {
+      "bytes": 2248,
+      "sha256": "19f5af5cdf8c980a2863a764d0640d868ffcbd694417a8a371b060f2afb291ee"
+    },
+    "tests/root_result_docs_review.json": {
+      "bytes": 14255,
+      "sha256": "26d334d76d7a22086875370abc9b0af08fffa21fc0c0085f551f7cdf95bf785e"
+    },
+    "experiment/chuck-lived-final-6029e13-raw.tar.verification.json": {
+      "bytes": 1726,
+      "sha256": "a5965549c6715c7ca310d5e26062c1f1c058fb059e920fcdcbf885a365b3caad"
+    },
+    "runpod-availability.json": {
+      "bytes": 406,
+      "sha256": "df6d4dfd7ad18851ca057ef7898b3bf27210b9eaa8ab34f7ee5ec486a648530e"
+    },
+    "tests/final_documentation_review.json": {
+      "bytes": 4228,
+      "sha256": "37427789d60898677f2baa6bc272cc6af3b96995fede7731c79849c591d95fde"
+    },
+    "packaging/publication-prefixes.json": {
+      "bytes": 3235,
+      "sha256": "f3a17356ab42bdd70db383033bb54e2e3ea9377f87ddda2c3f7dd12a661e19d6"
+    }
+  },
+  "cpu_recipe": {
+    "source_commit": "ab438c36c700d9086830100c7c273ea98ed043c2",
+    "source_before": {
+      "Makefile": "d34fb2ba8d29a17f7e71c35bba8a3a0665b517f1a3442d14ca6070cfec34ec54",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/bench_gguf_metal.sh": "0da14e22beed7a6797e0bde1ccb219fec430543f909d083800baad1f374a86bc",
+      "examples/bpe.c": "f89e648cb10ae2b7f93af9a31eafe5537a974fab11d9d960d7884355cccba9c5",
+      "examples/bpe.h": "2e5769426da001c944851a876724de40ed481f44f2ce13669fbde13c1c0aa32f",
+      "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+      "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+      "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_train.c": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+      "examples/infer_gemma.c": "fef9d64f9b36577925d2625f99562f99fedc298b32f9012789e9efb7b30e6533",
+      "examples/infer_gguf_metal.c": "fcda92e219fefe4ae7e1974b7be8c4fde00b7a1b6e64bd64d15c0766cd94cff9",
+      "examples/infer_janus.c": "adc4fa228fb69ab1f8387e18a15a26236b9e658d57e0be22bc52913f77f52439",
+      "examples/infer_llama.c": "907b18af3b7e9df7990b4082057f4d0a1f06f43fd06ee1669ee9a8f3846e40a5",
+      "examples/infer_llama3_bpe.c": "8305ac44642716be453dd7cb37a56f82ed39b9050eb05fc3e0070ccfa11ed7d3",
+      "examples/infer_llama3_char.c": "ebcea67ac9dffaaf9234443c64aeeac94c03b481d5d3caaf944b2e63d58eb9f1",
+      "examples/spa_agent_demo.c": "23ec38602e902ffa50d2d3ac191848edb1e048ddf2f8357c7d35a3ee6fb11d31",
+      "examples/spa_agent_future.c": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661",
+      "examples/spa_agent_scenarios.h": "9f6fadfaceb1b10148742deb1d5887b0fd02eb9b24d271af90de48fa27aaae28",
+      "examples/train_distillation.c": "ebb97751d359b3b9983178cc09993566df4547fe31270a54522ab7da602da1e6",
+      "examples/train_dpo.c": "511c12c0b3d9a7e95bbac4b5589dfd89b944dd61cd3de2fd21aa44dcaea0da4c",
+      "examples/train_grpo.c": "dd91669897458c8f8f29886af85de9e5068ce16bc828eac80d5017270f6f463f",
+      "examples/train_llama3_bpe.c": "5a949c422773d131b32a42d9a710c18051eadb91c5ab9b99e5034b46d0d3028f",
+      "examples/train_llama3_char.c": "7689607c1cd67e8b91626ca38fa2bd4c4957f242d80ebb7078c8bd51c97e47ce",
+      "examples/train_q.c": "0f4fe321c0d22677046739789aa7bfe60bc4076af4e4eef1064255bcffb38639",
+      "examples/train_resonance_lora.c": "47cfe412ec9057208c39ce353af82cd858f18f8ac7ebebb5f91ab1604801499a",
+      "examples/train_yent.c": "c54ba2adb9021bc71580a0b307b18d336466f6fa24f22ac9d80d0131a04f2a17",
+      "examples/unicode_numbers.h": "c77829428be33a7d0e71d3c851cea86ca8121e34c969d4744fcb6279e759944c",
+      "gguf.c": "39bfb68692bb025b23844bb8e56eef8add56a2660bc9f731ab9c9ef15d5879e9",
+      "gguf.h": "cc657d588e2ef47e3cdaf0e3ea017ef422cbbd5ab394730b6bc412bd3adb6589",
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_cuda.h": "8fb573ec4182586d7bc83fc02164a74d804763540cc71060dbb139eb1d2daac4",
+      "notorch_metal.h": "735f2feb3293ac13bd7360d1e97cfbcfbab984a3333944d4b34175401cead737",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "notorch_simd_scalar.h": "c3fa8f3ec388f7398bfbcb5fba7f67055354873775398c306e2340d42d50dc86",
+      "notorch_vision.h": "7f00d29a9c9c9318638ad38110ee850c95d7d26bc081f4f4295ad98e70a48363",
+      "spa_agent.c": "a039bc04644b094c16ada64f0c08f08d853a1ffca8f750c830d9e1cd4acf00ea",
+      "spa_agent.h": "f47b2bb9347b9613c96a4ef56a101f9c28a9253fccf2bc2a61781a1401d1d19d",
+      "spa_binding.c": "3e314877d9c31d250de64e02f5022065a48720cb87ac2383b478ac94bff79c82",
+      "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+      "stb_image.h": "fd0e815d15ee3f7c0fc516db7ad067454d2bee37311974cab6d83a7f1ed0512b",
+      "tests/bench_claim.c": "317a98ec763d0f2a3a8aeacecae9aa280ee50bbae9b941204398745821b477b2",
+      "tests/bench_dtype.c": "48eceae0af429b57a4ca76cad6bb24d3043b6e3e0c28ffc7c9cf699acc68ec6c",
+      "tests/bench_metal_batch.c": "8939dea91793f760156f0247282abe01d6842b84ee02bfa779624f767ce80175",
+      "tests/bench_multi_decode.c": "31ff6e7b2370aab59eb9b1e4ebeb2634c60fdbcccc0b44842d95e3cad377b1d2",
+      "tests/bench_qmatmul.c": "4d2f83d3b882ebf1e26b4dca703eb10e955551554be436c46d5199cedcf4d561",
+      "tests/bench_qmatvec.c": "8ce7a5d9e574305f569a56af091c07d580503b959b450348ecb108426e61f383",
+      "tests/check_requant.c": "cc599657faf754e479640cc08483a15a06416f9512cd44d180be770620c26486",
+      "tests/chuck_device_host_backend.c": "8f0adbdb5093889c1da1ba555e66a39deef4704f4ffb27ad773551696b4b9be9",
+      "tests/chuck_legacy_parity.c": "1816bdbbc48aa439bc81ae7e6b4723d5f21d7427c084fefb8d90f1d930abebee",
+      "tests/consumer_link.c": "d74aa239e414109ae993a6d0db6bd6d0ed6b470e7e0d94222a262dfd962158c7",
+      "tests/decode_fixtures.h": "68cce552d7e46987add54aae0577c738d31bf01cceb6de65e055b7651100526b",
+      "tests/gguf_dequant_ref.c": "fb5eb28c442cd8aacf23ad0c958656b253d9b2b4886e7332f51ee5a896726312",
+      "tests/gguf_layout.c": "a482aae472bdf85052664a1784539345660ec4fa4d6f326c8e6b87ae33afe6a5",
+      "tests/js_qmatvec_ref.c": "ec8db7ec9ee3ed3606b72f3f7a1bce568350c77a91d354baba3989da766cc60b",
+      "tests/run_chuck_architect_device.sh": "3e6768f2d29df4e310fde8304fbed17f62c84265c1ecd567b452c14c85c846c4",
+      "tests/run_chuck_architect_state.sh": "dac0d7f59608ec9db340c15a41fe20b765032ce4726c7b63e70bbffcb4f79292",
+      "tests/spa_layout.c": "5a65e78fff4db18297dbd6586fa5e5ad34c762563fee92c07f9d2f1693cf226b",
+      "tests/spa_python_parity.c": "0063dd77b34aff02c7a5aa56e1fa6b843f2be51e68b3d20cd13365e2f84a055a",
+      "tests/test_affinity.c": "11dbab2f93f79a24eeca3e86adcf469fdd8c62e74f56348ff54ed2693a2e178c",
+      "tests/test_bitnet_ops.c": "50e27e83401463122caa80afa20d856e98e991f8542cf004aa831b49b6df96a9",
+      "tests/test_chuck_actions_edge.c": "fca423cf4d4b34d95763e7285db50c70ce187f55111fb353576107d120df89ae",
+      "tests/test_chuck_architect.c": "1ecf25b69621387a085bf8263571a9d3985f966395f76cb4bac167ed7a2f95d6",
+      "tests/test_chuck_architect_conditioned.c": "f0e6c7931e8df265ed73c0edef7dc89a1a3b7118534ef25eaac40db3ccdb73c3",
+      "tests/test_chuck_architect_device.c": "144c82d9d4343f040f85cc0d5e68d9580e9b8a763b2bfa285604cfc6a81c8886",
+      "tests/test_chuck_architect_durability.c": "991e7501703c6c8737450004111c027c507ac59ce92cb9fc3783aab51a9d98a3",
+      "tests/test_chuck_architect_future.c": "0d31b5abd3bbc76cce7db76fa08040dcbf4828e10f44027ba60487116396ff86",
+      "tests/test_chuck_architect_scenarios.c": "7c2dfd524d6ed86a2518186e21fb934cb60f056977d5558b4c4c091d9314c298",
+      "tests/test_chuck_architect_state.c": "171ae259562c5e2a1a527cfb18debdb558183e20be7a3a19ff0869668da9d9c5",
+      "tests/test_chuck_legacy_parity.sh": "4cf353249fbaf175a0df9c7c8b684f47b5b6dba0fccd53a90b1fac80b6042183",
+      "tests/test_chuck_lived.c": "fd1fe7e12b3b91560af3f3f7d46846a6d5706165159f9097dffb54726cb67470",
+      "tests/test_conv1d.c": "aa6fecf173d3b2fb96274ec23c1327688689e5ba6e4cb4f2d67033d52d184f67",
+      "tests/test_cuda_decode.c": "0cc29e404945e3ded99a1b81b535ce6f1b95c3eaf6698c013b966b0c081ca1b0",
+      "tests/test_f16_matvec.c": "fa0ac33fc0abdfe25004c8cac8d36ea7a0a21bf26b20482e1b0d4e062bdb6c28",
+      "tests/test_gemma3.c": "23450dca37332f548229c05d530479eca2eb619afd99eabb873a4a212f6ff47c",
+      "tests/test_gguf.c": "e3f5e4d636a377e24f98a08885711d52e892e43a4b8f6998eecffe2e24a2d259",
+      "tests/test_gguf_keys.c": "e5089011374ab9be1de114941ef8a979e3a2ccea28901f1cd733d905113fac68",
+      "tests/test_gguf_q4k_real.c": "8eef4e87c030e1136ff54c0d5b120c641859e42aba4fc1e002312d7d485d82d7",
+      "tests/test_gguf_tokens.c": "97a625ae9168b4fc70e935f4465fb8c55b7a2d13bc34f89a69593c70016a8386",
+      "tests/test_gguf_write.c": "ecac0ca1cde7b4f14bafd7455f33ed260e1c4e96511be6cf4fdbae2a1e98b890",
+      "tests/test_janus_parity.c": "7967633574d10c12870261d156ab359e888b99d5d5a885b143315b0263e157ca",
+      "tests/test_libnotorch_lib.sh": "7a8c7713b120d2d1f6407f29c4ec032c10fd6323211eb4587d4311128ad1452b",
+      "tests/test_logmel.c": "8656241a1f9396b977170a53e95387d50ca1f9e84acdf6d0f98198761ee68e6f",
+      "tests/test_metal_f16.c": "4be64d36fbbf51cb349aa706d47e629b16eb2fd1c629309039c465d01d04a51f",
+      "tests/test_metal_q4k.c": "83a2834897faed758b259a1675a7d5c28dc07c6b0bf6aaf89af5048b75f5db79",
+      "tests/test_multi_decode.c": "483da0eaf39a12d384ab39558d45fe1044adae4f0d662d5b94e11501b2e45fa2",
+      "tests/test_notorch.c": "ba7e01dada38781d85afa54ee1c6312d1c423a4ceed053a8668805f12e96029a",
+      "tests/test_parliament_elect.c": "14de5cba4af0e09ea65a4a1f21a3f0326a7e5a43083c0687ea4177b427dd379b",
+      "tests/test_parliament_inject.c": "c011c90df51fd801d7d0a028d1a58c9e22c097975b0234c6e625a7f27bea4bd1",
+      "tests/test_plan_race.c": "f6e96cd7a5d44027ba76616080b53cb1d053f1db04285bcb1321d2c8dfe83b59",
+      "tests/test_q8_0_rows.c": "d5d8b0537e78b37d0e4c44d79fca5f917a27ad30d875392c4e2a101dffab9a47",
+      "tests/test_qgather.c": "70a6d2c05e437eea352f6b9b5451a7b936b25ce40aaea45168079a48eec97790",
+      "tests/test_qmatmul.c": "2c8f4a3af85f7cd767813e4f196446783b7751f66bf8b41b8bbe53795c574d98",
+      "tests/test_qmatvec.c": "529a180f96ff26437c848a91be430fdbd621822a1c67c43a75f871fe037c9c9c",
+      "tests/test_qmatvec_leak.c": "da70b9a29109fa2906b509adfff2495eca155600de43fddc54a3000e3837eb38",
+      "tests/test_qpool.c": "233371910be8cc65439a5495b76d33e4edaf4af0c993c711b0f5559e6265dce5",
+      "tests/test_quantize.c": "6e2418922ee3330bf969d2fddbb2cf3f75302f4dbfcd4faa63f17cc20691a55a",
+      "tests/test_repeat.c": "c47e38362100effea8013695fc3b631261d5f0aaf0d9de6cc9e5cd82e361bc70",
+      "tests/test_residual.c": "7662da34af81d140cdbc00320c991d64b155c03398ebdbe07b92a12ac87e4433",
+      "tests/test_resonance_parity.c": "00297808a947c3577f9159a52a5858ed2f2da01bcae4d74997a3891afdcbba4c",
+      "tests/test_rrpram_broadcast.c": "65c9f978b31337eda1043804fa87f61cda1ffef7790050ac88a992a69e749f49",
+      "tests/test_rrpram_lr.c": "27e2ac6a805adc35a24f5d746ba09fcbf092c1225f25c5578e3ae01cb7c8e2c1",
+      "tests/test_sigmoid_scale.c": "1d69d4d7810b11fb899df2b60ef86e9156104b5cd82ce2bf69ce6ce6b7d31ed6",
+      "tests/test_simd_correctness.c": "f5675e676332c0bfc547880649b02f4ae3f8fac1d034ceccb8a220f0faf4a079",
+      "tests/test_simd_loss.c": "ccd0da69e2cdc3aa4693ff56e03147a41bd90da789f50d73775c7872b232e1ec",
+      "tests/test_simd_tails.c": "32db6b873ea8f5c39c2e6a0d24359e490767614fb08cd5d41dec34cd092faba7",
+      "tests/test_smollm_tokenizer.c": "e33e8f9b3076094217af98a0d4ffce8a939229f382f2afc6e65fbad5f286b29c",
+      "tests/test_spa_agent.c": "69c448800225511db7f66a3959de98cd366640234c23647bd43767ec9ba86345",
+      "tests/test_spa_agent_durability.c": "49855ecfa9324eaf28ba1b69d1837734b6684fcb014d8bfb980c4db8a3d330ab",
+      "tests/test_spa_agent_future.c": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+      "tests/test_spa_agent_state.c": "82c217a802a1a2711cc1781ccbe992688abd7f8e3c06792fa9d65b894dedbaed",
+      "tests/test_spa_legacy_parity.c": "4d8f0589cf8562e36540bafdfb4aabfacedaf58fa078a6930130e8bac60dc01c",
+      "tests/test_spa_legacy_parity.sh": "e2275989ffa7253d1e967601ae207d4e1ff3069da9a32229c50af6223e40a193",
+      "tests/test_vision.c": "328350ccbddac4257eb36b564faa2f0ec36a2c519b7da4c98859ef2c69adc0eb",
+      "tests/test_wt_expert.c": "5b9b41743e2f8a00c4fa7747780a9a328808cfb3b2df4fd19b0bf89a2f6a7ffb"
+    },
+    "test_recipe_commands": [
+      "./notorch_test",
+      "./test_bitnet_ops",
+      "./test_spa_agent",
+      "./test_spa_agent_state",
+      "./test_spa_agent_durability",
+      "./test_spa_agent_future",
+      "./test_chuck_architect",
+      "./test_chuck_actions_edge",
+      "sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state",
+      "./test_chuck_architect_scenarios",
+      "./test_vision",
+      "./test_chuck_architect_future",
+      "./test_chuck_architect_conditioned",
+      "./test_chuck_architect_durability",
+      "./test_chuck_lived",
+      "./test_conv1d",
+      "./test_logmel",
+      "NT_LOGMEL_THREADS=1 ./test_logmel",
+      "./test_qpool",
+      "NT_QMV_CHUNKS=1 ./test_qpool",
+      "NT_QMV_CHUNKS=64 ./test_qpool",
+      "NT_QMV_SPIN=0 ./test_qpool",
+      "./test_qmatmul",
+      "./test_quantize",
+      "./test_gguf_write",
+      "./test_gguf_write rss19",
+      "./test_gguf_write rss91",
+      "./test_gguf_keys",
+      "./test_qmatvec_leak",
+      "./test_affinity",
+      "NT_QMV_BIG_ONLY=0 ./test_affinity off",
+      "./test_affinity narrowed",
+      "NT_QMV_PIN=0 ./test_affinity nopin",
+      "./test_plan_race",
+      "./test_wt_expert",
+      "./test_residual",
+      "./test_multi_decode",
+      "./test_gemma3",
+      "./test_smollm_tokenizer",
+      "./test_qgather",
+      "NT_QMV_CHUNKS=1 ./test_qgather",
+      "./test_f16_matvec",
+      "./test_q8_0_rows"
+    ],
+    "command_count": 43,
+    "builds": [
+      {
+        "command": [
+          "make",
+          "-j2",
+          "-B",
+          "shared",
+          "lib",
+          "chuck_architect_train",
+          "chuck_architect_future",
+          "spa_agent_demo",
+          "spa_agent_future",
+          "test_chuck_lived",
+          "test_spa_agent_future",
+          "notorch_test",
+          "test_spa_agent",
+          "test_spa_agent_state",
+          "test_spa_agent_durability",
+          "test_bitnet_ops",
+          "test_chuck_architect",
+          "test_chuck_actions_edge",
+          "test_chuck_architect_state",
+          "test_chuck_architect_scenarios",
+          "test_chuck_architect_future",
+          "test_chuck_architect_conditioned",
+          "test_chuck_architect_durability",
+          "test_vision",
+          "test_qpool",
+          "test_qmatmul",
+          "test_quantize",
+          "test_gguf_write",
+          "test_gguf_keys",
+          "test_qmatvec_leak",
+          "test_affinity",
+          "test_plan_race",
+          "test_wt_expert",
+          "test_qgather",
+          "test_f16_matvec",
+          "test_q8_0_rows",
+          "test_conv1d",
+          "test_logmel",
+          "test_residual",
+          "test_multi_decode",
+          "test_gemma3",
+          "test_smollm_tokenizer",
+          "BLAS_FLAGS=",
+          "BLAS_LIBS="
+        ],
+        "returncode": 0,
+        "seconds": 70.70641893300126,
+        "log": "cpu_suite_build.log",
+        "log_bytes": 70181,
+        "log_sha256": "bd5fe80246667b09505e9f846bb8c916e73c1c3735c149b807344f1c491b45b8",
+        "result_lines": [
+          "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect_scenarios tests/test_chuck_architect_scenarios.c notorch.c -lm ",
+          "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect_future tests/test_chuck_architect_future.c notorch.c -lm ",
+          "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect_conditioned tests/test_chuck_architect_conditioned.c notorch.c -lm ",
+          "\t-Dopen=chuck_durability_open -Dfstat=chuck_durability_fstat \\",
+          "\t-Dmkstemp=chuck_durability_mkstemp -Dfsync=chuck_durability_fsync \\",
+          "\t-Drename=chuck_durability_rename -Dclose=chuck_durability_close -c notorch.c -o tests/chuck_durability_notorch.o",
+          "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o test_spa_agent_state tests/test_spa_agent_state.c spa_agent.c tests/spa_state_notorch.o -lm ",
+          "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect_durability tests/test_chuck_architect_durability.c tests/chuck_durability_notorch.o -lm ",
+          "ar rcs libnotorch.a notorch.o gguf.o spa_agent.o spa_binding.o",
+          "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o chuck_architect_train examples/chuck_architect_train.c ./libnotorch.a -lm ",
+          "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o chuck_architect_future examples/chuck_architect_future.c ./libnotorch.a -lm ",
+          "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o spa_agent_demo examples/spa_agent_demo.c ./libnotorch.a -lm ",
+          "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o spa_agent_future examples/spa_agent_future.c ./libnotorch.a -lm ",
+          "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o test_spa_agent_durability tests/test_spa_agent_durability.c tests/spa_durability_agent.o ./libnotorch.a -lm ",
+          "  796 |     printf(\"  total: %llu elements\\n\", total_params);",
+          "  796 |     printf(\"  total: %llu elements\\n\", total_params);",
+          "  796 |     printf(\"  total: %llu elements\\n\", total_params);",
+          "  796 |     printf(\"  total: %llu elements\\n\", total_params);",
+          "  796 |     printf(\"  total: %llu elements\\n\", total_params);",
+          "  796 |     printf(\"  total: %llu elements\\n\", total_params);"
+        ]
+      }
+    ],
+    "tests": [
+      {
+        "command": "./notorch_test",
+        "returncode": 0,
+        "seconds": 0.0043331270026101265,
+        "log": "cpu_suite_01.log",
+        "log_bytes": 2068,
+        "log_sha256": "5ef88967cde36ce668f15eeb6b9a6f55e83f3a278d62bf44006c30ce04effba6",
+        "result_lines": [
+          "  PASS: layernorm",
+          "  PASS: gradcheck_layernorm",
+          "  PASS: gradcheck_gelu",
+          "  PASS: profiler",
+          "  PASS: training_loop",
+          "  PASS: seq_training_loop",
+          "  PASS: attention_training",
+          "  PASS: chuck_convergence",
+          "  PASS: gradcheck_cross_entropy",
+          "  PASS: gradcheck_silu",
+          "  PASS: gradcheck_rmsnorm",
+          "  PASS: gradcheck_softmax",
+          "  PASS: gradcheck_linear",
+          "  PASS: gradcheck_seq_linear",
+          "  PASS: gradcheck_causal_attention",
+          "  PASS: gradcheck_embedding",
+          "  PASS: gradcheck_rope",
+          "  PASS: gradcheck_geglu",
+          "  PASS: gradcheck_arithmetic",
+          "Results: 51 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "./test_bitnet_ops",
+        "returncode": 0,
+        "seconds": 0.0017126629973063245,
+        "log": "cpu_suite_02.log",
+        "log_bytes": 299,
+        "log_sha256": "6b1615ffba99e2c39e4486e982cf407901f21e70fba8ddf4bcd265848a6a1469",
+        "result_lines": [
+          "═══ 118 tests, 0 failures ═══"
+        ]
+      },
+      {
+        "command": "./test_spa_agent",
+        "returncode": 0,
+        "seconds": 0.03177686500202981,
+        "log": "cpu_suite_03.log",
+        "log_bytes": 338,
+        "log_sha256": "e6c7f57f7e6efcc6da2bc0497d8c7013027adc7e6738df6f9849139eb1907ef0",
+        "result_lines": [
+          "PASS legacy",
+          "PASS config",
+          "PASS actions",
+          "PASS perception",
+          "PASS deterministic",
+          "PASS credit",
+          "PASS sequence",
+          "SPA_IMITATION_HELDOUT matched=108 total=108 score_ratio_margin=.2",
+          "SPA_IMITATION labels=9 matched=9 updates=10800 first_loss=0.830604666 last_loss=0.000535224142",
+          "PASS imitation",
+          "PASS memory",
+          "PASS persistence",
+          "SPA_AGENT_OK gates=10 checks=12618"
+        ]
+      },
+      {
+        "command": "./test_spa_agent_state",
+        "returncode": 0,
+        "seconds": 0.006223513002623804,
+        "log": "cpu_suite_04.log",
+        "log_bytes": 196,
+        "log_sha256": "8fbec4f97b0e4e1e0c608d94ff8c0f0ecb7f20643749561085503e20a181ceaa",
+        "result_lines": [
+          "PASS checksum-valid malformed lives",
+          "PASS output aliases and exact reset",
+          "PASS counter limits",
+          "PASS native allocation failure",
+          "PASS atomic failed save",
+          "SPA_AGENT_STATE 5/5 groups, 78 checks, 0 skipped"
+        ]
+      },
+      {
+        "command": "./test_spa_agent_durability",
+        "returncode": 0,
+        "seconds": 0.004159072999755153,
+        "log": "cpu_suite_05.log",
+        "log_bytes": 495,
+        "log_sha256": "0ca6316d2479dcb8e40bf7b0abad5d59fe67323d5b1198990e44e0772724be94",
+        "result_lines": [
+          "PASS durable successful replacement",
+          "PASS directory open failure before mutation",
+          "PASS directory stat failure before mutation",
+          "PASS non-directory refused before mutation",
+          "PASS temporary creation failure",
+          "PASS file sync failure preserves prior file",
+          "PASS rename failure preserves prior file",
+          "PASS directory sync failure reports installed replacement",
+          "PASS directory close failure reports installed replacement",
+          "PASS relative path uses current parent directory",
+          "SPA_AGENT_DURABILITY 10/10 cases, 111 checks"
+        ]
+      },
+      {
+        "command": "./test_spa_agent_future",
+        "returncode": 0,
+        "seconds": 0.007937659000162967,
+        "log": "cpu_suite_06.log",
+        "log_bytes": 307,
+        "log_sha256": "4f7c95c178c12f642ef5b4d11860fad3443837eb33d97d4391e399f72cb11579",
+        "result_lines": [
+          "PASS capture",
+          "PASS validation",
+          "PASS gradient",
+          "PASS masks",
+          "PASS credit",
+          "PASS persistence",
+          "PASS SPA future: 6 groups, 6277 checks"
+        ]
+      },
+      {
+        "command": "./test_chuck_architect",
+        "returncode": 0,
+        "seconds": 0.002841826997610042,
+        "log": "cpu_suite_07.log",
+        "log_bytes": 168,
+        "log_sha256": "e2d06ba3a39411d5acbc78e62daa90c7fcb08a07d8390a10c697a306e22da5a3",
+        "result_lines": [
+          "PASS legacy",
+          "PASS observation",
+          "PASS actions",
+          "PASS action_rejection",
+          "PASS configuration",
+          "PASS policy_transactions",
+          "PASS credit",
+          "PASS resume",
+          "Chuck Architect: 8 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "./test_chuck_actions_edge",
+        "returncode": 0,
+        "seconds": 0.0031907230004435405,
+        "log": "cpu_suite_08.log",
+        "log_bytes": 191,
+        "log_sha256": "970d74a11d1a5e5b2b78a623912ff5089f97b2d96f6f9e787588d76cc97edf6a",
+        "result_lines": [
+          "PASS empty-and-frozen",
+          "PASS gradient-refusals",
+          "PASS local-state-refusals",
+          "PASS controls-and-noise",
+          "PASS boundary-counters",
+          "PASS full-parameter-shapes",
+          "CHUCK_ACTIONS_EDGE groups=6/6 assertions=5196"
+        ]
+      },
+      {
+        "command": "sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state",
+        "returncode": 0,
+        "seconds": 1.019634465003037,
+        "log": "cpu_suite_09.log",
+        "log_bytes": 174,
+        "log_sha256": "a99f7f187408167fad8bbbcd28c43d4736a3998339b2f6e898349fda2b025454",
+        "result_lines": [
+          "PASS numeric_locales",
+          "PASS hostile_lives",
+          "PASS pending_feedback",
+          "Chuck state: 3 passed, 0 failed, 106 checks, 0 locale skips"
+        ]
+      },
+      {
+        "command": "./test_chuck_architect_scenarios",
+        "returncode": 0,
+        "seconds": 0.04844710199904512,
+        "log": "cpu_suite_10.log",
+        "log_bytes": 512,
+        "log_sha256": "694c6c2ffbc94f0ef76172c7ff4e3d12b84f6712712b865bdb3cd20a25a2fa26",
+        "result_lines": [
+          "PASS mixed_replay",
+          "PASS interruptions",
+          "PASS interleaved_lives",
+          "PASS mode_transitions",
+          "PASS temporal_readout",
+          "PASS masked_exploration",
+          "Chuck scenarios: 6 passed, 0 failed, 4672 selected/executed transitions"
+        ]
+      },
+      {
+        "command": "./test_vision",
+        "returncode": 0,
+        "seconds": 0.005334496996511007,
+        "log": "cpu_suite_11.log",
+        "log_bytes": 3165,
+        "log_sha256": "ead5065d8106990b4c3f8c0a553d0b8e1df258df3d25fa7176a564078d0c3b51",
+        "result_lines": [
+          "  PASS: nt_group_norm returns 0",
+          "  PASS: gn 2grp ch0[0] ~ -1",
+          "  PASS: gn 2grp ch0[1] ~ +1",
+          "  PASS: gn 2grp ch1[0] ~ -1",
+          "  PASS: gn 2grp ch1[1] ~ +1",
+          "  PASS: gn 1grp affine [0] = -1.683",
+          "  PASS: gn 1grp affine [3] =  3.683",
+          "  PASS: up[0,0] = 1",
+          "  PASS: up[0,3] = 2",
+          "  PASS: up[1,1] = 1",
+          "  PASS: up[2,0] = 3",
+          "  PASS: up[3,3] = 4",
+          "  PASS: nt_attention returns 0",
+          "  PASS: attn out[0,0]",
+          "  PASS: attn out[0,1]",
+          "  PASS: attn out[1,0]",
+          "  PASS: attn out[1,1]",
+          "  PASS: cross-attn out[0]",
+          "  PASS: cross-attn out[1]",
+          "Results: 73 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "./test_chuck_architect_future",
+        "returncode": 0,
+        "seconds": 0.003938650999771198,
+        "log": "cpu_suite_12.log",
+        "log_bytes": 227,
+        "log_sha256": "5ec0b6e92a8620a7dcb434047fee25a31838fb0515a2ba2e92d7701c3693a800",
+        "result_lines": [
+          "PASS measured_reversal",
+          "PASS refusals",
+          "PASS nonfinite_alternatives",
+          "PASS gradient_and_determinism",
+          "PASS pending_and_online",
+          "PASS save_resume",
+          "CHUCK_FUTURE groups=6/6 checks=647"
+        ]
+      },
+      {
+        "command": "./test_chuck_architect_conditioned",
+        "returncode": 0,
+        "seconds": 0.01039374300307827,
+        "log": "cpu_suite_13.log",
+        "log_bytes": 311,
+        "log_sha256": "0d7bc35251934f58b5b306e60d9b21dc6c1b89b3627e382c17a5391355633559",
+        "result_lines": [
+          "PASS conditioned_scale",
+          "PASS conditioned_choice",
+          "PASS conditioned_refusals",
+          "PASS nonfinite_alternatives",
+          "PASS frozen_feedback",
+          "PASS frozen_refusals_and_nonfinite",
+          "PASS deterministic_fit_resume",
+          "CHUCK_CONDITIONED groups=7/7 checks=2474"
+        ]
+      },
+      {
+        "command": "./test_chuck_architect_durability",
+        "returncode": 0,
+        "seconds": 0.004320267002185574,
+        "log": "cpu_suite_14.log",
+        "log_bytes": 501,
+        "log_sha256": "ec29baa8a4c3a676c1d051b542e614b987c86b85d1de4a24af544f7980ab1aae",
+        "result_lines": [
+          "PASS durable successful replacement",
+          "PASS directory open failure before mutation",
+          "PASS directory stat failure before mutation",
+          "PASS non-directory refused before mutation",
+          "PASS temporary creation failure",
+          "PASS file sync failure preserves prior file",
+          "PASS rename failure preserves prior file",
+          "PASS directory sync failure reports installed replacement",
+          "PASS directory close failure reports installed replacement",
+          "PASS relative path uses current parent directory",
+          "CHUCK_ARCHITECT_DURABILITY 10/10 cases, 111 checks"
+        ]
+      },
+      {
+        "command": "./test_chuck_lived",
+        "returncode": 0,
+        "seconds": 0.0028829290022258647,
+        "log": "cpu_suite_15.log",
+        "log_bytes": 125,
+        "log_sha256": "690707fab97fad6e0719c31a57921b708e43593a842a4a28d6fe45fcaaa369ec",
+        "result_lines": [
+          "PASS selected_equivalence",
+          "PASS unselected_resume",
+          "PASS refusals",
+          "PASS nonfinite_consequences",
+          "CHUCK_LIVED groups=4/4 checks=292"
+        ]
+      },
+      {
+        "command": "./test_conv1d",
+        "returncode": 0,
+        "seconds": 0.8577704169983917,
+        "log": "cpu_suite_16.log",
+        "log_bytes": 2187,
+        "log_sha256": "a79b7bf64c16c03caaedc509580e4f132384289eaa57af097a8da57134302ddb",
+        "result_lines": [
+          "  PASS conv1d Cin=4 Lin=32 Cout=8 K=3 s=1 p=1 bias=1 vs the triple loop — max|d| = 4.768e-07 at 18, limit 1.200e-06 (12 terms)",
+          "  PASS conv1d Cin=4 Lin=32 Cout=8 K=3 s=2 p=1 bias=1 vs the triple loop — max|d| = 4.768e-07 at 29, limit 1.200e-06 (12 terms)",
+          "  PASS conv1d Cin=3 Lin=17 Cout=5 K=5 s=1 p=2 bias=1 vs the triple loop — max|d| = 2.980e-07 at 4, limit 1.500e-06 (15 terms)",
+          "  PASS conv1d Cin=3 Lin=17 Cout=5 K=5 s=3 p=2 bias=0 vs the triple loop — max|d| = 2.384e-07 at 4, limit 1.500e-06 (15 terms)",
+          "  PASS conv1d Cin=8 Lin=64 Cout=16 K=1 s=1 p=0 bias=1 vs the triple loop — max|d| = 2.980e-07 at 540, limit 8.000e-07 (8 terms)",
+          "  PASS conv1d Cin=16 Lin=100 Cout=32 K=7 s=2 p=3 bias=1 vs the triple loop — max|d| = 3.815e-06 at 156, limit 1.120e-05 (112 terms)",
+          "  PASS conv1d Cin=80 Lin=300 Cout=384 K=3 s=1 p=1 bias=1 vs the triple loop — max|d| = 1.526e-05 at 83183, limit 2.400e-05 (240 terms)",
+          "  PASS conv1d Cin=384 Lin=300 Cout=384 K=3 s=2 p=1 bias=1 vs the triple loop — max|d| = 5.341e-05 at 14925, limit 1.152e-04 (1152 terms)",
+          "  PASS conv1d_f16cols Cin=4 Lin=32 Cout=8 K=3 s=1 p=1 bias=1 vs the triple loop — max|d| = 4.768e-07 at 146, limit 1.200e-06 (12 terms)",
+          "  PASS conv1d_f16cols Cin=80 Lin=300 Cout=384 K=3 s=1 p=1 bias=1 vs the triple loop — max|d| = 1.717e-05 at 75757, limit 2.400e-05 (240 terms)",
+          "  PASS conv1d_f16cols Cin=384 Lin=300 Cout=384 K=3 s=2 p=1 bias=1 vs the triple loop — max|d| = 6.485e-05 at 44946, limit 1.152e-04 (1152 terms)",
+          "  PASS f16 columns change the result — max|d| vs f32 columns = 8.316e-04 at 60 (zero would mean the rounding never ran)",
+          "  PASS f16 columns stay within an f16 mantissa of the f32 path — 8.316e-04 < 1e-2",
+          "  PASS nt_im2col_1d lays taps out as row (c*K + k) across output positions",
+          "  PASS nt_im2col_1d zeroes the taps that fall outside the signal",
+          "  PASS a kernel longer than the signal is refused",
+          "  PASS stride 0 is refused",
+          "  PASS negative padding is refused",
+          "  PASS a NULL weight is refused",
+          "Results: 20 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "./test_logmel",
+        "returncode": 0,
+        "seconds": 0.08789336999689112,
+        "log": "cpu_suite_17.log",
+        "log_bytes": 2040,
+        "log_sha256": "dfae60404e9610cb45e1535df55d899db6261301e9ba34670e46a0baf604e22d",
+        "result_lines": [
+          "  PASS nt_stft n_fft=512 hop=256 frames=8 window=1 vs a direct DFT — worst relative 3.168e-07 at frame 5 bin 49, limit 1e-05",
+          "  PASS nt_stft n_fft=256 hop=128 frames=8 window=1 vs a direct DFT — worst relative 2.685e-07 at frame 1 bin 62, limit 1e-05",
+          "  PASS nt_stft n_fft=480 hop=160 frames=6 window=1 vs a direct DFT — worst relative 2.341e-07 at frame 0 bin 202, limit 1e-05",
+          "  PASS nt_stft n_fft=64 hop=32 frames=4 window=1 vs a direct DFT — worst relative 3.034e-07 at frame 0 bin 5, limit 1e-05",
+          "  PASS nt_stft n_fft=400 hop=160 frames=8 window=1 vs a direct DFT — worst relative 2.747e-07 at frame 0 bin 64, limit 1e-05",
+          "  PASS n_len over the padded signal — 300, expected 300",
+          "  PASS n_len_org counts only frames carrying audio — 99, expected 99",
+          "  PASS the silence tail adds frames — 99 real of 300",
+          "  PASS clamp eight decades under the peak then (x+4)/4 gives a range of exactly 2 — 2.0000000",
+          "  PASS every bin of the last silent frame sits on the floor",
+          "  PASS no NaN or inf anywhere in 24000 values",
+          "  PASS nt_mel_free clears the struct it frees",
+          "  PASS 1 thread and 6 threads agree bit for bit over 12000 values (0 differ)",
+          "  PASS nt_stft is bit-identical at 1 and 6 threads over 12864 values",
+          "  PASS a filter bank that is not 1 + n_fft/2 wide is refused",
+          "  PASS a NULL signal is refused",
+          "  PASS hop 0 is refused",
+          "  PASS nt_stft refuses n_fft 0",
+          "  PASS nt_stft refuses a zero frame count",
+          "Results: 25 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "NT_LOGMEL_THREADS=1 ./test_logmel",
+        "returncode": 0,
+        "seconds": 0.08293393399799243,
+        "log": "cpu_suite_18.log",
+        "log_bytes": 2040,
+        "log_sha256": "137df1ab13e3fcc72381b34008b24960f529a36b31892a8319be9d8068f3371e",
+        "result_lines": [
+          "  PASS nt_stft n_fft=512 hop=256 frames=8 window=1 vs a direct DFT — worst relative 3.168e-07 at frame 5 bin 49, limit 1e-05",
+          "  PASS nt_stft n_fft=256 hop=128 frames=8 window=1 vs a direct DFT — worst relative 2.685e-07 at frame 1 bin 62, limit 1e-05",
+          "  PASS nt_stft n_fft=480 hop=160 frames=6 window=1 vs a direct DFT — worst relative 2.341e-07 at frame 0 bin 202, limit 1e-05",
+          "  PASS nt_stft n_fft=64 hop=32 frames=4 window=1 vs a direct DFT — worst relative 3.034e-07 at frame 0 bin 5, limit 1e-05",
+          "  PASS nt_stft n_fft=400 hop=160 frames=8 window=1 vs a direct DFT — worst relative 2.747e-07 at frame 0 bin 64, limit 1e-05",
+          "  PASS n_len over the padded signal — 300, expected 300",
+          "  PASS n_len_org counts only frames carrying audio — 99, expected 99",
+          "  PASS the silence tail adds frames — 99 real of 300",
+          "  PASS clamp eight decades under the peak then (x+4)/4 gives a range of exactly 2 — 2.0000000",
+          "  PASS every bin of the last silent frame sits on the floor",
+          "  PASS no NaN or inf anywhere in 24000 values",
+          "  PASS nt_mel_free clears the struct it frees",
+          "  PASS 1 thread and 6 threads agree bit for bit over 12000 values (0 differ)",
+          "  PASS nt_stft is bit-identical at 1 and 6 threads over 12864 values",
+          "  PASS a filter bank that is not 1 + n_fft/2 wide is refused",
+          "  PASS a NULL signal is refused",
+          "  PASS hop 0 is refused",
+          "  PASS nt_stft refuses n_fft 0",
+          "  PASS nt_stft refuses a zero frame count",
+          "Results: 25 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "./test_qpool",
+        "returncode": 0,
+        "seconds": 0.10682855099730659,
+        "log": "cpu_suite_19.log",
+        "log_bytes": 419,
+        "log_sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+        "result_lines": [
+          "ALL PASS"
+        ]
+      },
+      {
+        "command": "NT_QMV_CHUNKS=1 ./test_qpool",
+        "returncode": 0,
+        "seconds": 0.12290293100159033,
+        "log": "cpu_suite_20.log",
+        "log_bytes": 419,
+        "log_sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+        "result_lines": [
+          "ALL PASS"
+        ]
+      },
+      {
+        "command": "NT_QMV_CHUNKS=64 ./test_qpool",
+        "returncode": 0,
+        "seconds": 0.13283943699934753,
+        "log": "cpu_suite_21.log",
+        "log_bytes": 419,
+        "log_sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+        "result_lines": [
+          "ALL PASS"
+        ]
+      },
+      {
+        "command": "NT_QMV_SPIN=0 ./test_qpool",
+        "returncode": 0,
+        "seconds": 0.10636542499923962,
+        "log": "cpu_suite_22.log",
+        "log_bytes": 419,
+        "log_sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+        "result_lines": [
+          "ALL PASS"
+        ]
+      },
+      {
+        "command": "./test_qmatmul",
+        "returncode": 0,
+        "seconds": 0.9217370539990952,
+        "log": "cpu_suite_23.log",
+        "log_bytes": 3210,
+        "log_sha256": "c9294a36606d2968bf7318acc1118730153045df638cb0f2682cb215947294e8",
+        "result_lines": [
+          "  PASS dtype=14 m=2048 k=4096 n=  8: 16384 outputs identical",
+          "  PASS dtype=14 m= 896 k=4864 n= 17: 15232 outputs identical",
+          "  PASS dtype= 1 m=  64 k= 256 n=  1: 64 outputs identical",
+          "  PASS dtype= 1 m=  64 k= 256 n=  3: 192 outputs identical",
+          "  PASS dtype= 1 m= 128 k= 512 n=  7: 896 outputs identical",
+          "  PASS dtype= 1 m= 128 k= 512 n=  8: 1024 outputs identical",
+          "  PASS dtype= 1 m= 128 k= 512 n=  9: 1152 outputs identical",
+          "  PASS dtype= 1 m= 128 k= 512 n= 33: 4224 outputs identical",
+          "  PASS dtype= 1 m=2048 k=4096 n=  8: 16384 outputs identical",
+          "  PASS dtype= 1 m= 127 k= 517 n=  9: 1143 outputs identical",
+          "  PASS dtype= 1 m=   1 k= 515 n=  8: 8 outputs identical",
+          "  PASS dtype= 1 m=  64 k=   5 n=  8: 512 outputs identical",
+          "  PASS dtype= 0 batched entry refuses and writes nothing",
+          "  PASS a null weight is refused",
+          "  PASS dtype= 6 m= 127 k= 512 n= 32: 4064 outputs identical",
+          "  PASS dtype= 8 m= 127 k= 512 n= 32: 4064 outputs identical",
+          "  PASS dtype=12 m= 127 k= 512 n= 32: 4064 outputs identical",
+          "  PASS dtype=14 m= 127 k= 512 n= 32: 4064 outputs identical",
+          "  PASS dtype=14 m= 127 k= 512 n= 31: 3937 outputs identical",
+          "Results: 46 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "./test_quantize",
+        "returncode": 0,
+        "seconds": 0.0021281910012476146,
+        "log": "cpu_suite_24.log",
+        "log_bytes": 330,
+        "log_sha256": "dd64c7c9fe108efba63299c64e04074022dcdb8eb5ebb38b282a15004fe2b200",
+        "result_lines": [
+          "  PASS Q4_0: round-trip worst error 5.637e-03, bound 6.526e-03",
+          "  PASS Q5_0: round-trip worst error 2.667e-03, bound 3.263e-03",
+          "  PASS Q8_0: round-trip worst error 1.947e-04, bound 2.056e-04",
+          "  (no files given — pass ours.gguf and a llama-quantize reference for the byte gate)",
+          "Results: 3 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "./test_gguf_write",
+        "returncode": 0,
+        "seconds": 0.07197881599859102,
+        "log": "cpu_suite_25.log",
+        "log_bytes": 5150,
+        "log_sha256": "15fd3a29568b6950f63c8d073730695610cfbb21426e6fad19148f4fb9ea9d26",
+        "result_lines": [
+          "  PASS a duplicate tensor name is refused",
+          "  PASS the refusal poisons the writer: close says no as well",
+          "  PASS and removes the file rather than leaving a partial GGUF to load",
+          "  PASS tensor data out of declaration order is refused",
+          "  PASS gguf_write_abort leaves no file behind",
+          "  PASS a tensor short of its declared size is refused",
+          "  PASS a tensor longer than declared is refused",
+          "  PASS the same tensor at its declared size is accepted",
+          "  PASS metadata after the header is refused",
+          "  PASS closing with a declared tensor undelivered is refused",
+          "  PASS and that file is removed too",
+          "  PASS 48 values of Q8_0 — not a whole number of blocks — is refused at declaration",
+          "  PASS 64 values of Q8_0 is two whole blocks and is accepted",
+          "  PASS a dtype nothing can size is refused",
+          "  PASS a zero dimension is refused",
+          "  PASS a fifth dimension is refused",
+          "  PASS a tensor name the reader would drop is refused here instead",
+          "  PASS a key the reader would truncate is refused too",
+          "  PASS nothing of any of that is left on disk",
+          "Results: 66 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "./test_gguf_write rss19",
+        "returncode": 0,
+        "seconds": 0.013468519999150885,
+        "log": "cpu_suite_26.log",
+        "log_bytes": 191,
+        "log_sha256": "b9b9f61d5f973ac3f51f43886ce2d5e57d2c50306a0b4c9d3497a458766dc8da",
+        "result_lines": [
+          "  PASS rss19: wrote 19341056 bytes",
+          "Results: 1 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "./test_gguf_write rss91",
+        "returncode": 0,
+        "seconds": 0.04341679400022258,
+        "log": "cpu_suite_27.log",
+        "log_bytes": 191,
+        "log_sha256": "dfaca01685636c03811bca6075ededcc566e62e8cd1a416f7b43dcd563920698",
+        "result_lines": [
+          "  PASS rss91: wrote 91201344 bytes",
+          "Results: 1 passed, 0 failed"
+        ]
+      },
+      {
+        "command": "./test_gguf_keys",
+        "returncode": 0,
+        "seconds": 0.0029171310015954077,
+        "log": "cpu_suite_28.log",
+        "log_bytes": 108,
+        "log_sha256": "67f1a88e0659dcbbeabd8ce0606fdf03f7f093949f15cae0b776ba3226827b4c",
+        "result_lines": []
+      },
+      {
+        "command": "./test_qmatvec_leak",
+        "returncode": 0,
+        "seconds": 0.08377952400041977,
+        "log": "cpu_suite_29.log",
+        "log_bytes": 219,
+        "log_sha256": "04dd2ac6199921908709079a41bcbb23427b07dd176b3566b3237a8a3c52367d",
+        "result_lines": [
+          "  PASS NULL weight returns -1",
+          "  PASS NULL activation returns -1",
+          "  PASS NULL output returns -1",
+          "  PASS nothing retained per call — 0 bytes held after 2000 calls",
+          "Results: all passed"
+        ]
+      },
+      {
+        "command": "./test_affinity",
+        "returncode": 0,
+        "seconds": 0.004357924997748341,
+        "log": "cpu_suite_30.log",
+        "log_bytes": 429,
+        "log_sha256": "c7520a55a2ca6baf2b382a6f4e91f83a6dc1da72b110db7337a69d2034b6721b",
+        "result_lines": [
+          "  PASS thread count matches the core plan — planned 9, expected 9 over cpus 0 1 2 3 4 5 6 7 8 ",
+          "  PASS the driving thread holds the whole chosen set — on cpus 0 1 2 3 4 5 6 7 8 , expected the plan's cores 0 1 2 3 4 5 6 7 8 ",
+          "  PASS a thread born after the pool inherits every chosen core — a thread opened after the pool sees cpus 0 1 2 3 4 5 6 7 8 , expected 0 1 2 3 4 5 6 7 8 ",
+          "Results: all passed"
+        ]
+      },
+      {
+        "command": "NT_QMV_BIG_ONLY=0 ./test_affinity off",
+        "returncode": 0,
+        "seconds": 0.011196962997928495,
+        "log": "cpu_suite_31.log",
+        "log_bytes": 425,
+        "log_sha256": "db9d95cd96bfd409952179027d24a40c40969bea9f2bc5c188f2995f415be468",
+        "result_lines": [
+          "  PASS thread count matches the core plan — planned 9, expected 9 over cpus 0 1 2 3 4 5 6 7 8 ",
+          "  PASS the driving thread holds the whole chosen set — on cpus 0 1 2 3 4 5 6 7 8 , expected the plan's cores 0 1 2 3 4 5 6 7 8 ",
+          "  PASS a thread born after the pool inherits every chosen core — a thread opened after the pool sees cpus 0 1 2 3 4 5 6 7 8 , expected 0 1 2 3 4 5 6 7 8 ",
+          "Results: all passed"
+        ]
+      },
+      {
+        "command": "./test_affinity narrowed",
+        "returncode": 0,
+        "seconds": 0.002025195000896929,
+        "log": "cpu_suite_32.log",
+        "log_bytes": 360,
+        "log_sha256": "1df1d0597102c9693cc6089838f44dd7b7f68bcb17d3283603eac162706fe8c7",
+        "result_lines": [
+          "  PASS thread count matches the core plan — planned 2, expected 2 over cpus 0 1 ",
+          "  PASS the driving thread holds the whole chosen set — on cpus 0 1 , expected the plan's cores 0 1 ",
+          "  PASS a thread born after the pool inherits every chosen core — a thread opened after the pool sees cpus 0 1 , expected 0 1 ",
+          "Results: all passed"
+        ]
+      },
+      {
+        "command": "NT_QMV_PIN=0 ./test_affinity nopin",
+        "returncode": 0,
+        "seconds": 0.004738709001685493,
+        "log": "cpu_suite_33.log",
+        "log_bytes": 418,
+        "log_sha256": "a0d9ea89005a77bb4ab0488f526a0a12f6e97b11e526f44afbf3a50f58de393f",
+        "result_lines": [
+          "  PASS thread count matches the core plan — planned 9, expected 9 over cpus 0 1 2 3 4 5 6 7 8 ",
+          "  PASS nothing touched the affinity mask — on cpus 0 1 2 3 4 5 6 7 8 , expected the mask untouched: 0 1 2 3 4 5 6 7 8 ",
+          "  PASS a thread born after the pool inherits every chosen core — a thread opened after the pool sees cpus 0 1 2 3 4 5 6 7 8 , expected 0 1 2 3 4 5 6 7 8 ",
+          "Results: all passed"
+        ]
+      },
+      {
+        "command": "./test_plan_race",
+        "returncode": 0,
+        "seconds": 0.015940885998134036,
+        "log": "cpu_suite_34.log",
+        "log_bytes": 195,
+        "log_sha256": "e8f29340659a55a20d8c313fd5393f87ae6432ac56fe391aec8c8a5c477a6983",
+        "result_lines": [
+          "  PASS both pools agree on the plan — 9 threads",
+          "  PASS float path matches its own serial run",
+          "  PASS integer path matches its own serial run",
+          "Results: all passed"
+        ]
+      },
+      {
+        "command": "./test_wt_expert",
+        "returncode": 0,
+        "seconds": 0.0017242459980479907,
+        "log": "cpu_suite_35.log",
+        "log_bytes": 657,
+        "log_sha256": "39db24b7a687ef3b4652b02ea161b58fc9d68b173fc0f32200392e90ef7d6eae",
+        "result_lines": [
+          "  PASS packed slice has the right base and height",
+          "  PASS packed slice has the right base and height",
+          "  PASS packed slice has the right base and height",
+          "  PASS packed slice has the right base and height",
+          "  PASS packed slice has the right base and height",
+          "  PASS f32 slice has the right base and height",
+          "  PASS f32 slice has the right base and height",
+          "  PASS f32 slice has the right base and height",
+          "  PASS f32 slice has the right base and height",
+          "  PASS f32 slice has the right base and height",
+          "  PASS a slice past the end is refused",
+          "  PASS a negative index is refused",
+          "  PASS a weight with no data is refused",
+          "Results: all passed"
+        ]
+      },
+      {
+        "command": "./test_residual",
+        "returncode": 0,
+        "seconds": 0.00241716700111283,
+        "log": "cpu_suite_36.log",
+        "log_bytes": 382,
+        "log_sha256": "a9c565cb97a755fb06ed5d3a431b91a3f3979685e3fd6dc441e7cc790f479d20",
+        "result_lines": []
+      },
+      {
+        "command": "./test_multi_decode",
+        "returncode": 0,
+        "seconds": 0.6432644849992357,
+        "log": "cpu_suite_37.log",
+        "log_bytes": 653,
+        "log_sha256": "cd97adf0d27185ea10e1d0c2a6951f098d42f6aa68926c5c41c6c7cab9f60877",
+        "result_lines": []
+      },
+      {
+        "command": "./test_gemma3",
+        "returncode": 0,
+        "seconds": 0.004721844001323916,
+        "log": "cpu_suite_38.log",
+        "log_bytes": 374,
+        "log_sha256": "a2d2c2654e33aaac1863a9512901955f71051d3c3449f6a36c1b10e4f4cfa138",
+        "result_lines": []
+      },
+      {
+        "command": "./test_smollm_tokenizer",
+        "returncode": 0,
+        "seconds": 0.0031355810024251696,
+        "log": "cpu_suite_39.log",
+        "log_bytes": 40,
+        "log_sha256": "e480a50b3a996dbb32b7ae451660aed8cbb3e67a27d85b0051a6ab06670da87e",
+        "result_lines": [
+          "SmolLM tokenizer: 92 checks, 0 failures"
+        ]
+      },
+      {
+        "command": "./test_qgather",
+        "returncode": 0,
+        "seconds": 0.7423225720012852,
+        "log": "cpu_suite_40.log",
+        "log_bytes": 511,
+        "log_sha256": "1a004e68984aff7d2a865d55540c4a76284344788c08c619fc447d40d91bd34e",
+        "result_lines": [
+          "  PASS Q4_0",
+          "  PASS gathered result is identical to the loop",
+          "  PASS Q5_0",
+          "  PASS gathered result is identical to the loop",
+          "  PASS Q8_0",
+          "  PASS gathered result is identical to the loop",
+          "  PASS Q4_K",
+          "  PASS gathered result is identical to the loop",
+          "  PASS Q6_K",
+          "  PASS gathered result is identical to the loop",
+          "  PASS Q4_0 at the OLMoE shape",
+          "  PASS gathered result is identical to the loop",
+          "  PASS a NULL slice is refused",
+          "  PASS no slices at all is refused",
+          "Results: all passed"
+        ]
+      },
+      {
+        "command": "NT_QMV_CHUNKS=1 ./test_qgather",
+        "returncode": 0,
+        "seconds": 0.8282464669973706,
+        "log": "cpu_suite_41.log",
+        "log_bytes": 511,
+        "log_sha256": "1a004e68984aff7d2a865d55540c4a76284344788c08c619fc447d40d91bd34e",
+        "result_lines": [
+          "  PASS Q4_0",
+          "  PASS gathered result is identical to the loop",
+          "  PASS Q5_0",
+          "  PASS gathered result is identical to the loop",
+          "  PASS Q8_0",
+          "  PASS gathered result is identical to the loop",
+          "  PASS Q4_K",
+          "  PASS gathered result is identical to the loop",
+          "  PASS Q6_K",
+          "  PASS gathered result is identical to the loop",
+          "  PASS Q4_0 at the OLMoE shape",
+          "  PASS gathered result is identical to the loop",
+          "  PASS a NULL slice is refused",
+          "  PASS no slices at all is refused",
+          "Results: all passed"
+        ]
+      },
+      {
+        "command": "./test_f16_matvec",
+        "returncode": 0,
+        "seconds": 0.02319395299855387,
+        "log": "cpu_suite_42.log",
+        "log_bytes": 5198,
+        "log_sha256": "b7bf5f79a022e32d8d6cbfe92a4c14d44e5cbf6ee3008e80749bac47cccee322",
+        "result_lines": [
+          "  PASS f16 matvec matches a double accumulation — k=30 worst relative error 4.24e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=31 worst relative error 5.27e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=32 worst relative error 4.58e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=33 worst relative error 4.16e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=34 worst relative error 3.74e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=35 worst relative error 4.14e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=36 worst relative error 5.7e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=37 worst relative error 3.92e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=38 worst relative error 4.8e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=39 worst relative error 4.13e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=40 worst relative error 5.37e-08 at row 4, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=2048 worst relative error 6.04e-08 at row 45, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=2049 worst relative error 6e-08 at row 45, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=2055 worst relative error 6.25e-08 at row 45, limit 1e-05",
+          "  PASS f16 matvec matches a double accumulation — k=2048 worst relative error 6.04e-08 at row 45, limit 1e-05",
+          "  PASS f32 matvec matches a double accumulation — k=33 worst relative error 1.04e-07, limit 1e-05",
+          "  PASS f32 matvec matches a double accumulation — k=2053 worst relative error 1.94e-07, limit 1e-05",
+          "  PASS f32 matvec matches a double accumulation — k=2048 worst relative error 2.38e-07, limit 1e-05",
+          "  PASS an unknown dtype is refused",
+          "Results: all passed"
+        ]
+      },
+      {
+        "command": "./test_q8_0_rows",
+        "returncode": 0,
+        "seconds": 0.01439034600116429,
+        "log": "cpu_suite_43.log",
+        "log_bytes": 2149,
+        "log_sha256": "2295ff94313b3864e936d50afb70b7d6147bd8c3ef10ffe69f9297025e6916a8",
+        "result_lines": [
+          "  PASS threaded and single-thread results are bit-identical — rows=7 k=96",
+          "  PASS q8_0 matvec matches a double accumulation — k=96 worst 4.24e-08 at row 1 (scalar order 1.05e-07), limit 1e-05",
+          "  PASS q8_0 matvec reproduces its documented summation order — k=96 7/7 rows",
+          "  PASS threaded and single-thread results are bit-identical — rows=64 k=1152",
+          "  PASS q8_0 matvec matches a double accumulation — k=1152 worst 1.71e-07 at row 42 (scalar order 1.45e-06), limit 1e-05",
+          "  PASS q8_0 matvec reproduces its documented summation order — k=1152 64/64 rows",
+          "  PASS threaded and single-thread results are bit-identical — rows=64 k=2048",
+          "  PASS q8_0 matvec matches a double accumulation — k=2048 worst 1.73e-07 at row 0 (scalar order 8.12e-07), limit 1e-05",
+          "  PASS q8_0 matvec reproduces its documented summation order — k=2048 64/64 rows",
+          "  PASS threaded and single-thread results are bit-identical — rows=64 k=6912",
+          "  PASS q8_0 matvec matches a double accumulation — k=6912 worst 3.42e-07 at row 16 (scalar order 1.54e-06), limit 1e-05",
+          "  PASS q8_0 matvec reproduces its documented summation order — k=6912 64/64 rows",
+          "  PASS large finite products cancel without SIMD overflow",
+          "  PASS scalar retry is bit-identical across thread counts",
+          "  PASS genuine overflow remains positive infinity",
+          "  PASS NaN input remains NaN",
+          "  PASS q8_0 batched matmul takes float activations",
+          "  PASS q8_0 batched matmul equals per-vector matvec bit for bit — m=67 k=1152 n=2..11, threaded and not",
+          "  PASS q8_0 batched matmul keeps the overflow retry",
+          "ALL PASS (0 failed)"
+        ]
+      }
+    ],
+    "started_utc": "2026-10-07T03:16:30Z",
+    "source_after": {
+      "Makefile": "d34fb2ba8d29a17f7e71c35bba8a3a0665b517f1a3442d14ca6070cfec34ec54",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/bench_gguf_metal.sh": "0da14e22beed7a6797e0bde1ccb219fec430543f909d083800baad1f374a86bc",
+      "examples/bpe.c": "f89e648cb10ae2b7f93af9a31eafe5537a974fab11d9d960d7884355cccba9c5",
+      "examples/bpe.h": "2e5769426da001c944851a876724de40ed481f44f2ce13669fbde13c1c0aa32f",
+      "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+      "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+      "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_train.c": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+      "examples/infer_gemma.c": "fef9d64f9b36577925d2625f99562f99fedc298b32f9012789e9efb7b30e6533",
+      "examples/infer_gguf_metal.c": "fcda92e219fefe4ae7e1974b7be8c4fde00b7a1b6e64bd64d15c0766cd94cff9",
+      "examples/infer_janus.c": "adc4fa228fb69ab1f8387e18a15a26236b9e658d57e0be22bc52913f77f52439",
+      "examples/infer_llama.c": "907b18af3b7e9df7990b4082057f4d0a1f06f43fd06ee1669ee9a8f3846e40a5",
+      "examples/infer_llama3_bpe.c": "8305ac44642716be453dd7cb37a56f82ed39b9050eb05fc3e0070ccfa11ed7d3",
+      "examples/infer_llama3_char.c": "ebcea67ac9dffaaf9234443c64aeeac94c03b481d5d3caaf944b2e63d58eb9f1",
+      "examples/spa_agent_demo.c": "23ec38602e902ffa50d2d3ac191848edb1e048ddf2f8357c7d35a3ee6fb11d31",
+      "examples/spa_agent_future.c": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661",
+      "examples/spa_agent_scenarios.h": "9f6fadfaceb1b10148742deb1d5887b0fd02eb9b24d271af90de48fa27aaae28",
+      "examples/train_distillation.c": "ebb97751d359b3b9983178cc09993566df4547fe31270a54522ab7da602da1e6",
+      "examples/train_dpo.c": "511c12c0b3d9a7e95bbac4b5589dfd89b944dd61cd3de2fd21aa44dcaea0da4c",
+      "examples/train_grpo.c": "dd91669897458c8f8f29886af85de9e5068ce16bc828eac80d5017270f6f463f",
+      "examples/train_llama3_bpe.c": "5a949c422773d131b32a42d9a710c18051eadb91c5ab9b99e5034b46d0d3028f",
+      "examples/train_llama3_char.c": "7689607c1cd67e8b91626ca38fa2bd4c4957f242d80ebb7078c8bd51c97e47ce",
+      "examples/train_q.c": "0f4fe321c0d22677046739789aa7bfe60bc4076af4e4eef1064255bcffb38639",
+      "examples/train_resonance_lora.c": "47cfe412ec9057208c39ce353af82cd858f18f8ac7ebebb5f91ab1604801499a",
+      "examples/train_yent.c": "c54ba2adb9021bc71580a0b307b18d336466f6fa24f22ac9d80d0131a04f2a17",
+      "examples/unicode_numbers.h": "c77829428be33a7d0e71d3c851cea86ca8121e34c969d4744fcb6279e759944c",
+      "gguf.c": "39bfb68692bb025b23844bb8e56eef8add56a2660bc9f731ab9c9ef15d5879e9",
+      "gguf.h": "cc657d588e2ef47e3cdaf0e3ea017ef422cbbd5ab394730b6bc412bd3adb6589",
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_cuda.h": "8fb573ec4182586d7bc83fc02164a74d804763540cc71060dbb139eb1d2daac4",
+      "notorch_metal.h": "735f2feb3293ac13bd7360d1e97cfbcfbab984a3333944d4b34175401cead737",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "notorch_simd_scalar.h": "c3fa8f3ec388f7398bfbcb5fba7f67055354873775398c306e2340d42d50dc86",
+      "notorch_vision.h": "7f00d29a9c9c9318638ad38110ee850c95d7d26bc081f4f4295ad98e70a48363",
+      "spa_agent.c": "a039bc04644b094c16ada64f0c08f08d853a1ffca8f750c830d9e1cd4acf00ea",
+      "spa_agent.h": "f47b2bb9347b9613c96a4ef56a101f9c28a9253fccf2bc2a61781a1401d1d19d",
+      "spa_binding.c": "3e314877d9c31d250de64e02f5022065a48720cb87ac2383b478ac94bff79c82",
+      "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+      "stb_image.h": "fd0e815d15ee3f7c0fc516db7ad067454d2bee37311974cab6d83a7f1ed0512b",
+      "tests/bench_claim.c": "317a98ec763d0f2a3a8aeacecae9aa280ee50bbae9b941204398745821b477b2",
+      "tests/bench_dtype.c": "48eceae0af429b57a4ca76cad6bb24d3043b6e3e0c28ffc7c9cf699acc68ec6c",
+      "tests/bench_metal_batch.c": "8939dea91793f760156f0247282abe01d6842b84ee02bfa779624f767ce80175",
+      "tests/bench_multi_decode.c": "31ff6e7b2370aab59eb9b1e4ebeb2634c60fdbcccc0b44842d95e3cad377b1d2",
+      "tests/bench_qmatmul.c": "4d2f83d3b882ebf1e26b4dca703eb10e955551554be436c46d5199cedcf4d561",
+      "tests/bench_qmatvec.c": "8ce7a5d9e574305f569a56af091c07d580503b959b450348ecb108426e61f383",
+      "tests/check_requant.c": "cc599657faf754e479640cc08483a15a06416f9512cd44d180be770620c26486",
+      "tests/chuck_device_host_backend.c": "8f0adbdb5093889c1da1ba555e66a39deef4704f4ffb27ad773551696b4b9be9",
+      "tests/chuck_legacy_parity.c": "1816bdbbc48aa439bc81ae7e6b4723d5f21d7427c084fefb8d90f1d930abebee",
+      "tests/consumer_link.c": "d74aa239e414109ae993a6d0db6bd6d0ed6b470e7e0d94222a262dfd962158c7",
+      "tests/decode_fixtures.h": "68cce552d7e46987add54aae0577c738d31bf01cceb6de65e055b7651100526b",
+      "tests/gguf_dequant_ref.c": "fb5eb28c442cd8aacf23ad0c958656b253d9b2b4886e7332f51ee5a896726312",
+      "tests/gguf_layout.c": "a482aae472bdf85052664a1784539345660ec4fa4d6f326c8e6b87ae33afe6a5",
+      "tests/js_qmatvec_ref.c": "ec8db7ec9ee3ed3606b72f3f7a1bce568350c77a91d354baba3989da766cc60b",
+      "tests/run_chuck_architect_device.sh": "3e6768f2d29df4e310fde8304fbed17f62c84265c1ecd567b452c14c85c846c4",
+      "tests/run_chuck_architect_state.sh": "dac0d7f59608ec9db340c15a41fe20b765032ce4726c7b63e70bbffcb4f79292",
+      "tests/spa_layout.c": "5a65e78fff4db18297dbd6586fa5e5ad34c762563fee92c07f9d2f1693cf226b",
+      "tests/spa_python_parity.c": "0063dd77b34aff02c7a5aa56e1fa6b843f2be51e68b3d20cd13365e2f84a055a",
+      "tests/test_affinity.c": "11dbab2f93f79a24eeca3e86adcf469fdd8c62e74f56348ff54ed2693a2e178c",
+      "tests/test_bitnet_ops.c": "50e27e83401463122caa80afa20d856e98e991f8542cf004aa831b49b6df96a9",
+      "tests/test_chuck_actions_edge.c": "fca423cf4d4b34d95763e7285db50c70ce187f55111fb353576107d120df89ae",
+      "tests/test_chuck_architect.c": "1ecf25b69621387a085bf8263571a9d3985f966395f76cb4bac167ed7a2f95d6",
+      "tests/test_chuck_architect_conditioned.c": "f0e6c7931e8df265ed73c0edef7dc89a1a3b7118534ef25eaac40db3ccdb73c3",
+      "tests/test_chuck_architect_device.c": "144c82d9d4343f040f85cc0d5e68d9580e9b8a763b2bfa285604cfc6a81c8886",
+      "tests/test_chuck_architect_durability.c": "991e7501703c6c8737450004111c027c507ac59ce92cb9fc3783aab51a9d98a3",
+      "tests/test_chuck_architect_future.c": "0d31b5abd3bbc76cce7db76fa08040dcbf4828e10f44027ba60487116396ff86",
+      "tests/test_chuck_architect_scenarios.c": "7c2dfd524d6ed86a2518186e21fb934cb60f056977d5558b4c4c091d9314c298",
+      "tests/test_chuck_architect_state.c": "171ae259562c5e2a1a527cfb18debdb558183e20be7a3a19ff0869668da9d9c5",
+      "tests/test_chuck_legacy_parity.sh": "4cf353249fbaf175a0df9c7c8b684f47b5b6dba0fccd53a90b1fac80b6042183",
+      "tests/test_chuck_lived.c": "fd1fe7e12b3b91560af3f3f7d46846a6d5706165159f9097dffb54726cb67470",
+      "tests/test_conv1d.c": "aa6fecf173d3b2fb96274ec23c1327688689e5ba6e4cb4f2d67033d52d184f67",
+      "tests/test_cuda_decode.c": "0cc29e404945e3ded99a1b81b535ce6f1b95c3eaf6698c013b966b0c081ca1b0",
+      "tests/test_f16_matvec.c": "fa0ac33fc0abdfe25004c8cac8d36ea7a0a21bf26b20482e1b0d4e062bdb6c28",
+      "tests/test_gemma3.c": "23450dca37332f548229c05d530479eca2eb619afd99eabb873a4a212f6ff47c",
+      "tests/test_gguf.c": "e3f5e4d636a377e24f98a08885711d52e892e43a4b8f6998eecffe2e24a2d259",
+      "tests/test_gguf_keys.c": "e5089011374ab9be1de114941ef8a979e3a2ccea28901f1cd733d905113fac68",
+      "tests/test_gguf_q4k_real.c": "8eef4e87c030e1136ff54c0d5b120c641859e42aba4fc1e002312d7d485d82d7",
+      "tests/test_gguf_tokens.c": "97a625ae9168b4fc70e935f4465fb8c55b7a2d13bc34f89a69593c70016a8386",
+      "tests/test_gguf_write.c": "ecac0ca1cde7b4f14bafd7455f33ed260e1c4e96511be6cf4fdbae2a1e98b890",
+      "tests/test_janus_parity.c": "7967633574d10c12870261d156ab359e888b99d5d5a885b143315b0263e157ca",
+      "tests/test_libnotorch_lib.sh": "7a8c7713b120d2d1f6407f29c4ec032c10fd6323211eb4587d4311128ad1452b",
+      "tests/test_logmel.c": "8656241a1f9396b977170a53e95387d50ca1f9e84acdf6d0f98198761ee68e6f",
+      "tests/test_metal_f16.c": "4be64d36fbbf51cb349aa706d47e629b16eb2fd1c629309039c465d01d04a51f",
+      "tests/test_metal_q4k.c": "83a2834897faed758b259a1675a7d5c28dc07c6b0bf6aaf89af5048b75f5db79",
+      "tests/test_multi_decode.c": "483da0eaf39a12d384ab39558d45fe1044adae4f0d662d5b94e11501b2e45fa2",
+      "tests/test_notorch.c": "ba7e01dada38781d85afa54ee1c6312d1c423a4ceed053a8668805f12e96029a",
+      "tests/test_parliament_elect.c": "14de5cba4af0e09ea65a4a1f21a3f0326a7e5a43083c0687ea4177b427dd379b",
+      "tests/test_parliament_inject.c": "c011c90df51fd801d7d0a028d1a58c9e22c097975b0234c6e625a7f27bea4bd1",
+      "tests/test_plan_race.c": "f6e96cd7a5d44027ba76616080b53cb1d053f1db04285bcb1321d2c8dfe83b59",
+      "tests/test_q8_0_rows.c": "d5d8b0537e78b37d0e4c44d79fca5f917a27ad30d875392c4e2a101dffab9a47",
+      "tests/test_qgather.c": "70a6d2c05e437eea352f6b9b5451a7b936b25ce40aaea45168079a48eec97790",
+      "tests/test_qmatmul.c": "2c8f4a3af85f7cd767813e4f196446783b7751f66bf8b41b8bbe53795c574d98",
+      "tests/test_qmatvec.c": "529a180f96ff26437c848a91be430fdbd621822a1c67c43a75f871fe037c9c9c",
+      "tests/test_qmatvec_leak.c": "da70b9a29109fa2906b509adfff2495eca155600de43fddc54a3000e3837eb38",
+      "tests/test_qpool.c": "233371910be8cc65439a5495b76d33e4edaf4af0c993c711b0f5559e6265dce5",
+      "tests/test_quantize.c": "6e2418922ee3330bf969d2fddbb2cf3f75302f4dbfcd4faa63f17cc20691a55a",
+      "tests/test_repeat.c": "c47e38362100effea8013695fc3b631261d5f0aaf0d9de6cc9e5cd82e361bc70",
+      "tests/test_residual.c": "7662da34af81d140cdbc00320c991d64b155c03398ebdbe07b92a12ac87e4433",
+      "tests/test_resonance_parity.c": "00297808a947c3577f9159a52a5858ed2f2da01bcae4d74997a3891afdcbba4c",
+      "tests/test_rrpram_broadcast.c": "65c9f978b31337eda1043804fa87f61cda1ffef7790050ac88a992a69e749f49",
+      "tests/test_rrpram_lr.c": "27e2ac6a805adc35a24f5d746ba09fcbf092c1225f25c5578e3ae01cb7c8e2c1",
+      "tests/test_sigmoid_scale.c": "1d69d4d7810b11fb899df2b60ef86e9156104b5cd82ce2bf69ce6ce6b7d31ed6",
+      "tests/test_simd_correctness.c": "f5675e676332c0bfc547880649b02f4ae3f8fac1d034ceccb8a220f0faf4a079",
+      "tests/test_simd_loss.c": "ccd0da69e2cdc3aa4693ff56e03147a41bd90da789f50d73775c7872b232e1ec",
+      "tests/test_simd_tails.c": "32db6b873ea8f5c39c2e6a0d24359e490767614fb08cd5d41dec34cd092faba7",
+      "tests/test_smollm_tokenizer.c": "e33e8f9b3076094217af98a0d4ffce8a939229f382f2afc6e65fbad5f286b29c",
+      "tests/test_spa_agent.c": "69c448800225511db7f66a3959de98cd366640234c23647bd43767ec9ba86345",
+      "tests/test_spa_agent_durability.c": "49855ecfa9324eaf28ba1b69d1837734b6684fcb014d8bfb980c4db8a3d330ab",
+      "tests/test_spa_agent_future.c": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+      "tests/test_spa_agent_state.c": "82c217a802a1a2711cc1781ccbe992688abd7f8e3c06792fa9d65b894dedbaed",
+      "tests/test_spa_legacy_parity.c": "4d8f0589cf8562e36540bafdfb4aabfacedaf58fa078a6930130e8bac60dc01c",
+      "tests/test_spa_legacy_parity.sh": "e2275989ffa7253d1e967601ae207d4e1ff3069da9a32229c50af6223e40a193",
+      "tests/test_vision.c": "328350ccbddac4257eb36b564faa2f0ec36a2c519b7da4c98859ef2c69adc0eb",
+      "tests/test_wt_expert.c": "5b9b41743e2f8a00c4fa7747780a9a328808cfb3b2df4fd19b0bf89a2f6a7ffb"
+    },
+    "source_changes": [],
+    "finished_utc": "2026-10-07T03:17:47Z",
+    "passed": true
+  },
+  "api_and_mutations": {
+    "passed": true,
+    "source_files": {
+      "tests/test_chuck_lived.c": "fd1fe7e12b3b91560af3f3f7d46846a6d5706165159f9097dffb54726cb67470",
+      "tests/test_chuck_lived_mutations.py": "5ca46f152b02633bcacfd493282ad58fa1203559569342d76b07ba4916f8bfb3",
+      "Makefile": "d34fb2ba8d29a17f7e71c35bba8a3a0665b517f1a3442d14ca6070cfec34ec54",
+      ".gitignore": "8d726cd90336a39c7152a045a6ef08443cd8161b78a7699240ef6526226aeeaf"
+    },
+    "api": {
+      "groups": 4,
+      "checks": 292,
+      "scalar_simd_and_sanitizers_pass": true
+    },
+    "compiled_mutants": 4,
+    "semantic_mutants": 8,
+    "terminal_mutants": 4,
+    "source_unchanged": true,
+    "baseline": {
+      "control": {
+        "status": "PASS",
+        "host_steps": 32,
+        "worlds": 0,
+        "branch_updates": 0,
+        "measurements": 0,
+        "selected_policy_transitions_compared": 0,
+        "summary": {
+          "steps": 32,
+          "action_counts": {
+            "legacy": 0,
+            "hold": 0,
+            "brake": 1,
+            "push": 31
+          },
+          "heldout": [
+            {
+              "type": "evaluation",
+              "step": 0,
+              "heldout_loss": 5.32541752
+            },
+            {
+              "type": "evaluation",
+              "step": 32,
+              "heldout_loss": 0.122161992
+            }
+          ],
+          "seconds": 0.853737969,
+          "max_rss_kib": 18304,
+          "frozen_weights_unchanged": true,
+          "history_updates": 32
+        }
+      },
+      "diagnostic": {
+        "status": "PASS",
+        "host_steps": 32,
+        "worlds": 1,
+        "branch_updates": 96,
+        "measurements": 18,
+        "selected_policy_transitions_compared": 16,
+        "summary": {
+          "steps": 32,
+          "action_counts": {
+            "legacy": 0,
+            "hold": 0,
+            "brake": 1,
+            "push": 31
+          },
+          "heldout": [
+            {
+              "type": "evaluation",
+              "step": 0,
+              "heldout_loss": 5.32541752
+            },
+            {
+              "type": "evaluation",
+              "step": 32,
+              "heldout_loss": 0.122161992
+            }
+          ],
+          "seconds": 4.02337222,
+          "max_rss_kib": 23900,
+          "frozen_weights_unchanged": true,
+          "history_updates": 32
+        }
+      },
+      "parity": {
+        "status": "PASS",
+        "host_steps_compared": 32,
+        "artifacts": {
+          ".initial.bin": {
+            "bytes": 1802992,
+            "sha256": "751f9e72de90b02dc728a4d507c95e2f8c984e7cad65e407e68088a2fa520859"
+          },
+          ".final.bin": {
+            "bytes": 1802992,
+            "sha256": "b9d9793cfea3e5d8f9b10ae38785598e2de3380b5abda72c17aeeb09bb30d2ca"
+          },
+          ".moments.final.bin": {
+            "bytes": 3605848,
+            "sha256": "babaed933dc0ed851330dfdafa625926f2cc4effc99f1cece1772960187f4a0f"
+          },
+          ".optimizer.final.json": {
+            "bytes": 6580,
+            "sha256": "1aa50e67f85025bbe4581beb5976e729ab18944725dd88bf079e0d9189aa543d"
+          },
+          ".policy.final.bin": {
+            "bytes": 1016,
+            "sha256": "7c937c06214e7af4c642cdf36a9f6234de175637e49fb9c826dc6ba7e0c623a7"
+          }
+        }
+      }
+    },
+    "receipt_sha256": {
+      "mutations.json": "bbaccb91d1097db61550e5f7de4a16930bedc51f00da1dc9043735423d2dc572",
+      "api-sanitizers.json": "41307dc79c8eb2f63186feeb04c21d308d5e2f29b15ccfa99845b71c25112c6b"
+    }
+  },
+  "mutations": {
+    "source_sha256": {
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/chuck_architect_train.c": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+      "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+      "tests/test_chuck_lived.c": "fd1fe7e12b3b91560af3f3f7d46846a6d5706165159f9097dffb54726cb67470",
+      "experiments/chuck_loss_architect/lived/run.py": "a42ba98416db228c3d7305a46ea60107e2055618d8f85e26c3d7b1bf9df8ca22",
+      "experiments/chuck_loss_architect/lived/protocol.json": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+      "experiments/chuck_loss_architect/conditional/run.py": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+      "experiments/chuck_loss_architect/future/run.py": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+      "experiments/chuck_loss_architect/scenarios/run.py": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+      "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc"
+    },
+    "compiled_mutations": [
+      {
+        "name": "learned_continuation_replaced_by_hold",
+        "source": "examples/chuck_architect_lived.h",
+        "mutant_sha256": "11bbd25e1ec8bd9b2a98ff706d217b1b105de030cf5fc74552b1d398f0e4f54f",
+        "build": {
+          "command": [
+            "cc",
+            "-O2",
+            "-std=gnu11",
+            "-DUSE_SIMD",
+            "-march=native",
+            "-pthread",
+            "-I",
+            "<tmp>/notorch-lived-gates-jzr6en3q/learned_continuation_replaced_by_hold",
+            "<tmp>/notorch-lived-gates-jzr6en3q/learned_continuation_replaced_by_hold/examples/chuck_architect_train.c",
+            "<tmp>/notorch-lived-gates-jzr6en3q/learned_continuation_replaced_by_hold/notorch.c",
+            "-lm",
+            "-o",
+            "<tmp>/notorch-lived-gates-jzr6en3q/learned_continuation_replaced_by_hold/gate"
+          ],
+          "returncode": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "caught": true,
+        "run": {
+          "command": [
+            "<tmp>/notorch-lived-gates-jzr6en3q/learned_continuation_replaced_by_hold/gate",
+            "--lived",
+            "simple",
+            "<tmp>/notorch-lived-gates-jzr6en3q/synthetic.tokens.u32",
+            "<tmp>/notorch-lived-gates-jzr6en3q/learned_continuation_replaced_by_hold-trace",
+            "32",
+            "42",
+            "0.0003",
+            "<tmp>/notorch-lived-gates-jzr6en3q/config.json",
+            "<tmp>/notorch-lived-gates-jzr6en3q/fixture.policy.bin",
+            "1"
+          ],
+          "returncode": 1,
+          "stdout": "",
+          "stderr": "chuck_architect_train: lived selected continuation differs from host\n"
+        }
+      },
+      {
+        "name": "native_intervention_reward_discarded",
+        "source": "chuck_architect_impl.h",
+        "mutant_sha256": "a4dbc68b042a3b31e3025dcbd30d1dd42e03417bae99ddac26022eec1c129f81",
+        "build": {
+          "command": [
+            "cc",
+            "-O2",
+            "-std=gnu11",
+            "-DUSE_SIMD",
+            "-march=native",
+            "-pthread",
+            "-I",
+            "<tmp>/notorch-lived-gates-jzr6en3q/native_intervention_reward_discarded",
+            "<tmp>/notorch-lived-gates-jzr6en3q/native_intervention_reward_discarded/tests/test_chuck_lived.c",
+            "<tmp>/notorch-lived-gates-jzr6en3q/native_intervention_reward_discarded/notorch.c",
+            "-lm",
+            "-o",
+            "<tmp>/notorch-lived-gates-jzr6en3q/native_intervention_reward_discarded/gate"
+          ],
+          "returncode": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "caught": true,
+        "run": {
+          "command": [
+            "<tmp>/notorch-lived-gates-jzr6en3q/native_intervention_reward_discarded/gate",
+            "selected_equivalence"
+          ],
+          "returncode": 1,
+          "stdout": "FAIL selected_equivalence\nCHUCK_LIVED groups=0/1 checks=6\n",
+          "stderr": "FAIL selected_equivalence:104 selected intervention reproduces native decision, consequence and life bytes\n"
+        }
+      },
+      {
+        "name": "diagnostic_history_leaks_into_source",
+        "source": "examples/chuck_architect_lived.h",
+        "mutant_sha256": "626594c9ae50871c03fa162fe75a65650bb1a26139a3d5410a258a1e604515e3",
+        "build": {
+          "command": [
+            "cc",
+            "-O2",
+            "-std=gnu11",
+            "-DUSE_SIMD",
+            "-march=native",
+            "-pthread",
+            "-I",
+            "<tmp>/notorch-lived-gates-jzr6en3q/diagnostic_history_leaks_into_source",
+            "<tmp>/notorch-lived-gates-jzr6en3q/diagnostic_history_leaks_into_source/examples/chuck_architect_train.c",
+            "<tmp>/notorch-lived-gates-jzr6en3q/diagnostic_history_leaks_into_source/notorch.c",
+            "-lm",
+            "-o",
+            "<tmp>/notorch-lived-gates-jzr6en3q/diagnostic_history_leaks_into_source/gate"
+          ],
+          "returncode": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "caught": true,
+        "run": {
+          "command": [
+            "<tmp>/notorch-lived-gates-jzr6en3q/diagnostic_history_leaks_into_source/gate",
+            "--lived",
+            "simple",
+            "<tmp>/notorch-lived-gates-jzr6en3q/synthetic.tokens.u32",
+            "<tmp>/notorch-lived-gates-jzr6en3q/diagnostic_history_leaks_into_source-trace",
+            "32",
+            "42",
+            "0.0003",
+            "<tmp>/notorch-lived-gates-jzr6en3q/config.json",
+            "<tmp>/notorch-lived-gates-jzr6en3q/fixture.policy.bin",
+            "1"
+          ],
+          "returncode": 1,
+          "stdout": "",
+          "stderr": "chuck_architect_train: lived host restore identity differs\n"
+        }
+      },
+      {
+        "name": "comparison_outcome_action_swapped",
+        "source": "examples/chuck_architect_lived.h",
+        "mutant_sha256": "ea04faa57c56a1572439df1fe74a281a6f0acf3da7092862a7c71b6f787b242c",
+        "build": {
+          "command": [
+            "cc",
+            "-O2",
+            "-std=gnu11",
+            "-DUSE_SIMD",
+            "-march=native",
+            "-pthread",
+            "-I",
+            "<tmp>/notorch-lived-gates-jzr6en3q/comparison_outcome_action_swapped",
+            "<tmp>/notorch-lived-gates-jzr6en3q/comparison_outcome_action_swapped/examples/chuck_architect_train.c",
+            "<tmp>/notorch-lived-gates-jzr6en3q/comparison_outcome_action_swapped/notorch.c",
+            "-lm",
+            "-o",
+            "<tmp>/notorch-lived-gates-jzr6en3q/comparison_outcome_action_swapped/gate"
+          ],
+          "returncode": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "caught": true,
+        "run": {
+          "command": [
+            "<tmp>/notorch-lived-gates-jzr6en3q/comparison_outcome_action_swapped/gate",
+            "--lived",
+            "simple",
+            "<tmp>/notorch-lived-gates-jzr6en3q/synthetic.tokens.u32",
+            "<tmp>/notorch-lived-gates-jzr6en3q/comparison_outcome_action_swapped-trace",
+            "32",
+            "42",
+            "0.0003",
+            "<tmp>/notorch-lived-gates-jzr6en3q/config.json",
+            "<tmp>/notorch-lived-gates-jzr6en3q/fixture.policy.bin",
+            "1"
+          ],
+          "returncode": 0,
+          "stdout": "lived simple seed=42 step=32/32 loss=0.216705 elapsed=3.36s\n",
+          "stderr": ""
+        },
+        "semantic_refusal": {
+          "caught": true,
+          "exception": "AssertionError",
+          "reason": "outcome belongs to a different executed branch"
+        }
+      }
+    ],
+    "semantic_mutations": [
+      {
+        "name": "missing_branch_step",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "incomplete branch trajectory"
+      },
+      {
+        "name": "duplicated_branch_step",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "incomplete branch trajectory"
+      },
+      {
+        "name": "missing_action_outcome",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "incomplete branch measurements"
+      },
+      {
+        "name": "altered_outcome_state_identity",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "outcome belongs to a different executed branch"
+      },
+      {
+        "name": "missing_native_history",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "branch consequence did not reach next observation"
+      },
+      {
+        "name": "altered_restore_identity",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "source restoration mismatch"
+      },
+      {
+        "name": "missing_continuation_check",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "incomplete natural continuation checks"
+      },
+      {
+        "name": "missing_terminal_summary",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "incomplete rollout trace"
+      }
+    ],
+    "terminal_mutations": [
+      {
+        "name": "persisted_trace_truncated",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "persisted artifact changed: fixture-diagnostic.jsonl"
+      },
+      {
+        "name": "persisted_trace_missing",
+        "caught": true,
+        "exception": "FileNotFoundError",
+        "reason": "[Errno 2] No such file or directory: '<tmp>/notorch-lived-gates-jzr6en3q/fixture-diagnostic.jsonl'"
+      },
+      {
+        "name": "persisted_trace_altered",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "persisted artifact changed: fixture-diagnostic.jsonl"
+      },
+      {
+        "name": "persisted_policy_changed",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "persisted artifact changed: fixture-diagnostic.policy.final.bin"
+      }
+    ],
+    "passed": true,
+    "api": {
+      "build": {
+        "command": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-DUSE_SIMD",
+          "-march=native",
+          "-pthread",
+          "-I",
+          "<tmp>/notorch-lived-gates-jzr6en3q/api",
+          "<tmp>/notorch-lived-gates-jzr6en3q/api/tests/test_chuck_lived.c",
+          "<tmp>/notorch-lived-gates-jzr6en3q/api/notorch.c",
+          "-lm",
+          "-o",
+          "<tmp>/notorch-lived-gates-jzr6en3q/api/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "test": {
+        "command": [
+          "<tmp>/notorch-lived-gates-jzr6en3q/api/gate"
+        ],
+        "returncode": 0,
+        "stdout": "PASS selected_equivalence\nPASS unselected_resume\nPASS refusals\nPASS nonfinite_consequences\nCHUCK_LIVED groups=4/4 checks=292\n",
+        "stderr": ""
+      }
+    },
+    "working_sources_unchanged": true
+  },
+  "sanitizers": {
+    "sources": {
+      "tests/test_chuck_lived.c": "fd1fe7e12b3b91560af3f3f7d46846a6d5706165159f9097dffb54726cb67470",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a"
+    },
+    "build": {
+      "command": [
+        "cc",
+        "-O1",
+        "-g",
+        "-std=gnu11",
+        "-pthread",
+        "-fsanitize=address,undefined",
+        "-fno-omit-frame-pointer",
+        "-I.",
+        "tests/test_chuck_lived.c",
+        "notorch.c",
+        "-lm",
+        "-o",
+        "<raw>/tests/lived-asan"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": "notorch.c: In function ‘nt_tape_backward’:\nnotorch.c:830:37: warning: argument 1 range [18446744071562067968, 18446744073709551615] exceeds maximum object size 9223372036854775807 [-Walloc-size-larger-than=]\n  830 |                 float* gx = (float*)calloc(out_len, sizeof(float));\n      |                                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nIn file included from notorch.h:12,\n                 from notorch.c:12:\n/usr/include/stdlib.h:675:14: note: in a call to allocation function ‘calloc’ declared here\n  675 | extern void *calloc (size_t __nmemb, size_t __size)\n      |              ^~~~~~\nnotorch.c:881:37: warning: argument 1 range [18446744071562067968, 18446744073709551615] exceeds maximum object size 9223372036854775807 [-Walloc-size-larger-than=]\n  881 |                 float* gx = (float*)calloc(n, sizeof(float));\n      |                                     ^~~~~~~~~~~~~~~~~~~~~~~~\n/usr/include/stdlib.h:675:14: note: in a call to allocation function ‘calloc’ declared here\n  675 | extern void *calloc (size_t __nmemb, size_t __size)\n      |              ^~~~~~\n"
+    },
+    "run": {
+      "command": [
+        "<raw>/tests/lived-asan"
+      ],
+      "returncode": 0,
+      "stdout": "PASS selected_equivalence\nPASS unselected_resume\nPASS refusals\nPASS nonfinite_consequences\nCHUCK_LIVED groups=4/4 checks=292\n",
+      "stderr": ""
+    },
+    "leak_detection": "disabled: prior LeakSanitizer /proc task inspection refusal in this environment",
+    "passed": true
+  },
+  "independent_api": {
+    "scope": "independent intervention API boundary and unchanged v1 arithmetic/codec",
+    "base_commit": "5eb709f12eca7089551d349e93b07daec3c5e2c7",
+    "commands": [
+      {
+        "argv": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I",
+          "<repo>",
+          "<raw>/audit/intervention_probe.c",
+          "<repo>/notorch.c",
+          "-lm",
+          "-o",
+          "<raw>/audit/intervention_probe"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "argv": [
+          "<raw>/audit/intervention_probe",
+          "<raw>/audit"
+        ],
+        "returncode": 0,
+        "stdout": "forcing_source_hash=68b30ab01f4c8657\nPASS independent_intervention_boundary checks=281 callbacks=9\n",
+        "stderr": ""
+      },
+      {
+        "argv": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I",
+          "<raw>/audit/baseline",
+          "<raw>/audit/baseline/roundtrip.c",
+          "<raw>/audit/baseline/notorch.c",
+          "-lm",
+          "-o",
+          "<raw>/audit/baseline/roundtrip"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "argv": [
+          "<raw>/audit/baseline/roundtrip",
+          "<raw>/audit/nonargmax.bin",
+          "<raw>/audit/baseline-roundtrip.bin"
+        ],
+        "returncode": 0,
+        "stdout": "PASS baseline_v1_nonargmax_load_save hash=471697d48ef01a18\n",
+        "stderr": ""
+      }
+    ],
+    "sources": {
+      "notorch.c": {
+        "baseline_sha256": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+        "current_sha256": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+        "identical_after_removing_only_new_API": true
+      },
+      "notorch.h": {
+        "baseline_sha256": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+        "current_sha256": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+        "identical_after_removing_only_new_API": true
+      },
+      "chuck_architect.h": {
+        "baseline_sha256": "01e0969c176fa467930c05b1e85de0f8194814e8bb47d229aa60bde4a66a8caa",
+        "current_sha256": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+        "identical_after_removing_only_new_API": true
+      },
+      "chuck_architect_impl.h": {
+        "baseline_sha256": "6a0d79fe46d1d6c2859ecf7dda52a2c37482aa259dec199445e0926f4514c3dc",
+        "current_sha256": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+        "identical_after_removing_only_new_API": true
+      }
+    },
+    "baseline_codec_roundtrip": {
+      "bytes": 1016,
+      "sha256": "605b0ff92c94d7b12e68a34c1857567ff2b72897d77102390e1e33cf520d0de9",
+      "byte_identical": true
+    },
+    "probe_sha256": "214328e07f60a5822f2d3df2fbe4beac84a7036668788c2885ea1c7b910b16ab",
+    "passed": true
+  },
+  "compatibility": {
+    "schema": 1,
+    "name": "chuck-lived-legacy-and-v1-compatibility",
+    "source_commit": "ab438c36c700d9086830100c7c273ea98ed043c2",
+    "source_status": " M .gitignore\n M Makefile\n M README.md\n M chuck_architect.h\n M chuck_architect_impl.h\n M examples/chuck_architect_rollout.h\n M examples/chuck_architect_train.c\n?? examples/chuck_architect_lived.h\n?? experiments/chuck_loss_architect/lived/run.py\n?? tests/test_chuck_lived.c\n",
+    "source_before": {
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "tests/chuck_legacy_parity.c": "1816bdbbc48aa439bc81ae7e6b4723d5f21d7427c084fefb8d90f1d930abebee",
+      "tests/test_chuck_legacy_parity.sh": "4cf353249fbaf175a0df9c7c8b684f47b5b6dba0fccd53a90b1fac80b6042183",
+      "tests/test_chuck_future_mutations.py": "23852b2421e679061c89dcbde5912aff4bfbc9613d31fd16d3ac23be16cb8de7",
+      "tests/test_chuck_architect_future.c": "0d31b5abd3bbc76cce7db76fa08040dcbf4828e10f44027ba60487116396ff86"
+    },
+    "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+    "commands": [
+      {
+        "name": "canonical-old-build",
+        "command": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I<tmp>/chuck-lived-compatibility-7ral0kv7/current",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/canonical-old.c",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/current/tests/chuck_legacy_parity.c",
+          "-lm",
+          "-o",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/canonical-old"
+        ],
+        "exit": 0,
+        "seconds": 3.0728458069970657,
+        "stdout": {
+          "file": "canonical-old-build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "canonical-old-build.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "canonical-old",
+        "command": [
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/canonical-old"
+        ],
+        "exit": 0,
+        "seconds": 0.007844269999623066,
+        "stdout": {
+          "file": "canonical-old.bin",
+          "bytes": 3336000,
+          "sha256": "306275db6c3e8b72d5a1d767fb573c443d300a9a8959363f5e76c8fe37a82601"
+        },
+        "stderr": {
+          "file": "canonical-old.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "canonical-current-build",
+        "command": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I<tmp>/chuck-lived-compatibility-7ral0kv7/current",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/current/notorch.c",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/current/tests/chuck_legacy_parity.c",
+          "-lm",
+          "-o",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/canonical-current"
+        ],
+        "exit": 0,
+        "seconds": 3.4255531759990845,
+        "stdout": {
+          "file": "canonical-current-build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "canonical-current-build.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "canonical-current",
+        "command": [
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/canonical-current"
+        ],
+        "exit": 0,
+        "seconds": 0.008865094001521356,
+        "stdout": {
+          "file": "canonical-current.bin",
+          "bytes": 3336000,
+          "sha256": "306275db6c3e8b72d5a1d767fb573c443d300a9a8959363f5e76c8fe37a82601"
+        },
+        "stderr": {
+          "file": "canonical-current.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "v1-old-build",
+        "command": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I<tmp>/chuck-lived-compatibility-7ral0kv7/v1-old",
+          "-DNT_CHUCK_FUTURE_V1_COMPAT_ONLY",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/v1-old/notorch.c",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/current/tests/test_chuck_architect_future.c",
+          "-lm",
+          "-o",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/v1-old"
+        ],
+        "exit": 1,
+        "seconds": 3.4230061630005366,
+        "stdout": {
+          "file": "v1-old-build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "v1-old-build.stderr.log",
+          "bytes": 143,
+          "sha256": "6a2d1b17adec9b948592382374b915dc21565c96ddd19c21c0d3557c7da9fd9c"
+        }
+      },
+      {
+        "name": "v1-old-build-corrected",
+        "command": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I<tmp>/chuck-lived-compatibility-7ral0kv7/v1-old",
+          "-DNT_CHUCK_FUTURE_V1_COMPAT_ONLY",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/v1-old/notorch.c",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/current/tests/test_chuck_architect_future.c",
+          "-lm",
+          "-o",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/v1-old-emitter"
+        ],
+        "exit": 0,
+        "seconds": 3.5274987859993416,
+        "stdout": {
+          "file": "v1-old-build-corrected.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "v1-old-build-corrected.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "v1-old-emitted",
+        "command": [
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/v1-old-emitter",
+          "--write-v1",
+          "<raw>/compatibility/v1-old"
+        ],
+        "exit": 0,
+        "seconds": 0.003940642996894894,
+        "stdout": {
+          "file": "v1-old-emitted.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "v1-old-emitted.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "v1-current-build-corrected",
+        "command": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I<tmp>/chuck-lived-compatibility-7ral0kv7/current",
+          "-DNT_CHUCK_FUTURE_V1_COMPAT_ONLY",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/current/notorch.c",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/current/tests/test_chuck_architect_future.c",
+          "-lm",
+          "-o",
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/v1-current-emitter"
+        ],
+        "exit": 0,
+        "seconds": 3.524893048001104,
+        "stdout": {
+          "file": "v1-current-build-corrected.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "v1-current-build-corrected.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "v1-current-emitted",
+        "command": [
+          "<tmp>/chuck-lived-compatibility-7ral0kv7/v1-current-emitter",
+          "--write-v1",
+          "<raw>/compatibility/v1-current"
+        ],
+        "exit": 0,
+        "seconds": 0.001566793001984479,
+        "stdout": {
+          "file": "v1-current-emitted.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "file": "v1-current-emitted.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    ],
+    "passed": true,
+    "isolated_build_directory": "<tmp>/chuck-lived-compatibility-7ral0kv7",
+    "canonical": {
+      "baseline_commit": "097fc062418bc9f29de8f0a89d781608680aef4d",
+      "baseline_c_sha256": "9ee1886cbfbd01333e44870cd4fd995e1cf52a9ed2a213d2d2fd28704fa916f6",
+      "steps": 6000,
+      "bytes": 3336000,
+      "old_sha256": "306275db6c3e8b72d5a1d767fb573c443d300a9a8959363f5e76c8fe37a82601",
+      "current_sha256": "306275db6c3e8b72d5a1d767fb573c443d300a9a8959363f5e76c8fe37a82601",
+      "identical": true,
+      "fixtures_cover": [
+        "noise",
+        "local_freeze",
+        "macro_lr_decay"
+      ],
+      "baseline_header": "same frozen current notorch.h, matching existing canonical parity harness"
+    },
+    "harness_sha256": "cd734c3278933a52c3723c54ad132e0c19c1f841e7cc59966723c85f565f3904",
+    "source_after_finally": {
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "tests/chuck_legacy_parity.c": "1816bdbbc48aa439bc81ae7e6b4723d5f21d7427c084fefb8d90f1d930abebee",
+      "tests/test_chuck_legacy_parity.sh": "4cf353249fbaf175a0df9c7c8b684f47b5b6dba0fccd53a90b1fac80b6042183",
+      "tests/test_chuck_future_mutations.py": "23852b2421e679061c89dcbde5912aff4bfbc9613d31fd16d3ac23be16cb8de7",
+      "tests/test_chuck_architect_future.c": "0d31b5abd3bbc76cce7db76fa08040dcbf4828e10f44027ba60487116396ff86"
+    },
+    "v1": {
+      "baseline_commit": "48512d822a67043e0899a7ac6a2b87779250f42b",
+      "baseline_sources": {
+        "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+        "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+        "chuck_architect.h": "138ab680a4a4d710fddc4e2eb96896968ba12c891472f926df2e218de42e9721",
+        "chuck_architect_impl.h": "efbaa0acd8127b49c9093562bea0aee70613287ee2d4b11150997fd61221a74c"
+      },
+      "files": [
+        {
+          "file": "init.bin",
+          "bytes": 1016,
+          "old_sha256": "a38024ab70d558e4c72fa22b359cd1950298c0a87399f87efc90d7ae1277e9a6",
+          "current_sha256": "a38024ab70d558e4c72fa22b359cd1950298c0a87399f87efc90d7ae1277e9a6",
+          "identical": true
+        },
+        {
+          "file": "pending.bin",
+          "bytes": 1016,
+          "old_sha256": "0d770856bcf43cd5e42e3790e93056ed31f81aa711e659b48628f372fa948091",
+          "current_sha256": "0d770856bcf43cd5e42e3790e93056ed31f81aa711e659b48628f372fa948091",
+          "identical": true
+        },
+        {
+          "file": "complete.bin",
+          "bytes": 1016,
+          "old_sha256": "9c9bcbd1e843bc53f16c0d82432c741d4d647a48f7863bd67a1d8b6747540820",
+          "current_sha256": "9c9bcbd1e843bc53f16c0d82432c741d4d647a48f7863bd67a1d8b6747540820",
+          "identical": true
+        }
+      ],
+      "passed": true
+    },
+    "source_after": {
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "tests/chuck_legacy_parity.c": "1816bdbbc48aa439bc81ae7e6b4723d5f21d7427c084fefb8d90f1d930abebee",
+      "tests/test_chuck_legacy_parity.sh": "4cf353249fbaf175a0df9c7c8b684f47b5b6dba0fccd53a90b1fac80b6042183",
+      "tests/test_chuck_future_mutations.py": "23852b2421e679061c89dcbde5912aff4bfbc9613d31fd16d3ac23be16cb8de7",
+      "tests/test_chuck_architect_future.c": "0d31b5abd3bbc76cce7db76fa08040dcbf4828e10f44027ba60487116396ff86"
+    },
+    "source_unchanged": true,
+    "initial_harness_failure": {
+      "reason": "Binary output pathname v1-old collided with the pinned-source directory of the same name; linker refused before any v1 fixture executed.",
+      "preserved_receipt": "initial-attempt/compatibility.json",
+      "preserved_receipt_sha256": "b5de4dde0f99a142c94ec31ae009f4174d6167723a7cd2f02f8a4abf5ffd8a1a",
+      "correction": "Use v1-old-emitter and v1-current-emitter as binary names; rerun only the two v1 builds/emissions. Existing completed canonical comparison retained."
+    },
+    "completion_driver_sha256": "187b6161b2e6053e0db761d326c0faf87a0db6cae6a420983f72bf767ebb6e4f"
+  },
+  "unchanged_functions": {
+    "nt_chuck_architect_feedback": {
+      "unchanged": true,
+      "sha256": "c1d5ecb0ad4e4f1024aaa7ca6db95e8e1dc64db0726104f5ddf5831327abd9bb"
+    },
+    "nt_chuck_architect_feedback_frozen": {
+      "unchanged": true,
+      "sha256": "b552e2880da26a0908d7ae282bb1983adc4687832b626854a62de5064a58c205"
+    },
+    "nt_chuck_architect_fit_comparison": {
+      "unchanged": true,
+      "sha256": "252f5f8f38e5ef1fe5a2007053f2756d7d8c56e34002e127f780ec566c2203f0"
+    },
+    "nt_chuck_architect_fit_conditioned": {
+      "unchanged": true,
+      "sha256": "28e23f44ffe6689a3fa73b2ec596d58d3ef0ad9369084a517c31ec863b6106b1"
+    },
+    "nt_ca_forward": {
+      "unchanged": true,
+      "sha256": "b4a01a082ff3b102781da318d408ef86f66513e11e4357dda68a69da26456ae3"
+    },
+    "nt_ca_features": {
+      "unchanged": true,
+      "sha256": "12c3dea3fb793b8f0c779d6a2c7e27a278a58f759ee1da2f8cd87eb4dcd9880c"
+    },
+    "nt_chuck_architect_step": {
+      "unchanged": true,
+      "sha256": "8c5446ee2399be960e9330924fc80c74befa76aaea7665819f810cc7036d2ace"
+    },
+    "nt_chuck_architect_select": {
+      "unchanged": true,
+      "sha256": "c9d108acaaf6a44fb27fa6d5f500f9eff2d631c4b7acfa47217a68ed9dc0cbac"
+    },
+    "nt_chuck_architect_load": {
+      "unchanged": true,
+      "sha256": "a47df0521c8891b7875ebfe41e23e842702729f23567ff4472b680ff0409efe2"
+    },
+    "nt_chuck_architect_save": {
+      "unchanged": true,
+      "sha256": "f2ec7f4c79d32a8eb1e610590c32563847507b50b207ff380ec9f03c14e279cb"
+    },
+    "nt_ca_state_codec": {
+      "unchanged": true,
+      "sha256": "849d0ad7b3984b11916c74125a82cce195afa286a40e379f6409321b007a2f5c"
+    },
+    "nt_ca_encode": {
+      "unchanged": true,
+      "sha256": "1436245034aac57d785b5b60561d2fd1018c8c7883587e44feca158c2cfa0429"
+    }
+  },
+  "cuda": {
+    "executed": false,
+    "scope": "fixed CPU experiment"
+  },
+  "normalization": "Repository/raw/temp absolute paths in this Git summary are replaced by <repo>, <raw>, <tmp>. Raw receipt hashes bind the original retained bytes.",
+  "independent_source_review": {
+    "status": "PASS",
+    "scope": "Independent pre-acquisition API, source and retained synthetic-host audit; new evaluation outcomes were not generated or inspected by this audit.",
+    "baseline_commit": "5eb709f12eca7089551d349e93b07daec3c5e2c7",
+    "source_sha256": {
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/chuck_architect_train.c": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+      "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+      "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+      "examples/chuck-loss-architect.json": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+      "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+      "experiments/chuck_loss_architect/scenarios/run.py": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+      "experiments/chuck_loss_architect/future/run.py": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+      "experiments/chuck_loss_architect/conditional/run.py": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+      "experiments/chuck_loss_architect/lived/run.py": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+      "experiments/chuck_loss_architect/lived/protocol.json": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5"
+    },
+    "api": {
+      "receipt": "api-audit.json",
+      "sha256": "ee7426c720c8eb0d9edaa9bc78d3f4ab8ec8ead7d9dcec44eaafaf647286c753",
+      "checks": 281,
+      "callbacks": 9,
+      "legacy_arithmetic_and_codec_bytes_unchanged": true,
+      "baseline_codec_roundtrip": {
+        "bytes": 1016,
+        "sha256": "605b0ff92c94d7b12e68a34c1857567ff2b72897d77102390e1e33cf520d0de9",
+        "byte_identical": true
+      }
+    },
+    "retained_fixture": {
+      "receipt": "fixture-audit.json",
+      "sha256": "964b48f66dda04588f48ddab8e1830dac25f9715be090537c248f3fad88caff2",
+      "checks": 3735,
+      "host_updates": 32,
+      "branch_updates": 96,
+      "selected_branch_real_host_updates": 16,
+      "measurements": 18,
+      "source_binding": {
+        "native_sources": "exactly match runtime fixture",
+        "runner": "later provenance/source-deployment checks; current parser reruns on retained fixture and matches its recorded diagnostic validation",
+        "initial_full_source_equality_check": "FAIL only for lived/run.py; retained explicit expected/current hashes above",
+        "current_runner_smoke_manifest_sha256": "98b1f24e5c76181808af830a9c2d3bbb4d8963f1180d5eed4d445433f06fefc9"
+      }
+    },
+    "credit_association_review": [
+      "Each of six branches restores full source body/tape/gradient/moments/Chuck/Architect/history/window/noise state; current bodies consume no global random draws after initialization.",
+      "Synchronous native intervention executes the actual requested action and receives one observed consequence; completed history is honest, weights/RNG are frozen and no invalid pending state is published.",
+      "Both continuation arms advance their own real temporal history. Parent continuation selects anew at updates2..16; parent weights stay fixed throughout collection.",
+      "Selected policy branch state hashes are captured before probe forwards and compared to actual host at matching points. Independent fixture joined all16 action/observation/consequence states.",
+      "The sample join keys checkpoint, continuation, action and H16; saved source-life hash and captured features are reauthenticated by the unchanged native fitter.",
+      "Two students start from one sealed parent and share identical32 source worlds/features; each receives only its named continuation losses, fixed ordering and conditioned objective.",
+      "Evaluation generation begins after both student lives are saved and hashed. Source/config/protocol and immutable artifact hashes are checked again at the end."
+    ],
+    "findings_fixed_before_measurement": [
+      {
+        "finding": "Branch gradient norm was after clipping while natural host norm was before clipping; direct equality mixed stages.",
+        "resolution": "All branch gradient_norm receipts now use before_clip norm, with source norm passed into fork helper; native observation retains after-clipping norm. Current fixture and parser agree."
+      },
+      {
+        "finding": "read_loss exited before existing rollout nonfinite completion branch, making that failure receipt unreachable.",
+        "resolution": "New raw scalar reader feeds native frozen completion; nonfinite post-action outcomes are recorded before host stops."
+      },
+      {
+        "finding": "Copied config/protocol/manifest lacked early terminal anchors.",
+        "resolution": "Runner now anchors all three immediately after creation before collection/fitting."
+      }
+    ],
+    "interpretation": "One fixed offline acquisition round on frozen parent-visited states with parent-policy continuation versus matched HOLD continuation; student weights are fitted after collection.",
+    "next_gate": "Run the sealed preregistered full experiment, then independently reread its actual raw receipts and compare outcomes without changing this recipe.",
+    "current_verifier_mutations": {
+      "receipt": "current-verifier-mutations.json",
+      "sha256": "b2fb0c49f7ac6910585fa89d6b1dd9e8ae4786fe898a5762b96f54524fe27e10",
+      "semantic_caught": 8,
+      "terminal_caught": 4,
+      "current_source_sha256": {
+        "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+        "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+        "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+        "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+        "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+        "examples/chuck_architect_train.c": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+        "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+        "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+        "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+        "tests/test_chuck_lived.c": "fd1fe7e12b3b91560af3f3f7d46846a6d5706165159f9097dffb54726cb67470",
+        "experiments/chuck_loss_architect/lived/run.py": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+        "experiments/chuck_loss_architect/lived/protocol.json": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+        "experiments/chuck_loss_architect/conditional/run.py": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+        "experiments/chuck_loss_architect/future/run.py": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+        "experiments/chuck_loss_architect/scenarios/run.py": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+        "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc"
+      },
+      "body_executions": 0,
+      "c_rebuilds": 0,
+      "original_smoke_unmodified": true,
+      "baseline_and_restored_baselines": "PASS"
+    }
+  },
+  "current_verifier_mutations": {
+    "scope": "Retained-data-only reapplication; zero C rebuilds, host executions or experiment outcomes generated",
+    "fixture_receipt_sha256": "bbaccb91d1097db61550e5f7de4a16930bedc51f00da1dc9043735423d2dc572",
+    "smoke_terminal_anchors_sha256": "6502ae809bedc24d76350dbd04c4c3320344d4c7e918ea4ceca476c971186a6b",
+    "current_sources_sha256": {
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/chuck_architect_train.c": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+      "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+      "tests/test_chuck_lived.c": "fd1fe7e12b3b91560af3f3f7d46846a6d5706165159f9097dffb54726cb67470",
+      "experiments/chuck_loss_architect/lived/run.py": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+      "experiments/chuck_loss_architect/lived/protocol.json": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+      "experiments/chuck_loss_architect/conditional/run.py": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+      "experiments/chuck_loss_architect/future/run.py": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+      "experiments/chuck_loss_architect/scenarios/run.py": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+      "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc"
+    },
+    "semantic_mutations": [
+      {
+        "name": "missing_branch_step",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "incomplete branch trajectory"
+      },
+      {
+        "name": "duplicated_branch_step",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "incomplete branch trajectory"
+      },
+      {
+        "name": "missing_action_outcome",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "incomplete branch measurements"
+      },
+      {
+        "name": "altered_outcome_state_identity",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "outcome belongs to a different executed branch"
+      },
+      {
+        "name": "missing_native_history",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "branch consequence did not reach next observation"
+      },
+      {
+        "name": "altered_restore_identity",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "source restoration mismatch"
+      },
+      {
+        "name": "missing_continuation_check",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "incomplete natural continuation checks"
+      },
+      {
+        "name": "missing_terminal_summary",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "incomplete rollout trace"
+      }
+    ],
+    "terminal_mutations": [
+      {
+        "name": "persisted_trace_truncated",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "persisted artifact changed: cohorts/development-simple-s42-diagnostic.jsonl"
+      },
+      {
+        "name": "persisted_trace_missing",
+        "caught": true,
+        "exception": "FileNotFoundError",
+        "reason": "[Errno 2] No such file or directory: '<raw>/audit/private-terminal-copy-7tzswxq5/smoke/cohorts/development-simple-s42-diagnostic.jsonl'"
+      },
+      {
+        "name": "persisted_trace_altered",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "persisted artifact changed: cohorts/development-simple-s42-diagnostic.jsonl"
+      },
+      {
+        "name": "persisted_policy_changed",
+        "caught": true,
+        "exception": "AssertionError",
+        "reason": "persisted artifact changed: cohorts/development-simple-s42-diagnostic.policy.final.bin"
+      }
+    ],
+    "semantic_baseline": {
+      "status": "PASS",
+      "host_steps": 32,
+      "worlds": 1,
+      "branch_updates": 96,
+      "measurements": 18,
+      "selected_policy_transitions_compared": 16,
+      "summary": {
+        "steps": 32,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 1,
+          "push": 31
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.32541752
+          },
+          {
+            "type": "evaluation",
+            "step": 32,
+            "heldout_loss": 0.122161992
+          }
+        ],
+        "seconds": 4.02337222,
+        "max_rss_kib": 23900,
+        "frozen_weights_unchanged": true,
+        "history_updates": 32
+      }
+    },
+    "terminal_baseline": {
+      "status": "PASS",
+      "artifact_identities": 241,
+      "paired_source_steps": 32,
+      "cohorts": 4,
+      "fit_traces": 2,
+      "readout_traces": 24,
+      "rollouts": 14,
+      "policy_continuations": 2,
+      "source_deployment_pairs": 2
+    },
+    "original_smoke_unmodified": true,
+    "current_sources_unchanged": true,
+    "passed": true,
+    "script_sha256": "e1adfe9bb870deb68509e2a10a43f2b6e13d4ceb7958312a6c7cb021457743b5"
+  },
+  "measured_source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+  "measured_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+  "early_independent_seal": {
+    "status": "PASS",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "acquisition_scope": "32 parent-visited worlds and two16384-fit students",
+    "files": {
+      "parent.policy.bin": {
+        "bytes": 1016,
+        "sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb"
+      },
+      "lived-hold.policy.bin": {
+        "bytes": 1016,
+        "sha256": "341af53d98beaa0a551f5d278c8d2518a599370699e56ea2a6ac75d9ec4bc364"
+      },
+      "lived-policy.policy.bin": {
+        "bytes": 1016,
+        "sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1"
+      },
+      "lived-hold.samples.bin": {
+        "bytes": 7312,
+        "sha256": "b1c071f1fbce06fc1991b7209f762f3edcde5dad7bf731676d2cae25bc164144"
+      },
+      "lived-policy.samples.bin": {
+        "bytes": 7312,
+        "sha256": "0270e406475aafe87001f44d9994f6351181fe59cf32dcc3b82eae640b7aaab5"
+      },
+      "sealed_lives.json": {
+        "bytes": 1741,
+        "sha256": "f9a200733a9cf48d3770b120dad7f2748ed0521be17008043c1970620e1bc6a5"
+      },
+      "manifest.json": {
+        "bytes": 16659,
+        "sha256": "9c27b6a0b85fa2eaadaff16e3ca0d0fe94e71294cd1a70083dbc2f5316fae7f3"
+      },
+      "protocol.json": {
+        "bytes": 11800,
+        "sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5"
+      },
+      "architect-config.json": {
+        "bytes": 313,
+        "sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5"
+      }
+    },
+    "timeline_prefix": [
+      {
+        "phase": "acquisition_started",
+        "time_ns": 1791343495727954169,
+        "parent_sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb"
+      },
+      {
+        "phase": "lives_sealed",
+        "time_ns": 1791343831423710685,
+        "sealed_lives_sha256": "f9a200733a9cf48d3770b120dad7f2748ed0521be17008043c1970620e1bc6a5"
+      },
+      {
+        "phase": "evaluation_generation_started",
+        "time_ns": 1791343831450222973,
+        "sealed_lives_sha256": "f9a200733a9cf48d3770b120dad7f2748ed0521be17008043c1970620e1bc6a5"
+      }
+    ],
+    "audit_time_ns": 1791343963924832390,
+    "scope": "Early independent seal/source/sample-table identity anchor; no evaluation trace or body execution read."
+  },
+  "final_auditor_static_review": {
+    "status": "STATIC_REVIEW_PASS",
+    "measured_source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "auditor_sources_sha256": {
+      "final-audit.py": "11244bb6ca9af695b64679837a2310daf53d1b64b5418b6093fa9cf4f0362338",
+      "final-policy-replay.c": "9c2e35cdbb0646561581a80408d44c653c3c4653f5da5e208ea0035ba6840981"
+    },
+    "findings_and_corrections": [
+      {
+        "finding": "Student fit tables lacked direct association with their prescribed development continuation.",
+        "correction": "Require exact JSON and binary table equality, then independently decode wire fields and source-life paths before native replay."
+      },
+      {
+        "finding": "Native raw readouts and enriched result readouts were checked separately.",
+        "correction": "Join every result row to its exact native row and allow only the five declared enrichment fields."
+      },
+      {
+        "finding": "Aggregate counts allowed repeated cohort/deployment/pair entries to substitute for omitted identities.",
+        "correction": "Require exact unique Cartesian identity sets and canonical source, deployment and resume endpoints."
+      },
+      {
+        "finding": "Replay cache omitted source lives reached indirectly through sample tables, and output-set completeness.",
+        "correction": "Fingerprint every decoded source life, exact output path set and cached command log identity."
+      },
+      {
+        "finding": "Replay adapter/caller needed explicit finite receipt, action/forced flag and positive count assertions.",
+        "correction": "Enforce finite recorded observations/consequences/scores; strict action and bool flags; native nonfinite/learned/error/actual-action and before/after receipt guards."
+      },
+      {
+        "finding": "Replay wire format assumed host scalar sizes and byte order.",
+        "correction": "C verifies little-endian IEEE binary32/binary64 and integer sizes; Python asserts72-byte inputs and136-byte outputs."
+      }
+    ],
+    "independent_delta_review": {
+      "agent": "/root/audit_next/review_final_auditor",
+      "result": "All original four coverage gaps closed; no new producer schema, offset or valid-input mismatch found.",
+      "scope": "Read-only static source review. No final outcome reads, builds, execution or edits."
+    },
+    "execution_boundary": "Auditor source frozen before reading full outcomes. Native adapter will be rebuilt from this exact C source and all tiny-policy replay will start only after experiment body processes finish.",
+    "early_seal_anchor_sha256": "988868caeca8b3953cb5bc0496856e8e0cce7ca3275d52a3d1a7f3872180efd4"
+  },
+  "independent_final_audit": {
+    "status": "PASS",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "source_sha256": {
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/chuck_architect_train.c": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+      "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+      "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+      "examples/chuck-loss-architect.json": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+      "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+      "experiments/chuck_loss_architect/scenarios/run.py": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+      "experiments/chuck_loss_architect/future/run.py": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+      "experiments/chuck_loss_architect/conditional/run.py": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+      "experiments/chuck_loss_architect/lived/run.py": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+      "experiments/chuck_loss_architect/lived/protocol.json": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5"
+    },
+    "results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+    "early_independent_seal_anchor_sha256": "988868caeca8b3953cb5bc0496856e8e0cce7ca3275d52a3d1a7f3872180efd4",
+    "manifest_sha256": "9c27b6a0b85fa2eaadaff16e3ca0d0fe94e71294cd1a70083dbc2f5316fae7f3",
+    "sealed_lives_sha256": "f9a200733a9cf48d3770b120dad7f2748ed0521be17008043c1970620e1bc6a5",
+    "artifacts": {
+      "files": 735,
+      "bytes": 1436263462,
+      "archive_members": 737,
+      "archive_hardlinks": 173,
+      "archive_identity": {
+        "bytes": 941976873,
+        "sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960"
+      }
+    },
+    "fit_updates": 32768,
+    "readouts": 768,
+    "source_host_updates": 8192,
+    "paired_source_steps": 4096,
+    "source_worlds": 64,
+    "branches": 384,
+    "branch_updates": 6144,
+    "comparison_measurements": 1152,
+    "selected_branch_real_host_matches": 1024,
+    "rollout_runs": 28,
+    "rollout_updates": 14336,
+    "native_policy_transitions": {
+      "source_hosts": 8192,
+      "branches": 6144,
+      "deployments": 8192
+    },
+    "all_body_updates": 28672,
+    "resume_pairs": 4,
+    "source_deployment_pairs": 4,
+    "total_checks": 586956,
+    "audit_source_sha256": "11244bb6ca9af695b64679837a2310daf53d1b64b5418b6093fa9cf4f0362338",
+    "policy_replay_source_sha256": "9c2e35cdbb0646561581a80408d44c653c3c4653f5da5e208ea0035ba6840981",
+    "policy_replay_binary_sha256": "30fbbbbebdb397024093ff58d2a929261318d1768a341b0ec66f66dddc769402",
+    "scope": "No target-body training rerun. Native policy fits/readouts and every source/branch/deployment life transition replayed through recorded-observation/consequence adapters; all raw/archive artifacts authenticated."
+  },
+  "independent_interpretation": {
+    "schema": 1,
+    "name": "independent-lived-credit-result-interpretation",
+    "status": "PASS",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "protocol_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+    "raw_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+    "parser_sha256": "782d149bee80f8f19f39b90cf071d1a22d63eb84e15930f3bda343769b74b84f",
+    "checks": 6698,
+    "sealed_before_new_outcomes": true,
+    "counts": {
+      "development_worlds": 32,
+      "evaluation_worlds": 32,
+      "readouts": 768,
+      "policy_fits": 32768,
+      "primary_deployments": 24,
+      "resume_deployments": 4,
+      "primary_deployment_updates": 12288,
+      "resume_deployment_updates": 2048,
+      "source_host_updates": 8192,
+      "branch_updates": 6144,
+      "selected_policy_transitions_compared": 1024,
+      "all_body_updates": 28672
+    },
+    "continuation_best_action_contrasts": [
+      {
+        "split": "development",
+        "body": "simple",
+        "worlds": 16,
+        "changed_best_sets": 4,
+        "all_tied_hold": 0,
+        "all_tied_policy": 0,
+        "hold_best_counts": {
+          "push": 6,
+          "hold": 6,
+          "brake": 10
+        },
+        "policy_best_counts": {
+          "push": 6,
+          "brake": 10,
+          "hold": 6
+        }
+      },
+      {
+        "split": "development",
+        "body": "hevlm",
+        "worlds": 16,
+        "changed_best_sets": 3,
+        "all_tied_hold": 0,
+        "all_tied_policy": 0,
+        "hold_best_counts": {
+          "push": 5,
+          "brake": 11,
+          "hold": 5
+        },
+        "policy_best_counts": {
+          "push": 6,
+          "hold": 6,
+          "brake": 8
+        }
+      },
+      {
+        "split": "evaluation",
+        "body": "simple",
+        "worlds": 16,
+        "changed_best_sets": 6,
+        "all_tied_hold": 0,
+        "all_tied_policy": 0,
+        "hold_best_counts": {
+          "push": 3,
+          "brake": 13,
+          "hold": 5
+        },
+        "policy_best_counts": {
+          "push": 7,
+          "hold": 6,
+          "brake": 9
+        }
+      },
+      {
+        "split": "evaluation",
+        "body": "hevlm",
+        "worlds": 16,
+        "changed_best_sets": 5,
+        "all_tied_hold": 0,
+        "all_tied_policy": 0,
+        "hold_best_counts": {
+          "push": 6,
+          "brake": 10,
+          "hold": 6
+        },
+        "policy_best_counts": {
+          "push": 8,
+          "brake": 7,
+          "hold": 5
+        }
+      }
+    ],
+    "interpretation_status": "Numerical report complete; next-learning question must reference these retained measurements, without altering this run."
+  },
+  "measured_trajectory_findings": {
+    "schema": 1,
+    "name": "lived-credit-measured-trajectory-findings",
+    "raw_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+    "base_interpretation_sha256": "488d3febacbf4b48ab2c6342a2e4f8d09b6f2fa167bbfa33564d27c4d20bb71b",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "dampening_floor_arrival": [
+      {
+        "body": "simple",
+        "seed": 701,
+        "arm": "parent",
+        "first_post_action_floor_step": 287,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 9,
+          "brake": 27,
+          "push": 92
+        },
+        "final128_floor_steps": 124
+      },
+      {
+        "body": "simple",
+        "seed": 701,
+        "arm": "lived-hold",
+        "first_post_action_floor_step": 72,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 98,
+          "push": 30
+        },
+        "final128_floor_steps": 118
+      },
+      {
+        "body": "simple",
+        "seed": 701,
+        "arm": "lived-policy",
+        "first_post_action_floor_step": 241,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 29,
+          "push": 99
+        },
+        "final128_floor_steps": 126
+      },
+      {
+        "body": "simple",
+        "seed": 907,
+        "arm": "parent",
+        "first_post_action_floor_step": 303,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 7,
+          "brake": 29,
+          "push": 92
+        },
+        "final128_floor_steps": 123
+      },
+      {
+        "body": "simple",
+        "seed": 907,
+        "arm": "lived-hold",
+        "first_post_action_floor_step": 120,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 2,
+          "brake": 86,
+          "push": 40
+        },
+        "final128_floor_steps": 123
+      },
+      {
+        "body": "simple",
+        "seed": 907,
+        "arm": "lived-policy",
+        "first_post_action_floor_step": 256,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 26,
+          "push": 102
+        },
+        "final128_floor_steps": 127
+      },
+      {
+        "body": "hevlm",
+        "seed": 701,
+        "arm": "parent",
+        "first_post_action_floor_step": 216,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 16,
+          "brake": 47,
+          "push": 65
+        },
+        "final128_floor_steps": 128
+      },
+      {
+        "body": "hevlm",
+        "seed": 701,
+        "arm": "lived-hold",
+        "first_post_action_floor_step": 42,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 127,
+          "push": 1
+        },
+        "final128_floor_steps": 128
+      },
+      {
+        "body": "hevlm",
+        "seed": 701,
+        "arm": "lived-policy",
+        "first_post_action_floor_step": 61,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 8,
+          "brake": 111,
+          "push": 9
+        },
+        "final128_floor_steps": 128
+      },
+      {
+        "body": "hevlm",
+        "seed": 907,
+        "arm": "parent",
+        "first_post_action_floor_step": 220,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 13,
+          "brake": 46,
+          "push": 69
+        },
+        "final128_floor_steps": 128
+      },
+      {
+        "body": "hevlm",
+        "seed": 907,
+        "arm": "lived-hold",
+        "first_post_action_floor_step": 42,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 127,
+          "push": 1
+        },
+        "final128_floor_steps": 128
+      },
+      {
+        "body": "hevlm",
+        "seed": 907,
+        "arm": "lived-policy",
+        "first_post_action_floor_step": 61,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 4,
+          "brake": 114,
+          "push": 10
+        },
+        "final128_floor_steps": 128
+      }
+    ],
+    "measured_action_aliases": [
+      {
+        "split": "development",
+        "body": "simple",
+        "source_worlds": 16,
+        "source_worlds_at_floor": 6,
+        "exact_hold_brake_H16_ties_at_floor_hold_continuation": 6,
+        "exact_hold_brake_H16_ties_at_floor_policy_continuation": 6
+      },
+      {
+        "split": "development",
+        "body": "hevlm",
+        "source_worlds": 16,
+        "source_worlds_at_floor": 8,
+        "exact_hold_brake_H16_ties_at_floor_hold_continuation": 8,
+        "exact_hold_brake_H16_ties_at_floor_policy_continuation": 8
+      },
+      {
+        "split": "evaluation",
+        "body": "simple",
+        "source_worlds": 16,
+        "source_worlds_at_floor": 6,
+        "exact_hold_brake_H16_ties_at_floor_hold_continuation": 6,
+        "exact_hold_brake_H16_ties_at_floor_policy_continuation": 6
+      },
+      {
+        "split": "evaluation",
+        "body": "hevlm",
+        "source_worlds": 16,
+        "source_worlds_at_floor": 8,
+        "exact_hold_brake_H16_ties_at_floor_hold_continuation": 8,
+        "exact_hold_brake_H16_ties_at_floor_policy_continuation": 8
+      }
+    ],
+    "next_learning_question": {
+      "status": "question for a separately fixed future experiment; no change to this run",
+      "question": "Can the next acquisition round learn from the students own early decisions and arrival at the dampening floor, while preserving useful parent choices?",
+      "evidence": [
+        "Acquisition worlds and fifteen-step policy continuations came from the fixed parent; deployment then used the newly fitted student itself.",
+        "Every first student-parent action divergence has identical recorded observations/features and before-loss; student choices subsequently reach the dampening floor earlier on both bodies and both seeds.",
+        "Matched continuation changes11of32evaluation best-action sets and improves SimpleLLM common-state regret and optimality, while both students finish allfourfull deployments worse than parent.",
+        "HeVLM lived-hold changes toBRAKE atstep2 under parent-identical observation/features; parent-sourced acquisition checkpoints are1,64,128,192,256,320,384,448."
+      ],
+      "potential_control_question": "A further parent-data replay versus the same fitting budget using actually reached student states would separate extra updates from new acquired trajectory experience."
+    }
+  },
+  "documentation_semantics": {
+    "scope": "Pre-result public API / README / fixed protocol semantic review; no experiment outcome files read",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "source_sha256": {
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+      "experiments/chuck_loss_architect/lived/README.md": "e3527e86afe1322b846e7dbf10378e7357b2c0632e414ad147b081aca2045c31",
+      "experiments/chuck_loss_architect/lived/protocol.json": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5"
+    },
+    "status": "PASS",
+    "findings": [],
+    "checked_contracts": [
+      "Intervene validates idle learned life, bounded available HOLD/BRAKE/PUSH zero-valued action, callback and source observation before core action",
+      "One same-window callback, no exposed intervention pending state, actual-action completed cache, explored=0",
+      "Native frozen consequence: real reward/history/counters, unchanged policy weights/configuration/RNG, nonfinite outcome reward -1",
+      "Six branches per identical source world; forced first action, subsequent HOLD or parent selections with actual native history",
+      "H1/H4/H16 diagnostics share four future windows at indices16-19; only H16 supplies conditioned fit targets",
+      "Full source restoration and selected-parent branch equality before optional probe forwards",
+      "Single fixed acquisition round,32 source worlds, two32-sample students,512epochs,32768fits",
+      "32new-seed evaluationworlds aftersealedlives, bothcontinuationtables,768totalreadouts",
+      "8192sourcehost+6144branch+14336deployment=28672bodyupdates;4save-loadrepeats",
+      "CPU-only F32 two-SIMD-thread execution scope; no GPU outcome claims"
+    ],
+    "final_results_audit": "awaiting root authorization to read completed run and final result documentation"
+  },
+  "root_result_documentation_review": {
+    "status": "PASS",
+    "checks": 8878,
+    "findings": [],
+    "raw_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "protocol_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+    "reviewed_document_sha256": {
+      "README.md": "f4864ffebc534e6ceaad49a8d0414f281c7ca67fba56edfbb482cc7e07d61ea5",
+      "NOTORCHLOG.md": "ac4155a9785df8579e78a47df585e297995b581be656e9feb1df6fe33ab53f71"
+    },
+    "continuation_changes": {
+      "development-simple": {
+        "worlds": 16,
+        "changed_best_sets": 4
+      },
+      "development-hevlm": {
+        "worlds": 16,
+        "changed_best_sets": 3
+      },
+      "evaluation-simple": {
+        "worlds": 16,
+        "changed_best_sets": 6
+      },
+      "evaluation-hevlm": {
+        "worlds": 16,
+        "changed_best_sets": 5
+      }
+    },
+    "runpod_receipt_sha256": "df6d4dfd7ad18851ca057ef7898b3bf27210b9eaa8ab34f7ee5ec486a648530e",
+    "scope": "Top README and newest NOTORCHLOG entry before final archive/audit metadata; final lived compact files pending separate review"
+  },
+  "numerical_archive_verification": {
+    "status": "PASS",
+    "archive_file": "chuck-lived-final-6029e13-raw.tar.gz",
+    "archive_bytes": 941976873,
+    "archive_sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960",
+    "members_verified": 737,
+    "original_verification": {
+      "status": "PASS",
+      "run": "chuck-lived-final-v1",
+      "results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+      "archive_file": "chuck-lived-final-v1.tar.gz",
+      "archive_bytes": 941976873,
+      "archive_sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960",
+      "members_verified": 737,
+      "completed_ns": 1791345187254375908
+    },
+    "forward_verification": {
+      "status": "PASS",
+      "method": "single forward gzip stream; hardlinks resolve only to earlier byte-verified members",
+      "run": "chuck-lived-final-v1",
+      "results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+      "archive_file": "chuck-lived-final-v1.tar.gz",
+      "archive_bytes": 941976873,
+      "archive_sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960",
+      "members_verified": 737,
+      "raw_artifacts_rechecked": 735,
+      "completed_ns": 1791345200044309555
+    },
+    "member_modes_match_raw": true,
+    "atomic_published_copy_verified": true,
+    "attempts": [
+      {
+        "method": "Python tarfile getmembers/extractfile",
+        "status": "PASS",
+        "note": "Backward hardlink resolution repeatedly decompresses gzip; completed normally."
+      },
+      {
+        "method": "Forward gzip stream with earlier verified hardlink targets",
+        "status": "PASS",
+        "note": "Run concurrently after slow original verification; same archive unchanged; no process was terminated."
+      }
+    ]
+  },
+  "runpod_availability_retry": {
+    "utc": "2026-10-07T03:26:56.632180+00:00",
+    "endpoint": "https://api.runpod.io/graphql",
+    "scope": "single unauthenticated read-only availability retry after support contact; no API key, pod creation or spend",
+    "http_status": 403,
+    "headers": {
+      "Content-Type": "text/plain; charset=UTF-8",
+      "Server": "cloudflare",
+      "CF-RAY": "a469cec78ce717d6-ORD"
+    },
+    "body": "error code: 1010\n"
+  },
+  "final_publication_review": {
+    "status": "PASS",
+    "checks": 21923,
+    "findings": [],
+    "scope": "Final tracked result publication and top-level documentation; later outer-archive name/size/hash and receipt-identity-only additions excluded. No numerical runs or tracked-file edits.",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "raw_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+    "reviewed_file_identities": {
+      "README.md": {
+        "bytes": 93975,
+        "sha256": "f4864ffebc534e6ceaad49a8d0414f281c7ca67fba56edfbb482cc7e07d61ea5"
+      },
+      "NOTORCHLOG.md": {
+        "bytes": 427957,
+        "sha256": "db838827cd25c7c60462b45136759aedf1d9e215293147a7f2546327e68d0748"
+      },
+      "experiments/chuck_loss_architect/lived/README.md": {
+        "bytes": 14747,
+        "sha256": "0067d19e36027c709dd6398173c6043130b45acf9fd66cf8793a368417b2b95d"
+      },
+      "experiments/chuck_loss_architect/lived/results.json": {
+        "bytes": 649236,
+        "sha256": "7cfcb5c80ced6c610f5a5814bba00e5a099d2a19dd507ac465485add0d882fc6"
+      },
+      "experiments/chuck_loss_architect/lived/common_state.csv": {
+        "bytes": 187138,
+        "sha256": "01895c97417888219c1d4451d51167fbceca86da44fd9a9a741cb07d8428308b"
+      },
+      "experiments/chuck_loss_architect/lived/deployment.csv": {
+        "bytes": 14963,
+        "sha256": "0cc82a151c955ee27441ac2c4da57c214632012cba0da685fdf9134c756c9d06"
+      },
+      "experiments/chuck_loss_architect/lived/verification.json": {
+        "bytes": 143752,
+        "sha256": "b61ddaef92aabcc013d3a8df9fa738258e473cd920f2a2683177ac1db094f757"
+      }
+    },
+    "prior_root_metrics_review": {
+      "identity": {
+        "bytes": 14255,
+        "sha256": "26d334d76d7a22086875370abc9b0af08fffa21fc0c0085f551f7cdf95bf785e"
+      },
+      "checks": 8878,
+      "status": "PASS"
+    },
+    "resolved_wording_findings": [
+      {
+        "file": "lived/README.md",
+        "removed": "not a failure to execute the architecture",
+        "resolution": "affirmative measured-regression sentence"
+      },
+      {
+        "file": "lived/README.md",
+        "removed": "they do not establish one cause for the final loss difference",
+        "resolution": "affirmative observed-trajectory scope"
+      },
+      {
+        "file": "lived/results.json",
+        "removed": "No superiority claim",
+        "resolution": "fixed one-round protocol sentence"
+      }
+    ],
+    "verification_receipt_count": 19,
+    "csv_rows": {
+      "common_state": 768,
+      "deployment": 140
+    },
+    "samples_verified": 128,
+    "source_hashes_unchanged": {
+      "notorch.c": true,
+      "notorch.h": true,
+      "notorch_simd.h": true,
+      "chuck_architect.h": true,
+      "chuck_architect_impl.h": true,
+      "examples/chuck_architect_train.c": true,
+      "examples/chuck_architect_scenarios.h": true,
+      "examples/chuck_architect_rollout.h": true,
+      "examples/chuck_architect_lived.h": true,
+      "examples/chuck_architect_future.c": true,
+      "examples/chuck-loss-architect.json": true,
+      "experiments/chuck_loss_architect/run.py": true,
+      "experiments/chuck_loss_architect/scenarios/run.py": true,
+      "experiments/chuck_loss_architect/future/run.py": true,
+      "experiments/chuck_loss_architect/conditional/run.py": true,
+      "experiments/chuck_loss_architect/lived/run.py": true,
+      "experiments/chuck_loss_architect/lived/protocol.json": true
+    },
+    "git_status_at_review": " M NOTORCHLOG.md\n M README.md\n M experiments/chuck_loss_architect/lived/README.md\n M experiments/chuck_loss_architect/lived/verification.json\n?? experiments/chuck_loss_architect/lived/common_state.csv\n?? experiments/chuck_loss_architect/lived/deployment.csv\n?? experiments/chuck_loss_architect/lived/results.json\n",
+    "staged_files_at_review": [],
+    "audit_harness_corrections": {
+      "initial_receipt": {
+        "bytes": 4093,
+        "sha256": "cf82409fc9b4d53a9edaab5d8d7e45a640a15cac3c5f3c6f42c49a1bb08e85fe"
+      },
+      "resolved": "CSV identity projection excludes extra rows/scope; compact trajectory excerpt excludes two named nonnumeric metadata fields; path scan covers changed log lines and preserves the exact canonical collaboration-agent identifier."
+    },
+    "no_unresolved_findings": true,
+    "audit_script_sha256": "35d0d0057b4c162957056980e9f38e6233f2583eafe3ae039186f6b92030f182"
+  },
+  "outer_archive_note": "The raw copy of this consolidated verification precedes the outer archive identity to avoid a circular hash. The Git copy appends that archive identity after full member verification.",
+  "publication_prefix_delivery": {
+    "status": "PASS",
+    "reconstructible_prefixes": 7,
+    "reconstructible_bytes": 3575382016,
+    "source_sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960",
+    "scope": "Seven post-run partial publication copies are represented by exact prefix reconstruction receipts instead of duplicate bytes. Every buffer matched a prefix of the complete authenticated numerical archive. No numerical artifact, experiment attempt or outcome is excluded; originals remain untouched. No creator is assigned to unexplained residual copies."
+  },
+  "raw_archive": {
+    "file": "chuck-lived-credit-6029e13-receipts.tar.gz",
+    "bytes": 1000727844,
+    "sha256": "3af5601adfd2f37b887ccdd47de6371e7cd3bf2723a96de5ff803501b6972d77",
+    "members": 1871,
+    "hardlinks": 241,
+    "index_sha256": "31adb0e370e9eb109eed3079d2bad3efa874232217ca3cc369b3edc10f141b8d",
+    "verified_all_members": true,
+    "published_copy_verified": true
+  },
+  "raw_archive_parts": {
+    "archive": {
+      "file": "chuck-lived-credit-6029e13-receipts.tar.gz",
+      "bytes": 1000727844,
+      "sha256": "3af5601adfd2f37b887ccdd47de6371e7cd3bf2723a96de5ff803501b6972d77"
+    },
+    "parts": [
+      {
+        "file": "chuck-lived-credit-6029e13-receipts.tar.gz.part01",
+        "bytes": 400000000,
+        "sha256": "52a4ff2cb2164fc5563d7b04fc8d00a169b59ed22601764a07e73acba95b8791"
+      },
+      {
+        "file": "chuck-lived-credit-6029e13-receipts.tar.gz.part02",
+        "bytes": 400000000,
+        "sha256": "023f6a31c57f8a89feb5fa0935e80cb41a9a86f318c4e89ba446b8de198ffbee"
+      },
+      {
+        "file": "chuck-lived-credit-6029e13-receipts.tar.gz.part03",
+        "bytes": 200727844,
+        "sha256": "ab4c2024474a85fd54b19b8509c484157c79f9294bf0b5b951ab3fa1a0fd93f0"
+      }
+    ],
+    "reconstruct": "Concatenate part01, part02 and part03 in that order, then verify the archive SHA-256 before extraction.",
+    "save_attempt": {
+      "whole_archive": "prepare_uploads failed; helper exited1 before finalization",
+      "cause": "Not established",
+      "recovery": "Same prepared helper route with three bounded lossless byte-range parts."
+    },
+    "manifest_file": "chuck-lived-credit-6029e13-parts.json",
+    "manifest_sha256": "7ae2ab61a50cdab545fa3f7fb13cf8eb9e16adb3bd060871b00e62f4a07f4dac",
+    "all_saved": true,
+    "whole_reconstruction_verified": true
+  }
+}

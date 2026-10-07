@@ -144,6 +144,14 @@ static float read_loss(int index) {
     return loss;
 }
 
+/* Consequence observers retain non-finite outcomes for native failure credit. */
+static float read_loss_raw(int index) {
+    nt_tape *tape = nt_tape_get();
+    if (index < 0 || index >= tape->count || !tape->entries[index].output ||
+        tape->entries[index].output->len < 1) die("missing loss scalar");
+    return tape->entries[index].output->data[0];
+}
+
 static void json_number(char *out, size_t size, double value, int precision) {
     if (isfinite(value)) snprintf(out, size, "%.*g", precision, value);
     else snprintf(out, size, "null");
@@ -277,10 +285,12 @@ static long parse_integer(const char *text, long low, long high) {
 
 #include "chuck_architect_scenarios.h"
 #include "chuck_architect_rollout.h"
+#include "chuck_architect_lived.h"
 
 int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "--scenarios")) return scenario_main(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "--rollout")) return rollout_main(argc, argv);
+    if (argc > 1 && !strcmp(argv[1], "--lived")) return lived_main(argc, argv);
     if (argc != 8 && argc != 9) {
         fprintf(stderr, "usage: %s simple|hevlm adam|chuck|legacy|learned TOKENS OUT_PREFIX STEPS SEED LR [ARCHITECT_JSON]\n", argv[0]);
         return 2;
