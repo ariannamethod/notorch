@@ -5,6 +5,9 @@
  * Generation, sentence sensing and policy arithmetic link the upstream C engine.
  * Every output record carries the executed action and its separate consequences.
  */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "notorch.h"
 #include "spa_agent.h"
 #include <errno.h>
@@ -364,9 +367,11 @@ static void save_and_resume(experiment_arm *arm, const char *prefix, const nt_sp
     arm->verified_resumes++;
 }
 
+#include "spa_agent_scenarios.h"
+
 int main(int argc, char **argv) {
-    if (argc != 6) {
-        fprintf(stderr, "usage: %s CHECKPOINT TOKENS_U32 VOCAB_U32 OUTPUT_PREFIX SEED\n", argv[0]);
+    if (argc != 6 && (argc != 8 || strcmp(argv[6], "--scenarios") || !argv[7][0])) {
+        fprintf(stderr, "usage: %s CHECKPOINT TOKENS_U32 VOCAB_U32 OUTPUT_PREFIX SEED [--scenarios PATH]\n", argv[0]);
         return 2;
     }
     errno = 0; char *end = NULL;
@@ -386,6 +391,20 @@ int main(int argc, char **argv) {
     char path[4096];
     int pn = snprintf(path, sizeof(path), "%s.jsonl", argv[4]);
     if (pn < 0 || (size_t)pn >= sizeof(path)) fail("trace output path too long");
+    scenario_sink scenarios = {0};
+    if (argc == 8) {
+        if (!strcmp(argv[7], path) || !strcmp(argv[7], argv[1]) ||
+            !strcmp(argv[7], argv[2]) || !strcmp(argv[7], argv[3]))
+            fail("scenario trace must have its own path");
+        scenario_open(&scenarios, argv[7], seed);
+        scenario_require_separate(&scenarios, path);
+        for (int ai = 0; ai < ARMS; ai++) {
+            char life_path[4096];
+            int length = snprintf(life_path, sizeof(life_path), "%s.%s.life.bin", argv[4], arms[ai].name);
+            if (length < 0 || (size_t)length >= sizeof(life_path)) fail("life output path too long");
+            scenario_require_separate(&scenarios, life_path);
+        }
+    }
     FILE *trace = fopen(path, "w");
     if (!trace) fail("cannot open trace");
     fprintf(trace, "{\"type\":\"body\",\"seed\":%u,\"parameters\":%ld,\"weights_fnv1a\":\"%016" PRIx64 "\"}\n", seed, body.count, original_weights);
@@ -411,6 +430,9 @@ int main(int argc, char **argv) {
                 nt_spa_observation obs;
                 nt_spa_metrics before, after;
                 observation(&body, chain, target, reseeds[target], &obs, &before);
+                if (ai == 4 && scenarios.file)
+                    scenario_snapshot(&scenarios, &body, arm, chain, reseeds,
+                                      seed, episode, step, target, &obs, &before);
                 nt_spa_decision decision, counterfactual;
                 int has_counterfactual = ai == 4;
                 if (has_counterfactual) {
@@ -444,6 +466,9 @@ int main(int argc, char **argv) {
                 } else if (host_rng != host_rng_before) fail("KEEP consumed host RNG");
                 nt_spa_observation next_obs;
                 observation(&body, chain, target, reseeds[target], &next_obs, &after);
+                if (ai == 4 && scenarios.file)
+                    scenario_match_actual(&scenarios, &decision, chain, reseeds,
+                                          cost, host_rng, &after);
                 nt_spa_consequence consequence = {before, after, cost};
                 nt_spa_receipt receipt = {0};
                 if (ai == 0) {
@@ -495,6 +520,7 @@ int main(int argc, char **argv) {
     }
     fputs("]}\n", trace);
     if (ferror(trace) || fclose(trace)) fail("trace close failed");
+    scenario_close(&scenarios);
     free(tokens); free(starts);
     nt_tape_destroy();
     for (int i = 0; i < PARAMS; i++) nt_tensor_free(body.parameters[i]);

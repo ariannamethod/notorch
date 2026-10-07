@@ -7,11 +7,14 @@
 #include "spa_agent.h"
 #include "notorch.h"
 
+#include <errno.h>
+#include <fcntl.h>
 #include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define SPA_WEIGHT_LIMIT 8.0f
@@ -730,30 +733,70 @@ static int encode(const nt_spa_agent *a,unsigned char *bytes,size_t capacity,siz
 }
 int nt_spa_agent_save(const nt_spa_agent *a,const char *path) {
     unsigned char bytes[SPA_FILE_CAPACITY];
-    size_t size,path_length;
-    FILE *f;
-    char *temporary;
-    int fd,status=encode(a,bytes,sizeof(bytes),&size),bad;
+    size_t size,path_length,parent_length;
+    FILE *f=NULL;
+    char *temporary=NULL,*parent=NULL;
+    const char *slash;
+    struct stat parent_stat;
+    int fd=-1,directory_fd=-1,created=0,renamed=0,saved_errno=0;
+    int status=encode(a,bytes,sizeof(bytes),&size),directory_flags=O_RDONLY;
     if(status!=NT_SPA_OK) return status;
     if(!path || !*path) return NT_SPA_E_IO;
     path_length=strlen(path);
     if(path_length>SIZE_MAX-sizeof(".tmp.XXXXXX")) return NT_SPA_E_IO;
+    slash=strrchr(path,'/');
+    if(slash && slash[1]=='\0') { errno=EISDIR; return NT_SPA_E_IO; }
+    parent_length=slash ? (slash==path ? 1 : (size_t)(slash-path)) : 1;
     temporary=(char*)malloc(path_length+sizeof(".tmp.XXXXXX"));
-    if(!temporary) return NT_SPA_E_MEMORY;
+    parent=(char*)malloc(parent_length+1);
+    if(!temporary || !parent) { free(temporary); free(parent); return NT_SPA_E_MEMORY; }
     memcpy(temporary,path,path_length);
     memcpy(temporary+path_length,".tmp.XXXXXX",sizeof(".tmp.XXXXXX"));
+    if(slash) memcpy(parent,path,parent_length); else parent[0]='.';
+    parent[parent_length]='\0';
+#ifdef O_DIRECTORY
+    directory_flags|=O_DIRECTORY;
+#endif
+#ifdef O_CLOEXEC
+    directory_flags|=O_CLOEXEC;
+#endif
+    status=NT_SPA_E_IO;
+    // Open and validate the directory before creating or replacing any file.
+    directory_fd=open(parent,directory_flags);
+    if(directory_fd<0) { saved_errno=errno; goto cleanup; }
+    if(fstat(directory_fd,&parent_stat)!=0) { saved_errno=errno; goto cleanup; }
+    if(!S_ISDIR(parent_stat.st_mode)) { saved_errno=ENOTDIR; goto cleanup; }
     fd=mkstemp(temporary);
-    if(fd<0) { free(temporary); return NT_SPA_E_IO; }
+    if(fd<0) { saved_errno=errno; goto cleanup; }
+    created=1;
     f=fdopen(fd,"wb");
-    if(!f) { close(fd); unlink(temporary); free(temporary); return NT_SPA_E_IO; }
-    bad=fwrite(bytes,1,size,f)!=size;
-    if(fflush(f)!=0) bad=1;
-    if(!bad && fsync(fd)!=0) bad=1;
-    if(fclose(f)!=0) bad=1;
-    if(!bad && rename(temporary,path)!=0) bad=1;
-    if(bad) unlink(temporary);
-    free(temporary);
-    return bad ? NT_SPA_E_IO : NT_SPA_OK;
+    if(!f) { saved_errno=errno; goto cleanup; }
+    if(fwrite(bytes,1,size,f)!=size) { saved_errno=errno?errno:EIO; goto cleanup; }
+    if(fflush(f)!=0) { saved_errno=errno; goto cleanup; }
+    if(fsync(fd)!=0) { saved_errno=errno; goto cleanup; }
+    if(fclose(f)!=0) { f=NULL; fd=-1; saved_errno=errno; goto cleanup; }
+    f=NULL; fd=-1;
+    if(rename(temporary,path)!=0) { saved_errno=errno; goto cleanup; }
+    renamed=1;
+    // NT_SPA_DIRECTORY_DURABILITY: persist the installed directory entry.
+    if(fsync(directory_fd)!=0) { saved_errno=errno; goto cleanup; }
+    status=NT_SPA_OK;
+cleanup:
+    if(f) {
+        if(fclose(f)!=0 && !saved_errno) saved_errno=errno;
+        fd=-1;
+    }
+    if(fd>=0 && close(fd)!=0 && !saved_errno) saved_errno=errno;
+    if(created && !renamed) {
+        if(unlink(temporary)!=0 && !saved_errno) saved_errno=errno;
+    }
+    if(directory_fd>=0 && close(directory_fd)!=0) {
+        if(!saved_errno) saved_errno=errno;
+        status=NT_SPA_E_IO;
+    }
+    free(temporary); free(parent);
+    if(status!=NT_SPA_OK) errno=saved_errno?saved_errno:EIO;
+    return status;
 }
 int nt_spa_agent_load(nt_spa_agent *a,const char *path) {
     unsigned char bytes[SPA_FILE_CAPACITY];

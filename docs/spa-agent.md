@@ -78,7 +78,10 @@ The binary save format records canonical little-endian fields, binary32
 weights and measurements, format/perception/reward versions, checksum, and
 pending state. Load validates a temporary life before replacing the resident
 one. Save writes a unique temporary file beside the destination, flushes and
-fsyncs it, then atomically renames it; a failed write preserves the old life.
+fsyncs it, atomically renames it, and fsyncs the parent directory. Failures
+before rename preserve the previous checkpoint. A directory sync or close
+failure after rename returns an I/O error with the new checkpoint already
+installed.
 Same-platform save/resume reproduces continuation exactly. Hosts save
 their sentence field and model/generation state alongside the Agent.
 
@@ -102,6 +105,12 @@ Reward weights are part of the frozen life configuration. Individual axes
 remain available for comparisons, including repetition and sentence collapse.
 The [experiment protocol](../experiments/spa_agent/protocol.json) fixes the
 host's metrics, horizon, seeds, and comparison arms before its runs.
+
+The [common-state scenario experiment](../experiments/spa_agent/scenarios/README.md)
+forks each valid host action from the same pre-decision state, measures fixed
+later continuations and checks an exact return to the ordinary trajectory.
+These diagnostic consequences are retained separately; ordinary learning
+continues to use its registered immediate reward.
 
 ## Lineage and research sources
 

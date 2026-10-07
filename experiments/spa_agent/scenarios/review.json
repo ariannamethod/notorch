@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "pull_request": "https://github.com/ariannamethod/notorch/pull/153",
+  "reviewed_commit": "6e834f33499247c9e5c33de7e0a889d5e502255f",
+  "commit_metadata": {
+    "finding": "https://github.com/ariannamethod/notorch/pull/153#discussion_r4202050095",
+    "command": "git show -s --format=%B <commit>",
+    "commit_messages": {
+      "6e834f33499247c9e5c33de7e0a889d5e502255f": "Add a persistent sentence-action policy above unchanged SPA\n\nIntroduce an independent native C SPA Agent with 267 policy parameters,\ncompact sentence observations, KEEP/LEFT/RIGHT actions, explicit host execution\ncredit, temporal outcome memory and exact canonical save/resume. Preserve all\nlegacy SPA source and offer disabled, registered legacy and learned modes.\n\nVerify 12618 agent checks, 78 hostile-state checks, 118 existing SPA/BitNet\nchecks, 108 held-out imitation inputs, 1024-step byte parity, four deliberate\nmutation failures and the complete 37-command CPU recipe. Acquired weights\nalone change the controlled action under identical observation/history/RNG.\n\nRetain the frozen pretrained SimpleLLM experiment: 240 decisions, 48 learned\nupdates, zero acquired-weight choice changes on both seeds, six negative and\none positive exploratory reseed. Preserve raw axes, replay identities and the\nbody sanitizer artifact failure. Record Q's dormant legacy trigger geometry.\n\nQuote: \"A sentence carries its last consequence into its next choice.\" \u2014 Astra\n\nMethod: Keep perception intact, let the host execute a bounded choice, and\ncompare acquired and initial weights on the very same remembered sentence field.\n\nCo-authored-by: Codex <codex@openai.com>\n\n",
+      "79707d8f1d448e69e0a1b69f3da6de80b8e460d5": "SPA: Sentence Phonon Agent \u2014 typed actions, persistent experience and receipts\n"
+    },
+    "source_commit_contains_quote_and_method": true,
+    "merge_commit_contains_only_title": true,
+    "disposition": "The published finding names the source commit; its Quote and Method are present in the actual Git object. The separate merge commit has only its title."
+  },
+  "save_directory_sync": {
+    "finding": "https://github.com/ariannamethod/notorch/pull/153#discussion_r4202050102",
+    "observed_source": "spa_agent.c::nt_spa_agent_save fsyncs the temporary file, closes it and renames it; the parent directory is not fsynced.",
+    "disposition": "Fixed: validate the parent directory before creating a temporary file; fsync it after installing the replacement. The documented post-rename I/O error can coexist with the new checkpoint already installed.",
+    "evidence": {
+      "path": "experiments/spa_agent/scenarios/durability.json",
+      "sha256": "fbe6232b7eb21a9358698da542f7195964fef237f3bfd30d32a9b9fd0922563c",
+      "cases": 10,
+      "checks": 111,
+      "omitted_fsync_mutation_exit": 1,
+      "asan_ubsan": "PASS for the save-only core and injected test; leak detection disabled."
+    }
+  }
+}

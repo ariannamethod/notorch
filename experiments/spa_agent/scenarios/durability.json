@@ -1,0 +1,241 @@
+{
+  "schema": 1,
+  "review": {
+    "url": "https://github.com/ariannamethod/notorch/pull/153#discussion_r4202050102",
+    "finding": "The installed checkpoint directory entry needs its own fsync after rename.",
+    "reference_url": "https://man7.org/linux/man-pages/man2/fsync.2.html",
+    "reference_location": "DESCRIPTION, retrieved lines 52-55"
+  },
+  "contract": {
+    "sequence": [
+      "open and fstat parent directory",
+      "create unique same-directory temporary file",
+      "write and fflush",
+      "fsync temporary file",
+      "close temporary file",
+      "rename into place",
+      "fsync parent directory",
+      "close directory"
+    ],
+    "pre_rename_failure": "E_IO preserves all prior checkpoint bytes and leaves the resident agent unchanged.",
+    "post_rename_failure": "Directory fsync or close failure returns E_IO; the replacement is already installed.",
+    "errors": "The first failed operation errno is preserved through descriptor and temporary-file cleanup.",
+    "checkpoint_bytes": 2296,
+    "schema_and_policy_arithmetic": "Unchanged."
+  },
+  "source_sha256": {
+    "spa_agent.c": "a30ebef08cd453ba2aa41133aecddf22d0468f11783d23eb469b61743aabfbb0",
+    "spa_agent.h": "c0dc6202c816131d81de26aae1393812573fea091b5ddd5fc2c0e52711b06115",
+    "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+    "tests/test_spa_agent_durability.c": "49855ecfa9324eaf28ba1b69d1837734b6684fcb014d8bfb980c4db8a3d330ab"
+  },
+  "dependency": {
+    "object": "notorch.o",
+    "object_sha256": "e6332277f351ca8faf70ac07c071236c8c466389f121519eef59cd8a2bb2f760",
+    "source": "notorch.c",
+    "source_sha256": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+    "role": "Existing ordinary notorch object supplies the linked engine; this save-only gate does not execute sentence perception."
+  },
+  "environment": {
+    "system": "Linux",
+    "architecture": "x86_64",
+    "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0"
+  },
+  "reproduction": "Copy the listed core headers/source, durability test and an ordinary notorch.o to one isolated directory. Commands below execute there with relative filenames. The syscall redirection flags apply only to the injected SPA object.",
+  "normal": {
+    "build_object": {
+      "command": [
+        "cc",
+        "-O2",
+        "-std=gnu11",
+        "-pthread",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I.",
+        "-U_FORTIFY_SOURCE",
+        "-D_FORTIFY_SOURCE=0",
+        "-Dopen=spa_durability_open",
+        "-Dfstat=spa_durability_fstat",
+        "-Dmkstemp=spa_durability_mkstemp",
+        "-Dfsync=spa_durability_fsync",
+        "-Drename=spa_durability_rename",
+        "-Dclose=spa_durability_close",
+        "-c",
+        "spa_agent.c",
+        "-o",
+        "durability.o"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "link": {
+      "command": [
+        "cc",
+        "-O2",
+        "-std=gnu11",
+        "-pthread",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I.",
+        "test_spa_agent_durability.c",
+        "durability.o",
+        "notorch.o",
+        "-lm",
+        "-o",
+        "durability"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "run": {
+      "command": [
+        "./durability"
+      ],
+      "returncode": 0,
+      "stdout": "PASS durable successful replacement\nPASS directory open failure before mutation\nPASS directory stat failure before mutation\nPASS non-directory refused before mutation\nPASS temporary creation failure\nPASS file sync failure preserves prior file\nPASS rename failure preserves prior file\nPASS directory sync failure reports installed replacement\nPASS directory close failure reports installed replacement\nPASS relative path uses current parent directory\nSPA_AGENT_DURABILITY 10/10 cases, 111 checks\n",
+      "stderr": ""
+    }
+  },
+  "mutation": {
+    "name": "omitted_parent_directory_fsync",
+    "anchor": "NT_SPA_DIRECTORY_DURABILITY",
+    "original": "if(fsync(directory_fd)!=0) { saved_errno=errno; goto cleanup; }",
+    "replacement": "if(0) { saved_errno=errno; goto cleanup; }",
+    "mutant_source_sha256": "7fab295f9627c18fc64014d7e6c817840658484d8c440a855e23385c09b8650f",
+    "expected_exit": 1,
+    "build_object": {
+      "command": [
+        "cc",
+        "-O2",
+        "-std=gnu11",
+        "-pthread",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I.",
+        "-U_FORTIFY_SOURCE",
+        "-D_FORTIFY_SOURCE=0",
+        "-Dopen=spa_durability_open",
+        "-Dfstat=spa_durability_fstat",
+        "-Dmkstemp=spa_durability_mkstemp",
+        "-Dfsync=spa_durability_fsync",
+        "-Drename=spa_durability_rename",
+        "-Dclose=spa_durability_close",
+        "-c",
+        "spa_agent_mutant.c",
+        "-o",
+        "mutant.o"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "link": {
+      "command": [
+        "cc",
+        "-O2",
+        "-std=gnu11",
+        "-pthread",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I.",
+        "test_spa_agent_durability.c",
+        "mutant.o",
+        "notorch.o",
+        "-lm",
+        "-o",
+        "mutant"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "run": {
+      "command": [
+        "./mutant"
+      ],
+      "returncode": 1,
+      "stdout": "PASS directory open failure before mutation\nPASS directory stat failure before mutation\nPASS non-directory refused before mutation\nPASS temporary creation failure\nPASS file sync failure preserves prior file\nPASS rename failure preserves prior file\nSPA_AGENT_DURABILITY 6/10 cases, 78 checks\n",
+      "stderr": "FAIL durable successful replacement:137: open/validate/create/file-sync/rename/directory-sync/close order (events=ODTFRc)\nFAIL directory sync failure reports installed replacement:136: reported save status matches injected syscall result (events=ODTFRc)\nFAIL directory close failure reports installed replacement:137: open/validate/create/file-sync/rename/directory-sync/close order (events=ODTFRc)\nFAIL relative path uses current parent directory:137: open/validate/create/file-sync/rename/directory-sync/close order (events=ODTFRc)\n"
+    }
+  },
+  "sanitizer": {
+    "instrumented": "spa_agent.c and the fault-injection test; ordinary notorch.o remains uninstrumented and its perception function is not called.",
+    "environment": {
+      "ASAN_OPTIONS": "detect_leaks=0:halt_on_error=1",
+      "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+    },
+    "build_object": {
+      "command": [
+        "cc",
+        "-O1",
+        "-g",
+        "-std=gnu11",
+        "-pthread",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsanitize=address,undefined",
+        "-fno-omit-frame-pointer",
+        "-fno-pie",
+        "-I.",
+        "-U_FORTIFY_SOURCE",
+        "-D_FORTIFY_SOURCE=0",
+        "-Dopen=spa_durability_open",
+        "-Dfstat=spa_durability_fstat",
+        "-Dmkstemp=spa_durability_mkstemp",
+        "-Dfsync=spa_durability_fsync",
+        "-Drename=spa_durability_rename",
+        "-Dclose=spa_durability_close",
+        "-c",
+        "spa_agent.c",
+        "-o",
+        "sanitized.o"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "link": {
+      "command": [
+        "cc",
+        "-O1",
+        "-g",
+        "-std=gnu11",
+        "-pthread",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsanitize=address,undefined",
+        "-fno-omit-frame-pointer",
+        "-fno-pie",
+        "-I.",
+        "-no-pie",
+        "test_spa_agent_durability.c",
+        "sanitized.o",
+        "notorch.o",
+        "-lm",
+        "-o",
+        "sanitized"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "run": {
+      "command": [
+        "./sanitized"
+      ],
+      "returncode": 0,
+      "stdout": "PASS durable successful replacement\nPASS directory open failure before mutation\nPASS directory stat failure before mutation\nPASS non-directory refused before mutation\nPASS temporary creation failure\nPASS file sync failure preserves prior file\nPASS rename failure preserves prior file\nPASS directory sync failure reports installed replacement\nPASS directory close failure reports installed replacement\nPASS relative path uses current parent directory\nSPA_AGENT_DURABILITY 10/10 cases, 111 checks\n",
+      "stderr": ""
+    }
+  },
+  "working_sources_unchanged": true,
+  "passed": true
+}

@@ -111,3 +111,8 @@ bench_cuda_decode
 /test_bitnet_ops
 /spa_agent_demo
 !tests/test_spa_agent_mutations.py
+
+# SPA consequence and trace verification
+/test_spa_agent_durability
+!tests/test_spa_scenarios.py
+!tests/test_spa_trace_io.py
