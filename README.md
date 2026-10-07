@@ -22,6 +22,7 @@
 - [architecture](#architecture)
 - [what's inside](#whats-inside)
 - [operations](#operations)
+- [owned sampling](#owned-sampling)
 - [optimizers](#optimizers)
 - [the chuck optimizer](#the-chuck-optimizer)
 - [Chuck: Loss Architect](#chuck-loss-architect)
@@ -430,6 +431,32 @@ every operation you need to build a modern transformer, and some you didn't know
 every single one has a correct backward pass. every single one passes numerical gradient checking — checked twice. debugging gradient errors in C without a debugger at 4 AM rewires the brain in ways formal verification theorists dream about.
 
 ---
+
+## owned sampling
+
+Haiku's next word has its own random state. `nt_rng_seed`, `nt_rng_u32`,
+`nt_rng_uniform`, and `nt_rng_index` operate on a caller-owned `uint64_t`:
+PCG32 XSH-RR, fixed stream 54, exact replay, and unbiased bounded draws.
+Copying that state copies the continuation. Tensor initialization keeps its
+existing `nt_seed` stream.
+
+`nt_rng_categorical` samples nonnegative weights at a positive temperature;
+`nt_categorical_index` takes an explicit draw for reference replay. Scaling
+and logarithms keep the distribution finite across the float32 weight and
+temperature range. Both validate before publishing outputs; invalid calls
+preserve the caller's state. These functions allocate no memory and leave
+the input weights intact. See [sampling](docs/SAMPLING.md) for the API, exact
+draw convention, reference vectors, and gates.
+
+```c
+uint64_t voice;
+nt_rng_seed(&voice, 42);
+float weights[] = {0.0f, 1.0f, 3.0f};
+int choice;
+if (nt_rng_categorical(&voice, weights, 3, 0.7f, &choice) == 0) {
+    // choice addresses a positive-weight entry; voice now owns the next draw.
+}
+```
 
 ## optimizers
 
@@ -1018,6 +1045,7 @@ ten test binaries (run output is the source of truth for counts):
 - **`tests/test_rrpram_lr.c` / `test_metal_q4k.c` / `test_simd_correctness.c` / `test_simd_loss.c`** — low-rank RRPRAM, Apple-Silicon Q4_K matvec, and AVX2+FMA SIMD parity
 - **`tests/test_sigmoid_scale.c`** — 4 tests: `nt_sigmoid` forward/backward, `nt_scale_by_t` forward/backward (scalar × tensor with grad flowing to both)
 - **`tests/test_tanh_sgd.c`** — tanh gradients and shape, frozen/unused parameters, optimizer state preservation, external clipping, and 24-step 5→8→1 / 6→4→1 SGD trajectories against a double-precision reference. `make check_tanh_sgd BLAS_FLAGS= BLAS_LIBS=` runs with C and libm.
+- **`tests/test_sampling.c`** — owned PCG32 vectors, bounded rejection, stable weighted selection, invalid-input preservation, and isolation from existing streams. `make check_sampling BLAS_FLAGS= BLAS_LIBS=` runs with C and libm.
 - **`tests/test_gguf.c`** — GGUF parser smoke test (F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K dequant)
 - **`tests/test_qmatvec.c`** — packed quantized matvec (`nt_qmatvec`) vs the dequant→cblas oracle across all 7 GGUF dtypes (F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K), relative error ~1e-6
 

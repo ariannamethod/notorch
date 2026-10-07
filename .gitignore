@@ -20,6 +20,7 @@ train_grpo
 train_distillation
 test_sigmoid_scale
 test_tanh_sgd
+test_sampling
 test_vision
 test_qpool
 *.dSYM
@@ -44,6 +45,7 @@ tests/bench_*
 !tests/*.c
 !tests/*.h
 !tests/*.sh
+!tests/test_sampling_mutations.py
 examples/infer_*
 examples/train_*
 !examples/*.c

@@ -978,6 +978,28 @@ void nt_print_params(nt_tensor** params, int n, const char** names);
 // Seed RNG
 void nt_seed(uint64_t seed);
 
+// Explicitly owned sampling stream: PCG32 XSH-RR, fixed sequence 54.
+// All 64-bit seeds and states are valid; copy *state to snapshot the stream.
+// These functions are independent of nt_seed(), Chuck, and libc rand().
+// NULL is a no-op for seed and returns zero for u32/uniform.
+void nt_rng_seed(uint64_t* state, uint64_t seed);
+uint32_t nt_rng_u32(uint64_t* state);
+// One word, upper 24 bits scaled to an exactly representable float in [0,1).
+float nt_rng_uniform(uint64_t* state);
+// Unbiased integer in [0,bound), using one or more words. bound must be > 0.
+// Checked samplers return 0 on success, -1 on error, preserving state/output
+// on error. Output storage must not overlap input/state storage.
+int nt_rng_index(uint64_t* state, uint32_t bound, uint32_t* out);
+// Weights are finite and nonnegative with at least one positive entry;
+// n and finite temperature must be positive, and finite draw is in [0,1).
+// Uses weight^(1/temperature), double accumulation, and strict CDF selection.
+// All sampling is allocation-free; weights are borrowed and never modified.
+int nt_categorical_index(const float* weights, int n, float temperature,
+                         double draw, int* out);
+// Consumes one full 32-bit word divided by 2^32, including singleton support.
+int nt_rng_categorical(uint64_t* state, const float* weights, int n,
+                       float temperature, int* out);
+
 #ifdef __cplusplus
 }
 #endif

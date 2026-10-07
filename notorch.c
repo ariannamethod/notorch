@@ -153,6 +153,103 @@ static float rand_uniform(void) {
     return (float)xorshift32() / 4294967296.0f;
 }
 
+/* PCG32 XSH-RR, adapted from PCG minimal C by Melissa O'Neill.
+ * Copyright 2014 Melissa O'Neill <oneill@pcg-random.org>
+ * SPDX-License-Identifier: Apache-2.0
+ * See LICENSES/Apache-2.0.txt and THIRD_PARTY_NOTICES.md.
+ * Changes: fixed sequence 54, caller-owned uint64_t state, NULL handling,
+ * checked bounded sampling, and error-preserving publication. Independent
+ * of the legacy tensor initializer; state arithmetic is modulo 2^64.
+ * Reference vectors: https://www.pcg-random.org/using-pcg-c-basic.html */
+uint32_t nt_rng_u32(uint64_t* state) {
+    if (!state) return 0;
+    uint64_t old = *state;
+    *state = old * UINT64_C(6364136223846793005) + UINT64_C(109);
+    uint32_t word = (uint32_t)(((old >> 18u) ^ old) >> 27u);
+    uint32_t rotation = (uint32_t)(old >> 59u);
+    return (word >> rotation) | (word << ((32u - rotation) & 31u));
+}
+
+void nt_rng_seed(uint64_t* state, uint64_t seed) {
+    if (!state) return;
+    *state = 0;
+    (void)nt_rng_u32(state);
+    *state += seed;
+    (void)nt_rng_u32(state);
+}
+
+float nt_rng_uniform(uint64_t* state) {
+    return (float)(nt_rng_u32(state) >> 8u) * 0x1p-24f;
+}
+
+int nt_rng_index(uint64_t* state, uint32_t bound, uint32_t* out) {
+    if (!state || !bound || !out) return -1;
+    uint64_t next = *state;
+    uint32_t threshold = (uint32_t)(0u - bound) % bound;
+    uint32_t word;
+    do {
+        word = nt_rng_u32(&next);
+    } while (word < threshold);
+    uint32_t selected = word % bound;
+    *state = next;
+    *out = selected;
+    return 0;
+}
+
+/* Scaling by the largest weight puts every exponent at or below zero. A
+ * positive float32 weight ratio remains representable in double even across
+ * the entire float32 range; the maximum always contributes exactly one. */
+static double nt_categorical_mass(float weight, double maximum,
+                                  double temperature) {
+    return weight > 0.0f ? exp(log((double)weight / maximum) / temperature) : 0.0;
+}
+
+int nt_categorical_index(const float* weights, int n, float temperature,
+                         double draw, int* out) {
+    if (!weights || n <= 0 || !out || !isfinite(temperature) ||
+        temperature <= 0.0f || !isfinite(draw) || draw < 0.0 || draw >= 1.0)
+        return -1;
+    double maximum = 0.0;
+    for (int i = 0; i < n; i++) {
+        if (!isfinite(weights[i]) || weights[i] < 0.0f) return -1;
+        if ((double)weights[i] > maximum) maximum = weights[i];
+    }
+    if (maximum == 0.0) return -1;
+
+    double total = 0.0;
+    for (int i = 0; i < n; i++)
+        total += nt_categorical_mass(weights[i], maximum, (double)temperature);
+    double target = draw * total;
+    double cumulative = 0.0;
+    int last_positive = -1;
+    for (int i = 0; i < n; i++) {
+        double mass = nt_categorical_mass(weights[i], maximum, (double)temperature);
+        if (mass == 0.0) continue;
+        last_positive = i;
+        cumulative += mass;
+        if (target < cumulative) {
+            *out = i;
+            return 0;
+        }
+    }
+    // Rounding at draw just below one may put target on the final boundary.
+    *out = last_positive;
+    return 0;
+}
+
+int nt_rng_categorical(uint64_t* state, const float* weights, int n,
+                       float temperature, int* out) {
+    if (!state || !out) return -1;
+    uint64_t next = *state;
+    double draw = (double)nt_rng_u32(&next) * 0x1p-32;
+    int selected;
+    if (nt_categorical_index(weights, n, temperature, draw, &selected) != 0)
+        return -1;
+    *state = next;
+    *out = selected;
+    return 0;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TENSOR
 // ═══════════════════════════════════════════════════════════════════════════════
