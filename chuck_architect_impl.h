@@ -579,6 +579,100 @@ int nt_chuck_architect_feedback(nt_chuck_architect *architect, float after_loss,
     return NT_CHUCK_OK;
 }
 
+int nt_chuck_architect_capture(const nt_chuck_architect *architect,
+    const nt_chuck_observation *observation,
+    float features[NT_CHUCK_ARCHITECT_FEATURES]) {
+    if (!architect || !observation || !features) return NT_CHUCK_E_ARGUMENT;
+    if (!nt_ca_state_valid(architect) || architect->pending ||
+        !nt_ca_observation_valid(observation)) return NT_CHUCK_E_STATE;
+    float captured[NT_CHUCK_ARCHITECT_FEATURES];
+    nt_ca_features(architect, observation, captured);
+    memcpy(features, captured, sizeof captured);
+    return NT_CHUCK_OK;
+}
+
+int nt_chuck_architect_scores(const nt_chuck_architect *architect,
+    const float features[NT_CHUCK_ARCHITECT_FEATURES],
+    float scores[NT_CHUCK_ARCHITECT_HEADS]) {
+    if (!architect || !features || !scores) return NT_CHUCK_E_ARGUMENT;
+    if (!nt_ca_state_valid(architect) || architect->pending ||
+        architect->config.mode != NT_CHUCK_ARCHITECT_LEARNED) return NT_CHUCK_E_STATE;
+    if (!nt_ca_floats_valid(features, NT_CHUCK_ARCHITECT_FEATURES, 1)) return NT_CHUCK_E_ARGUMENT;
+    float hidden[NT_CHUCK_ARCHITECT_HIDDEN], predicted[NT_CHUCK_ARCHITECT_HEADS];
+    nt_ca_forward(architect, features, hidden, predicted);
+    memcpy(scores, predicted, sizeof predicted);
+    return NT_CHUCK_OK;
+}
+
+static float nt_ca_huber(float error) {
+    float magnitude = fabsf(error);
+    return magnitude <= 1 ? 0.5f * error * error : magnitude - 0.5f;
+}
+
+int nt_chuck_architect_fit_comparison(nt_chuck_architect *architect,
+    const nt_chuck_architect_comparison *sample,
+    nt_chuck_architect_comparison_receipt *receipt) {
+    const uint32_t required_actions = NT_CHUCK_ACTION_BIT(NT_CHUCK_ACTION_HOLD) |
+        NT_CHUCK_ACTION_BIT(NT_CHUCK_ACTION_BRAKE) | NT_CHUCK_ACTION_BIT(NT_CHUCK_ACTION_PUSH);
+    if (!architect || !sample) return NT_CHUCK_E_ARGUMENT;
+    if (!nt_ca_state_valid(architect) || architect->pending ||
+        architect->config.mode != NT_CHUCK_ARCHITECT_LEARNED) return NT_CHUCK_E_STATE;
+    if ((architect->config.limits.enabled_actions & required_actions) != required_actions)
+        return NT_CHUCK_E_ACTION;
+    if (!nt_ca_floats_valid(sample->features, NT_CHUCK_ARCHITECT_FEATURES, 1))
+        return NT_CHUCK_E_ARGUMENT;
+    if (!isfinite(sample->future_loss[0])) return NT_CHUCK_E_BASELINE;
+
+    nt_chuck_architect prior = *architect, next = prior;
+    nt_chuck_architect_comparison_receipt r;
+    memset(&r, 0, sizeof r);
+    r.hash_before = nt_chuck_architect_hash(&prior);
+    r.decisions = prior.decisions;
+    r.updates = prior.updates;
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k)
+        r.future_loss[k] = sample->future_loss[k]; // NT_CA_COMPARISON_OUTCOME: measured branch, fixed head order.
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k) {
+        r.nonfinite[k] = !isfinite(r.future_loss[k]);
+        r.loss_delta[k] = (double)r.future_loss[0] - (double)r.future_loss[k];
+        r.target[k] = r.nonfinite[k] ? -1.0f :
+            nt_ca_ratio(r.loss_delta[k], fabs((double)r.future_loss[0]) + 1e-6);
+    }
+    float hidden[NT_CHUCK_ARCHITECT_HIDDEN], g[NT_CHUCK_ARCHITECT_HEADS];
+    float hidden_g[NT_CHUCK_ARCHITECT_HIDDEN];
+    nt_ca_forward(&prior, sample->features, hidden, r.predicted_before);
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k) {
+        r.error_before[k] = r.predicted_before[k] - r.target[k]; // NT_CA_COMPARISON_CREDIT
+        g[k] = nt_ca_clip(r.error_before[k], -1, 1) / NT_CHUCK_ARCHITECT_HEADS;
+        r.huber_before += nt_ca_huber(r.error_before[k]) / NT_CHUCK_ARCHITECT_HEADS;
+    }
+    for (int h = 0; h < NT_CHUCK_ARCHITECT_HIDDEN; ++h) {
+        float sum = 0;
+        for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k)
+            sum += g[k] * prior.w2[k][h];
+        hidden_g[h] = sum * (1 - hidden[h] * hidden[h]);
+    }
+    float rate = prior.config.learning_rate; // NT_CA_COMPARISON_RATE
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k) {
+        for (int h = 0; h < NT_CHUCK_ARCHITECT_HIDDEN; ++h)
+            next.w2[k][h] = nt_ca_clip(prior.w2[k][h] - rate * g[k] * hidden[h], -16, 16);
+        next.b2[k] = nt_ca_clip(prior.b2[k] - rate * g[k], -16, 16);
+    }
+    for (int h = 0; h < NT_CHUCK_ARCHITECT_HIDDEN; ++h) {
+        for (int i = 0; i < NT_CHUCK_ARCHITECT_FEATURES; ++i)
+            next.w1[h][i] = nt_ca_clip(prior.w1[h][i] - rate * hidden_g[h] * sample->features[i], -16, 16);
+        next.b1[h] = nt_ca_clip(prior.b1[h] - rate * hidden_g[h], -16, 16);
+    }
+    if (!nt_ca_state_valid(&next)) return NT_CHUCK_E_STATE;
+    nt_ca_forward(&next, sample->features, hidden, r.predicted_after);
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k)
+        r.huber_after += nt_ca_huber(r.predicted_after[k] - r.target[k]) / NT_CHUCK_ARCHITECT_HEADS;
+    r.hash_after = nt_chuck_architect_hash(&next);
+    r.fitted = 1;
+    *architect = next;
+    if (receipt) *receipt = r;
+    return NT_CHUCK_OK;
+}
+
 // The same explicit field walk writes, reads and hashes the life. No struct
 // padding, native byte order, pointer or compiler enum width enters the file.
 typedef struct {

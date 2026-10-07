@@ -159,7 +159,11 @@ make test_spa_legacy_parity
 python3 tests/test_spa_agent_mutations.py --json /tmp/spa-mutations.json
 ```
 
-The full CPU recipe passes all 38 commands. A first attempt stopped because an
+The original full CPU recipe passes all 38 commands. Integrating Chuck future
+credit from main `5284c1b` adds its new gate; the combined recipe passes all 39
+commands, with both host builds, narrow suites and SPA parity retained in
+[merge_verification.json](merge_verification.json).
+A first scenario-verification attempt stopped because an
 existing ignored `test_multi_decode` binary had mode 0644. Its bytes were
 preserved; rebuilding produced the identical SHA-256 with mode 0755, followed
 by the complete successful run. The source of the mode change is unknown.
