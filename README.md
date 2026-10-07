@@ -616,7 +616,12 @@ make spa_agent_demo BLAS_FLAGS= BLAS_LIBS=
 ```
 
 [API and research](docs/spa-agent.md) ·
-[Pretrained SimpleLLM experiment](experiments/spa_agent/README.md)
+[Pretrained SimpleLLM experiment](experiments/spa_agent/README.md) ·
+[Common-state action consequences](experiments/spa_agent/scenarios/README.md)
+
+The native experiment host can fork each valid sentence action from one saved
+state and measure immediate and later consequences. Its optional diagnostics
+preserve the ordinary trajectory and saved Agent life byte for byte.
 
 ---
 

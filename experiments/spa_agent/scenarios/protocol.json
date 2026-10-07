@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "name": "SPA common-state sentence-action consequences v1",
+  "frozen_before_first_scenario_run": true,
+  "question": "At the same real pre-decision state, which valid sentence action has the best declared immediate or later consequence, and does the current policy select it?",
+  "parent_protocol": {
+    "path": "experiments/spa_agent/protocol.json",
+    "sha256": "0a1272697270e93b8d0dbdeb2d8ce7706dbbbda77fcc146c2f29be7eddc1fae2",
+    "body_and_host_unchanged": true
+  },
+  "body": {
+    "repository": "ariannamethod/notorch-simple-llm",
+    "commit": "80b3bd611ed8c937efdc481dc07895c8e13e345d",
+    "recipe": "train_dracula.py",
+    "checkpoint": "weights/dracula.weights",
+    "checkpoint_sha256": "22ce6e5dfe4efb4a00477a9652784970dc53a69fea2825174398af749acda00d",
+    "corpus": "dracula.txt",
+    "corpus_sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c",
+    "parameters": 450688,
+    "architecture": "128-wide, two-layer, four-head RoPE/RMSNorm/SwiGLU transformer; hidden 384; 94 Unicode characters; context 64",
+    "numerical_engine": "upstream notorch.c linked with the independent C experiment runner",
+    "weights_frozen": true
+  },
+  "seeds": [
+    42,
+    73
+  ],
+  "episodes": 6,
+  "snapshots_per_episode": 4,
+  "sentences_per_chain": 4,
+  "snapshots": {
+    "arm": "learned",
+    "time": "Immediately before each ordinary choose call, while the agent is idle.",
+    "target": "(episode_index + decision_index) modulo 4, unchanged from the parent protocol.",
+    "state": "The complete current sentence chain, reseed counters, persistent agent and its private RNG, body parameter bytes, and the ordinary initial host generation stream.",
+    "count_per_seed": 24
+  },
+  "interventions": {
+    "actions": [
+      "KEEP",
+      "RESEED_LEFT",
+      "RESEED_RIGHT"
+    ],
+    "availability": "All and only actions passing nt_spa_action_validate at the original target. Count 60/seed (24 KEEP, 18 LEFT, 18 RIGHT).",
+    "execution": "Host intervention directly executes the valid typed action on a private chain/counter copy. No agent choose, observe, imitation, reset or weight replacement occurs in the diagnostic branch.",
+    "initial_host_rng": "stream(seed, 0x7370615f6163746e, episode_index, decision_index), exactly the parent host stream. All alternatives start from this identical stream; KEEP consumes none.",
+    "generation": {
+      "minimum_generated_characters": 12,
+      "maximum_generated_characters": 64,
+      "stop_characters": ".!?",
+      "temperature": 0.8,
+      "initial_prompt_characters": 16,
+      "initial_prompt_selection": "SplitMix64 samples the sorted corpus sentence-start offsets (first character and the character after .!? followed by whitespace); choose 16 following codepoints.",
+      "base_chain": "Generate the complete four-sentence chain once per episode and seed; clone it into every arm before intervention. Store every generated token and termination flag.",
+      "rng": "Independent SplitMix64 generation stream per episode/slot. Reseeds use the same per-seed/episode/decision stream in every arm. Policy RNG is separate."
+    },
+    "reseed_prompt": "Last min(3, neighbor_length) character tokens, identical to v1.",
+    "acceptance": "Every valid reseed applies; preserve its positive or negative measured consequence.",
+    "forks_per_seed": 60
+  },
+  "continuation": {
+    "horizons": [
+      0,
+      1,
+      4
+    ],
+    "horizon_meaning": "Number of additional fixed host reseeds after the initial intervention; horizon 0 is its immediate consequence.",
+    "future_target": "(original_target + hop) modulo 4, hop starts at 1.",
+    "future_action": "RESEED_LEFT if future_target>0; otherwise RESEED_RIGHT. This is a frozen diagnostic host continuation and performs no agent learning.",
+    "future_host_rng": "stream(seed, 0x7370615f66757472, episode_index*4 + decision_index, hop), independently constructed at every hop and identical across initial alternatives.",
+    "generation": "The same parent 3-character-neighbor, min 12/max 64, temperature 0.8 recipe at every hop.",
+    "max_hop": 4,
+    "measurements_per_seed": 180
+  },
+  "measurements": {
+    "target": "Seven metrics always refer to the original intervention target index in the current four-sentence chain, including at later horizons.",
+    "before": "Snapshot metrics before any intervention, shared by every action/horizon.",
+    "axes": {
+      "local_connectedness": "Mean cosine similarity of target to its existing immediate neighbors, mapped from [-1,1] to [0,1].",
+      "global_connectedness": "Unchanged nt_spa_connectedness of target against all other sentence embeddings.",
+      "coherence": "Mean adjacent sentence cosine similarity mapped to [0,1].",
+      "novelty": "1 minus maximum positive cosine similarity between target and any other sentence.",
+      "repetition": "Repeated character trigrams inside target divided by all target trigrams; zero for fewer than three tokens.",
+      "collapse": "Fraction of the six unordered sentence pairs with cosine similarity at least 0.98.",
+      "continuity": "Minimum adjacent sentence cosine similarity mapped to [0,1]."
+    },
+    "cost": "cumulative_generated_characters / (64 * (horizon+1)); include initial intervention and all fixed continuation generations. KEEP initial cost is 0.",
+    "reward": "clamp(0.15*d_local + 0.15*d_global + 0.20*d_coherence + 0.20*d_novelty - 0.15*d_repetition - 0.10*d_collapse + 0.05*d_continuity - 0.05*cost, -1, 1)",
+    "cost_reporting": "Retain initial generated chars, each future generated chars, cumulative chars, and the declared horizon denominator independently of reward.",
+    "interpretation": "The later-horizon score measures this fixed continuation and its normalized generation cost. The parent policy continues learning exclusively from its original immediate reward; diagnostic measurements never train it."
+  },
+  "comparison": {
+    "tie_tolerance": 1e-07,
+    "best_actions": "All valid actions whose reward is within 1e-7 of the maximum at that snapshot/horizon.",
+    "positive_opportunity": "max_action_reward > KEEP_reward + 1e-7 at the same snapshot/horizon.",
+    "selected_regret": "max_action_reward minus reward of the ordinary policy-selected action at the snapshot. Report raw value and declare positive only above 1e-7.",
+    "changed_ranking": "Compare the complete best-action set at horizon 0 against horizons 1 and 4, retaining ties.",
+    "primary": [
+      "Positive opportunities and selected regrets by seed/horizon.",
+      "Action winner sets and their change across horizons.",
+      "Raw per-action seven-axis differences and generation costs relative to KEEP."
+    ],
+    "historical_result": "The parent 0/48 acquired-weight changes and learned/frozen equality remain their registered result."
+  },
+  "gates": {
+    "off_on": "Run the complete ordinary host with diagnostics disabled and enabled. Require byte-identical complete original JSONL and all five final canonical life files per seed; require match with pinned parent trace/life identities.",
+    "join": "Every fork returns with host chain/counters, complete agent, private/ordinary RNG, and body parameter bytes unchanged. Restore the ordinary forward counter and separately report every diagnostic forward.",
+    "selected_initial": "At horizon 0, the fork for the actual ordinary selected action must reproduce its executed chain, reseed/cost and measured consequence.",
+    "pairing": "Snapshot life/input hashes and initial host RNG agree for every action; future RNG starting states agree at each hop across alternatives.",
+    "completeness": "Exactly 24 snapshots, 60 valid forks, 180 horizon measurements per seed, with no duplicates/missing/extra actions. Require complete typed trace plus one terminal summary.",
+    "red_hand": [
+      "A deliberate main-chain mutation is detected.",
+      "A deliberate mismatched future RNG is detected.",
+      "A deliberate consequence score mutation is detected."
+    ],
+    "numerical": "Each axis/cost/reward finite and range-valid; reward recomputed from independent raw components."
+  },
+  "scope": {
+    "policy_capacity": "Unchanged 267 parameters.",
+    "host_tuning": "No changes to prompts, cap, temperature, embeddings, action availability or coefficients after observing results.",
+    "future_experiments": "Neighbor-context length and sentence cap are separate future protocols. No second consumer is added in this round."
+  },
+  "reporting": {
+    "sources": "Snapshot all compiled sources; retain compiler flags, binary/source/model/corpus hashes, machine and thread settings.",
+    "artifacts": "Complete ordinary/scenario raw records, every action/horizon measurement, negative/tied outcomes, replay comparisons and test receipts. Checkpoints are regenerated, not committed."
+  }
+}

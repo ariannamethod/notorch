@@ -587,13 +587,25 @@ tests/spa_state_notorch.o: notorch.c notorch.h $(CHUCK_HEADERS)
 test_spa_agent_state: tests/test_spa_agent_state.c spa_agent.c spa_agent.h tests/spa_state_notorch.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_spa_agent_state.c spa_agent.c tests/spa_state_notorch.o -lm $(BLAS_LIBS)
 
+# Observe real save syscalls without changing the production object or libc.
+# Fortified open aliases bypass source-level wrappers, so disable them here only.
+tests/spa_durability_agent.o: spa_agent.c spa_agent.h notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 \
+		-Dopen=spa_durability_open -Dfstat=spa_durability_fstat \
+		-Dmkstemp=spa_durability_mkstemp -Dfsync=spa_durability_fsync \
+		-Drename=spa_durability_rename -Dclose=spa_durability_close -c spa_agent.c -o $@
+
+test_spa_agent_durability: tests/test_spa_agent_durability.c tests/spa_durability_agent.o libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_spa_agent_durability.c tests/spa_durability_agent.o ./libnotorch.a -lm $(BLAS_LIBS)
+
 test_bitnet_ops: tests/test_bitnet_ops.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< notorch.c -lm $(BLAS_LIBS)
 
-check_spa_agent: test_spa_agent test_spa_agent_state test_bitnet_ops
+check_spa_agent: test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops
 	./test_bitnet_ops
 	./test_spa_agent
 	./test_spa_agent_state
+	./test_spa_agent_durability
 
 test_spa_agent_mutations:
 	python3 tests/test_spa_agent_mutations.py
@@ -601,7 +613,12 @@ test_spa_agent_mutations:
 test_spa_legacy_parity:
 	sh tests/test_spa_legacy_parity.sh
 
-spa_agent_demo: examples/spa_agent_demo.c spa_agent.h libnotorch.a
+.PHONY: check_spa_scenarios
+check_spa_scenarios:
+	python3 tests/test_spa_scenarios.py
+	python3 tests/test_spa_trace_io.py --self-test
+
+spa_agent_demo: examples/spa_agent_demo.c examples/spa_agent_scenarios.h spa_agent.h libnotorch.a
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch.a -lm $(BLAS_LIBS)
 
 # ── Test & Clean ──
@@ -695,11 +712,12 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_spa_agent test_spa_agent_state test_bitnet_ops test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
+test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
 	./notorch_test
 	./test_bitnet_ops
 	./test_spa_agent
 	./test_spa_agent_state
+	./test_spa_agent_durability
 	./test_chuck_architect
 	./test_chuck_actions_edge
 	sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state
@@ -785,7 +803,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
-	rm -f test_spa_agent test_spa_agent_state test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o
+	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o
 	rm -f test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future chuck_architect_train chuck_architect_future
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
 		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual test_gemma3 test_smollm_tokenizer \

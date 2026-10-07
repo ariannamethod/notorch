@@ -13,6 +13,91 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — SPA and Chuck future credit share the current build
+
+Integrated main `5284c1b` into SPA PR #155 after Chuck future credit merged.
+Resolved `Makefile` prerequisites and cleanup by retaining both SPA durability
+and Chuck future targets. Preserved the complete log entries from both branches.
+Chuck implementation and experiment files match main exactly; SPA implementation,
+frozen protocol and measured scenario artifacts match the prior PR head.
+
+`make -j2 check_spa_agent check_chuck_future BLAS_FLAGS= BLAS_LIBS=` passes:
+SPA 12,618 checks, hostile state 78, durability 111, existing SPA/BitNet 118,
+and Chuck future credit 647. `make check_spa_scenarios BLAS_FLAGS= BLAS_LIBS=`
+passes all scenario, path and completeness gates. Rebuilt the shared library
+and both experiment hosts, then `LD_LIBRARY_PATH=. make -j1 test BLAS_FLAGS=
+BLAS_LIBS=` passes all 39 combined CPU commands. `make test_spa_legacy_parity`
+still gives 1,024 steps / 114,688 identical bytes. Exact commands, outputs,
+source hashes and retained-file checks are in
+`experiments/spa_agent/scenarios/merge_verification.json`.
+
+## 2026-10-07 — SPA measures alternative consequences from the same state
+
+Follow-up to merged PR #153, based on fresh main `79707d8`. The optional
+`--scenarios` host mode forks KEEP/LEFT/RIGHT from each real learned-arm
+pre-decision state. It records horizons 0/1/4 under a fixed later host
+continuation, seven raw axes and explicit generation cost. Each fork starts
+from the same sentence field and RNG; the original agent, host state and body
+remain unchanged. The chosen H0 fork must match actual ordinary execution.
+Diagnostics do not supply learning credit. Ordinary policy arithmetic and
+the three legacy SPA functions are untouched; Chuck files are unchanged.
+
+The frozen protocol is `experiments/spa_agent/scenarios/protocol.json`, SHA-256
+`25aeed3248bcde9920a4a4eed29fd5ef06e5373da670c26fbb87696d819edcf4`.
+Pinned 450,688-parameter SimpleLLM, seeds 42/73: 48 snapshots, 120 valid forks,
+360 measurements. An alternative beats KEEP at 7/48 states immediately and
+14/48 at each later horizon. Selected positive regrets number 12/21/17 at
+horizons 0/1/4. Best-action sets change at 9/48 and 19/48 states after 1 and
+4 steps. At the first state, RIGHT initially beats KEEP by 0.008609292;
+after four fixed steps, KEEP scores -0.007562072 versus RIGHT -0.108164445.
+The initial positive reward includes increased novelty and lower coherence.
+Full raw measurements preserve that distinction.
+
+Two complete executions reproduce 27 trajectory/life/archive artifacts
+exactly. Diagnostics on/off reproduce both original full traces and all ten
+original saved lives. The parent result remains **0/48 acquired-weight action
+changes**. Protocol, caps, host prompts and reward weights were retained.
+Diagnostic forward calls total 32,661 and remain separate from ordinary
+2,803/2,789 counts. This establishes measured alternatives under a fixed
+continuation; no new real-body learning success is claimed.
+
+Eight parser mutations and four compiled defects are caught: host-state leak,
+unpaired future RNG, reversed consequence sign and wrong future metric target.
+The earlier fixture accepted the wrong-target mutation; its transcript-derived
+audit is retained, with absent source hashes explicit. Target-specific
+repetition made the gate discriminating. Five path guards
+and existing-sink preservation cover the create-only diagnostic output.
+
+Codex's directory-durability review was correct. Save now validates the parent
+directory before creating a temporary file and fsyncs it after rename. Failure
+before rename preserves the old checkpoint; a directory sync/close failure
+after rename returns E_IO with the replacement already installed. Schema and
+canonical bytes remain unchanged. Ten cases/111 checks cover syscall order,
+eight injected failures, cleanup and errno. The omitted-directory-fsync mutant
+fails; focused ASan/UBSan passes. The metadata comment names source `6e834f3`,
+which already has Quote/Method; merge `79707d8` has only its title. Exact Git
+messages and both review dispositions are preserved in `scenarios/review.json`.
+
+The original partial sanitizer trace remains a failed historical artifact.
+An immutable-v1 follow-up localizes a reproduced truncation: the writer's open
+descriptor reaches 223,280 complete bytes, while the pathname switches to a
+different inode containing 62,337 bytes. Flush/close succeed; the descriptor
+is marked deleted and its reread matches the full baseline hash. The replacing
+actor is unknown. Subprocess-parent execution and a later named-file/raw/gzip
+recheck retain the complete original trace. Seven completeness mutations fail.
+No production writer patch was made; evidence is in `scenarios/trace_io.json`.
+
+Commands: `make -j2 check_spa_agent BLAS_FLAGS= BLAS_LIBS=`,
+`make -j2 shared spa_agent_demo BLAS_FLAGS= BLAS_LIBS=`,
+`LD_LIBRARY_PATH=. make -j1 test BLAS_FLAGS= BLAS_LIBS=` (all 38 CPU commands),
+`make test_spa_legacy_parity` (1,024 steps/114,688 identical bytes),
+`python3 tests/test_spa_agent_mutations.py --json <output>/agent_mutations.json`
+(four caught), and `make check_spa_scenarios BLAS_FLAGS= BLAS_LIBS=` (all pass).
+The first CPU attempt stopped at an existing ignored binary with mode 0644;
+its rebuild has identical bytes and mode 0755. Both attempts remain recorded.
+The scenario runner, complete raw streams, immutable source identities,
+repeat checks and all receipts live in `experiments/spa_agent/scenarios/`.
+
 ## 2026-10-07 — Future credit changes preference; conditional BRAKE remains unlearned
 
 Clean source `634a77ba8e28daa9aa71ebc1e000e074017ce955`, integrated with SPA

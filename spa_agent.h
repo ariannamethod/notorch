@@ -193,7 +193,10 @@ int nt_spa_agent_set_policy(nt_spa_agent *agent, const nt_spa_policy *policy);
 
 // Versioned canonical little-endian IEEE binary32 with checksum, exact length,
 // strict structural/range/cache checks, transactional load and atomic save
-// through a unique same-directory temporary file, fsync and rename. Includes pending
+// through a unique same-directory temporary file, file fsync, rename and parent
+// directory fsync. Pre-rename failures preserve the old checkpoint. A directory
+// sync/close failure after rename returns E_IO with the new file already installed.
+// Includes pending
 // decision, raw outcomes, frozen reward/perception versions, private RNG.
 // The host separately saves model/generation state. Same-platform continuation
 // is exact; no raw C structure dump. hash covers this canonical representation.

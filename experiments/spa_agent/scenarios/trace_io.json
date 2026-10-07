@@ -1,0 +1,411 @@
+{
+  "schema": 1,
+  "name": "Immutable v1 sanitizer trace path investigation",
+  "status": "BOUNDARY_IDENTIFIED",
+  "scope": "The original v1 body, protocol, reward and historical PARTIAL receipt are unchanged. This investigation separates process status, open-file contents and published-path contents.",
+  "historical_receipt": "experiments/spa_agent/receipts.json: body sanitizer integration PARTIAL; artifact gate FAIL",
+  "proven_boundary": {
+    "finding": "During direct shell execution, the trace pathname was unlinked/replaced while the C FILE remained open. The open descriptor reached the complete trace; reopening the pathname reached a different inode containing a prefix.",
+    "first_observed_divergence_after_episode": 2,
+    "descriptor_inode": 657329,
+    "replacement_path_inode": 657364,
+    "descriptor_final_bytes": 223280,
+    "replacement_path_bytes": 62337,
+    "descriptor_final_fnv1a64": "4720a0fb662510e8",
+    "complete_baseline_fnv1a64": "4720a0fb662510e8",
+    "descriptor_readlink_marks_deleted": true,
+    "all_instrumented_fflush_results_zero": true,
+    "ferror_always_zero": true,
+    "fclose_result": 0,
+    "inference": "An actor outside the unchanged v1 writer replaced the named artifact during execution. The experiment does not identify that actor or establish that all launchers are immune.",
+    "writer_change": "No production trace-writer patch: neither a missing fclose nor a failed flush explains this observed event.",
+    "operational_gate": "Require a complete registered stream in the subprocess parent; persist verified bytes and a gzip mirror, then recheck both and the named trace in a later invocation. Exit 0 alone is insufficient."
+  },
+  "immutable_inputs": {
+    "source_base_commit": "9766bb7df07893f8fb5880c4ad8e9e36e7e7c0f6",
+    "source_commit": null,
+    "source_identity": "Exact saved v1 source hashes, not the later scenario host. The snapshot predates examples/spa_agent_scenarios.h.",
+    "source_files_sha256": {
+      "chuck_architect_impl.h": "efbaa0acd8127b49c9093562bea0aee70613287ee2d4b11150997fd61221a74c",
+      "chuck_architect.h": "138ab680a4a4d710fddc4e2eb96896968ba12c891472f926df2e218de42e9721",
+      "notorch.c": "d0c4616f2dbf5f5ecff1cd9f224486af3818e7e3d1bd1a73f2fdef36feb7c4f9",
+      "spa_agent.h": "0b08a16df9ecf33379211271932353f4efb9d2e5eec0181a1646ff9121190073",
+      "spa_agent.c": "1e45cd34aef012db1b7f738a4aae1adf858991091c09f2a91d5020073c95b74b",
+      "notorch.h": "684e1521613300ffcdb9e1262e7e614ee5dd6deea5fa175986316c098719f365",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "examples/spa_agent_demo.c": "16ed9fa64990493a17cbbfea52555e8f6ef7423f452e4616e08f21a1ca31343e",
+      "experiments/spa_agent/run.py": "d45bf0dec38870839d904fcc86eff6752e096fad6bb51787d68a0a87c75d561f",
+      "experiments/spa_agent/protocol.json": "0a1272697270e93b8d0dbdeb2d8ce7706dbbbda77fcc146c2f29be7eddc1fae2"
+    },
+    "matches_original_receipt_source_hashes": true,
+    "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+    "sanitized_binary": {
+      "bytes": 5256624,
+      "sha256": "a023c744bd3f12e7db36300288c00c2939ae68dc7e58d4596f3d277e6c634ee6"
+    },
+    "build_cwd": "<inputs>/source_snapshot",
+    "build_command": "cc -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -DUSE_SIMD -march=native -pthread -I. examples/spa_agent_demo.c spa_agent.c notorch.c -lm -o ../spa_agent_demo_sanitized",
+    "artifacts": {
+      "simple.weights": {
+        "bytes": 1802992,
+        "sha256": "22ce6e5dfe4efb4a00477a9652784970dc53a69fea2825174398af749acda00d"
+      },
+      "corpus.tokens.u32": {
+        "bytes": 3374540,
+        "sha256": "a1876f953a5a306dea7cf9896ea4d634e52808ee7b61570387b590a5b2e0d7d8"
+      },
+      "vocabulary.u32": {
+        "bytes": 376,
+        "sha256": "5bff414a2e4e596cd082cd2d1eba2fefa08405672b30f9c0e3c2a94906f450e0"
+      }
+    },
+    "sanitizer_environment": {
+      "ASAN_OPTIONS": "detect_leaks=0",
+      "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+    }
+  },
+  "registered_complete_trace": {
+    "bytes": 223280,
+    "sha256": "51abdaee81b0e5cf1689ce48f0ae5d3783fe343672b0e7ea16d995f66680bf6b",
+    "seed": 42,
+    "records": 128,
+    "record_types": {
+      "body": 1,
+      "base": 6,
+      "decision": 120,
+      "summary": 1
+    },
+    "full_original_detect_leaks_1_trace_matches": true,
+    "original_detect_leaks_1_process_exit": 1,
+    "original_detect_leaks_1_failure": "LeakSanitizer could not inspect /proc/2/task after the C experiment completed."
+  },
+  "old_partial_artifacts": {
+    "asan-s42.jsonl": {
+      "bytes": 66433,
+      "sha256": "aeb31c7c198cae25a3cba145642c876a28bc528f5c5a58162dbac864511ddd74",
+      "stat_bytes": 66433,
+      "inode": 656519,
+      "device": 27,
+      "valid_records_before_error": 39,
+      "parse_error": {
+        "line": 40,
+        "message": "Expecting ',' delimiter: line 1 column 260 (char 259)"
+      },
+      "exact_prefix_of_complete_trace": true
+    },
+    "asan-recheck-s42.jsonl": {
+      "bytes": 66433,
+      "sha256": "aeb31c7c198cae25a3cba145642c876a28bc528f5c5a58162dbac864511ddd74",
+      "stat_bytes": 66433,
+      "inode": 656310,
+      "device": 27,
+      "valid_records_before_error": 39,
+      "parse_error": {
+        "line": 40,
+        "message": "Expecting ',' delimiter: line 1 column 260 (char 259)"
+      },
+      "exact_prefix_of_complete_trace": true
+    }
+  },
+  "paired_launches": {
+    "same_parent": {
+      "command": "python3 <output>/probe.py",
+      "launcher_source_with_path_placeholders": "from pathlib import Path\nimport collections,gzip,hashlib,json,os,subprocess,time\nbase=Path('<inputs>')\nout=Path('<output>')\nprefix=out/'probe-s42'\nargv=[str(base/'spa_agent_demo_sanitized'),str(base/'simple.weights'),str(base/'corpus.tokens.u32'),str(base/'vocabulary.u32'),str(prefix),'42']\ncmd=argv\nenv=dict(os.environ,ASAN_OPTIONS='detect_leaks=0',UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1')\nstart=time.monotonic();p=subprocess.Popen(cmd,cwd=base/'source_snapshot',env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)\nprint('LAUNCHED',p.pid,flush=True)\nstdout,stderr=p.communicate(timeout=300)\nprint('RETURN',p.returncode,'WALL',time.monotonic()-start,flush=True)\n(out/'stdout.bin').write_bytes(stdout);(out/'stderr.log').write_bytes(stderr)\npath=prefix.with_suffix('.jsonl'); raw=path.read_bytes(); st=path.stat()\nrows=[];error=None\nfor i,line in enumerate(raw.splitlines(),1):\n try:rows.append(json.loads(line))\n except Exception as e:error={'line':i,'message':str(e)};break\nreport={'returncode':p.returncode,'seconds':time.monotonic()-start,'command':cmd,'size':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),'stat_size':st.st_size,'inode':st.st_ino,'device':st.st_dev,'mtime_ns':st.st_mtime_ns,'newline':raw.endswith(b'\\n'),'records':len(rows),'types':dict(collections.Counter(r['type'] for r in rows)),'parse_error':error,'stderr':stderr.decode(errors='replace'),'last_bytes':raw[-160:].decode(errors='replace')}\nfor name,value in [('same_parent_copy.jsonl',raw),('same_parent_copy.jsonl.gz',gzip.compress(raw,mtime=0))]:\n with (out/name).open('wb') as f:f.write(value);f.flush();os.fsync(f.fileno())\nreport['immediate_reread_equal']=path.read_bytes()==raw\n(out/'same_parent_receipt.json').write_text(json.dumps(report,indent=2)+'\\n')\nprint(json.dumps(report,indent=2),flush=True)\n",
+      "process_returncode": 0,
+      "process_wall_seconds": 38.664114349001466,
+      "same_parent": {
+        "size": 223280,
+        "sha256": "51abdaee81b0e5cf1689ce48f0ae5d3783fe343672b0e7ea16d995f66680bf6b",
+        "stat_size": 223280,
+        "inode": 656913,
+        "device": 27,
+        "records": 128,
+        "types": {
+          "body": 1,
+          "base": 6,
+          "decision": 120,
+          "summary": 1
+        },
+        "parse_error": null,
+        "stderr": "seed=42 episode=1/6 forwards=484\nseed=42 episode=2/6 forwards=927\nseed=42 episode=3/6 forwards=1428\nseed=42 episode=4/6 forwards=1851\nseed=42 episode=5/6 forwards=2234\nseed=42 episode=6/6 forwards=2803\n",
+        "immediate_reread_equal": true
+      },
+      "later_original_and_raw_and_gzip_mirrors": {
+        "status": "PASS",
+        "checks": [
+          {
+            "artifact": "probe-s42.jsonl",
+            "bytes": 223280,
+            "sha256": "51abdaee81b0e5cf1689ce48f0ae5d3783fe343672b0e7ea16d995f66680bf6b",
+            "records": 128,
+            "record_types": {
+              "body": 1,
+              "base": 6,
+              "decision": 120,
+              "summary": 1
+            },
+            "complete": true,
+            "seed": 42
+          },
+          {
+            "artifact": "same_parent_copy.jsonl",
+            "bytes": 223280,
+            "sha256": "51abdaee81b0e5cf1689ce48f0ae5d3783fe343672b0e7ea16d995f66680bf6b",
+            "records": 128,
+            "record_types": {
+              "body": 1,
+              "base": 6,
+              "decision": 120,
+              "summary": 1
+            },
+            "complete": true,
+            "seed": 42
+          },
+          {
+            "artifact": "same_parent_copy.jsonl.gz",
+            "bytes": 223280,
+            "sha256": "51abdaee81b0e5cf1689ce48f0ae5d3783fe343672b0e7ea16d995f66680bf6b",
+            "records": 128,
+            "record_types": {
+              "body": 1,
+              "base": 6,
+              "decision": 120,
+              "summary": 1
+            },
+            "complete": true,
+            "seed": 42
+          }
+        ]
+      },
+      "later_validation_command": "python3 tests/test_spa_trace_io.py --recheck <output>/parent-recheck-receipt.json --json <output>/later-recheck-final.json"
+    },
+    "direct_shell": {
+      "body_command": "ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 <inputs>/spa_agent_demo_sanitized <inputs>/simple.weights <inputs>/corpus.tokens.u32 <inputs>/vocabulary.u32 <output>/shell-s42 42",
+      "process_returncode": 0,
+      "progress": "All six episodes reported 484, 927, 1428, 1851, 2234, 2803 cumulative forwards.",
+      "same_shell_sibling_json_parser_returncode": 1,
+      "same_shell_parser_error": "physical line 40, column 260: Expecting value",
+      "later_read": {
+        "artifact": "shell-s42.jsonl",
+        "stat_bytes": 66433,
+        "read_bytes": 66433,
+        "chunked_read_bytes": 66433,
+        "sha256": "aeb31c7c198cae25a3cba145642c876a28bc528f5c5a58162dbac864511ddd74",
+        "inode": 657056,
+        "device": 27,
+        "mtime_ns": 1791335845328399953,
+        "tail": "g_before\":\"3dd9ce58fa8ed212\",\"host_rng_after\":\"3dd9ce58fa8ed212\",\"scores\":[0,-0."
+      },
+      "same_initial_prefix_as_both_old_partial_artifacts": true
+    },
+    "instrumented_direct_shell": {
+      "source_change": "Only a separate link-time fflush/fclose shim; immutable v1 C files unchanged.",
+      "emit_shim_command": "python3 tests/test_spa_trace_io.py --emit-stdio-probe <output>/stdio_probe.c",
+      "shim_sha256": "fd60f3ff83dc55a790d1fa48b3770c4f0198487625254b6a779a7a8379aba797",
+      "build_cwd": "<inputs>/source_snapshot",
+      "build_command": "cc -std=c11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -DUSE_SIMD -march=native -pthread -I. examples/spa_agent_demo.c spa_agent.c notorch.c <output>/stdio_probe.c -Wl,--wrap=fflush -Wl,--wrap=fclose -lm -o <output>/instrumented-v1-final",
+      "binary": {
+        "bytes": 5280120,
+        "sha256": "1dbd4b052ba4257af17de1c8259e8dd2f6e24e497f9e06295d15d6b70f824b34"
+      },
+      "body_command": "ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 <output>/instrumented-v1-final <inputs>/simple.weights <inputs>/corpus.tokens.u32 <inputs>/vocabulary.u32 <output>/instrumented-final-s42 42 2> <output>/instrumented-final.stderr.log",
+      "process_returncode": 0,
+      "same_shell_sibling_read": {
+        "c_returncode": 0,
+        "size": 62337,
+        "stat_size": 62337,
+        "sha256": "26a44fbf81bb2a9f69592834018c59ec82139bd374ad748e808ce7507c0a2d0c",
+        "records": 36,
+        "error": {
+          "line": 37,
+          "error": "Expecting value: line 1 column 1337 (char 1336)"
+        },
+        "inode": 657364,
+        "device": 27
+      },
+      "raw_stderr": "TRACE_IO kind=fflush result=0 ferror=0 pos=37761 fd=3 fd_size=37761 fd_ino=657329 path_size=37761 path_ino=657329 reread_fd=37761 fnv=e7162d1f414432fc read_end=0 link=<output>/instrumented-final-s42.jsonl\nseed=42 episode=1/6 forwards=484\nTRACE_IO kind=fflush result=0 ferror=0 pos=73682 fd=3 fd_size=73682 fd_ino=657329 path_size=73682 path_ino=657329 reread_fd=73682 fnv=c6b87e1f8c0c8cc2 read_end=0 link=<output>/instrumented-final-s42.jsonl\nseed=42 episode=2/6 forwards=927\nTRACE_IO kind=fflush result=0 ferror=0 pos=111544 fd=3 fd_size=111544 fd_ino=657329 path_size=62337 path_ino=657364 reread_fd=111544 fnv=4ed3f748d4f840b9 read_end=0 link=<output>/instrumented-final-s42.jsonl (deleted)\nseed=42 episode=3/6 forwards=1428\nTRACE_IO kind=fflush result=0 ferror=0 pos=148254 fd=3 fd_size=148254 fd_ino=657329 path_size=62337 path_ino=657364 reread_fd=148254 fnv=7edd540b7073f8ac read_end=0 link=<output>/instrumented-final-s42.jsonl (deleted)\nseed=42 episode=4/6 forwards=1851\nTRACE_IO kind=fflush result=0 ferror=0 pos=184529 fd=3 fd_size=184529 fd_ino=657329 path_size=62337 path_ino=657364 reread_fd=184529 fnv=fe949ca6149453c0 read_end=0 link=<output>/instrumented-final-s42.jsonl (deleted)\nseed=42 episode=5/6 forwards=2234\nTRACE_IO kind=fflush result=0 ferror=0 pos=222261 fd=3 fd_size=222261 fd_ino=657329 path_size=62337 path_ino=657364 reread_fd=222261 fnv=0eed8e472608a331 read_end=0 link=<output>/instrumented-final-s42.jsonl (deleted)\nseed=42 episode=6/6 forwards=2803\nTRACE_IO kind=pre-fclose result=0 ferror=0 pos=223280 fd=3 fd_size=223280 fd_ino=657329 path_size=62337 path_ino=657364 reread_fd=223280 fnv=4720a0fb662510e8 read_end=0 link=<output>/instrumented-final-s42.jsonl (deleted)\nTRACE_IO kind=post-fclose result=0 path_size=62337 path_ino=657364\n",
+      "events": [
+        {
+          "kind": "fflush",
+          "result": 0,
+          "ferror": 0,
+          "pos": 37761,
+          "fd": 3,
+          "fd_size": 37761,
+          "fd_ino": 657329,
+          "path_size": 37761,
+          "path_ino": 657329,
+          "reread_fd": 37761,
+          "fnv": "e7162d1f414432fc",
+          "read_end": 0,
+          "link": "<output>/instrumented-final-s42.jsonl",
+          "fnv_matches_complete_baseline_prefix": true
+        },
+        {
+          "kind": "fflush",
+          "result": 0,
+          "ferror": 0,
+          "pos": 73682,
+          "fd": 3,
+          "fd_size": 73682,
+          "fd_ino": 657329,
+          "path_size": 73682,
+          "path_ino": 657329,
+          "reread_fd": 73682,
+          "fnv": "c6b87e1f8c0c8cc2",
+          "read_end": 0,
+          "link": "<output>/instrumented-final-s42.jsonl",
+          "fnv_matches_complete_baseline_prefix": true
+        },
+        {
+          "kind": "fflush",
+          "result": 0,
+          "ferror": 0,
+          "pos": 111544,
+          "fd": 3,
+          "fd_size": 111544,
+          "fd_ino": 657329,
+          "path_size": 62337,
+          "path_ino": 657364,
+          "reread_fd": 111544,
+          "fnv": "4ed3f748d4f840b9",
+          "read_end": 0,
+          "link": "<output>/instrumented-final-s42.jsonl (deleted)",
+          "fnv_matches_complete_baseline_prefix": true
+        },
+        {
+          "kind": "fflush",
+          "result": 0,
+          "ferror": 0,
+          "pos": 148254,
+          "fd": 3,
+          "fd_size": 148254,
+          "fd_ino": 657329,
+          "path_size": 62337,
+          "path_ino": 657364,
+          "reread_fd": 148254,
+          "fnv": "7edd540b7073f8ac",
+          "read_end": 0,
+          "link": "<output>/instrumented-final-s42.jsonl (deleted)",
+          "fnv_matches_complete_baseline_prefix": true
+        },
+        {
+          "kind": "fflush",
+          "result": 0,
+          "ferror": 0,
+          "pos": 184529,
+          "fd": 3,
+          "fd_size": 184529,
+          "fd_ino": 657329,
+          "path_size": 62337,
+          "path_ino": 657364,
+          "reread_fd": 184529,
+          "fnv": "fe949ca6149453c0",
+          "read_end": 0,
+          "link": "<output>/instrumented-final-s42.jsonl (deleted)",
+          "fnv_matches_complete_baseline_prefix": true
+        },
+        {
+          "kind": "fflush",
+          "result": 0,
+          "ferror": 0,
+          "pos": 222261,
+          "fd": 3,
+          "fd_size": 222261,
+          "fd_ino": 657329,
+          "path_size": 62337,
+          "path_ino": 657364,
+          "reread_fd": 222261,
+          "fnv": "0eed8e472608a331",
+          "read_end": 0,
+          "link": "<output>/instrumented-final-s42.jsonl (deleted)",
+          "fnv_matches_complete_baseline_prefix": true
+        },
+        {
+          "kind": "pre-fclose",
+          "result": 0,
+          "ferror": 0,
+          "pos": 223280,
+          "fd": 3,
+          "fd_size": 223280,
+          "fd_ino": 657329,
+          "path_size": 62337,
+          "path_ino": 657364,
+          "reread_fd": 223280,
+          "fnv": "4720a0fb662510e8",
+          "read_end": 0,
+          "link": "<output>/instrumented-final-s42.jsonl (deleted)",
+          "fnv_matches_complete_baseline_prefix": true
+        },
+        {
+          "kind": "post-fclose",
+          "result": 0,
+          "path_size": 62337,
+          "path_ino": 657364
+        }
+      ],
+      "later_read": {
+        "bytes": 62337,
+        "sha256": "26a44fbf81bb2a9f69592834018c59ec82139bd374ad748e808ce7507c0a2d0c",
+        "stat_bytes": 62337,
+        "inode": 657364,
+        "device": 27,
+        "valid_records_before_error": 36,
+        "parse_error": {
+          "line": 37,
+          "message": "Expecting value: line 1 column 1337 (char 1336)"
+        },
+        "exact_prefix_of_complete_trace": true
+      },
+      "later_gate": {
+        "command": "python3 tests/test_spa_trace_io.py --check <output>/instrumented-final-s42.jsonl --seed 42 --json <output>/final-partial-gate.json",
+        "returncode": 1,
+        "status": "FAIL",
+        "error": "JSONL line 37: Expecting value: line 1 column 1337 (char 1336)"
+      }
+    }
+  },
+  "syscall_tracing": {
+    "status": "UNAVAILABLE",
+    "command": "strace -f -o <output>/syscalls.log true",
+    "stderr": "strace: test_ptrace_get_syscall_info: PTRACE_TRACEME: Operation not permitted\nstrace: ptrace(PTRACE_TRACEME, ...): Operation not permitted\nstrace: PTRACE_SETOPTIONS: Operation not permitted\nstrace: cleanup: waitpid(-1, __WALL): No child processes\n"
+  },
+  "independent_gate": {
+    "script": "tests/test_spa_trace_io.py",
+    "sha256": "f4cc9893b03d641653a5ca8e4efb7ca37e90fa0717d9b98db2f3980df18c288d",
+    "self_test_command": "python3 tests/test_spa_trace_io.py --self-test --json <output>/gate-selftest-final.json",
+    "self_test": {
+      "status": "PASS",
+      "complete_fixture_records": 128,
+      "caught_mutations": {
+        "empty": "trace lacks its final newline",
+        "partial JSON write": "JSONL line 68: Unterminated string starting at: line 1 column 55 (char 54)",
+        "missing final summary": "incomplete event stream: observed {'body': 1, 'base': 6, 'decision': 120}, expected {'body': 1, 'base': 6, 'decision': 120, 'summary': 1}",
+        "success summary with missing decision": "incomplete event stream: observed {'body': 1, 'base': 6, 'decision': 119, 'summary': 1}, expected {'body': 1, 'base': 6, 'decision': 120, 'summary': 1}",
+        "duplicate decision with unchanged total count": "decision coordinates are missing, duplicated or unregistered",
+        "missing final newline": "trace lacks its final newline",
+        "summary falsely declares incomplete acquired life": "incomplete life counters in learned"
+      }
+    },
+    "emitted_probe_equals_used_probe": true,
+    "runner_cli_fixture_test": {
+      "status": "PASS",
+      "scope": "--run exercised on a synthetic complete 128-record emitter, not an additional model experiment; parent writes, source identity, raw/gzip mirrors and later --recheck were checked."
+    },
+    "new_runner_reproduction_command": "python3 tests/test_spa_trace_io.py --run <inputs>/spa_agent_demo_sanitized --inputs <inputs> --source <inputs>/source_snapshot --output <new-output> --seed 42",
+    "new_runner_reproduction_status": "Not rerun on the body after boundary localization; the captured equivalent Python parent probe supplies the real model receipt above.",
+    "meaning": "Completeness and stable artifact identity, not a semantic-quality result or a guarantee against all future external replacement."
+  },
+  "production_files_modified_by_this_investigation": [],
+  "path_normalization": {
+    "scope": "Path strings only: machine-local source, input, output and scratch prefixes are replaced by semantic placeholders, including raw_stderr and parsed link fields. Recorded byte counts, content hashes, inode numbers, exit statuses and diagnostic results are unchanged. No model or gate was rerun.",
+    "pre_normalization_receipt_sha256": "27eb9705559d7de2b80fb80d34040c49026839cc1e9c99d190def3cd71bcbeb1",
+    "replaced_path_prefix_occurrences": 14,
+    "placeholders": {
+      "<source>": "Source checkout or immutable source snapshot, as specified by the surrounding field.",
+      "<inputs>": "Immutable v1 experiment input and binary directory.",
+      "<output>": "Trace investigation artifact directory.",
+      "<scratch>": "Transient workspace root."
+    }
+  }
+}

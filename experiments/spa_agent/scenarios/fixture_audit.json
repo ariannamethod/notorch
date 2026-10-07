@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "name": "Original later-horizon target mutation escaped the first fixture",
+  "provenance": "Transcript-derived receipt of an earlier actual audit execution. This file records the retained tool command and output; no rerun was performed to create it.",
+  "artifact_status": {
+    "temporary_directory": "Created through tempfile.TemporaryDirectory(prefix=\"spa-target-audit-\").",
+    "temporary_sources_binary_and_traces": "Deleted automatically when that original audit command exited.",
+    "standalone_receipt_at_original_run": false,
+    "source_hashes_captured_at_original_run": false,
+    "source_sha256": null,
+    "inferred_hashes": false
+  },
+  "mutation": {
+    "file": "examples/spa_agent_scenarios.h",
+    "scope": "The second and final matching observation call, inside later-horizon measurement. The horizon-zero call remained unchanged.",
+    "original": "observation(body, branch, target, counts[target], &measured_observation, &after);",
+    "replacement": "observation(body, branch, future_target, counts[future_target], &measured_observation, &after);"
+  },
+  "execution": {
+    "working_directory": "Repository root of the then-current astra/spa-action-consequences worktree.",
+    "command": [
+      "python3",
+      "-"
+    ],
+    "stdin": "import importlib.util, pathlib, subprocess, tempfile\nroot=pathlib.Path.cwd()\nspec=importlib.util.spec_from_file_location('audit_fixture',root/'tests/test_spa_scenarios.py')\nm=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)\nwith tempfile.TemporaryDirectory(prefix='spa-target-audit-') as td:\n p=pathlib.Path(td);(p/'examples').mkdir()\n (p/'fixture.c').write_text(m.FIXTURE)\n (p/'examples/spa_agent_demo.c').write_bytes((root/'examples/spa_agent_demo.c').read_bytes())\n h=(root/'examples/spa_agent_scenarios.h').read_text()\n needle='observation(body, branch, target, counts[target], &measured_observation, &after);'\n assert h.count(needle)==2\n head,tail=h.rsplit(needle,1)\n (p/'examples/spa_agent_scenarios.h').write_text(head+'observation(body, branch, future_target, counts[future_target], &measured_observation, &after);'+tail)\n command=['cc','-O2','-std=gnu11','-pthread','-I',str(p),'-I',str(root),str(p/'fixture.c'),str(root/'spa_agent.c'),str(root/'notorch.o'),'-lm','-o',str(p/'mutant')]\n build=subprocess.run(command,text=True,capture_output=True); print('compile',build.returncode,build.stderr[-1000:])\n if build.returncode==0:\n  run=subprocess.run([str(p/'mutant'),str(p/'scenario.jsonl'),str(p/'ordinary.jsonl'),'42'],text=True,capture_output=True);print('run',run.returncode,run.stdout,run.stderr[-1000:])\n  if run.returncode==0:\n   try:\n    r=m.validate_files(p/'scenario.jsonl',p/'ordinary.jsonl');print('VALIDATOR_ACCEPTED_WRONG_TARGET',r['snapshots'],r['measurements'])\n   except Exception as e: print('VALIDATOR_REJECTED',repr(e))\n",
+    "returncode": 0,
+    "stdout": "compile 0 \nrun 0 SPA_SCENARIO_FIXTURE_OK snapshots=24 forks=60 measurements=180\n \nVALIDATOR_ACCEPTED_WRONG_TARGET 24 180\n",
+    "stderr": ""
+  },
+  "observed_result": {
+    "mutant_compile_exit": 0,
+    "mutant_fixture_exit": 0,
+    "snapshot_count": 24,
+    "fork_count": 60,
+    "measurement_count": 180,
+    "validator_accepted_wrong_target": true
+  },
+  "sources_read_by_command": [
+    "tests/test_spa_scenarios.py",
+    "examples/spa_agent_demo.c",
+    "examples/spa_agent_scenarios.h",
+    "spa_agent.c",
+    "spa_agent.h",
+    "notorch.h",
+    "notorch.o",
+    "experiments/spa_agent/scenarios/run.py",
+    "experiments/spa_agent/scenarios/protocol.json"
+  ],
+  "follow_up": "The tester subsequently changed only the synthetic fixture to create target-dependent repetition and added a compiled wrong-target mutation. Its retained proof is in the final scenario gate receipts."
+}

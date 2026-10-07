@@ -29,7 +29,7 @@ PROTOCOL = Path(__file__).with_name("protocol.json")
 SOURCE_FILES = (
     "notorch.c", "notorch.h", "notorch_simd.h", "chuck_architect.h",
     "chuck_architect_impl.h", "spa_agent.h", "spa_agent.c",
-    "examples/spa_agent_demo.c", "experiments/spa_agent/run.py",
+    "examples/spa_agent_demo.c", "examples/spa_agent_scenarios.h", "experiments/spa_agent/run.py",
     "experiments/spa_agent/protocol.json",
 )
 AXES = ("local_connectedness", "global_connectedness", "coherence", "novelty",

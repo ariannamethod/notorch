@@ -7,6 +7,11 @@ The first pretrained-body experiment records a different result: **zero of 48
 choices changed through acquired weights**, and learned/frozen trajectories
 remain identical. Both results belong to v1.
 
+The [common-state consequence follow-up](scenarios/README.md) measures every
+valid alternative and fixed later continuations while reproducing these
+original traces and lives exactly. It also records the save-durability fix
+and investigation of the incomplete sanitizer artifact.
+
 ## Frozen protocol and body
 
 [protocol.json](protocol.json) was fixed before the first run. Its SHA-256 is
