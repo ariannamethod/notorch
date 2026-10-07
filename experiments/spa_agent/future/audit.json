@@ -1,0 +1,889 @@
+{
+  "schema": 1,
+  "name": "Independent SPA future-credit causal and compatibility audit",
+  "status": "PASS",
+  "base_commit": "47cb6f8207b8ca2c3fc02be898eeb19d0f6bbad7",
+  "protocol_path": "experiments/spa_agent/future/protocol.json",
+  "protocol_sha256": "134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861",
+  "command": "python3 -u tests/test_spa_future_mutations.py --json <output>/mutations-final.json",
+  "command_returncode": 0,
+  "mutation_driver_sha256": "d3d583ed2640ccf73d62e1d100b05fee3a190d2c1e5d091c0709bc605686744e",
+  "raw_gate_receipt_sha256": "9ee3f4a6aba587debba2de8537025a83eb8f5006bb9cbdbfc2d9354980b42566",
+  "model_execution_scope": "No sentence/body generation and no new-seed evaluation in this audit. Host mutation gates use 48 explicitly invented compact states and the native 267-parameter policy.",
+  "gate_receipt": {
+    "schema": 1,
+    "passed": true,
+    "source_sha256": {
+      "spa_agent.c": "a039bc04644b094c16ada64f0c08f08d853a1ffca8f750c830d9e1cd4acf00ea",
+      "spa_agent.h": "f47b2bb9347b9613c96a4ef56a101f9c28a9253fccf2bc2a61781a1401d1d19d",
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "638aa0f0c77b21a1d70a5e306d25f269faed1035d85d1ca4501612fc3340b313",
+      "chuck_architect_impl.h": "f679f0004c4dbd6ffdeeedb84471eeab5f157b1f63fa4f5aecb36f7daec1851e"
+    },
+    "v1_compatibility": {
+      "baseline_commit": "47cb6f8207b8ca2c3fc02be898eeb19d0f6bbad7",
+      "baseline_source_sha256": {
+        "spa_agent.c": "a30ebef08cd453ba2aa41133aecddf22d0468f11783d23eb469b61743aabfbb0",
+        "spa_agent.h": "c0dc6202c816131d81de26aae1393812573fea091b5ddd5fc2c0e52711b06115",
+        "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+        "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+        "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+        "chuck_architect.h": "638aa0f0c77b21a1d70a5e306d25f269faed1035d85d1ca4501612fc3340b313",
+        "chuck_architect_impl.h": "f679f0004c4dbd6ffdeeedb84471eeab5f157b1f63fa4f5aecb36f7daec1851e"
+      },
+      "emitter_sha256": "96bd8c268c084ee25ac13c05210207a3daeadc459b05cece5d1c419bb1648ebb",
+      "files": [
+        {
+          "name": "initial.bin",
+          "bytes": 2296,
+          "old_sha256": "48980fc07e9a2bcff221120cb3471c43574f9f96c63e3f967ea53290f929eece",
+          "new_sha256": "48980fc07e9a2bcff221120cb3471c43574f9f96c63e3f967ea53290f929eece",
+          "identical": true
+        },
+        {
+          "name": "pending.bin",
+          "bytes": 2296,
+          "old_sha256": "5505aa5402310cc540043eb078d70591d676074c6df7ca34e5aee4fb0e908e1f",
+          "new_sha256": "5505aa5402310cc540043eb078d70591d676074c6df7ca34e5aee4fb0e908e1f",
+          "identical": true
+        },
+        {
+          "name": "completed.bin",
+          "bytes": 2296,
+          "old_sha256": "8d8ae7df678891baaab69e1af94b4466a08a165491f0357d4e27b6de1e78569d",
+          "new_sha256": "8d8ae7df678891baaab69e1af94b4466a08a165491f0357d4e27b6de1e78569d",
+          "identical": true
+        },
+        {
+          "name": "imitation.bin",
+          "bytes": 2296,
+          "old_sha256": "e493e0c06a4621ebfe49b0214949a2bbef7c5b0cc234acd1acd0fbd022462b58",
+          "new_sha256": "e493e0c06a4621ebfe49b0214949a2bbef7c5b0cc234acd1acd0fbd022462b58",
+          "identical": true
+        }
+      ],
+      "v1-old": {
+        "build": {
+          "command": [
+            "cc",
+            "-O2",
+            "-std=gnu11",
+            "-pthread",
+            "-I",
+            "<temporary>/v1-old",
+            "-I",
+            "<source>",
+            "<temporary>/v1-old/gate.c",
+            "<temporary>/v1-old/spa_agent.c",
+            "<temporary>/v1-old/notorch.c",
+            "-lm",
+            "-o",
+            "<temporary>/v1-old/gate"
+          ],
+          "returncode": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "run": {
+          "command": [
+            "<temporary>/v1-old/gate",
+            "<temporary>/v1-old-output"
+          ],
+          "returncode": 0,
+          "stdout": "PASS v1_compatibility: initial, pending, completed and imitation lives\n",
+          "stderr": ""
+        }
+      },
+      "v1-current": {
+        "build": {
+          "command": [
+            "cc",
+            "-O2",
+            "-std=gnu11",
+            "-pthread",
+            "-I",
+            "<temporary>/v1-current",
+            "-I",
+            "<source>",
+            "<temporary>/v1-current/gate.c",
+            "<temporary>/v1-current/spa_agent.c",
+            "<temporary>/v1-current/notorch.c",
+            "-lm",
+            "-o",
+            "<temporary>/v1-current/gate"
+          ],
+          "returncode": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "run": {
+          "command": [
+            "<temporary>/v1-current/gate",
+            "<temporary>/v1-current-output"
+          ],
+          "returncode": 0,
+          "stdout": "PASS v1_compatibility: initial, pending, completed and imitation lives\n",
+          "stderr": ""
+        }
+      },
+      "passed": true
+    },
+    "native": {
+      "test_sha256": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+      "baseline": {
+        "build": {
+          "command": [
+            "cc",
+            "-O2",
+            "-std=gnu11",
+            "-pthread",
+            "-I",
+            "<temporary>/native-baseline",
+            "-I",
+            "<source>",
+            "<temporary>/native-baseline/gate.c",
+            "<temporary>/native-baseline/spa_agent.c",
+            "<temporary>/native-baseline/notorch.c",
+            "-lm",
+            "-o",
+            "<temporary>/native-baseline/gate"
+          ],
+          "returncode": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "run": {
+          "command": [
+            "<temporary>/native-baseline/gate"
+          ],
+          "returncode": 0,
+          "stdout": "PASS capture\nPASS validation\ngradient: comparisons=1602 nonzero_parameters=267 maximum_absolute_error=2.80579572e-05\nPASS gradient\nPASS masks\ncredit: H0 RIGHT advantage=0.0086092921; H4 RIGHT advantage=-0.100602373; acquired RIGHT -> KEEP\nPASS credit\nPASS persistence\nPASS SPA future: 6 groups, 6277 checks\n",
+          "stderr": ""
+        }
+      },
+      "mutations": [
+        {
+          "name": "reversed_comparison_credit",
+          "gate": "credit",
+          "mutant_source_sha256": "3032a2e83b480be873c12fa1e557bff9398dee256b3f0e525849ab39b1834bd0",
+          "build": {
+            "command": [
+              "cc",
+              "-O2",
+              "-std=gnu11",
+              "-pthread",
+              "-I",
+              "<temporary>/reversed_comparison_credit",
+              "-I",
+              "<source>",
+              "<temporary>/reversed_comparison_credit/gate.c",
+              "<temporary>/reversed_comparison_credit/spa_agent.c",
+              "<temporary>/reversed_comparison_credit/notorch.c",
+              "-lm",
+              "-o",
+              "<temporary>/reversed_comparison_credit/gate"
+            ],
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          },
+          "caught": true,
+          "run": {
+            "command": [
+              "<temporary>/reversed_comparison_credit/gate",
+              "credit"
+            ],
+            "returncode": 1,
+            "stdout": "",
+            "stderr": "FAIL credit:435: future credit changes measured action advantage sign\n"
+          }
+        },
+        {
+          "name": "suppressed_comparison_update",
+          "gate": "credit",
+          "mutant_source_sha256": "6595bd9ade91c92b09ce2975e5e78f1a055a8466f87dcf142752b2c92e44e2d6",
+          "build": {
+            "command": [
+              "cc",
+              "-O2",
+              "-std=gnu11",
+              "-pthread",
+              "-I",
+              "<temporary>/suppressed_comparison_update",
+              "-I",
+              "<source>",
+              "<temporary>/suppressed_comparison_update/gate.c",
+              "<temporary>/suppressed_comparison_update/spa_agent.c",
+              "<temporary>/suppressed_comparison_update/notorch.c",
+              "-lm",
+              "-o",
+              "<temporary>/suppressed_comparison_update/gate"
+            ],
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          },
+          "caught": true,
+          "run": {
+            "command": [
+              "<temporary>/suppressed_comparison_update/gate",
+              "credit"
+            ],
+            "returncode": 1,
+            "stdout": "",
+            "stderr": "FAIL credit:439: H0 fixture loss decreases\n"
+          }
+        },
+        {
+          "name": "left_right_targets_swapped",
+          "gate": "credit",
+          "mutant_source_sha256": "b5f24912dcd2d29cc8bcb7f9b47c84c27d5e70a34969271f73a0ca9062c36b6f",
+          "build": {
+            "command": [
+              "cc",
+              "-O2",
+              "-std=gnu11",
+              "-pthread",
+              "-I",
+              "<temporary>/left_right_targets_swapped",
+              "-I",
+              "<source>",
+              "<temporary>/left_right_targets_swapped/gate.c",
+              "<temporary>/left_right_targets_swapped/spa_agent.c",
+              "<temporary>/left_right_targets_swapped/notorch.c",
+              "-lm",
+              "-o",
+              "<temporary>/left_right_targets_swapped/gate"
+            ],
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          },
+          "caught": true,
+          "run": {
+            "command": [
+              "<temporary>/left_right_targets_swapped/gate",
+              "credit"
+            ],
+            "returncode": 1,
+            "stdout": "",
+            "stderr": "FAIL credit:435: future credit changes measured action advantage sign\n"
+          }
+        }
+      ],
+      "working_test_unchanged": true,
+      "passed": true
+    },
+    "host": {
+      "host_sha256": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661",
+      "helper_source_sha256": {
+        "tests/test_spa_future.py": "87fbed5560d6d89c3918fb32e7a9fa9c10e58056677c32d83cddc40bb069784e",
+        "experiments/spa_agent/future/run.py": "6131057ffe1f25c42f4888af644012a91f21ad6adfb93b32f5be5ada223a7df1",
+        "experiments/spa_agent/future/protocol.json": "134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861",
+        "experiments/spa_agent/scenarios/run.py": "3da78ceb56bc50a0bb341db029373c9941003ad0a8a60ed422d2db091ef29195",
+        "experiments/spa_agent/run.py": "4dc7152c421cd5d1812669f117673ca721a6800d3ee15020c6581d4cfeda85f7",
+        "tests/test_spa_trace_io.py": "f4cc9893b03d641653a5ca8e4efb7ca37e90fa0717d9b98db2f3980df18c288d"
+      },
+      "fixture": {
+        "kind": "48 invented states; no sentence generation",
+        "dataset": {
+          "bytes": 55911,
+          "sha256": "16c5cca8e2105adf98b5515b24cb0da293f31a11af4a11c56a6cf27d266ba9a9"
+        }
+      },
+      "verifier_sha256": "d7dfda9f970e3293edbacf33f410e963d8c25eda3f30ac7d8d2df5ef2179e909",
+      "mutations": [
+        {
+          "build": {
+            "command": [
+              "cc",
+              "-O2",
+              "-std=gnu11",
+              "-pthread",
+              "-I",
+              "<temporary>/immediate_substituted_for_future",
+              "-I",
+              "<source>",
+              "<temporary>/immediate_substituted_for_future/gate.c",
+              "<temporary>/immediate_substituted_for_future/spa_agent.c",
+              "<temporary>/immediate_substituted_for_future/notorch.c",
+              "-lm",
+              "-o",
+              "<temporary>/immediate_substituted_for_future/gate"
+            ],
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          },
+          "run": {
+            "command": [
+              "<temporary>/immediate_substituted_for_future/gate",
+              "train",
+              "<temporary>/synthetic.txt",
+              "<temporary>/immediate_substituted_for_future-output"
+            ],
+            "returncode": 0,
+            "stdout": "{\"type\":\"fit_complete\",\"fit_steps\":73728,\"lives_sealed\":4}\n",
+            "stderr": ""
+          },
+          "trace": {
+            "bytes": 101958234,
+            "sha256": "0ff44ee0a1ea787165fdf67b743eb4de29ad34806f4c8b2e7d9164d1f707506f"
+          },
+          "gate": {
+            "command": [
+              "<python>",
+              "<temporary>/verify_fit.py",
+              "<source>",
+              "future_horizon",
+              "<temporary>/immediate_substituted_for_future-output.fit.jsonl",
+              "<temporary>/synthetic.txt"
+            ],
+            "returncode": 1,
+            "stdout": "",
+            "stderr": "FAIL future_horizon: fit horizon differs from registered arm\n"
+          },
+          "name": "immediate_substituted_for_future",
+          "named_gate": "future_horizon",
+          "expected_failure": "fit horizon differs from registered arm",
+          "mutant_source_sha256": "571837753524bc83d67be9da20419ddecf27e880c2c1aed881c4b377ce1bf855",
+          "caught": true
+        },
+        {
+          "build": {
+            "command": [
+              "cc",
+              "-O2",
+              "-std=gnu11",
+              "-pthread",
+              "-I",
+              "<temporary>/host_action_outcomes_swapped",
+              "-I",
+              "<source>",
+              "<temporary>/host_action_outcomes_swapped/gate.c",
+              "<temporary>/host_action_outcomes_swapped/spa_agent.c",
+              "<temporary>/host_action_outcomes_swapped/notorch.c",
+              "-lm",
+              "-o",
+              "<temporary>/host_action_outcomes_swapped/gate"
+            ],
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          },
+          "run": {
+            "command": [
+              "<temporary>/host_action_outcomes_swapped/gate",
+              "train",
+              "<temporary>/synthetic.txt",
+              "<temporary>/host_action_outcomes_swapped-output"
+            ],
+            "returncode": 0,
+            "stdout": "{\"type\":\"fit_complete\",\"fit_steps\":73728,\"lives_sealed\":4}\n",
+            "stderr": ""
+          },
+          "trace": {
+            "bytes": 102548017,
+            "sha256": "aadb2c840f4820cafae2a3c05131bea5a10946bdd4ffbb3b96ad8b4fe28a6bd0"
+          },
+          "gate": {
+            "command": [
+              "<python>",
+              "<temporary>/verify_fit.py",
+              "<source>",
+              "future_action_targets",
+              "<temporary>/host_action_outcomes_swapped-output.fit.jsonl",
+              "<temporary>/synthetic.txt"
+            ],
+            "returncode": 1,
+            "stdout": "",
+            "stderr": "FAIL future_action_targets: fit rewards differs from raw outcome\n"
+          },
+          "name": "host_action_outcomes_swapped",
+          "named_gate": "future_action_targets",
+          "expected_failure": "fit rewards differs from raw outcome",
+          "mutant_source_sha256": "12292004701655dd1e72ddf70cc81b53c81cff4552571990db7fe8f51e4516d5",
+          "caught": true
+        },
+        {
+          "build": {
+            "command": [
+              "cc",
+              "-O2",
+              "-std=gnu11",
+              "-pthread",
+              "-I",
+              "<temporary>/source_features_reassociated",
+              "-I",
+              "<source>",
+              "<temporary>/source_features_reassociated/gate.c",
+              "<temporary>/source_features_reassociated/spa_agent.c",
+              "<temporary>/source_features_reassociated/notorch.c",
+              "-lm",
+              "-o",
+              "<temporary>/source_features_reassociated/gate"
+            ],
+            "returncode": 0,
+            "stdout": "",
+            "stderr": ""
+          },
+          "run": {
+            "command": [
+              "<temporary>/source_features_reassociated/gate",
+              "train",
+              "<temporary>/synthetic.txt",
+              "<temporary>/source_features_reassociated-output"
+            ],
+            "returncode": 1,
+            "stdout": "",
+            "stderr": "spa_agent_future: source-feature witness mismatch\n"
+          },
+          "trace": {
+            "bytes": 42907,
+            "sha256": "986f575603caf3ab3d98182ed6943b8eafcb9c1c030a632db5ef36ddd659e128"
+          },
+          "name": "source_features_reassociated",
+          "named_gate": "source_feature_witness",
+          "expected_failure": "source-feature witness mismatch",
+          "mutant_source_sha256": "85dad729614770e828d20d275503d2536fa96afb3756931d7b349dc93e561fc2",
+          "caught": true
+        }
+      ],
+      "baseline": {
+        "build": {
+          "command": [
+            "cc",
+            "-O2",
+            "-std=gnu11",
+            "-pthread",
+            "-I",
+            "<temporary>/host-baseline",
+            "-I",
+            "<source>",
+            "<temporary>/host-baseline/gate.c",
+            "<temporary>/host-baseline/spa_agent.c",
+            "<temporary>/host-baseline/notorch.c",
+            "-lm",
+            "-o",
+            "<temporary>/host-baseline/gate"
+          ],
+          "returncode": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "run": {
+          "command": [
+            "<temporary>/host-baseline/gate",
+            "train",
+            "<temporary>/synthetic.txt",
+            "<temporary>/host-baseline-output"
+          ],
+          "returncode": 0,
+          "stdout": "{\"type\":\"fit_complete\",\"fit_steps\":73728,\"lives_sealed\":4}\n",
+          "stderr": ""
+        },
+        "trace": {
+          "bytes": 102549044,
+          "sha256": "8bbe77ca67ff2c193d68d4ae5ffb7c990dbdabcf64353dbce1ea1a535afb52de"
+        },
+        "gate": {
+          "command": [
+            "<python>",
+            "<temporary>/verify_fit.py",
+            "<source>",
+            "future_fit_baseline",
+            "<temporary>/host-baseline-output.fit.jsonl",
+            "<temporary>/synthetic.txt"
+          ],
+          "returncode": 0,
+          "stdout": "PASS future_fit_baseline: {\"checks\": {\"all_head_losses_recomputed\": true, \"complete\": true, \"policy_only\": true, \"raw_targets_recomputed\": true, \"saved_resume\": true, \"source_donor_association\": true}, \"epochs_per_arm\": 512, \"fits\": 73728, \"life_hashes\": {\"h0\": \"1c5531996829e455\", \"h4\": \"8bec3c11a59e77e8\", \"initial\": \"a860088f913c7cde\", \"shuffled_h4\": \"8bec3c11a59e77e8\"}, \"samples\": 48}\n",
+          "stderr": ""
+        }
+      },
+      "working_host_and_helpers_unchanged": true,
+      "passed": true
+    },
+    "changed_sources": [],
+    "working_sources_unchanged": true
+  },
+  "earlier_source_stability_failure": {
+    "status": "FAIL",
+    "classification": "concurrent-source-stability",
+    "command": "python3 -u tests/test_spa_future_mutations.py --native-only --json <output>/native-first.json",
+    "returncode": 1,
+    "cause": "spa_agent.h documentation was clarified during the run; its hash changed while all native arithmetic, compiled mutation and v1 byte gates passed.",
+    "before_header_sha256": "a4a0423a551d7ad1913cd2df3d343d7da52fc07f8fd83a00efadd6702f2f8ffe",
+    "after_header_sha256": "f47b2bb9347b9613c96a4ef56a101f9c28a9253fccf2bc2a61781a1401d1d19d",
+    "implementation_sha256_unchanged": true,
+    "native_gate_passed": true,
+    "v1_gate_passed": true,
+    "working_sources_unchanged": false,
+    "native_stdout": "PASS capture\nPASS validation\ngradient: comparisons=1602 nonzero_parameters=267 maximum_absolute_error=2.80579572e-05\nPASS gradient\nPASS masks\ncredit: H0 RIGHT advantage=0.0086092921; H4 RIGHT advantage=-0.100602373; acquired RIGHT -> KEEP\nPASS credit\nPASS persistence\nPASS SPA future: 6 groups, 6277 checks\n",
+    "receipt_sha256": "c810782bbbb8033c798e9ee38074769c6910a0ca7154eddbc4384d0cda5c30f4"
+  },
+  "reviewed_mechanism": {
+    "captured_history": "Readout uses the exact captured 29 features after the live history changes; capture/readout preserve the complete life and feature object.",
+    "provenance_boundary": "Native comparison requires a matching nonzero source-life identity and valid feature geometry/action coordinates. The host independently checks the FNV witness of source identity, coordinates and binary32 features before import, fit and readout. Python joins exact snapshot/outcome rows and their SHA256 identities to the retained archive.",
+    "gradient": "1602 finite differences cover all267 parameters with nonzero-gradient coverage, three last-action histories and both Huber regimes. Maximum absolute gradient error2.80579572e-05. All heads and hidden gradients use one pre-update policy.",
+    "credit": "Retained seed42 snapshot0 has RIGHT advantage+0.0086092921 atH0 and-0.100602373 atH4. Fitting H0 acquires RIGHT; fitting H4 on the identical captured input changes it toKEEP. Restoring only H0 weights restoresRIGHT.",
+    "refusal_and_masks": "Native6277-check baseline includes invalid source binding, feature geometry, horizons, rates, typed actions, raw metrics and output aliases; refusals retain all tested state/input/output bytes. Masked output-head parameters retain exact bytes including negative zero.",
+    "policy_only_replay": "Online counters, history, RNG and checkpoint schema stay fixed during replay. Pending decisions refuse replay. Save/load preserves fitting continuation and resumes ordinary choose/observe.",
+    "old_api_bytes": "Both current and mergedbase sources are freshly compiled. Initial, pending, completed ring-rollover and imitation lives each contain2296 bytes and are identical.",
+    "readout_outcome_independence": "Host chooses from score_experience before reading zero-rate consequence diagnostics; the selected action is then joined to its executed branch. Independent parser preflight separately perturbs consequences while holding features and sealed policy fixed."
+  },
+  "control_questions": {
+    "h4_vs_h0": "Does later credit improve H4 choices relative to immediate credit at the same24576-fit budget?",
+    "h4_vs_shuffled_h4": "Does correct feature-to-future association improve selection above acquired action preferences? Cyclic donors remain within identical sentence_count,target groups; receipts retain receiver and donor identities separately.",
+    "h4_vs_initial_same_input": "Do acquired policy weights change action with captured features, action availability and source history/RNG fixed?",
+    "fixed_keep_left_right": "Does the fitted conditional policy improve over each fixed preference with its declared boundary fallback?",
+    "outcome_independent_readout": "Do changed valid outcome values leave pure readout scores and choices fixed under the same policy/features?",
+    "v1_compatibility": "Does adding captured-experience comparison change any existing saved-life byte for the exercised online and imitation trajectories?"
+  },
+  "retained_training_geometry": {
+    "method": "Read-only computation from the committed scenario archive; winner/regret calculations use its recorded float rewards and tie tolerance1e-7. No policy or measurement was tuned from this audit.",
+    "target_strata_h4": [
+      {
+        "target": 0,
+        "states": 12,
+        "positive_opportunities": 1,
+        "identical_complete_chains_across_all_actions": 0,
+        "identical_seven_after_axes_across_all_actions": 0
+      },
+      {
+        "target": 1,
+        "states": 12,
+        "positive_opportunities": 6,
+        "identical_complete_chains_across_all_actions": 0,
+        "identical_seven_after_axes_across_all_actions": 0
+      },
+      {
+        "target": 2,
+        "states": 12,
+        "positive_opportunities": 7,
+        "identical_complete_chains_across_all_actions": 0,
+        "identical_seven_after_axes_across_all_actions": 0
+      },
+      {
+        "target": 3,
+        "states": 12,
+        "positive_opportunities": 0,
+        "identical_complete_chains_across_all_actions": 12,
+        "identical_seven_after_axes_across_all_actions": 12
+      }
+    ],
+    "fixed_continuation_effect": "For originaltarget3, the four fixed operations are0<-1,1<-0,2<-1,3<-2. None reads originalsentence3 before it is replaced. All12 measuredtarget3 states have identical complete H4chains and seven after-axes across actions; their remaining reward difference is generationcost.",
+    "representation_observations": "All48 feature vectors are distinct. Three features are constant in these retained states: phase lock(index10), prior reseed count(index13=0), and temperature(index14). Connectedness(index4) spans0.333429962..0.33556816. The frozen experiment retains this representation.",
+    "data": {
+      "archive_sha256": "dcee2f733f8a7a4063a44f0654b574dad55ce6b57ea258ee81a7582d39370d22",
+      "snapshots": 48,
+      "feature_ranges": [
+        {
+          "index": 0,
+          "min": -0.0126558356,
+          "max": 0.00436518667,
+          "unique": 48
+        },
+        {
+          "index": 1,
+          "min": -0.0142514892,
+          "max": 0.0254336875,
+          "unique": 48
+        },
+        {
+          "index": 2,
+          "min": -0.0119579034,
+          "max": 0.00510078343,
+          "unique": 48
+        },
+        {
+          "index": 3,
+          "min": -0.00878392719,
+          "max": 0.00771038188,
+          "unique": 48
+        },
+        {
+          "index": 4,
+          "min": 0.333429962,
+          "max": 0.33556816,
+          "unique": 48
+        },
+        {
+          "index": 5,
+          "min": 0,
+          "max": 0.910771072,
+          "unique": 37
+        },
+        {
+          "index": 6,
+          "min": 0,
+          "max": 0.910771072,
+          "unique": 37
+        },
+        {
+          "index": 7,
+          "min": 0.649627686,
+          "max": 0.808793426,
+          "unique": 16
+        },
+        {
+          "index": 8,
+          "min": 0.0892289281,
+          "max": 0.850021899,
+          "unique": 34
+        },
+        {
+          "index": 9,
+          "min": 0,
+          "max": 0.274193555,
+          "unique": 19
+        },
+        {
+          "index": 10,
+          "min": 0.5,
+          "max": 0.5,
+          "unique": 1
+        },
+        {
+          "index": 11,
+          "min": 0.913054407,
+          "max": 0.917002559,
+          "unique": 48
+        },
+        {
+          "index": 12,
+          "min": 0,
+          "max": 1,
+          "unique": 4
+        },
+        {
+          "index": 13,
+          "min": 0,
+          "max": 0,
+          "unique": 1
+        },
+        {
+          "index": 14,
+          "min": 0.0500000007,
+          "max": 0.0500000007,
+          "unique": 1
+        },
+        {
+          "index": 15,
+          "min": 0,
+          "max": 1,
+          "unique": 2
+        },
+        {
+          "index": 16,
+          "min": 0,
+          "max": 1,
+          "unique": 2
+        },
+        {
+          "index": 17,
+          "min": 0.250210851,
+          "max": 0.250797659,
+          "unique": 16
+        },
+        {
+          "index": 18,
+          "min": 0.250054359,
+          "max": 0.251254976,
+          "unique": 48
+        },
+        {
+          "index": 19,
+          "min": -0.0188939217,
+          "max": 0,
+          "unique": 37
+        },
+        {
+          "index": 20,
+          "min": 0,
+          "max": 0.884316444,
+          "unique": 47
+        },
+        {
+          "index": 21,
+          "min": 0,
+          "max": 0.499777019,
+          "unique": 47
+        },
+        {
+          "index": 22,
+          "min": 0,
+          "max": 1,
+          "unique": 8
+        },
+        {
+          "index": 23,
+          "min": 0,
+          "max": 0.285714298,
+          "unique": 6
+        },
+        {
+          "index": 24,
+          "min": 0,
+          "max": 0.125,
+          "unique": 2
+        },
+        {
+          "index": 25,
+          "min": 0,
+          "max": 1,
+          "unique": 2
+        },
+        {
+          "index": 26,
+          "min": 0,
+          "max": 1,
+          "unique": 2
+        },
+        {
+          "index": 27,
+          "min": 0,
+          "max": 1,
+          "unique": 2
+        },
+        {
+          "index": 28,
+          "min": -0.0697132573,
+          "max": 0.00955282431,
+          "unique": 8
+        }
+      ],
+      "feature_collisions": 0,
+      "horizons": {
+        "0": {
+          "winner_sets": {
+            "(2,)": 2,
+            "(0,)": 41,
+            "(1,)": 5
+          },
+          "all_branches_same_chain_states": 0,
+          "alternative_chain_equals_KEEP": 0,
+          "alternative_pairs": 72,
+          "constant_action_rankings": {
+            "(0, 1, 2)": {
+              "optimal_count": 41,
+              "mean_keep_relative": 0.0,
+              "mean_regret": 0.0014566668597916666
+            },
+            "(1, 0, 2)": {
+              "optimal_count": 15,
+              "mean_keep_relative": -0.030970102502708333,
+              "mean_regret": 0.0324267693625
+            },
+            "(2, 0, 1)": {
+              "optimal_count": 12,
+              "mean_keep_relative": -0.03146093360966667,
+              "mean_regret": 0.03291760046945833
+            },
+            "(1, 2, 0)": {
+              "optimal_count": 7,
+              "mean_keep_relative": -0.04159914004520834,
+              "mean_regret": 0.043055806905
+            },
+            "(2, 1, 0)": {
+              "optimal_count": 4,
+              "mean_keep_relative": -0.04261968952508333,
+              "mean_regret": 0.044076356384875004
+            }
+          },
+          "mean_oracle_advantage": 0.0014566668597916666
+        },
+        "1": {
+          "winner_sets": {
+            "(2,)": 6,
+            "(0,)": 34,
+            "(1,)": 8
+          },
+          "all_branches_same_chain_states": 0,
+          "alternative_chain_equals_KEEP": 0,
+          "alternative_pairs": 72,
+          "constant_action_rankings": {
+            "(0, 1, 2)": {
+              "optimal_count": 34,
+              "mean_keep_relative": 0.0,
+              "mean_regret": 0.0059996890327083325
+            },
+            "(1, 0, 2)": {
+              "optimal_count": 17,
+              "mean_keep_relative": -0.014344199742604168,
+              "mean_regret": 0.020343888775312503
+            },
+            "(2, 0, 1)": {
+              "optimal_count": 15,
+              "mean_keep_relative": -0.018244661127916666,
+              "mean_regret": 0.024244350160625
+            },
+            "(1, 2, 0)": {
+              "optimal_count": 11,
+              "mean_keep_relative": -0.021834384109270837,
+              "mean_regret": 0.027834073141979165
+            },
+            "(2, 1, 0)": {
+              "optimal_count": 9,
+              "mean_keep_relative": -0.02316637618279167,
+              "mean_regret": 0.0291660652155
+            }
+          },
+          "mean_oracle_advantage": 0.0059996890327083325
+        },
+        "4": {
+          "winner_sets": {
+            "(0,)": 34,
+            "(2,)": 5,
+            "(1,)": 8,
+            "(1, 2)": 1
+          },
+          "all_branches_same_chain_states": 12,
+          "alternative_chain_equals_KEEP": 12,
+          "alternative_pairs": 72,
+          "constant_action_rankings": {
+            "(0, 1, 2)": {
+              "optimal_count": 34,
+              "mean_keep_relative": 0.0,
+              "mean_regret": 0.006499182293333333
+            },
+            "(1, 0, 2)": {
+              "optimal_count": 20,
+              "mean_keep_relative": -0.002256522384514583,
+              "mean_regret": 0.008755704677847916
+            },
+            "(2, 0, 1)": {
+              "optimal_count": 18,
+              "mean_keep_relative": -0.00828936470118125,
+              "mean_regret": 0.014788546994514583
+            },
+            "(1, 2, 0)": {
+              "optimal_count": 10,
+              "mean_keep_relative": -0.008255010091806248,
+              "mean_regret": 0.014754192385139584
+            },
+            "(2, 1, 0)": {
+              "optimal_count": 6,
+              "mean_keep_relative": -0.01039222919680625,
+              "mean_regret": 0.016891411490139584
+            }
+          },
+          "mean_oracle_advantage": 0.006499182293333333
+        }
+      }
+    }
+  },
+  "production_edits_by_auditor": [],
+  "path_policy": "Commands use semantic <source>, <temporary> and <output> placeholders; source/content hashes and numerical evidence retain their original values.",
+  "interpreter_path_normalization": {
+    "scope": "Artifact path strings only: machine-local interpreter paths in the embedded gate receipt are replaced with <python>. Source/test files, numerical evidence, content hashes and exit statuses are unchanged.",
+    "pre_normalization_audit_sha256": "b966319f5f32bb6a334e9fc3695186cac239bd3d5452322ca0540d59d1e10dd0",
+    "normalized_field_paths": [
+      "$.gate_receipt.host.mutations[0].gate.command[0]",
+      "$.gate_receipt.host.mutations[1].gate.command[0]",
+      "$.gate_receipt.host.baseline.gate.command[0]"
+    ],
+    "raw_gate_receipt_sha256_scope": "The recorded raw_gate_receipt_sha256 identifies the original unmodified receipt bytes before this interpreter-path normalization of the embedded copy."
+  }
+}

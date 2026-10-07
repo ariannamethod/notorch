@@ -120,3 +120,11 @@ bench_cuda_decode
 /test_spa_agent_durability
 !tests/test_spa_scenarios.py
 !tests/test_spa_trace_io.py
+
+# SPA future-comparison learning
+/test_spa_agent_future
+/spa_agent_future
+!tests/test_spa_future.py
+!tests/test_spa_future_mutations.py
+# Reconstruct from the three lossless tracked transport parts.
+/experiments/spa_agent/future/raw_traces.jsonl.gz

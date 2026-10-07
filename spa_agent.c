@@ -597,6 +597,184 @@ int nt_spa_agent_set_policy(nt_spa_agent *a,const nt_spa_policy *policy) {
     return NT_SPA_OK;
 }
 
+static int buffer_overlap(const void *a,size_t a_size,const void *b,size_t b_size) {
+    uintptr_t x,y;
+    if(!a || !b) return 0;
+    x=(uintptr_t)a; y=(uintptr_t)b;
+    return x<=y ? y-x<a_size : x-y<b_size;
+}
+static uint32_t experience_mask(const nt_spa_experience *e) {
+    uint32_t mask=1u<<NT_SPA_KEEP;
+    if(e->sentence_index>0) mask|=1u<<NT_SPA_RESEED_LEFT;
+    if(e->sentence_index+1<e->sentence_count) mask|=1u<<NT_SPA_RESEED_RIGHT;
+    return mask;
+}
+static int learned_idle(const nt_spa_agent *a) {
+    if(nt_spa_agent_validate(a)!=NT_SPA_OK || a->config.mode!=NT_SPA_AGENT_LEARNED)
+        return NT_SPA_E_STATE;
+    return a->pending ? NT_SPA_E_PENDING : NT_SPA_OK;
+}
+int nt_spa_experience_validate(const nt_spa_experience *e) {
+    const float *x;
+    uint32_t i,n;
+    int last=-1,has_history=0,valid_frequency=0;
+    float maximum_fraction=1000000.0f/1000001.0f;
+    if(!e || e->version!=NT_SPA_EXPERIENCE_VERSION || !e->source_life_hash ||
+        !e->sentence_count || e->sentence_count>NT_SPA_AGENT_MAX_SENTENCES ||
+        e->sentence_index>=e->sentence_count) return NT_SPA_E_EXPERIENCE;
+    x=e->features;
+    for(i=0;i<NT_SPA_AGENT_FEATURES;++i)
+        if(!in_range(x[i],-1,1)) return NT_SPA_E_EXPERIENCE;
+    for(i=4;i<NT_SPA_AGENT_FEATURES;++i)
+        if(i!=5 && i!=6 && i!=11 && i!=19 && i!=28 && x[i]<0)
+            return NT_SPA_E_EXPERIENCE;
+    if(x[12]!=(e->sentence_count>1 ? (float)e->sentence_index/(e->sentence_count-1) : 0) ||
+        x[15]!=(e->sentence_index>0 ? 1.0f : 0.0f) ||
+        x[16]!=(e->sentence_index+1<e->sentence_count ? 1.0f : 0.0f) ||
+        (e->sentence_index==0 && x[5]!=0) ||
+        (e->sentence_index+1==e->sentence_count && x[6]!=0) ||
+        x[13]>maximum_fraction || x[17]>maximum_fraction || x[18]>maximum_fraction)
+        return NT_SPA_E_EXPERIENCE;
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) {
+        if(x[25+i]!=0 && x[25+i]!=1) return NT_SPA_E_EXPERIENCE;
+        if(x[25+i]==1) { if(last>=0) return NT_SPA_E_EXPERIENCE; last=(int)i; }
+        if(x[22+i]!=0) has_history=1;
+    }
+    if(!has_history) {
+        if(last>=0 || x[19]!=0 || x[20]!=0 || x[21]!=0 || x[28]!=0)
+            return NT_SPA_E_EXPERIENCE;
+    } else {
+        if(last<0 || x[22+last]==0) return NT_SPA_E_EXPERIENCE;
+        // Every frequency vector comes from the bounded one-to-eight ring.
+        for(n=1;n<=NT_SPA_AGENT_HISTORY && !valid_frequency;++n) {
+            unsigned total=0;
+            int matches=1;
+            for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) {
+                unsigned count=(unsigned)floorf(x[22+i]*n+.5f);
+                if(count>n || (float)count/n!=x[22+i]) matches=0;
+                total+=count;
+            }
+            if(matches && total==n) valid_frequency=1;
+        }
+        if(!valid_frequency) return NT_SPA_E_EXPERIENCE;
+    }
+    return NT_SPA_OK;
+}
+int nt_spa_agent_capture_experience(const nt_spa_agent *a,const nt_spa_observation *o,
+    nt_spa_experience *out) {
+    nt_spa_experience e;
+    int status=learned_idle(a);
+    if(status!=NT_SPA_OK) return status;
+    if(!out || overlaps_agent(a,out,sizeof(*out)) ||
+        buffer_overlap(o,sizeof(*o),out,sizeof(*out))) return NT_SPA_E_EXPERIENCE;
+    if(nt_spa_observation_validate(o)!=NT_SPA_OK) return NT_SPA_E_OBSERVATION;
+    memset(&e,0,sizeof(e));
+    e.version=NT_SPA_EXPERIENCE_VERSION;
+    e.sentence_index=o->sentence_index; e.sentence_count=o->sentence_count;
+    e.source_life_hash=nt_spa_agent_hash(a);
+    features(a,o,e.features);
+    status=nt_spa_experience_validate(&e);
+    if(status!=NT_SPA_OK) return status;
+    *out=e;
+    return NT_SPA_OK;
+}
+int nt_spa_agent_score_experience(const nt_spa_agent *a,const nt_spa_experience *e,
+    nt_spa_readout *out) {
+    nt_spa_readout readout;
+    float hidden[NT_SPA_AGENT_HIDDEN];
+    int best=NT_SPA_KEEP,i,status=learned_idle(a);
+    if(status!=NT_SPA_OK) return status;
+    if(nt_spa_experience_validate(e)!=NT_SPA_OK) return NT_SPA_E_EXPERIENCE;
+    if(!out || overlaps_agent(a,out,sizeof(*out)) ||
+        buffer_overlap(e,sizeof(*e),out,sizeof(*out))) return NT_SPA_E_ACTION;
+    memset(&readout,0,sizeof(readout));
+    readout.action_mask=experience_mask(e);
+    forward(&a->policy,e->features,hidden,readout.scores);
+    for(i=1;i<NT_SPA_AGENT_ACTIONS;++i)
+        if((readout.action_mask&(1u<<i)) && readout.scores[i]>readout.scores[best]) best=i;
+    readout.action=make_action((nt_spa_action_kind)best,e->sentence_index);
+    *out=readout;
+    return NT_SPA_OK;
+}
+static int metrics_equal(const nt_spa_metrics *a,const nt_spa_metrics *b) {
+    return a->local_connectedness==b->local_connectedness &&
+        a->global_connectedness==b->global_connectedness && a->coherence==b->coherence &&
+        a->novelty==b->novelty && a->repetition==b->repetition &&
+        a->collapse==b->collapse && a->continuity==b->continuity;
+}
+static double comparison_loss(const float *scores,const float *targets,uint32_t mask) {
+    double loss=0;
+    unsigned count=0,i;
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) if(mask&(1u<<i)) {
+        double error=fabs((double)scores[i]-targets[i]);
+        loss+=error<=1 ? .5*error*error : error-.5;
+        ++count;
+    }
+    return loss/count;
+}
+int nt_spa_agent_fit_comparison(nt_spa_agent *a,const nt_spa_experience *e,
+    const nt_spa_comparison *comparison,float rate,nt_spa_comparison_receipt *out) {
+    nt_spa_comparison_receipt r;
+    nt_spa_policy next;
+    nt_spa_observation bounds;
+    nt_spa_alternative zero;
+    float hidden[NT_SPA_AGENT_HIDDEN],post_hidden[NT_SPA_AGENT_HIDDEN];
+    float gradient[NT_SPA_AGENT_ACTIONS]={0};
+    unsigned count=0,i;
+    uint32_t mask;
+    int status=learned_idle(a);
+    if(status!=NT_SPA_OK) return status;
+    if(nt_spa_experience_validate(e)!=NT_SPA_OK) return NT_SPA_E_EXPERIENCE;
+    if(!comparison || !in_range(rate,0,1)) return NT_SPA_E_COMPARISON;
+    if(overlaps_agent(a,e,sizeof(*e)) || overlaps_agent(a,comparison,sizeof(*comparison)) ||
+        overlaps_agent(a,out,sizeof(*out)) || buffer_overlap(e,sizeof(*e),comparison,sizeof(*comparison)) ||
+        buffer_overlap(e,sizeof(*e),out,sizeof(*out)) ||
+        buffer_overlap(comparison,sizeof(*comparison),out,sizeof(*out))) return NT_SPA_E_COMPARISON;
+    mask=experience_mask(e);
+    if(comparison->source_life_hash!=e->source_life_hash || comparison->action_mask!=mask ||
+        comparison->horizon>NT_SPA_COMPARISON_MAX_HORIZON) return NT_SPA_E_COMPARISON;
+    memset(&bounds,0,sizeof(bounds)); bounds.temperature=1;
+    bounds.sentence_index=e->sentence_index; bounds.sentence_count=e->sentence_count;
+    memset(&zero,0,sizeof(zero)); memset(&r,0,sizeof(r));
+    r.source_life_hash=e->source_life_hash; r.action_mask=mask;
+    r.horizon=comparison->horizon; r.learning_rate=rate;
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) {
+        const nt_spa_alternative *alternative=&comparison->alternatives[i];
+        if(!(mask&(1u<<i))) {
+            if(memcmp(alternative,&zero,sizeof(zero))) return NT_SPA_E_COMPARISON;
+            continue;
+        }
+        if(alternative->action.kind!=(nt_spa_action_kind)i ||
+            nt_spa_action_validate(&alternative->action,&bounds)!=NT_SPA_OK)
+            return NT_SPA_E_ACTION;
+        if(!consequence_valid(&alternative->consequence) ||
+            !metrics_equal(&alternative->consequence.before,&comparison->alternatives[0].consequence.before))
+            return NT_SPA_E_CONSEQUENCE;
+        r.rewards[i]=reward_for(&a->config,&alternative->consequence);
+        ++count;
+    }
+    forward(&a->policy,e->features,hidden,r.scores_before);
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) if(mask&(1u<<i)) {
+        // NT_SPA_COMPARISON_TARGET_SIGN: measured advantage over paired KEEP.
+        r.targets[i]=r.rewards[i]-r.rewards[NT_SPA_KEEP];
+        gradient[i]=bounded(r.targets[i]-r.scores_before[i],-1,1)/(float)count;
+    }
+    r.loss_before=comparison_loss(r.scores_before,r.targets,mask);
+    next=a->policy;
+    // NT_SPA_COMPARISON_UPDATE: all heads use the same pre-update weights.
+    if(rate>0) train_policy(&next,e->features,hidden,gradient,rate);
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) if(!(mask&(1u<<i))) {
+        memcpy(next.w2[i],a->policy.w2[i],sizeof(next.w2[i]));
+        next.b2[i]=a->policy.b2[i];
+    }
+    if(!policy_valid(&next)) return NT_SPA_E_STATE;
+    forward(&next,e->features,post_hidden,r.scores_after);
+    r.loss_after=comparison_loss(r.scores_after,r.targets,mask);
+    a->policy=next;
+    if(out) *out=r;
+    return NT_SPA_OK;
+}
+
 // Canonical fields are explicitly encoded. No padding, enum representation or
 // host byte order enters the file. One codec defines both directions.
 typedef struct {

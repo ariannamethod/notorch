@@ -1,0 +1,210 @@
+{
+  "schema": 1,
+  "name": "SPA learned future-action comparisons v1",
+  "frozen_before_experiment_training_and_new_seed_generation": true,
+  "base_commit": "47cb6f8207b8ca2c3fc02be898eeb19d0f6bbad7",
+  "question": "Can the native267parameter SPA policy acquire a choice from measured future consequences and select useful actions on new sentence states?",
+  "parents": {
+    "protocol.json": {
+      "path": "experiments/spa_agent/scenarios/protocol.json",
+      "sha256": "25aeed3248bcde9920a4a4eed29fd5ef06e5373da670c26fbb87696d819edcf4"
+    },
+    "receipts.json": {
+      "path": "experiments/spa_agent/scenarios/receipts.json",
+      "sha256": "fd13d4c256fb10ea1e31c7616da6fc8a9d94250063da683bcfcad475c11f05aa"
+    },
+    "raw_traces.jsonl.gz": {
+      "path": "experiments/spa_agent/scenarios/raw_traces.jsonl.gz",
+      "sha256": "dcee2f733f8a7a4063a44f0654b574dad55ce6b57ea258ee81a7582d39370d22"
+    }
+  },
+  "body": {
+    "repository": "ariannamethod/notorch-simple-llm",
+    "commit": "80b3bd611ed8c937efdc481dc07895c8e13e345d",
+    "recipe": "train_dracula.py",
+    "checkpoint": "weights/dracula.weights",
+    "checkpoint_sha256": "22ce6e5dfe4efb4a00477a9652784970dc53a69fea2825174398af749acda00d",
+    "corpus": "dracula.txt",
+    "corpus_sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c",
+    "parameters": 450688,
+    "architecture": "128-wide, two-layer, four-head RoPE/RMSNorm/SwiGLU transformer; hidden 384; 94 Unicode characters; context 64",
+    "numerical_engine": "upstream notorch.c linked with the independent C experiment runner",
+    "weights_frozen": true
+  },
+  "source_exposure": {
+    "training": "All scenario states and H0/H1/H4 outcomes for seeds42/73 are already inspected and retained from the preceding experiment.",
+    "evaluation": "Sentence-scenario seeds101/211 have not been generated or inspected before this protocol. The same frozen checkpoint and corpus are used.",
+    "known_training_structure": "At H4 all12 target3 training states have identical complete after-chains and seven after-axes across valid initial actions. Fixed continuation overwrites their initial intervention before reading it; generation cost differs. Report each target position separately."
+  },
+  "training": {
+    "seeds": [
+      42,
+      73
+    ],
+    "snapshots_per_seed": 24,
+    "rows": 48,
+    "order": "Seed42 snapshot0..23, then seed73 snapshot0..23, repeated in the same order every epoch.",
+    "epochs": 512,
+    "learning_rate": 0.03,
+    "fits_per_arm": 24576,
+    "policy_seed": 1,
+    "policy_mode": "LEARNED",
+    "exploration": 0.0,
+    "other_config": "nt_spa_agent_config_default unchanged, including raw reward coefficients and costweight.",
+    "architecture": "Existing29->8tanh->3action head native policy,267parameters.",
+    "initialization": "Each arm starts from the same canonical newly initialized life. Its online history,counters and RNG remain unchanged during replay; captured source features carry the original sentence/action history.",
+    "arms": [
+      "initial",
+      "h4",
+      "h0",
+      "shuffled_h4"
+    ],
+    "arm_horizons": {
+      "h4": 4,
+      "h0": 0,
+      "shuffled_h4": 4
+    },
+    "initial_arm": "Saved before fitting and never fitted.",
+    "target": "For each valid action: frozen raw-component reward(action,horizon) minus reward(KEEP,same horizon); KEEP target0.",
+    "objective": "Mean Huber loss with delta1 across all and only valid action heads. Compute all head/hidden gradients from one pre-update policy; SGD rate0.03, existing parameter bounds[-8,8].",
+    "shuffle": {
+      "group": "Identical(sentence_count,target index), preserving typed action coordinates and mask.",
+      "order": "Original global training row order within each group.",
+      "donor": "The next row in the group with cyclic wraparound: donor_index=(receiver_index+1)mod group_size.",
+      "transform": "Keep receiver features and feature-source identity; copy the donor fullH4 raw comparison and bind its training-input source field to the receiver. Record the actual donor outcome-source identity separately. Original measured records remain unchanged.",
+      "question": "Does correct association of a sentence state with its future outcomes improve selection beyond acquired action preferences?"
+    },
+    "h0_control_question": "Does using the later consequence improve H4 selection compared with the same budget fitted to immediate outcomes?",
+    "no_adaptation": "No changes to target,horizon,rate,epoch count,ordering,capacity or body recipe after experiment fitting/evaluation begins."
+  },
+  "evaluation": {
+    "seeds": [
+      101,
+      211
+    ],
+    "snapshots_per_seed": 24,
+    "rows": 48,
+    "seal_before_generation": "Write and hash initial/H4/H0/shuffled lives, complete training trace and source/protocol identities before starting any101/211 body process. Recheck that seal before and after evaluation.",
+    "state_source": "Unchanged spa_agent_demo learned-arm ordinary trajectory with diagnostics enabled. The policy under evaluation reads captured features; the reference host retains its existing online behavior.",
+    "generation": {
+      "minimum_generated_characters": 12,
+      "maximum_generated_characters": 64,
+      "stop_characters": ".!?",
+      "temperature": 0.8,
+      "initial_prompt_characters": 16,
+      "initial_prompt_selection": "SplitMix64 samples the sorted corpus sentence-start offsets (first character and the character after .!? followed by whitespace); choose 16 following codepoints.",
+      "base_chain": "Generate the complete four-sentence chain once per episode and seed; clone it into every arm before intervention. Store every generated token and termination flag.",
+      "rng": "Independent SplitMix64 generation stream per episode/slot. Reseeds use the same per-seed/episode/decision stream in every arm. Policy RNG is separate."
+    },
+    "intervention_rng": "stream(seed, 0x7370615f6163746e, episode_index, decision_index), exactly the parent host stream. All alternatives start from this identical stream; KEEP consumes none.",
+    "continuation": {
+      "horizons": [
+        0,
+        1,
+        4
+      ],
+      "horizon_meaning": "Number of additional fixed host reseeds after the initial intervention; horizon 0 is its immediate consequence.",
+      "future_target": "(original_target + hop) modulo 4, hop starts at 1.",
+      "future_action": "RESEED_LEFT if future_target>0; otherwise RESEED_RIGHT. This is a frozen diagnostic host continuation and performs no agent learning.",
+      "future_host_rng": "stream(seed, 0x7370615f66757472, episode_index*4 + decision_index, hop), independently constructed at every hop and identical across initial alternatives.",
+      "generation": "The same parent 3-character-neighbor, min 12/max 64, temperature 0.8 recipe at every hop.",
+      "max_hop": 4,
+      "measurements_per_seed": 180
+    },
+    "horizons_measured": [
+      0,
+      1,
+      4
+    ],
+    "readout": "Native C pure greedy score_experience on identical29feature values for all four saved lives. Same boundary mask and KEEP-first exact score ties. No readout learning or RNG/history mutation.",
+    "execution_association": "Join each native typed choice to that source state's actually executed alternative branch and complete raw measured trajectory. Retain both source identity and selected outcome-record identity.",
+    "fixed_policies": {
+      "keep": "KEEP",
+      "left": "RESEED_LEFT when available, otherwise KEEP",
+      "right": "RESEED_RIGHT when available, otherwise KEEP"
+    },
+    "paired_host_gate": "For each new seed run ordinary diagnosticsOFF andON; require complete byte-identical ordinary JSONL and all five saved lives. Complete scenario stream must contain24snapshots60forks180measurements."
+  },
+  "measurements": {
+    "target": "Seven metrics always refer to the original intervention target index in the current four-sentence chain, including at later horizons.",
+    "before": "Snapshot metrics before any intervention, shared by every action/horizon.",
+    "axes": {
+      "local_connectedness": "Mean cosine similarity of target to its existing immediate neighbors, mapped from [-1,1] to [0,1].",
+      "global_connectedness": "Unchanged nt_spa_connectedness of target against all other sentence embeddings.",
+      "coherence": "Mean adjacent sentence cosine similarity mapped to [0,1].",
+      "novelty": "1 minus maximum positive cosine similarity between target and any other sentence.",
+      "repetition": "Repeated character trigrams inside target divided by all target trigrams; zero for fewer than three tokens.",
+      "collapse": "Fraction of the six unordered sentence pairs with cosine similarity at least 0.98.",
+      "continuity": "Minimum adjacent sentence cosine similarity mapped to [0,1]."
+    },
+    "cost": "cumulative_generated_characters / (64 * (horizon+1)); include initial intervention and all fixed continuation generations. KEEP initial cost is 0.",
+    "reward": "clamp(0.15*d_local + 0.15*d_global + 0.20*d_coherence + 0.20*d_novelty - 0.15*d_repetition - 0.10*d_collapse + 0.05*d_continuity - 0.05*cost, -1, 1)",
+    "cost_reporting": "Retain initial generated chars, each future generated chars, cumulative chars, and the declared horizon denominator independently of reward.",
+    "interpretation": "The later-horizon score measures this fixed continuation and its normalized generation cost. The parent policy continues learning exclusively from its original immediate reward; diagnostic measurements never train it."
+  },
+  "reporting": {
+    "primary_horizon": 4,
+    "primary_metrics": [
+      "Mean selected reward minus same-state KEEP reward.",
+      "Mean regret=max valid measured reward minus selected measured reward.",
+      "Counts of KEEP/LEFT/RIGHT and selections within1e-7of measured best reward.",
+      "Changed typed choices between initial and H4 weights on identical capturedfeatures."
+    ],
+    "comparisons": [
+      "H4 vs initial",
+      "H4 vs equal-budgetH0",
+      "H4 vs equal-budgetshuffledH4",
+      "All saved policies vs each fixedKEEP/LEFT/RIGHT preference"
+    ],
+    "breakdown": [
+      "Per seed",
+      "Per target index",
+      "Combined48states",
+      "Training48states reported separately"
+    ],
+    "raw_components": "Retain every selected and alternative action's seven before/after axes,normalized generation cost,raw character counts,complete tokens and termination flags atH0/H1/H4.",
+    "tie_tolerance": 1e-07,
+    "secondary": [
+      "H0 outcomes under each learned choice",
+      "H1 outcomes under each learned choice",
+      "Novelty,repetition,collapse,continuity and generationcost individually",
+      "Per-epoch loss and every native comparison-fit receipt with source/donor identity and pre/post scores"
+    ],
+    "reproducibility": "Two complete identical training/evaluation executions; compare dataset,all saved lives,complete fit/readout and body/scenario streams byte for byte. Retain one canonical compressed trace set and both artifact manifests.",
+    "artifacts": "No modelweights,agentcheckpoint or executable committed. Retain source/compiler/model/corpus/protocol identities, commands,outcomes,rawcompressed traces,fit/readout receipts and sealed-life hashes.",
+    "result_policy": "Keep all recorded positive,zero and negative outcomes under this frozen measurement."
+  },
+  "gates": {
+    "core": [
+      "All267policy finite-difference gradients",
+      "KEEP-relative reward and meanHuber arithmetic",
+      "All valid action masks and boundary coordinates",
+      "Malformed capturedfeatures/comparisons/actions,horizon,sourcebinding refused transactionally",
+      "Output/input aliases refused or safely copied as documented",
+      "Replay changes policy only; pending refuses replay",
+      "Save/resume reproduces fit continuation and readout",
+      "Existing v1 initial,pending,completed and imitation life bytes match rebuilt base"
+    ],
+    "causal": [
+      "Compiled immediate/future substitution caught by actual reversal fixture",
+      "Compiled credit-sign or action-target swap caught",
+      "Disabled learning caught",
+      "Undeclared source-feature reassociation refused by dataset/association gate",
+      "Pure readout choices independent of supplied outcome values"
+    ],
+    "host": [
+      "Raw rewards independently recomputed from all axes and cost",
+      "Unchanged complete ordinaryOFF/ON traces and lives",
+      "Only declared shuffle mapping permits donor reassignment",
+      "All four lives sealed before new-seed process and unchanged afterward",
+      "Native chosen-action receipt joins exact executed branch",
+      "Complete artifacts rehashed and revalidated after a later read"
+    ]
+  },
+  "scope": {
+    "new_primitive": "Native comparison replay and pure captured-experience readout above existing SPA.",
+    "old_behavior": "Ordinary SPA perception,online observe arithmetic,canonical lifeformat and prior protocols/receipts remain unchanged.",
+    "territory": "Independent SPAfiles. Chuck code and branches remain read-only references. Root owns shared Makefile,README and log wiring.",
+    "next_body": "This phase uses the existing cheap SimpleLLM body."
+  }
+}

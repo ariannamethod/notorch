@@ -13,6 +13,77 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — SPA learns future comparisons and opens the same life to Python
+
+Follow-up to merged PR #155, based on freshly fetched main `47cb6f8`.
+Added `capture_experience`, `score_experience` and `fit_comparison` to the
+existing 267-parameter SPA policy. Captured sentence/history features stay
+fixed; all valid action heads learn measured reward relative to paired KEEP
+with simultaneous mean-Huber gradients. Replay changes policy bytes only.
+Source association, action bounds, common before metrics, aliases and pending
+credit are checked before mutation. Original SPA arithmetic, online credit,
+temporal state and the 2,296-byte v1 life encoding remain unchanged. Chuck
+implementation and prior experiment files remain identical to main.
+
+Frozen protocol `experiments/spa_agent/future/protocol.json`, SHA-256
+`134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861`:
+48 retained SimpleLLM states at seeds 42/73 train H4, H0 and shuffled-H4
+policies for 512 epochs / 24,576 fits each. All four lives, including initial,
+are sealed before generating the 48 new states at seeds 101/211. The body
+is the same frozen 450,688-parameter Dracula transformer. The unchanged
+reference host supplies states; pure policy readout selects among actually
+executed same-state alternatives under the registered continuation.
+
+Acquired H4 weights change **17/48** new-state choices: 31 KEEP / 17 LEFT.
+Mean H4 advantage over KEEP is **−0.002473649**; regret is 0.009100622 and
+27/48 choices are measured-best. Initial/H0/KEEP select 48 KEEP, regret
+0.006626973, 32/48 best. Shuffled-H4 advantage is −0.001379491; fixed LEFT
+and RIGHT give −0.005310106 and −0.005267728. H4 utility loses to KEEP on
+both seeds. The separate training advantage is +0.000479821. Raw H4
+coherence increases by 0.002638487 relative to KEEP while novelty falls by
+0.009278271 and normalized generation cost rises by 0.054752602; collapse
+stays zero. All axes and the negative transfer result are retained. The
+registered target-3 continuation geometry, where later generation overwrites
+the initial intervention, remains explicit in the per-target results.
+
+Two complete executions reproduce **44 artifacts byte for byte**, including
+73,728 fit receipts per execution, all saved lives, datasets, 672 training
+and 672 evaluation readouts, and full paired ordinary/scenario trajectories.
+Independent audit checks all 138 execution artifacts, 22 measured sources,
+1,344 selected-outcome joins, 4,032 decoded-policy score components, 5,712
+raw metric values recomputed from token embeddings, and 720 rewards. The
+complete nine-stream archive is retained in three lossless transport parts;
+`traces.py` reconstructs the original 24,000,308 bytes and verifies its hash.
+Receipts, repeat manifests, source hashes and separate-axis tables live in
+`experiments/spa_agent/future/`.
+
+`python/SPA.py` now provides **`import SPA`** through stdlib ctypes over the
+same library: sensory helpers, perception, typed actions, online and comparison
+learning, memory reset and canonical save/resume. The loaded C library reports
+its ABI through two read-only queries; Python checks 252 coordinates across
+14 value types before passing a structure pointer. Eight binding groups pass,
+including 59 byte-exact C/Python records, pending-life C-to-Python continuation,
+and a compiled offset mutation. `examples/spa_python.py` runs a complete small
+token-host loop. The pinned Molequla inspection identifies CGO over the same
+`spa_agent.h` as its consumer boundary, preserving its existing host perception.
+
+Native future tests pass six groups / **6,277 checks**, including 1,602
+finite-difference comparisons covering all 267 parameters. The retained
+H0/H4 fixture learns RIGHT → KEEP with non-policy state fixed. Six compiled
+future-credit/source mutants are caught; four v1 lives match rebuilt `47cb6f8`
+exactly. The audit keeps an earlier source-stability FAIL caused by a concurrent
+header-comment edit, followed by the stable complete PASS.
+Existing SPA/Chuck and scenario gates pass;
+original SPA parity remains 1,024 steps / 114,688 bytes. Rebuilt shared/static
+libraries and both hosts, then all **40 CPU recipe commands** and both Python
+bindings pass. Exact commands and outputs are in `verification.json`,
+`audit.json`, `result_audit.json` and `python.json`.
+
+README now separates Attention's sensory helpers from Agent's learned actor,
+documents future comparisons and Python entry, and corrects the old alpha
+description: smaller alpha gives stronger recency weighting. Full architecture
+and host contracts remain in `docs/spa-agent.md` and `docs/spa-python.md`.
+
 ## 2026-10-07 — SPA and Chuck future credit share the current build
 
 Integrated main `5284c1b` into SPA PR #155 after Chuck future credit merged.

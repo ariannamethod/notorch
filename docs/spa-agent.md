@@ -112,6 +112,32 @@ later continuations and checks an exact return to the ordinary trajectory.
 These diagnostic consequences are retained separately; ordinary learning
 continues to use its registered immediate reward.
 
+## Learning comparisons of later consequences
+
+`nt_spa_agent_capture_experience` captures the 29 perception and temporal
+features, sentence coordinates and source-life hash before an intervention.
+`nt_spa_agent_score_experience` reads that same captured field with the current
+policy and returns a bounded greedy action. It preserves the agent and its RNG.
+
+`nt_spa_agent_fit_comparison` receives the measured consequences of every valid
+action at one host-declared horizon. The existing reward formula gives each
+action a reward; subtracting the same-state KEEP reward gives its learning
+target. All available heads fit their mean Huber loss in one simultaneous
+update. The hidden gradient uses the same pre-update weights as the head
+gradients. The host chooses the rate and records the fit receipt, including
+raw rewards, relative targets, scores and loss before and after the update.
+
+Comparison replay changes policy weights. The online history, counters,
+configuration and RNG remain at their saved values, and the canonical v1 life
+format retains the acquired weights. A pending online decision refuses replay.
+Source bindings, action masks, typed coordinates and common before-measurements
+are validated before an update. Hosts retain the actual measurement provenance
+alongside captured experience.
+
+The [future-credit protocol](../experiments/spa_agent/future/protocol.json)
+fixes training on retained sentence scenarios, an immediate-outcome control,
+a declared shuffled-outcome control, and evaluation on new generation seeds.
+
 ## Lineage and research sources
 
 The code lineage is **PostGPT → SPA → Q → Sentence Phonon Agent**.
