@@ -163,20 +163,23 @@ gpu: notorch.c notorch.h notorch_cuda.cu tests/test_notorch.c $(CHUCK_HEADERS)
 lib: libnotorch.a $(if $(filter 1,$(USE_CUDA)),libnotorch_gpu.a)
 
 # CPU-only library — always built, organism binaries link this (no CUDA deps).
-libnotorch.a: notorch.c notorch.h gguf.c gguf.h $(CHUCK_HEADERS)
+spa_agent.o: spa_agent.c spa_agent.h notorch.h
+	$(CC) $(CFLAGS) -c spa_agent.c -o $@
+
+libnotorch.a: notorch.c notorch.h gguf.c gguf.h spa_agent.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf.o
 	rm -f libnotorch.a
-	$(AR) rcs libnotorch.a notorch.o gguf.o
+	$(AR) rcs libnotorch.a notorch.o gguf.o spa_agent.o
 	@echo "Built: libnotorch.a (CPU + BLAS)"
 
 # GPU-enabled library — only when USE_CUDA=1. SFT trainer links this +
 # -lcudart -lcublas. Compiled with -DUSE_CUDA so #ifdef blocks activate.
-libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h $(CHUCK_HEADERS)
+libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h spa_agent.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -DUSE_CUDA -I/usr/local/cuda/include -c notorch.c -o notorch_gpu.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf_gpu.o
 	nvcc -O2 -DUSE_CUDA -c notorch_cuda.cu -o notorch_cuda.o
-	$(AR) rcs libnotorch_gpu.a notorch_gpu.o gguf_gpu.o notorch_cuda.o
+	$(AR) rcs libnotorch_gpu.a notorch_gpu.o gguf_gpu.o notorch_cuda.o spa_agent.o
 	@echo "Built: libnotorch_gpu.a (CPU + BLAS + CUDA)"
 
 # ── Python binding gate ──
@@ -198,8 +201,8 @@ endif
 
 shared: libnotorch.$(SOEXT)
 
-libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h $(CHUCK_HEADERS)
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c -lm $(BLAS_LIBS)
+libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h spa_agent.c spa_agent.h Makefile $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c spa_agent.c -lm $(BLAS_LIBS)
 	@echo "Built: libnotorch.$(SOEXT) ($(BLAS_NAME)) — load it with any FFI"
 
 # ── The harness as a linkable surface ──────────────────────────────────────
@@ -246,6 +249,7 @@ install: lib lib_harness
 	install -m 0644 libnotorch.a $(PREFIX)/lib/libnotorch.a
 	install -m 0644 libnotorch_harness.a $(PREFIX)/lib/libnotorch_harness.a
 	install -m 0644 notorch.h    $(PREFIX)/include/ariannamethod/notorch.h
+	install -m 0644 spa_agent.h  $(PREFIX)/include/ariannamethod/spa_agent.h
 	install -m 0644 chuck_architect.h $(PREFIX)/include/ariannamethod/chuck_architect.h
 	install -m 0644 gguf.h       $(PREFIX)/include/ariannamethod/gguf.h
 	# The harness headers include each other as "harness/arch.h", so they are
@@ -556,6 +560,37 @@ check_chuck_device_cuda:
 chuck_architect_train: examples/chuck_architect_train.c examples/chuck_architect_scenarios.h libnotorch.a $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ examples/chuck_architect_train.c ./libnotorch.a -lm $(BLAS_LIBS)
 
+# ── SPA: Sentence Phonon Agent ──
+
+.PHONY: check_spa_agent test_spa_agent_mutations test_spa_legacy_parity
+
+test_spa_agent: tests/test_spa_agent.c spa_agent.c spa_agent.h notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_spa_agent.c spa_agent.c notorch.c -lm $(BLAS_LIBS)
+
+# Inject one legacy allocation refusal without changing production sources.
+tests/spa_state_notorch.o: notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -Dcalloc=spa_test_calloc -c notorch.c -o $@
+
+test_spa_agent_state: tests/test_spa_agent_state.c spa_agent.c spa_agent.h tests/spa_state_notorch.o
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_spa_agent_state.c spa_agent.c tests/spa_state_notorch.o -lm $(BLAS_LIBS)
+
+test_bitnet_ops: tests/test_bitnet_ops.c notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< notorch.c -lm $(BLAS_LIBS)
+
+check_spa_agent: test_spa_agent test_spa_agent_state test_bitnet_ops
+	./test_bitnet_ops
+	./test_spa_agent
+	./test_spa_agent_state
+
+test_spa_agent_mutations:
+	python3 tests/test_spa_agent_mutations.py
+
+test_spa_legacy_parity:
+	sh tests/test_spa_legacy_parity.sh
+
+spa_agent_demo: examples/spa_agent_demo.c spa_agent.h libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch.a -lm $(BLAS_LIBS)
+
 # ── Test & Clean ──
 
 test_qpool: tests/test_qpool.c notorch.c notorch.h $(CHUCK_HEADERS)
@@ -647,8 +682,11 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_affinity tests/test_affinity.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
-test: notorch_test test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
+test: notorch_test test_spa_agent test_spa_agent_state test_bitnet_ops test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
 	./notorch_test
+	./test_bitnet_ops
+	./test_spa_agent
+	./test_spa_agent_state
 	./test_chuck_architect
 	./test_chuck_actions_edge
 	sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state
@@ -733,6 +771,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
+	rm -f test_spa_agent test_spa_agent_state test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o
 	rm -f test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios chuck_architect_train
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
 		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual test_gemma3 test_smollm_tokenizer \

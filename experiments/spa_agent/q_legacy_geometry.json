@@ -1,0 +1,34 @@
+{
+  "source": {
+    "repository": "ariannamethod/q",
+    "commit": "f5d00a36ecfcdb5e655e1576770f03d06d900e04",
+    "path": "postgpt_q.c",
+    "sha256": "820287691af6bb6fde41d5e0a24d107574b5dcd0e35eb3834bdc39027ae4a135"
+  },
+  "method": "Extract the exact pinned spa_cross_attend implementation into a temporary probe; no Q source edits.",
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+  "flags": [
+    "-O2",
+    "-std=c11"
+  ],
+  "probe_sha256": "17a3a06e7cabbdb8e99cc1ddbe129bfed356b916c0c55a47c8d0a9fb7f79ebff",
+  "numeric_probe": {
+    "fields": 4100,
+    "phase_values": [
+      0,
+      0.5,
+      1
+    ],
+    "triggers": 0,
+    "minimum_observed_ratio": 0.734477997
+  },
+  "analytical_bound": {
+    "assumptions": "12 finite sentence vectors of Euclidean norm at most 1, dimension 32, distance bias 0.1/(1+distance).",
+    "edge_minimum": 0.8449791200220792,
+    "edge_maximum": 1.2545496898125588,
+    "formula": "12*11*m/(2*11*m+110*M); symmetry counts the selected row twice in total degree.",
+    "minimum_score_to_mean_lower_bound": 0.7122883913333464,
+    "maximum_trigger_ratio": 0.7,
+    "conclusion": "The registered 12-sentence Q geometry stays above the reseed trigger. Synthetic low-score fixtures exercise the decision branch separately."
+  }
+}

@@ -28,6 +28,7 @@
 - [bit-level precision — BitNet b1.58](#bit-level-precision--bitnet-b158)
 - [SwiGLU FFN](#swiglu-ffn)
 - [SPA — Sentence Phonon Attention](#spa--sentence-phonon-attention)
+- [SPA — Sentence Phonon Agent](#spa--sentence-phonon-agent)
 - [LoRA / adapter training](#lora--adapter-training)
 - [BLAS inference API](#blas-inference-api)
 - [audio front end — conv1d, STFT, log-mel](#audio-front-end--conv1d-stft-log-mel)
@@ -568,6 +569,36 @@ nt_spa_modulate_logits(logits, V, conn, 0.3f);
 no tape, no gradients — purely a post-hoc modulation of the logit distribution with the current sentence's position in the manifold of recent sentences. the `0.85` α is a recency bias (larger α = more recent tokens dominate the sentence embedding); the `0.3` strength caps how aggressively connectedness can sharpen the distribution. both are just parameters — pick what works for your generation style.
 
 originated in [ariannamethod/q](https://github.com/ariannamethod/q) (`postgpt_q.c`) and [ariannamethod/postgpt](https://github.com/ariannamethod/postgpt), ported here as a reusable helper. used in [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) to cut "word salad" artifacts without retraining. SPA as a *trained* forward operation with gradient flow is an open direction — currently only the inference helpers are here.
+
+---
+
+## SPA — Sentence Phonon Agent
+
+Sentence Phonon Attention is the sensory organ. **Sentence Phonon Agent** lives
+above it: a persistent 267-parameter policy observes a sentence field, selects
+`KEEP`, `RESEED_LEFT`, or `RESEED_RIGHT`, and learns from the host's measured
+consequence. The host executes the action; the Agent carries learned weights,
+action/outcome history, private RNG, and pending credit through save/resume.
+
+`spa_agent.h` exposes `select`, `choose`, and `observe`, plus an explicit legacy
+policy and imitation training. Null/disabled mode preserves ordinary SPA.
+Raw connectedness, coherence, novelty, repetition, collapse, continuity, and
+regeneration cost remain separate in its receipts. A weight-only counterfactual
+holds observation, history, and RNG fixed to test acquired experience directly.
+
+Lineage: **PostGPT → SPA → Q → Sentence Phonon Agent**. Meta SONAR/LCM inform
+the sentence/concept computation level; WOLFE informs typed actions; Netta
+informs acquired consequences; Chuck: Loss Architect supplies a contemporary
+parallel inside notorch. The implementation is native C in `spa_agent.c`.
+
+```bash
+make check_spa_agent BLAS_FLAGS= BLAS_LIBS=
+make test_spa_legacy_parity test_spa_agent_mutations
+make spa_agent_demo BLAS_FLAGS= BLAS_LIBS=
+```
+
+[API and research](docs/spa-agent.md) ·
+[Pretrained SimpleLLM experiment](experiments/spa_agent/README.md)
 
 ---
 

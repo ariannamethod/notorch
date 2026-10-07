@@ -104,3 +104,10 @@ bench_cuda_decode
 /test_chuck_architect_state
 /test_chuck_architect_scenarios
 !tests/test_chuck_scenario_mutations.py
+
+# SPA: Sentence Phonon Agent build outputs
+/test_spa_agent
+/test_spa_agent_state
+/test_bitnet_ops
+/spa_agent_demo
+!tests/test_spa_agent_mutations.py
