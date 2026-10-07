@@ -13,6 +13,75 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — SPA acquires sentence actions above unchanged perception
+
+Sentence Phonon Agent now lives in `spa_agent.c` / `spa_agent.h`: a native
+267-parameter policy (29 inputs, eight tanh units, three action heads) chooses
+KEEP, RESEED_LEFT or RESEED_RIGHT. The host executes the bounded typed action
+and returns its exact identity with seven raw before/after consequence axes
+and regeneration cost. Persistent weights, private RNG, eight outcome receipts,
+EMA history and pending credit survive a canonical 2,296-byte save/resume.
+Imitation uses masked cross-entropy; acquisition fits the selected action value
+to the frozen, explicitly documented reward. Legacy and disabled modes remain
+available.
+
+The three old SPA functions and `notorch.c` / `notorch.h` are unchanged by this
+branch. PostGPT → SPA → Q remains the lineage. SONAR/LCM inform sentence-level
+computation, WOLFE the typed host boundary, Netta consequence credit, and Chuck
+the contemporary separation of state, policy and action. The module has no
+unmerged Chuck dependency. Main `48512d8`, including the other Astra's truncated
+state fix, was integrated before final verification and documentation.
+
+Controlled evidence: 10/10 Agent groups and 12,618 checks; independent hostile
+state 5/5 groups and 78 checks, no skips; existing BitNet/SwiGLU/SPA 118 checks.
+A weight-only fork changes KEEP to LEFT with identical observation, history,
+temporal features and RNG. Imitation learns nine examples and classifies all
+108 held-out observations after 10,800 updates. Deliberate wrong action ranking,
+reversed reward, reversed credit gradient and suppressed acquisition each
+compile and fail their named gate with exit 1. Legacy perception matches two
+fresh builds for 1,024 steps / 114,688 bytes, SHA-256
+`02b775177e733cc0de2d35a7a4c739bd13b90c33a029a3659298fb4f64d28a30`.
+
+Independent audit reproduced and closed failed-save truncation, contradictory
+checksum-valid counters/EMA/receipt flags, one-ULP pending-cache corruption,
+output alias mutation, swallowed perception allocation failure and counter
+wraparound. Failure leaves the resident life and previous saved checkpoint
+intact. Memory reset preserves weights, RNG and lifetime counters exactly.
+
+The first real body is pretrained SimpleLLM at `80b3bd6` (450,688 parameters),
+seeds 42/73, five arms, six four-sentence episodes and 240 host decisions.
+Its protocol was frozen before execution. Learned receives 48 updates, but
+acquired weights change **0/24 choices at each seed**; learned and frozen
+trajectories match. Seven exploratory reseeds yield six negative rewards and
+one positive; acquired reseed scores remain below KEEP. Mean learned rewards
+are -0.005917228 and -0.006427699. Initial generated units end on punctuation
+in 6/48 cases; the rest reach the fixed 64-character cap. All raw axes, tokens,
+truncation flags and negative outcomes remain in the receipts. All 60 episode
+save/resume checks pass; body weights stay unchanged. Replays on integrated main
+reproduce both complete traces and all ten final saved lives byte for byte.
+
+Pinned Q's 12 normalized sentence vectors also expose a dormant legacy trigger:
+the weakest score/mean has lower bound 0.71228839, above the largest trigger
+ratio 0.70. Extracting its actual C scorer and running 4,100 fields at three
+phase values yields zero triggers. Controlled lower-score observations retain
+coverage of the registered reseed rule. Its threshold was preserved.
+
+Final commands: `make check_spa_agent BLAS_FLAGS= BLAS_LIBS=`,
+`LD_LIBRARY_PATH=. make -j1 test BLAS_FLAGS= BLAS_LIBS=` (all 37 CPU recipe
+commands pass), `make test_spa_legacy_parity`, and
+`python3 tests/test_spa_agent_mutations.py --json <output>/mutations.json`.
+Both current static/shared libraries were rebuilt before the final CPU gate.
+Core and hostile-state ASan/UBSan pass with leak detection disabled. LSan is
+SKIPPED because sandbox process-task inspection fails. Body sanitizer integration
+is PARTIAL: two exit-0 runs retain an incomplete 66,433-byte trace prefix, so
+the artifact gate is FAIL; cause unresolved. Earlier aggregate/build and shared
+loader failures are retained alongside the successful final run.
+
+`experiments/spa_agent/` preserves the frozen protocol, full compressed C traces,
+model/corpus/source hashes, every decision, replay checks and complete test
+receipts. Its README explains the measured negative body result and reproduction.
+`docs/spa-agent.md` specifies the API, reward, persistence and research lineage.
+
 ## 2026-10-07 — Checked Chuck refuses truncated parameter state
 
 PR #151's first-moment finding reproduces on merged `9766bb7`: a two-element

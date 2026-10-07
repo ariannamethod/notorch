@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "name": "SimpleLLM sentence-space consequences v1",
+  "frozen_before_first_run": true,
+  "body": {
+    "repository": "ariannamethod/notorch-simple-llm",
+    "commit": "80b3bd611ed8c937efdc481dc07895c8e13e345d",
+    "recipe": "train_dracula.py",
+    "checkpoint": "weights/dracula.weights",
+    "checkpoint_sha256": "22ce6e5dfe4efb4a00477a9652784970dc53a69fea2825174398af749acda00d",
+    "corpus": "dracula.txt",
+    "corpus_sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c",
+    "parameters": 450688,
+    "architecture": "128-wide, two-layer, four-head RoPE/RMSNorm/SwiGLU transformer; hidden 384; 94 Unicode characters; context 64",
+    "numerical_engine": "upstream notorch.c linked with the independent C experiment runner",
+    "weights_frozen": true
+  },
+  "seeds": [42, 73],
+  "episodes": 6,
+  "sentences_per_episode": 4,
+  "decisions_per_episode": 4,
+  "sentence_generation": {
+    "minimum_generated_characters": 12,
+    "maximum_generated_characters": 64,
+    "stop_characters": ".!?",
+    "temperature": 0.8,
+    "initial_prompt_characters": 16,
+    "initial_prompt_selection": "SplitMix64 samples the sorted corpus sentence-start offsets (first character and the character after .!? followed by whitespace); choose 16 following codepoints.",
+    "base_chain": "Generate the complete four-sentence chain once per episode and seed; clone it into every arm before intervention. Store every generated token and termination flag.",
+    "rng": "Independent SplitMix64 generation stream per episode/slot. Reseeds use the same per-seed/episode/decision stream in every arm. Policy RNG is separate."
+  },
+  "arms": {
+    "disabled": {"mode": "disabled", "learning_rate": 0, "exploration": 0},
+    "legacy": {"mode": "legacy", "learning_rate": 0, "exploration": 0},
+    "random": {"mode": "learned", "learning_rate": 0, "exploration": 1},
+    "frozen": {"mode": "learned", "learning_rate": 0, "exploration": 0.2},
+    "learned": {"mode": "learned", "learning_rate": 0.03, "exploration": 0.2}
+  },
+  "agent": {
+    "memory_decay": 0.8,
+    "phase_lock_input": 0.5,
+    "imitation_before_experiment": false,
+    "history": "Each arm retains its own policy, action history, outcome history and EMA memory across all six episodes.",
+    "embedding": "Unchanged nt_spa_embed_sentence over the body's learned 128-dimensional token embedding rows, alpha 0.85.",
+    "observation": "nt_spa_agent_perceive over the complete current chain, with target repetition replaced by the observed repeated character-trigram fraction.",
+    "target": "(episode_index + decision_index) modulo 4; target selection is fixed independently of policy scores."
+  },
+  "actions": {
+    "KEEP": "Leave every sentence token and host RNG unchanged; generation cost zero.",
+    "RESEED_LEFT": "Use the last min(3, neighbor_length) character tokens of the immediate left sentence as prompt; generate a new target sentence; replace the target with the generated tokens.",
+    "RESEED_RIGHT": "Use the last min(3, neighbor_length) character tokens of the immediate right sentence as prompt; generate a new target sentence; replace the target with the generated tokens.",
+    "bounds": "The agent masks nonexistent neighbors. The host independently validates target/source and refuses an invalid action.",
+    "acceptance": "Every valid reseed is applied. Its complete positive or negative measured consequence is credited once."
+  },
+  "consequence": {
+    "horizon": "Immediate four-sentence trajectory after the single typed action; subsequent decisions observe this changed trajectory.",
+    "local_connectedness": "Mean cosine similarity of target to its existing immediate neighbors, mapped from [-1,1] to [0,1].",
+    "global_connectedness": "Unchanged nt_spa_connectedness of target against all other sentence embeddings.",
+    "coherence": "Mean adjacent sentence cosine similarity mapped to [0,1].",
+    "novelty": "1 minus maximum positive cosine similarity between target and any other sentence.",
+    "repetition": "Repeated character trigrams inside target divided by all target trigrams; zero for fewer than three tokens.",
+    "collapse": "Fraction of the six unordered sentence pairs with cosine similarity at least 0.98.",
+    "continuity": "Minimum adjacent sentence cosine similarity mapped to [0,1].",
+    "regeneration_cost": "Generated character count divided by 64; zero for KEEP.",
+    "reward": "clamp(0.15*d_local + 0.15*d_global + 0.20*d_coherence + 0.20*d_novelty - 0.15*d_repetition - 0.10*d_collapse + 0.05*d_continuity - 0.05*regeneration_cost, -1, 1)",
+    "raw_components": "Retain all seven before/after measurements, generated tokens, cost, typed action, policy scores and reward for every decision."
+  },
+  "controls": {
+    "acquired_weights": "On every learned decision copy the entire idle agent, replace only its policy with that arm's initial weights, and call pure select on both copies with the identical observation and RNG. Record feature/RNG equality, initial/acquired actions and scores.",
+    "frozen": "Zero learning rate with the same initial weights, exploration rate and RNG seed as learned; histories and measured outcomes still evolve.",
+    "random": "Uniform exploration across valid actions, zero learning rate, separate deterministic private policy RNG.",
+    "disabled": "Check exact token equality with each original base chain and zero mutation of the disabled agent and host RNG on every decision.",
+    "save_resume": "Save/load every arm after each episode and require identical canonical agent hashes; later choices use the loaded state.",
+    "body_preservation": "Require identical FNV1a body-parameter bytes before and after all episodes."
+  },
+  "reporting": {
+    "primary": "Paired per-seed arm measurements, action counts, acquired-weight-dependent choices and every raw metric axis.",
+    "quality_claim": "Any statement names this pretrained body, these prompts/seeds, this immediate horizon and the measured axes.",
+    "failed_outcomes": "Retain negative rewards, zero acquired-weight changes, truncated sentences and all regressions under the frozen reward."
+  }
+}
