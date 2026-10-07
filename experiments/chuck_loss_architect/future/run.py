@@ -130,6 +130,26 @@ def summarize(rows: list[dict]) -> list[dict]:
     return result
 
 
+def verify_cohort_traces(cohorts: list[dict], output: Path, steps: int) -> dict:
+    """Re-read persisted receipts after fitting/readout, before final success."""
+    for cohort in cohorts:
+        prefix = output / "cohorts" / f"{cohort['body']}-s{cohort['seed']}"
+        control = Path(str(prefix) + "-control")
+        diagnostic = Path(str(prefix) + "-diagnostic")
+        control_path = Path(str(control) + ".jsonl")
+        diagnostic_path = Path(str(diagnostic) + ".jsonl")
+        assert v1.digest(diagnostic_path) == cohort["trace_sha256"], "persisted diagnostic trace identity changed: " + diagnostic_path.name
+        if "control_trace_sha256" in cohort:
+            assert v1.digest(control_path) == cohort["control_trace_sha256"], "persisted control trace identity changed: " + control_path.name
+        left, right = scenarios.events(control_path), scenarios.events(diagnostic_path)
+        assert left[-1] == cohort["control_summary"] and right[-1] == cohort["diagnostic_summary"], "persisted cohort summary changed"
+        for rows in (left, right):
+            assert [r["step"] for r in rows if r["type"] == "host_step"] == list(range(1, steps + 1)), "incomplete persisted host trajectory"
+        assert scenarios.compare_hosts(left, right, control, diagnostic, steps) == cohort["parity"], "persisted host parity changed"
+    return {"cohorts_verified":len(cohorts), "host_steps_compared":len(cohorts)*steps,
+            "summaries_and_recorded_trace_hashes_match":True, "final_state_bytes_match":True}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output",type=Path,required=True)
@@ -198,6 +218,7 @@ def main() -> int:
         samples=gather_samples(traces["diagnostic"],body,seed,prefixes["diagnostic"],output,old_rows)
         cohorts.append({"body":body,"seed":seed,"replay":replay,"parity":parity,"old_association":association,
                         "control_summary":traces["control"][-1],"diagnostic_summary":traces["diagnostic"][-1],
+                        "control_trace_sha256":v1.digest(Path(str(prefixes["control"])+".jsonl")),
                         "trace_sha256":v1.digest(Path(str(prefixes["diagnostic"])+".jsonl"))})
         print("COHORT_OK",body,seed,"old_association="+str(replay),flush=True)
         return samples
@@ -245,10 +266,12 @@ def main() -> int:
     outputs.extend(readouts(future_binary,eval_table,evaluation,lives,output,"evaluation",env))
     for label,p in lives.items(): assert v1.digest(p)==sealed[label]["sha256"],"evaluation changed a fitted life"
     phase("evaluation_complete",states=len(evaluation),lives_unchanged=True)
+    final_trace_recheck=verify_cohort_traces(cohorts,output,steps)
     for name,digest in hashes.items(): assert v1.digest(ROOT/name)==digest,"source changed during experiment: "+name
     result={"manifest":manifest,"fit_receipts":fit_receipts,"sealed_lives":seal,"cohorts":cohorts,"gates":gate,
             "summary":summarize(outputs),"readouts":outputs,"comparisons":all_comparisons,
             "untouched_seed211_summary":summarize([r for r in outputs if r["split"]=="evaluation" and r["seed"]==211]),
+            "final_trace_recheck":final_trace_recheck,
             "source_hashes_rechecked":True,"fitted_lives_unchanged_by_evaluation":True,
             "artifacts":{str(p.relative_to(output)):{"bytes":p.stat().st_size,"sha256":v1.digest(p)} for p in sorted(output.rglob("*"))
                          if p.is_file() and p.suffix in (".json",".jsonl",".log",".bin",".u32",".corpus")}}

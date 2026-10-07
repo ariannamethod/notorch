@@ -13,6 +13,81 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Future credit changes preference; conditional BRAKE remains unlearned
+
+Clean source `634a77ba8e28daa9aa71ebc1e000e074017ce955`, integrated with SPA
+merge `79707d8`, runs the fixed two-body protocol on CPU. SimpleLLM has 450,688
+parameters; HeVLM has 1,123,456. Eight cohorts cover seeds 42/73/101/211,
+512 host updates each, with independent control and diagnostic processes.
+All 4,096 paired host steps and every final body, moment, control and policy
+byte match. The four old cohorts also reproduce all 2,048 archived host steps,
+fork states and measured outcomes. Thirty-two source states produce 96 action
+branches, 1,536 branch updates and 288 action/horizon measurements.
+
+The 163-parameter Architect receives 4,096 comparison fits on eight SimpleLLM
+states. A copy receives 4,096 more on eight HeVLM states. Both lives are saved
+and hashed before the final run generates evaluation outcomes. All 192 C
+readouts preserve their source history and associate the selected action with
+its executed branch. Final hashes confirm that evaluation changes neither life.
+
+Both fitted lives choose PUSH at every one of the 16 new-seed evaluation states;
+initial weights choose HOLD throughout. Each fitted life matches fixed PUSH
+exactly: 4/8 optimal choices per body. Mean H16 advantage over HOLD is
+0.00316423178 for SimpleLLM and 0.00344905257 for HeVLM; mean regret against
+the best measured branch is 0.00136449933 and 0.000568941236 respectively.
+HeVLM adaptation changes weights and scores, but changes zero choices relative
+to its frozen parent. Conditional BRAKE selection remains unlearned in this
+fixed experiment. The selected branch receives one intervention and fifteen
+HOLD updates; host training retains the original immediate-feedback policy.
+
+The earlier runner smoke exposed seed 101's first checkpoint on both bodies.
+Those two exact overlaps and the whole seed-101 trajectory exposure remain in
+the protocol and receipts. Untouched seed 211 is reported separately: PUSH is
+optimal at 2/4 states per body, with mean regret 0.000804066658 for SimpleLLM
+and 0.000445932150 for HeVLM. No target, learning rate, epoch count, ordering
+or policy capacity was changed after smoke or evaluation.
+
+Verification covers six future groups / 647 checks, three caught credit/learning
+mutations, and a rejected feature-to-source association fault. The three v1
+compatibility files remain identical to rebuilt `48512d8`; canonical Chuck's
+6,000-step SHA-256 remains
+`306275db6c3e8b72d5a1d767fb573c443d300a9a8959363f5e76c8fe37a82601`.
+Independent probes check all 163 gradients, completed-history continuation,
+Huber regimes, float extremes and all weight bounds. The current 38-command CPU
+recipe is covered by the 35 unchanged commands plus the three newly merged
+SPA/BitNet commands, all passing; source hashes bind both stages. Focused
+ASan/UBSan pass. The edge probe's LeakSanitizer is unavailable because sandbox
+task inspection fails, and its original diagnostic is retained. CUDA awaits
+RunPod access and has no execution claim in this phase.
+
+The final artifact audit catches a separate failure: HeVLM seed 73's diagnostic
+JSONL is truncated during host step 501, after its complete cohort hash was
+recorded. A targeted replay also leaves an incomplete persisted trace. The
+retained deterministic continuation and original recorded summary reconstruct
+the exact original 170,856-byte file, SHA-256
+`be6482a0302e52bf7fa579a7038058fc400744b5ecca903c61a8c3e88736394b`.
+An isolated wrapper validates and compresses that complete receipt before
+returning; all 24 saved replay artifacts match. The damaged files and original
+results inventory remain alongside the authenticated repair. Cause remains
+unknown. The runner now rechecks recorded trace hashes, complete step sequences,
+summaries and host parity before reporting success: RED on the retained damage,
+GREEN after restoration. Independent audit verifies all 309 final artifacts and
+recomputes every fit/readout result. Numerical metrics and fitted lives are
+unchanged by this repair.
+
+Exact comparisons, source/corpus/protocol identities and consolidated gates are
+in `experiments/chuck_loss_architect/future/`. The next learning question is how
+the same action language can acquire the state-dependent reversals already
+present in its measured experience.
+
+The separately retained `chuck-future-credit-634a77b-raw.tar.gz` contains 570
+verified members, 429,943,659 bytes, SHA-256
+`0c46257580b881ce03940f07284b3a4f106cbe37268c20a17c7e1e0252ebdf3e`.
+It includes the original smoke, fitted lives, full trajectories, independent
+probes, failed artifacts and authenticated recovery; exact duplicate contents
+use ordinary tar hardlinks. The compact verification file records the archive
+and its index hashes.
+
 ## 2026-10-07 — The Architect learns measured future-action comparisons
 
 The next experience is a comparison of three executed futures from one saved

@@ -527,6 +527,13 @@ evaluation. [Research notes](docs/chuck-learned-policy-research.md) connect the
 experiment to learned optimizers, executable training controllers and delayed
 credit, with primary sources and their recorded failures.
 
+The first future-credit run performs 8,192 comparison fits. Both acquired lives
+switch from initial HOLD to PUSH on all 16 evaluation states and match the
+constant-PUSH reference: 4/8 optimal choices per body. HeVLM adaptation changes
+scores but no choices. The separately untouched seed 211 has the same 2/4
+optimal choices per body. Learning conditional BRAKE choices is the next
+question; all 4,096 paired host steps and final saved states remain exact.
+
 ---
 
 ## bit-level precision — BitNet b1.58
