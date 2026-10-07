@@ -41,7 +41,7 @@ typedef struct {
 typedef struct {
     nt_chuck_observation observation;
     float features[NT_CHUCK_ARCHITECT_FEATURES];
-    float scores[NT_CHUCK_ARCHITECT_HEADS]; // predicted relative improvement
+    float scores[NT_CHUCK_ARCHITECT_HEADS]; // acquired scores for this life's objective
     nt_chuck_action action;
     uint64_t sequence;
     int explored;
@@ -93,6 +93,13 @@ typedef struct {
     uint64_t decisions, updates; // unchanged online chronology
 } nt_chuck_architect_comparison_receipt;
 
+// Conditioned credit retains its measured scale beside the raw comparison.
+// Existing comparison receipts and the saved-life layout remain unchanged.
+typedef struct {
+    nt_chuck_architect_comparison_receipt comparison;
+    double scale;
+} nt_chuck_architect_conditioned_receipt;
+
 // Defaults: legacy, life_id="chuck", seed=1, learning_rate=.03, exploration=.15.
 // Strict flat JSON fields: mode ("disabled", "legacy", "learned"), life_id
 // ([A-Za-z0-9_.-], 1..63 bytes), enabled_actions (array of action names),
@@ -130,6 +137,16 @@ int nt_chuck_architect_step(nt_chuck_architect *architect, float lr, float loss,
 int nt_chuck_architect_feedback(nt_chuck_architect *architect, float after_loss,
     nt_chuck_architect_receipt *receipt);
 
+// Complete the same pending experience with policy weights frozen. Measured
+// reward, temporal history, completed-decision cache and online counters follow
+// feedback; all 163 weights remain unchanged and receipt.learned is zero.
+// Receipt.predicted retains the selected score in its acquired objective's
+// units; error is zero because completion applies no regression objective.
+// This lets an acquired policy act through a full training trajectory while
+// retaining its measured history. Refusal leaves life and receipt unchanged.
+int nt_chuck_architect_feedback_frozen(nt_chuck_architect *architect,
+    float after_loss, nt_chuck_architect_receipt *receipt);
+
 // Read-only replay interfaces. Capture uses the observation and this life's
 // actual history; scores reads the supplied finite features in [-1,1]. Both
 // require no pending action. Scores additionally requires learned mode and
@@ -157,12 +174,29 @@ int nt_chuck_architect_fit_comparison(nt_chuck_architect *architect,
     const nt_chuck_architect_comparison *sample,
     nt_chuck_architect_comparison_receipt *receipt);
 
+// Conditioned replay gives each common-state comparison its measured scale:
+// max(max_FINITE_alternatives(abs((double)HOLD_loss-action_loss)),
+//     1e-6*(abs((double)HOLD_loss)+1)). Finite targets are the HOLD-relative
+// deltas divided by that scale, in [-1,1]; all-equal finite losses give zero.
+// Non-finite alternatives receive -1 and retain their raw outcomes/status.
+// These heads predict a unit-span action advantage. The selected replay
+// objective belongs to the caller's life_id/protocol; it is not inferred from
+// the v1 weights. All other fitting, chronology and refusal contracts match
+// fit_comparison, whose original relative-improvement target is unchanged.
+int nt_chuck_architect_fit_conditioned(nt_chuck_architect *architect,
+    const nt_chuck_architect_comparison *sample,
+    nt_chuck_architect_conditioned_receipt *receipt);
+
 // Versioned, little-endian IEEE-754 policy life with canonical field encoding,
 // FNV-1a checksum, strict size/range validation and transactional load. Includes
 // configuration, weights, RNG, counters, temporal features and pending credit.
 // Pending caches must agree with their observation/history/network within
 // 1e-6 + 1e-5*abs(expected); recorded values are preserved during validation.
 // The training body separately checkpoints its parameters, optimizer and RNG.
+// Save validates the parent directory before creating a temporary file, syncs
+// the file, atomically replaces the destination, then syncs the directory.
+// Failure before rename preserves the old destination. A directory sync/close
+// failure after rename returns NT_CHUCK_E_IO with the replacement installed.
 int nt_chuck_architect_save(const nt_chuck_architect *architect, const char *path);
 int nt_chuck_architect_load(nt_chuck_architect *architect, const char *path);
 uint64_t nt_chuck_architect_hash(const nt_chuck_architect *architect);

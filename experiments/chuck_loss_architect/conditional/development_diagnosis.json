@@ -1,0 +1,861 @@
+{
+  "schema": 1,
+  "name": "development-only-credit-conditioning-diagnosis-v1",
+  "status": "COMPLETE",
+  "development_seeds": [
+    42,
+    73
+  ],
+  "bodies": {
+    "simple": 450688,
+    "hevlm": 1123456
+  },
+  "evaluation_rows_accessed": 0,
+  "policy_parameters": 163,
+  "policy_seed": 1,
+  "learning_rate": 0.03,
+  "checkpoint_order": [
+    1,
+    32,
+    128,
+    384
+  ],
+  "replay_order": "ascending seed then checkpoint, same order each epoch",
+  "training": "eight SimpleLLM states from initial life; eight HeVLM states adapt each frozen SimpleLLM result",
+  "source": {
+    "commit": "47cb6f8207b8ca2c3fc02be898eeb19d0f6bbad7",
+    "files": {
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "638aa0f0c77b21a1d70a5e306d25f269faed1035d85d1ca4501612fc3340b313",
+      "chuck_architect_impl.h": "f679f0004c4dbd6ffdeeedb84471eeab5f157b1f63fa4f5aecb36f7daec1851e",
+      "examples/chuck_architect_future.c": "da2394b1c77338c8cb4d45678aec682e4a4f044112b58d00a774f1cf25925ab7"
+    }
+  },
+  "inputs": {
+    "development.samples.bin": "eddd3763e3c561df8bb5d8084dc83988f73fca095ea035502663f890fe1b8c2c",
+    "development.samples.json": "fd81ca900fee9ead0ae24a7700036a28c48296ba94fce6607d36930284dec9fd",
+    "initial.policy.bin": "848c90267c43584dfd11105831bde0706c3a0bd867b99edc6f7e1fc6aada1b6f",
+    "simple.policy.bin": "3d96cac70a9863c2c3073f56955dd19c71a2642b4368a5a6b9c3cb16532069b4",
+    "adapted.policy.bin": "769a5ac6a3289e63203ca58a9b08293ce147c09f17e738b0e1b4a01bb5cc4c17"
+  },
+  "protocol_sha256": "bd1fd2b2c156f69ec8041fe7b28dbf791d3d1b16f8be44e8c0cd4f56a957b863",
+  "trials": [
+    {
+      "id": "baseline",
+      "target_gain": 1,
+      "epochs": 512,
+      "hidden_trainable": true,
+      "feature_control": "actual"
+    },
+    {
+      "id": "more_epochs",
+      "target_gain": 1,
+      "epochs": 8192,
+      "hidden_trainable": true,
+      "feature_control": "actual"
+    },
+    {
+      "id": "gain100",
+      "target_gain": 100,
+      "epochs": 512,
+      "hidden_trainable": true,
+      "feature_control": "actual"
+    },
+    {
+      "id": "gain100_frozen_hidden",
+      "target_gain": 100,
+      "epochs": 512,
+      "hidden_trainable": false,
+      "feature_control": "actual"
+    },
+    {
+      "id": "gain100_constant_features",
+      "target_gain": 100,
+      "epochs": 512,
+      "hidden_trainable": true,
+      "feature_control": "per-stage training mean"
+    },
+    {
+      "id": "maxabs",
+      "target": "delta/max(1e-6*(abs(HOLD)+1),max_abs_delta)",
+      "epochs": 512,
+      "hidden_trainable": true,
+      "feature_control": "actual"
+    }
+  ],
+  "trial_target": "raw/gain: clamp(gain*(loss[HOLD]-loss[action])/(abs(loss[HOLD])+1e-6),-1,1); maxabs: (loss[HOLD]-loss[action])/max(1e-6*(abs(loss[HOLD])+1),max_action(abs(loss[HOLD]-loss[action])))",
+  "preregistration": "Five trials fixed before execution; root requested sixth maxabs trial before first execution. No additional target, rate, capacity or epoch trials followed results.",
+  "results": [
+    {
+      "trial": "baseline",
+      "stage": 0,
+      "body": 1,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0009259283542633057
+    },
+    {
+      "trial": "baseline",
+      "stage": 0,
+      "body": 2,
+      "optimal": 4,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0007858425378799438
+    },
+    {
+      "trial": "baseline",
+      "stage": 1,
+      "body": 1,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0009259283542633057
+    },
+    {
+      "trial": "baseline",
+      "stage": 1,
+      "body": 2,
+      "optimal": 4,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0007858425378799438
+    },
+    {
+      "trial": "more_epochs",
+      "stage": 0,
+      "body": 1,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0009259283542633057
+    },
+    {
+      "trial": "more_epochs",
+      "stage": 0,
+      "body": 2,
+      "optimal": 4,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0007858425378799438
+    },
+    {
+      "trial": "more_epochs",
+      "stage": 1,
+      "body": 1,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0009259283542633057
+    },
+    {
+      "trial": "more_epochs",
+      "stage": 1,
+      "body": 2,
+      "optimal": 6,
+      "choices": [
+        2,
+        2,
+        1,
+        0,
+        2,
+        2,
+        2,
+        0
+      ],
+      "mean_regret": 0.0003261566162109375
+    },
+    {
+      "trial": "gain100",
+      "stage": 0,
+      "body": 1,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0009259283542633057
+    },
+    {
+      "trial": "gain100",
+      "stage": 0,
+      "body": 2,
+      "optimal": 4,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0007858425378799438
+    },
+    {
+      "trial": "gain100",
+      "stage": 1,
+      "body": 1,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0009259283542633057
+    },
+    {
+      "trial": "gain100",
+      "stage": 1,
+      "body": 2,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        0,
+        2,
+        0,
+        0,
+        1
+      ],
+      "mean_regret": 0.0005842596292495728
+    },
+    {
+      "trial": "gain100_frozen_hidden",
+      "stage": 0,
+      "body": 1,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0009259283542633057
+    },
+    {
+      "trial": "gain100_frozen_hidden",
+      "stage": 0,
+      "body": 2,
+      "optimal": 4,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0007858425378799438
+    },
+    {
+      "trial": "gain100_frozen_hidden",
+      "stage": 1,
+      "body": 1,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0009259283542633057
+    },
+    {
+      "trial": "gain100_frozen_hidden",
+      "stage": 1,
+      "body": 2,
+      "optimal": 4,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0007858425378799438
+    },
+    {
+      "trial": "gain100_constant_features",
+      "stage": 0,
+      "body": 1,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0009259283542633057
+    },
+    {
+      "trial": "gain100_constant_features",
+      "stage": 0,
+      "body": 2,
+      "optimal": 4,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0007858425378799438
+    },
+    {
+      "trial": "gain100_constant_features",
+      "stage": 1,
+      "body": 1,
+      "optimal": 5,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0009259283542633057
+    },
+    {
+      "trial": "gain100_constant_features",
+      "stage": 1,
+      "body": 2,
+      "optimal": 4,
+      "choices": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_regret": 0.0007858425378799438
+    },
+    {
+      "trial": "maxabs",
+      "stage": 0,
+      "body": 1,
+      "optimal": 8,
+      "choices": [
+        2,
+        2,
+        1,
+        1,
+        2,
+        2,
+        2,
+        1
+      ],
+      "mean_regret": 0.0
+    },
+    {
+      "trial": "maxabs",
+      "stage": 0,
+      "body": 2,
+      "optimal": 7,
+      "choices": [
+        2,
+        2,
+        1,
+        1,
+        2,
+        2,
+        2,
+        1
+      ],
+      "mean_regret": 0.00019729137420654297
+    },
+    {
+      "trial": "maxabs",
+      "stage": 1,
+      "body": 1,
+      "optimal": 8,
+      "choices": [
+        2,
+        2,
+        1,
+        1,
+        2,
+        2,
+        2,
+        1
+      ],
+      "mean_regret": 0.0
+    },
+    {
+      "trial": "maxabs",
+      "stage": 1,
+      "body": 2,
+      "optimal": 8,
+      "choices": [
+        2,
+        2,
+        1,
+        1,
+        2,
+        2,
+        0,
+        1
+      ],
+      "mean_regret": 0.0
+    }
+  ],
+  "weight_deltas": [
+    {
+      "type": "stage",
+      "trial": "baseline",
+      "stage": 0,
+      "gain": 1,
+      "fits": 4096,
+      "w1_l2": 2.1127195851229683e-05,
+      "w1_max": 6.645917892456055e-06,
+      "b1_l2": 1.050550296221021e-06,
+      "b1_max": 6.423013587664173e-07,
+      "w2_l2": 0.0026042018542224675,
+      "w2_max": 0.0012520980089902878,
+      "b2_l2": 0.0008781558930421728,
+      "b2_max": 0.0006576649029739201
+    },
+    {
+      "type": "stage",
+      "trial": "baseline",
+      "stage": 1,
+      "gain": 1,
+      "fits": 4096,
+      "w1_l2": 0.00012882167293657568,
+      "w1_max": 6.064772605895996e-05,
+      "b1_l2": 4.319131729047362e-06,
+      "b1_max": 2.9958877689750807e-06,
+      "w2_l2": 0.005117379585308936,
+      "w2_max": 0.002513917861506343,
+      "b2_l2": 0.00020829906824081852,
+      "b2_max": 0.00020387861877679825
+    },
+    {
+      "type": "stage",
+      "trial": "more_epochs",
+      "stage": 0,
+      "gain": 1,
+      "fits": 65536,
+      "w1_l2": 0.002434315184860129,
+      "w1_max": 0.0010429248213768005,
+      "b1_l2": 0.00014619177804904695,
+      "b1_max": 0.00010711714276112616,
+      "w2_l2": 0.03062984919923865,
+      "w2_max": 0.015258776023983955,
+      "b2_l2": 0.005082534239050551,
+      "b2_max": 0.0037060680333524942
+    },
+    {
+      "type": "stage",
+      "trial": "more_epochs",
+      "stage": 1,
+      "gain": 1,
+      "fits": 65536,
+      "w1_l2": 0.011315318281542128,
+      "w1_max": 0.005369618535041809,
+      "b1_l2": 0.00040070271225839735,
+      "b1_max": 0.00032157733221538365,
+      "w2_l2": 0.044007956736580624,
+      "w2_max": 0.021883541718125343,
+      "b2_l2": 0.004278234798577485,
+      "b2_max": 0.0032253318931907415
+    },
+    {
+      "type": "stage",
+      "trial": "gain100",
+      "stage": 0,
+      "gain": 100,
+      "fits": 4096,
+      "w1_l2": 0.19337604975086378,
+      "w1_max": 0.07091210409998894,
+      "b1_l2": 0.017109630520375476,
+      "b1_max": 0.010601959191262722,
+      "w2_l2": 0.3276858763460948,
+      "w2_max": 0.15447740256786346,
+      "b2_l2": 0.0716624196475189,
+      "b2_max": 0.05448323115706444
+    },
+    {
+      "type": "stage",
+      "trial": "gain100",
+      "stage": 1,
+      "gain": 100,
+      "fits": 4096,
+      "w1_l2": 0.976593349498616,
+      "w1_max": 0.45643216744065285,
+      "b1_l2": 0.08795281942612461,
+      "b1_max": 0.06287793908268213,
+      "w2_l2": 0.9508239711227745,
+      "w2_max": 0.5152805596590042,
+      "b2_l2": 0.01932406393116784,
+      "b2_max": 0.014393232762813568
+    },
+    {
+      "type": "stage",
+      "trial": "gain100_frozen_hidden",
+      "stage": 0,
+      "gain": 100,
+      "fits": 4096,
+      "w1_l2": 0,
+      "w1_max": 0,
+      "b1_l2": 0,
+      "b1_max": 0,
+      "w2_l2": 0.26041623382518136,
+      "w2_max": 0.1252073049545288,
+      "b2_l2": 0.0878191753355955,
+      "b2_max": 0.0657690167427063
+    },
+    {
+      "type": "stage",
+      "trial": "gain100_frozen_hidden",
+      "stage": 1,
+      "gain": 100,
+      "fits": 4096,
+      "w1_l2": 0,
+      "w1_max": 0,
+      "b1_l2": 0,
+      "b1_max": 0,
+      "w2_l2": 0.5116096813206323,
+      "w2_max": 0.25130024552345276,
+      "b2_l2": 0.020809293273983884,
+      "b2_max": 0.020361434668302536
+    },
+    {
+      "type": "stage",
+      "trial": "gain100_constant_features",
+      "stage": 0,
+      "gain": 100,
+      "fits": 4096,
+      "w1_l2": 0.0025677877915304104,
+      "w1_max": 0.0008603110909461975,
+      "b1_l2": 0.0017082698076269702,
+      "b1_max": 0.0008602719171904027,
+      "w2_l2": 0.04728660594749626,
+      "w2_max": 0.017614569514989853,
+      "b2_l2": 0.13099949364952804,
+      "b2_max": 0.09553621709346771
+    },
+    {
+      "type": "stage",
+      "trial": "gain100_constant_features",
+      "stage": 1,
+      "gain": 100,
+      "fits": 4096,
+      "w1_l2": 0.010070060869359127,
+      "w1_max": 0.0037103891372680664,
+      "b1_l2": 0.006732418503791752,
+      "b1_max": 0.003710329590830952,
+      "w2_l2": 0.012735395237417768,
+      "w2_max": 0.006878921762108803,
+      "b2_l2": 0.04527399640176153,
+      "b2_max": 0.0420517772436142
+    },
+    {
+      "type": "stage",
+      "trial": "maxabs",
+      "stage": 0,
+      "gain": -1,
+      "fits": 4096,
+      "w1_l2": 2.889660822928353,
+      "w1_max": 1.575671911239624,
+      "b1_l2": 0.23709215670245892,
+      "b1_max": 0.19369284808635712,
+      "w2_l2": 2.764861229213146,
+      "w2_max": 1.4418761730194092,
+      "b2_l2": 0.4102398314065193,
+      "b2_max": 0.3143470585346222
+    },
+    {
+      "type": "stage",
+      "trial": "maxabs",
+      "stage": 1,
+      "gain": -1,
+      "fits": 4096,
+      "w1_l2": 1.7027009235232162,
+      "w1_max": 0.7903743982315063,
+      "b1_l2": 0.3871700928994591,
+      "b1_max": 0.3365020304918289,
+      "w2_l2": 0.6342739810276026,
+      "w2_max": 0.4375770688056946,
+      "b2_l2": 0.22198539776610118,
+      "b2_max": 0.1896284520626068
+    }
+  ],
+  "target_diagnostics": {
+    "action_order": [
+      "hold",
+      "brake",
+      "push"
+    ],
+    "raw_nonzero_magnitude_min": 7.1469161578454195e-06,
+    "raw_nonzero_magnitude_max": 0.006069200018895657,
+    "raw_target_means": {
+      "simple": [
+        0.0,
+        -0.0010326530413335632,
+        0.001097484195254806
+      ],
+      "hevlm": [
+        0.0,
+        -0.0014912899258041272,
+        0.001277920899263621
+      ]
+    },
+    "feature_ranges": [
+      {
+        "index": 0,
+        "min": 0.601415575,
+        "max": 0.856357276
+      },
+      {
+        "index": 1,
+        "min": -0.0718443766,
+        "max": 0.000161778298
+      },
+      {
+        "index": 2,
+        "min": -0.51399231,
+        "max": 0.00102058903
+      },
+      {
+        "index": 3,
+        "min": -1,
+        "max": -1
+      },
+      {
+        "index": 4,
+        "min": 0.150000006,
+        "max": 0.559722245
+      },
+      {
+        "index": 5,
+        "min": 0.5,
+        "max": 0.5
+      },
+      {
+        "index": 6,
+        "min": 0,
+        "max": 0
+      },
+      {
+        "index": 7,
+        "min": 0.500055611,
+        "max": 0.500232518
+      },
+      {
+        "index": 8,
+        "min": -2.75479761e-05,
+        "max": 0.000733862165
+      },
+      {
+        "index": 9,
+        "min": 0,
+        "max": 0.300000012
+      },
+      {
+        "index": 10,
+        "min": 0,
+        "max": 0.5
+      },
+      {
+        "index": 11,
+        "min": 0,
+        "max": 0
+      },
+      {
+        "index": 12,
+        "min": 0.000999000971,
+        "max": 0.277456641
+      },
+      {
+        "index": 13,
+        "min": -0.145633608,
+        "max": 0.056847658
+      },
+      {
+        "index": 14,
+        "min": -0.0716791004,
+        "max": 0.000151073415
+      },
+      {
+        "index": 15,
+        "min": 0,
+        "max": 0.0313400775
+      }
+    ],
+    "gradient_probe": {
+      "first_fit_w1_unchanged": true,
+      "first_fit_b1_unchanged": true,
+      "first_fit_w2_changed": true,
+      "first_targets": [
+        0,
+        -0.00453829439,
+        0.00448273821
+      ],
+      "simple_baseline_hidden_range": [
+        -0.216183931,
+        0.245847404
+      ]
+    }
+  },
+  "verification": {
+    "original_simple_and_adapted_baseline_weights_byte_identical": true,
+    "pinned_replay_jsonl_byte_identical": true,
+    "pinned_replay_lives_byte_identical": true,
+    "pinned_replay_rows": 204,
+    "pinned_replay_reason": "Bind exact immutable source after shared checkout began concurrent additive changes. Same fixed trials, no tuning.",
+    "first_attempt": {
+      "stage": "before first readout",
+      "status": "FAIL baseline weight parity",
+      "reason_to_retest": "Original run compiled -march=native; first scratch build omitted native ISA/FMA. Rebuild exactly measured flags before interpreting any trial.",
+      "completed_trials": 0,
+      "original_flags": "-O2 -std=c11 -D_GNU_SOURCE"
+    },
+    "pinned_gradient_probe_byte_identical": true
+  },
+  "artifacts": {
+    "protocol.json": "bd1fd2b2c156f69ec8041fe7b28dbf791d3d1b16f8be44e8c0cd4f56a957b863",
+    "results.jsonl": "f3d94751e46b8f15c333e564e651fcf55f93b03274537cb0df755093f7d728e2",
+    "pinned-results.jsonl": "f3d94751e46b8f15c333e564e651fcf55f93b03274537cb0df755093f7d728e2",
+    "summary.json": "d1348a565dd8599e56ac00f1a682917eb51f6463c58d0809b8f84dfb9933929d",
+    "gradient-probe.json": "43f8d611550df34c538ae82cce864d3632868aa6831835edf47d1d7b1e28925f",
+    "failed-scalar-receipt.json": "9bec5a6317e833c3e86d5c043a610da56e546288425dd014fbed9c4ebcaecd4b",
+    "failed-scalar-results.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pinned-diagnose": "c4e9795f42a9db1860f0c2df06648d95bf5859408e3175f879ef2a79fc35ad76",
+    "pinned-gradient-probe.json": "43f8d611550df34c538ae82cce864d3632868aa6831835edf47d1d7b1e28925f"
+  },
+  "diagnostic_source_sha256": "1c9956e4b3066d467d79ae7b424962e978d0c7f0063c57f84228a6a024ee33bd",
+  "gradient_probe_source_sha256": "eed57d6c9288c9de752de1e8bf26d1e49b93a81afce374977f6d0614334494ff",
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+  "compile_argv": [
+    "cc",
+    "-O2",
+    "-std=gnu11",
+    "-DUSE_SIMD",
+    "-march=native",
+    "-pthread",
+    "-I<pinned-source>",
+    "<pinned-source>/diagnose.c",
+    "-o",
+    "<output>/diagnose",
+    "-lm"
+  ],
+  "run_argv": [
+    "<output>/diagnose",
+    "<raw-final-v1>",
+    "<output>/lives"
+  ],
+  "decision": {
+    "mechanism": "Add an explicit conditioned-comparison operation alongside the unchanged raw-relative operation. Normalize each finite branch advantage by the largest measured absolute branch advantage with a relative numerical floor.",
+    "evidence": "At the same 512 epochs, maxabs fits all eight SimpleLLM development choices; transfer fits seven HeVLM choices and adaptation reaches eight while preserving SimpleLLM eight. Raw baseline and gain100 retain constant PUSH on SimpleLLM; raw16x epochs also retain constant PUSH there.",
+    "objective_semantics": "Conditioned scores predict within-state normalized measured action advantages. Raw losses and regret remain separate receipts. Each source state gets its own scale; the objective changes its weighting of small-margin versus large-margin states.",
+    "state_dependence": "Both SimpleLLM seeds have checkpoint128, yet maxabs chooses BRAKE at seed42 and PUSH at seed73, matching their measured futures.",
+    "testable_prediction": "Frozen conditioned life will select BRAKE in later training states of fresh whole-seed trajectories, with lower measured regret than the unchanged raw-relative life and constant PUSH. Seal life before new evaluation.",
+    "causal_controls": [
+      "Raw-relative same training budget isolates conditioned target.",
+      "Raw-relative16x budget tests simple undertraining.",
+      "Globalgain100 separates uniform amplitude from per-state conditioning.",
+      "Frozen-hidden gain100 isolates representation updates within that gain treatment.",
+      "Constant-feature gain100 confirms that treatment acquires no state-conditioned action without varying observations."
+    ],
+    "next_rollout": "Apply frozen conditioned weights through ordinary C selection in a full training continuation; record every action, raw loss, history, and policy hash before changing any online learning rule."
+  }
+}

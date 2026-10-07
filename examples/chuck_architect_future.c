@@ -109,7 +109,7 @@ static int init_main(int argc, char **argv) {
     printf("{\"type\":\"initialized\",\"hash\":\"%016" PRIx64 "\",\"parameters\":%d,\"fit_steps\":0}\n", nt_chuck_architect_hash(&a), NT_CHUCK_ARCHITECT_PARAMETERS);
     return 0;
 }
-static int fit_main(int argc, char **argv) {
+static int fit_main(int argc, char **argv, int conditioned) {
     if (argc != 8) fail("usage: future fit INPUT_LIFE SAMPLES OUTPUT_LIFE TRACE EPOCHS LIFE_ID");
     nt_chuck_architect a; if (nt_chuck_architect_load(&a, argv[2])) fail("input life load failed");
     set_identity(&a, argv[7]); nt_chuck_architect initial = a;
@@ -118,15 +118,23 @@ static int fit_main(int argc, char **argv) {
     for (int i = 0; i < count; ++i) { nt_chuck_architect source; source_life(&samples[i], &source); }
     FILE *trace = fopen(argv[5], "w"); if (!trace) fail("fit trace open failed");
     uint64_t fit_steps = 0;
-    fprintf(trace, "{\"type\":\"fit_run\",\"samples\":%d,\"epochs\":%d,\"learning_rate\":%.9g,\"initial_hash\":\"%016" PRIx64 "\",\"life_id\":\"%s\"}\n", count, epochs, a.config.learning_rate, nt_chuck_architect_hash(&a), a.config.life_id);
+    fprintf(trace, "{\"type\":\"fit_run\",\"samples\":%d,\"epochs\":%d,\"learning_rate\":%.9g,\"initial_hash\":\"%016" PRIx64 "\",\"life_id\":\"%s\",\"objective\":\"%s\"}\n", count, epochs, a.config.learning_rate, nt_chuck_architect_hash(&a), a.config.life_id, conditioned ? "state-span-huber-v1" : "hold-relative-huber-v1");
     for (int epoch = 0; epoch < epochs; ++epoch) for (int i = 0; i < count; ++i) {
         nt_chuck_architect_comparison_receipt receipt;
-        if (nt_chuck_architect_fit_comparison(&a, &samples[i].comparison, &receipt)) fail("comparison fit refused");
+        double scale = 0;
+        if (conditioned) {
+            nt_chuck_architect_conditioned_receipt normalized;
+            if (nt_chuck_architect_fit_conditioned(&a, &samples[i].comparison, &normalized))
+                fail("conditioned comparison fit refused");
+            receipt = normalized.comparison;
+            scale = normalized.scale;
+        } else if (nt_chuck_architect_fit_comparison(&a, &samples[i].comparison, &receipt)) fail("comparison fit refused");
         ++fit_steps;
         fprintf(trace, "{\"type\":\"fit\",\"fit_step\":%" PRIu64 ",\"epoch\":%d,\"sample_index\":%d,", fit_steps, epoch + 1, i);
         sample_identity(trace, &samples[i]);
         fprintf(trace, ",\"hash_before\":\"%016" PRIx64 "\",\"hash_after\":\"%016" PRIx64 "\",\"future_loss\":", receipt.hash_before, receipt.hash_after);
         floats(trace, receipt.future_loss, 3); fputs(",\"target\":", trace); floats(trace, receipt.target, 3);
+        if (conditioned) fprintf(trace, ",\"scale\":%.17g", scale);
         fputs(",\"predicted_before\":", trace); floats(trace, receipt.predicted_before, 3);
         fputs(",\"predicted_after\":", trace); floats(trace, receipt.predicted_after, 3);
         fputs(",\"error_before\":", trace); floats(trace, receipt.error_before, 3);
@@ -142,11 +150,11 @@ static int fit_main(int argc, char **argv) {
     free(samples); return 0;
 }
 static int eval_main(int argc, char **argv) {
-    if (argc != 6) fail("usage: future eval SAMPLES MODEL_LIFE LABEL TRACE (MODEL_LIFE=- for source/hold/push)");
+    if (argc != 6) fail("usage: future eval SAMPLES MODEL_LIFE LABEL TRACE (MODEL_LIFE=- for source/hold/brake/push)");
     sample *samples = calloc(MAX_SAMPLES, sizeof(*samples)); if (!samples) fail("sample allocation failed");
     int count = read_samples(argv[2], samples), forced = -1;
     const char *label = argv[4];
-    if (!strcmp(label, "hold")) forced = 0; else if (!strcmp(label, "push")) forced = 2;
+    if (!strcmp(label, "hold")) forced = 0; else if (!strcmp(label, "brake")) forced = 1; else if (!strcmp(label, "push")) forced = 2;
     int use_source = !strcmp(argv[3], "-");
     if (use_source && forced < 0 && strcmp(label, "source")) fail("invalid source readout label");
     nt_chuck_architect model; if (!use_source && nt_chuck_architect_load(&model, argv[3])) fail("model life load failed");
@@ -176,9 +184,10 @@ static int eval_main(int argc, char **argv) {
     free(samples); return 0;
 }
 int main(int argc, char **argv) {
-    if (argc < 2) fail("expected init, fit or eval");
+    if (argc < 2) fail("expected init, fit, fit-conditioned or eval");
     if (!strcmp(argv[1], "init")) return init_main(argc,argv);
-    if (!strcmp(argv[1], "fit")) return fit_main(argc,argv);
+    if (!strcmp(argv[1], "fit")) return fit_main(argc,argv,0);
+    if (!strcmp(argv[1], "fit-conditioned")) return fit_main(argc,argv,1);
     if (!strcmp(argv[1], "eval")) return eval_main(argc,argv);
     fail("unknown command"); return 1;
 }

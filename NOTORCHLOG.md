@@ -13,6 +13,73 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Conditional credit and frozen-weight experience
+
+The next Chuck branch starts from combined SPA/Chuck main `47cb6f8`. Six
+development-only trials replay the sixteen archived seed-42/73 states. The
+original relative-loss fitter reproduces both saved weight sets exactly.
+Its targets average toward PUSH, and its first stage changes input weights
+by L2 0.0000211272. Sixteen times as many epochs and a global target gain of
+100 retain missed conditional choices. The gain-100 frozen-hidden and
+constant-feature controls are retained with all other trial outcomes.
+
+Per-state scaling uses the largest finite absolute HOLD-to-action difference,
+floored by `1e-6*(abs(HOLD)+1)`. With the same 163 parameters, LR .03 and 512
+epochs, this development trial reaches 8/8 SimpleLLM choices and 7/8 HeVLM
+choices before adaptation; the adapted copy reaches 8/8 on both bodies.
+Exact measured ties count as optimal. Rebuilding the six trials from pinned
+`47cb6f8` reproduces all 204 trace rows and twelve saved lives byte for byte.
+The initial scalar-build parity failure and its native-build correction remain
+in the diagnosis receipt. No new-seed outcome supplies this selection.
+
+`nt_chuck_architect_fit_conditioned` now implements that explicit objective.
+Raw losses, deltas, scale, normalized targets, scores and life hashes remain
+separate receipt fields. The original comparison fitter and online feedback
+arithmetic are unchanged. Replay changes weights only, preserving the v1 life
+encoding and online chronology. `nt_chuck_architect_feedback_frozen` completes
+executed action feedback with real temporal history and unchanged weights;
+its receipt reports `learned=0,error=0`, with no regression error computed.
+
+The next fixed protocol seals SimpleLLM and HeVLM-adapted lives before seeds
+307/509 generate outcomes. Common-state branches retain the single intervention
+plus fifteen HOLD updates. A separate 512-step closed-loop experiment executes
+each saved policy's choice on every update of both bodies. Canonical Chuck,
+fixed actions and the old future-trained life supply the named controls. A
+step-256 policy save/load repeats actual continuation with the body in process.
+The protocol and development receipts live in
+`experiments/chuck_loss_architect/conditional/`.
+
+The persistence audit also reproduces a concrete gap: Chuck syncs the file
+but omits its parent directory after rename. Save now checks the parent before
+creating a temporary file and syncs it after replacement. Failure before rename
+preserves the preceding checkpoint; failure of directory sync/close after rename
+returns E_IO with the replacement installed. The v1 bytes are unchanged. The
+new syscall gate passes ten cases/111 checks; omitting parent fsync makes it
+fail. This carries the already-merged SPA durability behavior into Chuck.
+
+The new conditioned/frozen gate passes seven groups/2,474 checks and catches
+three deliberate defects: the old denominator substituted for the new scale,
+exchanged BRAKE/PUSH outcomes, and accidental learning during frozen feedback.
+Independent audit checks 1,531 assertions, including all 163 derivatives over
+eight loss regimes and seven frozen-consequence/save-resume regimes. Focused
+ASan/UBSan pass with leak detection disabled after the previously recorded
+sandbox task-inspection refusal. All 41 commands of the current CPU recipe pass
+after forced rebuilds. Canonical Chuck reproduces 6,000 steps byte for byte;
+the three initial/pending/completed v1 lives reproduce their pinned baseline
+bytes. Three earlier future-credit mutations also remain caught.
+
+Three development smoke runs finish their numerical work but fail terminal
+receipt checks after persisted traces change or truncate. The failed runs and
+available hashes remain retained; an unavailable earlier expected hash is
+reported as absent. The fourth, with intermediate artifacts staged in `/tmp`,
+passes: 8,192 fits, 162 readouts, fourteen eight-step deployments, two source
+host-parity checks and two policy-continuation checks. All 224 archive members
+are verified before publication. The numerical protocol is unchanged across
+these attempts, and every smoke uses only development seed 42. The cause of
+the earlier pathname-content changes remains unknown. The final verifier now
+rechecks fit/sample tables, readouts, every final deployment artifact and the
+exact evaluation identity set before success.
+
 ## 2026-10-07 — SPA and Chuck future credit share the current build
 
 Integrated main `5284c1b` into SPA PR #155 after Chuck future credit merged.

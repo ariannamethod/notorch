@@ -8,6 +8,8 @@
 #include <ctype.h>
 #include <errno.h>
 #include <float.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <limits.h>
 #include <locale.h>
 #include <math.h>
@@ -579,6 +581,36 @@ int nt_chuck_architect_feedback(nt_chuck_architect *architect, float after_loss,
     return NT_CHUCK_OK;
 }
 
+int nt_chuck_architect_feedback_frozen(nt_chuck_architect *architect,
+    float after_loss, nt_chuck_architect_receipt *receipt) {
+    // NT_CA_FROZEN_COMPLETION: complete measured history without weight learning.
+    if (!nt_ca_state_valid(architect) || !architect->pending) return NT_CHUCK_E_STATE;
+    nt_chuck_architect a = *architect;
+    const nt_chuck_architect_decision *d = &a.pending_decision;
+    nt_chuck_architect_receipt r;
+    memset(&r, 0, sizeof r);
+    r.before_loss = d->observation.loss;
+    r.after_loss = after_loss;
+    r.loss_delta = (double)r.before_loss - (double)r.after_loss;
+    r.nonfinite = !isfinite(after_loss);
+    r.reward = r.nonfinite ? -1 : nt_ca_ratio(r.loss_delta, fabs((double)r.before_loss) + 1e-6);
+    int head = d->action.kind - NT_CHUCK_ACTION_HOLD;
+    r.predicted = d->scores[head];
+    r.error = 0; // Frozen completion applies no regression objective.
+    r.action = d->action;
+    r.decision = d->sequence;
+    r.learned = 0;
+    a.prev_loss = d->observation.loss;
+    a.prev_trend = d->observation.loss_trend;
+    a.prev_reward = r.reward;
+    a.has_history = 1;
+    a.pending = 0;
+    ++a.updates;
+    *architect = a;
+    if (receipt) *receipt = r;
+    return NT_CHUCK_OK;
+}
+
 int nt_chuck_architect_capture(const nt_chuck_architect *architect,
     const nt_chuck_observation *observation,
     float features[NT_CHUCK_ARCHITECT_FEATURES]) {
@@ -670,6 +702,74 @@ int nt_chuck_architect_fit_comparison(nt_chuck_architect *architect,
     r.fitted = 1;
     *architect = next;
     if (receipt) *receipt = r;
+    return NT_CHUCK_OK;
+}
+
+int nt_chuck_architect_fit_conditioned(nt_chuck_architect *architect,
+    const nt_chuck_architect_comparison *sample,
+    nt_chuck_architect_conditioned_receipt *receipt) {
+    const uint32_t required_actions = NT_CHUCK_ACTION_BIT(NT_CHUCK_ACTION_HOLD) |
+        NT_CHUCK_ACTION_BIT(NT_CHUCK_ACTION_BRAKE) | NT_CHUCK_ACTION_BIT(NT_CHUCK_ACTION_PUSH);
+    if (!architect || !sample) return NT_CHUCK_E_ARGUMENT;
+    if (!nt_ca_state_valid(architect) || architect->pending ||
+        architect->config.mode != NT_CHUCK_ARCHITECT_LEARNED) return NT_CHUCK_E_STATE;
+    if ((architect->config.limits.enabled_actions & required_actions) != required_actions)
+        return NT_CHUCK_E_ACTION;
+    if (!nt_ca_floats_valid(sample->features, NT_CHUCK_ARCHITECT_FEATURES, 1))
+        return NT_CHUCK_E_ARGUMENT;
+    if (!isfinite(sample->future_loss[0])) return NT_CHUCK_E_BASELINE;
+
+    nt_chuck_architect prior = *architect, next = prior;
+    nt_chuck_architect_conditioned_receipt out;
+    memset(&out, 0, sizeof out);
+    nt_chuck_architect_comparison_receipt *r = &out.comparison;
+    r->hash_before = nt_chuck_architect_hash(&prior);
+    r->decisions = prior.decisions;
+    r->updates = prior.updates;
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k)
+        r->future_loss[k] = sample->future_loss[k]; // NT_CA_CONDITIONED_OUTCOME: measured branch, fixed head order.
+    out.scale = 1e-6 * (fabs((double)r->future_loss[0]) + 1.0); // NT_CA_CONDITIONED_SCALE_FLOOR
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k) {
+        r->nonfinite[k] = !isfinite(r->future_loss[k]);
+        r->loss_delta[k] = (double)r->future_loss[0] - (double)r->future_loss[k];
+        if (k && !r->nonfinite[k]) out.scale = fmax(out.scale, fabs(r->loss_delta[k]));
+    }
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k)
+        r->target[k] = r->nonfinite[k] ? -1.0f : nt_ca_ratio(r->loss_delta[k], out.scale); // NT_CA_CONDITIONED_CREDIT
+
+    float hidden[NT_CHUCK_ARCHITECT_HIDDEN], g[NT_CHUCK_ARCHITECT_HEADS];
+    float hidden_g[NT_CHUCK_ARCHITECT_HIDDEN];
+    nt_ca_forward(&prior, sample->features, hidden, r->predicted_before);
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k) {
+        r->error_before[k] = r->predicted_before[k] - r->target[k];
+        g[k] = nt_ca_clip(r->error_before[k], -1, 1) / NT_CHUCK_ARCHITECT_HEADS;
+        r->huber_before += nt_ca_huber(r->error_before[k]) / NT_CHUCK_ARCHITECT_HEADS;
+    }
+    for (int h = 0; h < NT_CHUCK_ARCHITECT_HIDDEN; ++h) {
+        float sum = 0;
+        for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k)
+            sum += g[k] * prior.w2[k][h];
+        hidden_g[h] = sum * (1 - hidden[h] * hidden[h]);
+    }
+    float rate = prior.config.learning_rate;
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k) {
+        for (int h = 0; h < NT_CHUCK_ARCHITECT_HIDDEN; ++h)
+            next.w2[k][h] = nt_ca_clip(prior.w2[k][h] - rate * g[k] * hidden[h], -16, 16);
+        next.b2[k] = nt_ca_clip(prior.b2[k] - rate * g[k], -16, 16);
+    }
+    for (int h = 0; h < NT_CHUCK_ARCHITECT_HIDDEN; ++h) {
+        for (int i = 0; i < NT_CHUCK_ARCHITECT_FEATURES; ++i)
+            next.w1[h][i] = nt_ca_clip(prior.w1[h][i] - rate * hidden_g[h] * sample->features[i], -16, 16);
+        next.b1[h] = nt_ca_clip(prior.b1[h] - rate * hidden_g[h], -16, 16);
+    }
+    if (!nt_ca_state_valid(&next)) return NT_CHUCK_E_STATE;
+    nt_ca_forward(&next, sample->features, hidden, r->predicted_after);
+    for (int k = 0; k < NT_CHUCK_ARCHITECT_HEADS; ++k)
+        r->huber_after += nt_ca_huber(r->predicted_after[k] - r->target[k]) / NT_CHUCK_ARCHITECT_HEADS;
+    r->hash_after = nt_chuck_architect_hash(&next);
+    r->fitted = 1;
+    *architect = next;
+    if (receipt) *receipt = out;
     return NT_CHUCK_OK;
 }
 
@@ -795,26 +895,68 @@ int nt_chuck_architect_save(const nt_chuck_architect *architect, const char *pat
     uint64_t checksum = nt_ca_checksum(file + 24, NT_CA_PAYLOAD_BYTES);
     nt_ca_codec c = {file, 8, 24, 0, 0};
     nt_ca_u32(&c, &version); nt_ca_u32(&c, &length); nt_ca_u64(&c, &checksum);
-    // A failed write leaves the preceding life intact. The unique temporary
-    // file lives beside its destination so rename is an atomic replacement.
-    size_t path_len = strlen(path);
-    if (path_len > SIZE_MAX - 12) return NT_CHUCK_E_ARGUMENT;
-    char *temporary = (char *)malloc(path_len + 12);
-    if (!temporary) return NT_CHUCK_E_IO;
-    memcpy(temporary, path, path_len);
-    memcpy(temporary + path_len, ".tmp.XXXXXX", 12);
-    int fd = mkstemp(temporary);
-    if (fd < 0) { free(temporary); return NT_CHUCK_E_IO; }
-    FILE *f = fdopen(fd, "wb");
-    if (!f) { close(fd); unlink(temporary); free(temporary); return NT_CHUCK_E_IO; }
-    int failed = fwrite(file, 1, sizeof(file), f) != sizeof(file);
-    if (fflush(f) != 0) failed = 1;
-    if (!failed && fsync(fd) != 0) failed = 1;
-    if (fclose(f) != 0) failed = 1;
-    if (!failed && rename(temporary, path) != 0) failed = 1;
-    if (failed) unlink(temporary);
-    free(temporary);
-    return failed ? NT_CHUCK_E_IO : NT_CHUCK_OK;
+    size_t path_length, parent_length;
+    FILE *f = NULL;
+    char *temporary = NULL, *parent = NULL;
+    const char *slash;
+    struct stat parent_stat;
+    int fd = -1, directory_fd = -1, created = 0, renamed = 0, saved_errno = 0;
+    int status, directory_flags = O_RDONLY;
+    path_length = strlen(path);
+    if (path_length > SIZE_MAX - sizeof(".tmp.XXXXXX")) return NT_CHUCK_E_ARGUMENT;
+    slash = strrchr(path, '/');
+    if (slash && slash[1] == '\0') { errno = EISDIR; return NT_CHUCK_E_IO; }
+    parent_length = slash ? (slash == path ? 1 : (size_t)(slash - path)) : 1;
+    temporary = (char *)malloc(path_length + sizeof(".tmp.XXXXXX"));
+    parent = (char *)malloc(parent_length + 1);
+    if (!temporary || !parent) { free(temporary); free(parent); return NT_CHUCK_E_IO; }
+    memcpy(temporary, path, path_length);
+    memcpy(temporary + path_length, ".tmp.XXXXXX", sizeof(".tmp.XXXXXX"));
+    if (slash) memcpy(parent, path, parent_length); else parent[0] = '.';
+    parent[parent_length] = '\0';
+#ifdef O_DIRECTORY
+    directory_flags |= O_DIRECTORY;
+#endif
+#ifdef O_CLOEXEC
+    directory_flags |= O_CLOEXEC;
+#endif
+    status = NT_CHUCK_E_IO;
+    // Open and validate the directory before creating or replacing any file.
+    directory_fd = open(parent, directory_flags);
+    if (directory_fd < 0) { saved_errno = errno; goto cleanup; }
+    if (fstat(directory_fd, &parent_stat) != 0) { saved_errno = errno; goto cleanup; }
+    if (!S_ISDIR(parent_stat.st_mode)) { saved_errno = ENOTDIR; goto cleanup; }
+    fd = mkstemp(temporary);
+    if (fd < 0) { saved_errno = errno; goto cleanup; }
+    created = 1;
+    f = fdopen(fd, "wb");
+    if (!f) { saved_errno = errno; goto cleanup; }
+    if (fwrite(file, 1, sizeof(file), f) != sizeof(file)) { saved_errno = errno ? errno : EIO; goto cleanup; }
+    if (fflush(f) != 0) { saved_errno = errno; goto cleanup; }
+    if (fsync(fd) != 0) { saved_errno = errno; goto cleanup; }
+    if (fclose(f) != 0) { f = NULL; fd = -1; saved_errno = errno; goto cleanup; }
+    f = NULL; fd = -1;
+    if (rename(temporary, path) != 0) { saved_errno = errno; goto cleanup; }
+    renamed = 1;
+    // NT_CA_DIRECTORY_DURABILITY: persist the installed directory entry.
+    if (fsync(directory_fd) != 0) { saved_errno = errno; goto cleanup; }
+    status = NT_CHUCK_OK;
+cleanup:
+    if (f) {
+        if (fclose(f) != 0 && !saved_errno) saved_errno = errno;
+        fd = -1;
+    }
+    if (fd >= 0 && close(fd) != 0 && !saved_errno) saved_errno = errno;
+    if (created && !renamed) {
+        if (unlink(temporary) != 0 && !saved_errno) saved_errno = errno;
+    }
+    if (directory_fd >= 0 && close(directory_fd) != 0) {
+        if (!saved_errno) saved_errno = errno;
+        status = NT_CHUCK_E_IO;
+    }
+    free(temporary); free(parent);
+    if (status != NT_CHUCK_OK) errno = saved_errno ? saved_errno : EIO;
+    return status;
 }
 
 int nt_chuck_architect_load(nt_chuck_architect *architect, const char *path) {

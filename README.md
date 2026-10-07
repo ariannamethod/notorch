@@ -534,6 +534,16 @@ scores but no choices. The separately untouched seed 211 has the same 2/4
 optimal choices per body. Learning conditional BRAKE choices is the next
 question; all 4,096 paired host steps and final saved states remain exact.
 
+`nt_chuck_architect_fit_conditioned` gives each saved world's measured action
+differences their own scale. Its HOLD-relative targets divide by the largest
+finite absolute action difference, with a documented floor. The raw losses and
+the scale stay in the receipt. The same 163 parameters learn these conditioned
+action scores; the earlier relative-loss objective remains available unchanged.
+`nt_chuck_architect_feedback_frozen` then lets a saved policy act throughout a
+real training trajectory: consequences advance its temporal history while its
+acquired weights stay fixed. The [conditional-credit protocol](experiments/chuck_loss_architect/conditional/README.md)
+separates common-state action comparisons from this repeated-action deployment.
+
 ---
 
 ## bit-level precision — BitNet b1.58

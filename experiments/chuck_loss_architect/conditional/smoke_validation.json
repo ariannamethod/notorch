@@ -1,0 +1,148 @@
+{
+  "status": "three retained failed development runs, followed by complete validated run",
+  "scope": "only development seed42,8hoststeps; numerical target/rate/epochs unchanged",
+  "cause": "unknown",
+  "runs": [
+    {
+      "run": "smoke-v1",
+      "log_sha256": "5c2124716f1848cee60a399e19562f32552f4a86817947e65ddc99ed68a1d9f7",
+      "failure": "AssertionError: persisted rollout trace changed",
+      "damaged_traces": [
+        {
+          "path": "rollouts/hevlm-s42-canonical.jsonl",
+          "observed": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "original_anchor": null,
+          "parse_error": "AssertionError()"
+        },
+        {
+          "path": "rollouts/hevlm-s42-conditional-simple.jsonl",
+          "observed": {
+            "bytes": 8192,
+            "sha256": "add1ef8ae10a4ba9455f29689fb9c47ced2700ca7ef4037555b99248e2112143"
+          },
+          "original_anchor": null,
+          "parse_error": "JSONDecodeError('Unterminated string starting at: line 1 column 146 (char 145)')"
+        }
+      ],
+      "protocol_sha256": "8b4e4292805950a066817f9b13018ab92a0d4dd9f7d4fae3a6020243c51796f2",
+      "runner_sha256": "40c55a06e23bc443c48cba0fd8e524b1a23ce5ec6971a7f1d079fd52b6d817ee"
+    },
+    {
+      "run": "smoke-v2",
+      "log_sha256": "c0f7f61f82163c63aa44c8e21c303f18a4d9b4c978aff7a33119416e34b179cd",
+      "failure": "AssertionError: persisted control trace identity changed: simple-s42-control.jsonl",
+      "damaged_traces": [
+        {
+          "path": "cohorts/simple-s42-control.jsonl",
+          "observed": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "original_anchor": null,
+          "parse_error": "AssertionError()"
+        },
+        {
+          "path": "rollouts/hevlm-s42-conditional-adapted-resume.jsonl",
+          "observed": {
+            "bytes": 4096,
+            "sha256": "d3a1d9dd4c4dbfc976fbc7fddc3dfac23746db0726556c2f24e391f3735cbae6"
+          },
+          "original_anchor": null,
+          "parse_error": "JSONDecodeError('Unterminated string starting at: line 1 column 719 (char 718)')"
+        }
+      ],
+      "protocol_sha256": "8b4e4292805950a066817f9b13018ab92a0d4dd9f7d4fae3a6020243c51796f2",
+      "runner_sha256": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35"
+    },
+    {
+      "run": "smoke-v3",
+      "log_sha256": "619b912cfb00f92a8e62de947ecb1901683ff246e96becbadcfce153c8c83e14",
+      "failure": "AssertionError: persisted rollout trace changed: rollouts/hevlm-s42-canonical",
+      "damaged_traces": [
+        {
+          "path": "rollouts/hevlm-s42-canonical.jsonl",
+          "observed": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "original_anchor": {
+            "bytes": 6441,
+            "sha256": "3cd76de6b65a006f73646723243878b54334297965174e8bd1bd92bf3e3e925e"
+          },
+          "parse_error": "AssertionError()"
+        },
+        {
+          "path": "rollouts/hevlm-s42-conditional-simple.jsonl",
+          "observed": {
+            "bytes": 4096,
+            "sha256": "31dfab8321b825167b047f573ac0f448e98b394f40fc486baf50abe308ad88e6"
+          },
+          "original_anchor": {
+            "bytes": 13144,
+            "sha256": "f676bdf3fe0f1f06f0be1e357525c16b926094ed51b79dfa5e4b93d87bf50731"
+          },
+          "parse_error": "JSONDecodeError('Unterminated string starting at: line 1 column 719 (char 718)')"
+        }
+      ],
+      "protocol_sha256": "8b4e4292805950a066817f9b13018ab92a0d4dd9f7d4fae3a6020243c51796f2",
+      "runner_sha256": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35"
+    }
+  ],
+  "validated_run": {
+    "staging": "temporary directory",
+    "results_sha256": "1b30a9b22e1695e83fa1066ee0cae8e9bd812d4227f71768c691af3dde915f5c",
+    "archive_sha256": "262a6006b5c4425dd776a0ca3588e13db0cb6ce5fa1728a889044bb648d94f24",
+    "archive_bytes": 51963235,
+    "archive_members": 224,
+    "artifacts_retained": true,
+    "fit_steps": 8192,
+    "readouts": 162,
+    "closed_loop_processes": 14,
+    "closed_loop_updates": 112,
+    "continuations": 2,
+    "final_trace_recheck": {
+      "cohorts_verified": 2,
+      "host_steps_compared": 16,
+      "summaries_and_recorded_trace_hashes_match": true,
+      "final_state_bytes_match": true,
+      "additional_artifacts": {
+        "fit_traces": 2,
+        "readout_traces": 18,
+        "rollouts": 14,
+        "continuations": 2,
+        "status": "PASS"
+      }
+    },
+    "source_sha256": {
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "01e0969c176fa467930c05b1e85de0f8194814e8bb47d229aa60bde4a66a8caa",
+      "chuck_architect_impl.h": "6a0d79fe46d1d6c2859ecf7dda52a2c37482aa259dec199445e0926f4514c3dc",
+      "examples/chuck_architect_train.c": "1b6261e25a64be5c5e8b7b421f52add85a4de92cc386da273d8b79909ffe4c10",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_rollout.h": "e6b3988e44cf10df3f4b51c882919cc7f2973b640195e8db4fd7655e0f38f6cd",
+      "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+      "examples/chuck-loss-architect.json": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+      "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+      "experiments/chuck_loss_architect/scenarios/run.py": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+      "experiments/chuck_loss_architect/scenarios/protocol.json": "90c49115d93cff3e636a5093aa5f6f177630d30eade5639df1b35fba307fd27f",
+      "experiments/chuck_loss_architect/future/run.py": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+      "experiments/chuck_loss_architect/conditional/run.py": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+      "experiments/chuck_loss_architect/conditional/protocol.json": "8b4e4292805950a066817f9b13018ab92a0d4dd9f7d4fae3a6020243c51796f2",
+      "experiments/chuck_loss_architect/conditional/development_diagnosis.json": "1b5a096e1cf5ddffa82f8464c879ca664269747f6fd5b3a231a9886f8ecda023"
+    },
+    "all_recorded_artifact_hashes_verified_before_and_after_archive_creation": true,
+    "published_archive_sha256_rechecked": true
+  },
+  "schema": 1,
+  "protocol_sha256": "8b4e4292805950a066817f9b13018ab92a0d4dd9f7d4fae3a6020243c51796f2",
+  "smoke_seeds": [
+    42
+  ],
+  "fresh_evaluation_seeds_executed": [],
+  "artifact_statement": "Original failed raw directories and logs retained unchanged. Expected anchors that died with the process are null. The fourth run executes the unchanged numerical protocol in a temporary directory; all raw archive members verify before publication. Cause of pathname changes remains unknown."
+}
