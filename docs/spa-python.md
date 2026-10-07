@@ -107,6 +107,20 @@ Comparison fitting changes policy bytes while retaining temporal memory,
 online counters and RNG. Raw rewards, KEEP-relative targets, scores and Huber
 losses are available in `ComparisonReceipt`.
 
+For repeated executions from exactly the same captured state, build one
+comparison per paired continuation and call:
+
+```python
+receipt = agent.fit_repeated(experience, comparisons, learning_rate=0.03)
+```
+
+The sequence contains 1–64 comparisons with the same source, horizon, mask
+and before-measurements. C computes and clips each outcome's reward, averages
+those rewards, and performs one update toward their KEEP-relative means.
+The receipt contains the mean rewards; retain the individual comparisons and
+their generation provenance alongside it. A single comparison reproduces
+`fit_comparison` byte for byte.
+
 `agent.save(path)` and `SPA.Agent.from_file(path)` use the native canonical
 checkpoint, including pending credit. Python and C load the same file.
 `agent.load(path)` replaces an existing life transactionally;
@@ -123,16 +137,17 @@ by [`spa_agent.h`](../spa_agent.h).
 ## ABI and parity gates
 
 The loaded library exports two read-only scalar queries from `spa_binding.h`.
-Before passing any structure pointer, `Native` checks 252 coordinates: native
+Before passing any structure pointer, `Native` checks 253 coordinates: native
 versions, dimensions and enum values, plus size, alignment, every field offset
 and every field size for all 14 exposed value types. A missing manifest or
 mismatched coordinate raises `SPA.ABIError` with a rebuild instruction or the
 specific difference. ABI metadata is compiled into that actual library.
 
 `python/test_spa_binding.py` builds `tests/spa_layout.c` and a separate native
-oracle in an isolated temporary directory. Its eight groups cover all ABI
+oracle in an isolated temporary directory. Its ten groups cover all ABI
 coordinates, malformed buffers/config/actions, pending credit, reset boundaries,
-disabled and legacy behavior, comparison learning and checkpoint refusal.
+disabled and legacy behavior, comparison learning, repeated reward aggregation,
+count-one parity and checkpoint refusal.
 The oracle gives 59 byte-exact C/Python records: sensory output, observation,
 eight imitation losses, sixteen comparison receipts, readout, ten decisions,
 ten online receipts and ten canonical life hashes. Pending checkpoints and the

@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "scope": "Synthetic test development before real generation or experiment fitting; these are not policy results.",
+  "original_stderr_files_retained": false,
+  "evidence": "Exceptions observed in execution-tool responses; no reconstructed raw log is claimed.",
+  "corrections": [
+    {
+      "test": "malformed_snapshot_witness",
+      "observed_exception": "AssertionError: malformed_snapshot_witness: wrong named failure: invalid host snapshot witness",
+      "cause": "The refusal occurred correctly; the test expected snapshot_witness instead of the error text snapshot witness.",
+      "correction": "Match the actual named refusal text."
+    },
+    {
+      "test": "r0_association",
+      "observed_exception": "AssertionError: r0_association: deliberate defect escaped",
+      "cause": "Deepcopy preserved the alias between top-level r0 outcomes and repeats[0].outcomes, so the intended one-sided corruption modified both objects.",
+      "correction": "Detach the repeated outcome object before applying the intentional corruption."
+    }
+  ],
+  "final_preflight": {
+    "path": "<authoritative-output>/narrow_gates.json",
+    "sha256": "dedbad3a863732e3f1eae55a5bf8756e8db10f2687ca57dd6b44dc7129aa2e13",
+    "pass": true,
+    "body_runs": 0,
+    "named_red_hands": 14
+  }
+}

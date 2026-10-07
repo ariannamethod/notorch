@@ -1,0 +1,2287 @@
+{
+  "source_head": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+  "merge_head": "bbc885d08881ee37d95c8c4c588080661bb49af2",
+  "source_before": {
+    "Makefile": "c96f236dda5e40965c78ec57eb511da1fb55f12ed10110d2c8ddfabc127ebfb8",
+    "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+    "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+    "examples/bench_gguf_metal.sh": "0da14e22beed7a6797e0bde1ccb219fec430543f909d083800baad1f374a86bc",
+    "examples/bpe.c": "f89e648cb10ae2b7f93af9a31eafe5537a974fab11d9d960d7884355cccba9c5",
+    "examples/bpe.h": "2e5769426da001c944851a876724de40ed481f44f2ce13669fbde13c1c0aa32f",
+    "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+    "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+    "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+    "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+    "examples/chuck_architect_train.c": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+    "examples/infer_gemma.c": "fef9d64f9b36577925d2625f99562f99fedc298b32f9012789e9efb7b30e6533",
+    "examples/infer_gguf_metal.c": "fcda92e219fefe4ae7e1974b7be8c4fde00b7a1b6e64bd64d15c0766cd94cff9",
+    "examples/infer_janus.c": "adc4fa228fb69ab1f8387e18a15a26236b9e658d57e0be22bc52913f77f52439",
+    "examples/infer_llama.c": "907b18af3b7e9df7990b4082057f4d0a1f06f43fd06ee1669ee9a8f3846e40a5",
+    "examples/infer_llama3_bpe.c": "8305ac44642716be453dd7cb37a56f82ed39b9050eb05fc3e0070ccfa11ed7d3",
+    "examples/infer_llama3_char.c": "ebcea67ac9dffaaf9234443c64aeeac94c03b481d5d3caaf944b2e63d58eb9f1",
+    "examples/spa_agent_demo.c": "23ec38602e902ffa50d2d3ac191848edb1e048ddf2f8357c7d35a3ee6fb11d31",
+    "examples/spa_agent_future.c": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661",
+    "examples/spa_agent_replicates.c": "b886d3c9851a366247128a3385c67868b14770d4f7df62fcdae06ea63b82bec6",
+    "examples/spa_agent_scenarios.h": "9f6fadfaceb1b10148742deb1d5887b0fd02eb9b24d271af90de48fa27aaae28",
+    "examples/spa_python.py": "039b96f01ad4a174e23368ecbf339903a6b6c83901b4330018645f706e93483b",
+    "examples/train_distillation.c": "ebb97751d359b3b9983178cc09993566df4547fe31270a54522ab7da602da1e6",
+    "examples/train_dpo.c": "511c12c0b3d9a7e95bbac4b5589dfd89b944dd61cd3de2fd21aa44dcaea0da4c",
+    "examples/train_grpo.c": "dd91669897458c8f8f29886af85de9e5068ce16bc828eac80d5017270f6f463f",
+    "examples/train_llama3_bpe.c": "5a949c422773d131b32a42d9a710c18051eadb91c5ab9b99e5034b46d0d3028f",
+    "examples/train_llama3_char.c": "7689607c1cd67e8b91626ca38fa2bd4c4957f242d80ebb7078c8bd51c97e47ce",
+    "examples/train_q.c": "0f4fe321c0d22677046739789aa7bfe60bc4076af4e4eef1064255bcffb38639",
+    "examples/train_resonance_lora.c": "47cfe412ec9057208c39ce353af82cd858f18f8ac7ebebb5f91ab1604801499a",
+    "examples/train_yent.c": "c54ba2adb9021bc71580a0b307b18d336466f6fa24f22ac9d80d0131a04f2a17",
+    "examples/unicode_numbers.h": "c77829428be33a7d0e71d3c851cea86ca8121e34c969d4744fcb6279e759944c",
+    "gguf.c": "39bfb68692bb025b23844bb8e56eef8add56a2660bc9f731ab9c9ef15d5879e9",
+    "gguf.h": "cc657d588e2ef47e3cdaf0e3ea017ef422cbbd5ab394730b6bc412bd3adb6589",
+    "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+    "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+    "notorch_cuda.h": "8fb573ec4182586d7bc83fc02164a74d804763540cc71060dbb139eb1d2daac4",
+    "notorch_metal.h": "735f2feb3293ac13bd7360d1e97cfbcfbab984a3333944d4b34175401cead737",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "notorch_simd_scalar.h": "c3fa8f3ec388f7398bfbcb5fba7f67055354873775398c306e2340d42d50dc86",
+    "notorch_vision.h": "7f00d29a9c9c9318638ad38110ee850c95d7d26bc081f4f4295ad98e70a48363",
+    "python/SPA.py": "6620ee7b7333fd9956022e6b1460cc8991966d42a16046a33b462ee77d19c86f",
+    "python/__init__.py": "6abc2f96fd7f91e26527c99f0163bfe54a82bf4b431799d16081e43393acfd87",
+    "python/notorch.py": "1e8d3551fe45fc5b6e4321ff036dac46198dd19b1feda7d4638352cf8e1031d1",
+    "python/test_binding.py": "07b7bfdf94a18a8b9a8f800389f383535678b07e6293c72942c2af92a72b3303",
+    "python/test_spa_binding.py": "44ca4f535ab28652d267fa831d51e416b0d2566c34318994aebe55d55d269d16",
+    "spa_agent.c": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+    "spa_agent.h": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730",
+    "spa_binding.c": "5bbab8e95e937361dbf1c25d2c4b4296878977493eb7f0c68033e9fa981dbe84",
+    "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+    "stb_image.h": "fd0e815d15ee3f7c0fc516db7ad067454d2bee37311974cab6d83a7f1ed0512b",
+    "tests/bench_claim.c": "317a98ec763d0f2a3a8aeacecae9aa280ee50bbae9b941204398745821b477b2",
+    "tests/bench_dtype.c": "48eceae0af429b57a4ca76cad6bb24d3043b6e3e0c28ffc7c9cf699acc68ec6c",
+    "tests/bench_metal_batch.c": "8939dea91793f760156f0247282abe01d6842b84ee02bfa779624f767ce80175",
+    "tests/bench_multi_decode.c": "31ff6e7b2370aab59eb9b1e4ebeb2634c60fdbcccc0b44842d95e3cad377b1d2",
+    "tests/bench_qmatmul.c": "4d2f83d3b882ebf1e26b4dca703eb10e955551554be436c46d5199cedcf4d561",
+    "tests/bench_qmatvec.c": "8ce7a5d9e574305f569a56af091c07d580503b959b450348ecb108426e61f383",
+    "tests/check_requant.c": "cc599657faf754e479640cc08483a15a06416f9512cd44d180be770620c26486",
+    "tests/chuck_device_host_backend.c": "8f0adbdb5093889c1da1ba555e66a39deef4704f4ffb27ad773551696b4b9be9",
+    "tests/chuck_legacy_parity.c": "1816bdbbc48aa439bc81ae7e6b4723d5f21d7427c084fefb8d90f1d930abebee",
+    "tests/consumer_link.c": "d74aa239e414109ae993a6d0db6bd6d0ed6b470e7e0d94222a262dfd962158c7",
+    "tests/decode_fixtures.h": "68cce552d7e46987add54aae0577c738d31bf01cceb6de65e055b7651100526b",
+    "tests/gguf_dequant_ref.c": "fb5eb28c442cd8aacf23ad0c958656b253d9b2b4886e7332f51ee5a896726312",
+    "tests/gguf_layout.c": "a482aae472bdf85052664a1784539345660ec4fa4d6f326c8e6b87ae33afe6a5",
+    "tests/js_qmatvec_ref.c": "ec8db7ec9ee3ed3606b72f3f7a1bce568350c77a91d354baba3989da766cc60b",
+    "tests/run_chuck_architect_device.sh": "3e6768f2d29df4e310fde8304fbed17f62c84265c1ecd567b452c14c85c846c4",
+    "tests/run_chuck_architect_state.sh": "dac0d7f59608ec9db340c15a41fe20b765032ce4726c7b63e70bbffcb4f79292",
+    "tests/spa_layout.c": "8748bf036e59c053ce95e5ceda6682e03ce6fcc773da09037cc515ab482c845b",
+    "tests/spa_python_parity.c": "0063dd77b34aff02c7a5aa56e1fa6b843f2be51e68b3d20cd13365e2f84a055a",
+    "tests/spa_replicates_fixture.c": "00ef2c829b3a03147a680b334e34935e66412407ec3de2cbe1e76f10ee754889",
+    "tests/test_affinity.c": "11dbab2f93f79a24eeca3e86adcf469fdd8c62e74f56348ff54ed2693a2e178c",
+    "tests/test_bitnet_ops.c": "50e27e83401463122caa80afa20d856e98e991f8542cf004aa831b49b6df96a9",
+    "tests/test_chuck_actions_edge.c": "fca423cf4d4b34d95763e7285db50c70ce187f55111fb353576107d120df89ae",
+    "tests/test_chuck_architect.c": "1ecf25b69621387a085bf8263571a9d3985f966395f76cb4bac167ed7a2f95d6",
+    "tests/test_chuck_architect_conditioned.c": "f0e6c7931e8df265ed73c0edef7dc89a1a3b7118534ef25eaac40db3ccdb73c3",
+    "tests/test_chuck_architect_device.c": "144c82d9d4343f040f85cc0d5e68d9580e9b8a763b2bfa285604cfc6a81c8886",
+    "tests/test_chuck_architect_durability.c": "991e7501703c6c8737450004111c027c507ac59ce92cb9fc3783aab51a9d98a3",
+    "tests/test_chuck_architect_future.c": "0d31b5abd3bbc76cce7db76fa08040dcbf4828e10f44027ba60487116396ff86",
+    "tests/test_chuck_architect_mutations.py": "5bbe42317c201303ce87bcc11b5166e34bb1bc3b4ccac57720cbd84ce67523d6",
+    "tests/test_chuck_architect_scenarios.c": "7c2dfd524d6ed86a2518186e21fb934cb60f056977d5558b4c4c091d9314c298",
+    "tests/test_chuck_architect_state.c": "171ae259562c5e2a1a527cfb18debdb558183e20be7a3a19ff0869668da9d9c5",
+    "tests/test_chuck_conditioned_mutations.py": "01827e6f27c53c44db01c9e956dfb4d8fc53eeb9f5cbb19c232e641573b0ccb5",
+    "tests/test_chuck_future_mutations.py": "23852b2421e679061c89dcbde5912aff4bfbc9613d31fd16d3ac23be16cb8de7",
+    "tests/test_chuck_legacy_parity.sh": "4cf353249fbaf175a0df9c7c8b684f47b5b6dba0fccd53a90b1fac80b6042183",
+    "tests/test_chuck_lived.c": "fd1fe7e12b3b91560af3f3f7d46846a6d5706165159f9097dffb54726cb67470",
+    "tests/test_chuck_lived_mutations.py": "5ca46f152b02633bcacfd493282ad58fa1203559569342d76b07ba4916f8bfb3",
+    "tests/test_chuck_scenario_mutations.py": "9c1909ccba509e70e1cb92c59eeb230f03a958fe9b50880055087545a120b23d",
+    "tests/test_conv1d.c": "aa6fecf173d3b2fb96274ec23c1327688689e5ba6e4cb4f2d67033d52d184f67",
+    "tests/test_cuda_decode.c": "0cc29e404945e3ded99a1b81b535ce6f1b95c3eaf6698c013b966b0c081ca1b0",
+    "tests/test_f16_matvec.c": "fa0ac33fc0abdfe25004c8cac8d36ea7a0a21bf26b20482e1b0d4e062bdb6c28",
+    "tests/test_gemma3.c": "23450dca37332f548229c05d530479eca2eb619afd99eabb873a4a212f6ff47c",
+    "tests/test_gguf.c": "e3f5e4d636a377e24f98a08885711d52e892e43a4b8f6998eecffe2e24a2d259",
+    "tests/test_gguf_keys.c": "e5089011374ab9be1de114941ef8a979e3a2ccea28901f1cd733d905113fac68",
+    "tests/test_gguf_q4k_real.c": "8eef4e87c030e1136ff54c0d5b120c641859e42aba4fc1e002312d7d485d82d7",
+    "tests/test_gguf_tokens.c": "97a625ae9168b4fc70e935f4465fb8c55b7a2d13bc34f89a69593c70016a8386",
+    "tests/test_gguf_write.c": "ecac0ca1cde7b4f14bafd7455f33ed260e1c4e96511be6cf4fdbae2a1e98b890",
+    "tests/test_janus_parity.c": "7967633574d10c12870261d156ab359e888b99d5d5a885b143315b0263e157ca",
+    "tests/test_libnotorch_lib.sh": "7a8c7713b120d2d1f6407f29c4ec032c10fd6323211eb4587d4311128ad1452b",
+    "tests/test_logmel.c": "8656241a1f9396b977170a53e95387d50ca1f9e84acdf6d0f98198761ee68e6f",
+    "tests/test_metal_f16.c": "4be64d36fbbf51cb349aa706d47e629b16eb2fd1c629309039c465d01d04a51f",
+    "tests/test_metal_q4k.c": "83a2834897faed758b259a1675a7d5c28dc07c6b0bf6aaf89af5048b75f5db79",
+    "tests/test_multi_decode.c": "483da0eaf39a12d384ab39558d45fe1044adae4f0d662d5b94e11501b2e45fa2",
+    "tests/test_notorch.c": "ba7e01dada38781d85afa54ee1c6312d1c423a4ceed053a8668805f12e96029a",
+    "tests/test_parliament_elect.c": "14de5cba4af0e09ea65a4a1f21a3f0326a7e5a43083c0687ea4177b427dd379b",
+    "tests/test_parliament_inject.c": "c011c90df51fd801d7d0a028d1a58c9e22c097975b0234c6e625a7f27bea4bd1",
+    "tests/test_plan_race.c": "f6e96cd7a5d44027ba76616080b53cb1d053f1db04285bcb1321d2c8dfe83b59",
+    "tests/test_q8_0_rows.c": "d5d8b0537e78b37d0e4c44d79fca5f917a27ad30d875392c4e2a101dffab9a47",
+    "tests/test_qgather.c": "70a6d2c05e437eea352f6b9b5451a7b936b25ce40aaea45168079a48eec97790",
+    "tests/test_qmatmul.c": "2c8f4a3af85f7cd767813e4f196446783b7751f66bf8b41b8bbe53795c574d98",
+    "tests/test_qmatvec.c": "529a180f96ff26437c848a91be430fdbd621822a1c67c43a75f871fe037c9c9c",
+    "tests/test_qmatvec_leak.c": "da70b9a29109fa2906b509adfff2495eca155600de43fddc54a3000e3837eb38",
+    "tests/test_qpool.c": "233371910be8cc65439a5495b76d33e4edaf4af0c993c711b0f5559e6265dce5",
+    "tests/test_quantize.c": "6e2418922ee3330bf969d2fddbb2cf3f75302f4dbfcd4faa63f17cc20691a55a",
+    "tests/test_repeat.c": "c47e38362100effea8013695fc3b631261d5f0aaf0d9de6cc9e5cd82e361bc70",
+    "tests/test_residual.c": "7662da34af81d140cdbc00320c991d64b155c03398ebdbe07b92a12ac87e4433",
+    "tests/test_resonance_parity.c": "00297808a947c3577f9159a52a5858ed2f2da01bcae4d74997a3891afdcbba4c",
+    "tests/test_rrpram_broadcast.c": "65c9f978b31337eda1043804fa87f61cda1ffef7790050ac88a992a69e749f49",
+    "tests/test_rrpram_lr.c": "27e2ac6a805adc35a24f5d746ba09fcbf092c1225f25c5578e3ae01cb7c8e2c1",
+    "tests/test_sigmoid_scale.c": "1d69d4d7810b11fb899df2b60ef86e9156104b5cd82ce2bf69ce6ce6b7d31ed6",
+    "tests/test_simd_correctness.c": "f5675e676332c0bfc547880649b02f4ae3f8fac1d034ceccb8a220f0faf4a079",
+    "tests/test_simd_loss.c": "ccd0da69e2cdc3aa4693ff56e03147a41bd90da789f50d73775c7872b232e1ec",
+    "tests/test_simd_tails.c": "32db6b873ea8f5c39c2e6a0d24359e490767614fb08cd5d41dec34cd092faba7",
+    "tests/test_smollm_tokenizer.c": "e33e8f9b3076094217af98a0d4ffce8a939229f382f2afc6e65fbad5f286b29c",
+    "tests/test_spa_agent.c": "69c448800225511db7f66a3959de98cd366640234c23647bd43767ec9ba86345",
+    "tests/test_spa_agent_durability.c": "49855ecfa9324eaf28ba1b69d1837734b6684fcb014d8bfb980c4db8a3d330ab",
+    "tests/test_spa_agent_future.c": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+    "tests/test_spa_agent_mutations.py": "47c1166aa293f1bfd56f9af3a7afaee3801175bdf07196f5e5e5e3850e512905",
+    "tests/test_spa_agent_repeated.c": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+    "tests/test_spa_agent_state.c": "82c217a802a1a2711cc1781ccbe992688abd7f8e3c06792fa9d65b894dedbaed",
+    "tests/test_spa_future.py": "87fbed5560d6d89c3918fb32e7a9fa9c10e58056677c32d83cddc40bb069784e",
+    "tests/test_spa_future_mutations.py": "d3d583ed2640ccf73d62e1d100b05fee3a190d2c1e5d091c0709bc605686744e",
+    "tests/test_spa_legacy_parity.c": "4d8f0589cf8562e36540bafdfb4aabfacedaf58fa078a6930130e8bac60dc01c",
+    "tests/test_spa_legacy_parity.sh": "e2275989ffa7253d1e967601ae207d4e1ff3069da9a32229c50af6223e40a193",
+    "tests/test_spa_repeated_mutations.py": "7ccf90abe98126e5da41cc8d669281d5fa5aac08d9a8a02c7782044ddce21866",
+    "tests/test_spa_replicates.py": "a2a3e06e8aa9b68382e789b514a1f53afd620d8b62154e10a5687f054b237d32",
+    "tests/test_spa_scenarios.py": "465e2d910f2be06fc97c8e92bdcb7a7c4021e9bae8e59bb659f1c3804e2eb6a2",
+    "tests/test_spa_trace_io.py": "f4cc9893b03d641653a5ca8e4efb7ca37e90fa0717d9b98db2f3980df18c288d",
+    "tests/test_vision.c": "328350ccbddac4257eb36b564faa2f0ec36a2c519b7da4c98859ef2c69adc0eb",
+    "tests/test_wt_expert.c": "5b9b41743e2f8a00c4fa7747780a9a328808cfb3b2df4fd19b0bf89a2f6a7ffb"
+  },
+  "identities_before": {
+    "measured_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "chuck": {
+      "notorch.c": {
+        "measured_sha256": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+        "current_sha256": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+        "identical": true
+      },
+      "notorch.h": {
+        "measured_sha256": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+        "current_sha256": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+        "identical": true
+      },
+      "notorch_simd.h": {
+        "measured_sha256": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+        "current_sha256": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+        "identical": true
+      },
+      "chuck_architect.h": {
+        "measured_sha256": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+        "current_sha256": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+        "identical": true
+      },
+      "chuck_architect_impl.h": {
+        "measured_sha256": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+        "current_sha256": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+        "identical": true
+      },
+      "examples/chuck_architect_train.c": {
+        "measured_sha256": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+        "current_sha256": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+        "identical": true
+      },
+      "examples/chuck_architect_scenarios.h": {
+        "measured_sha256": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+        "current_sha256": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+        "identical": true
+      },
+      "examples/chuck_architect_rollout.h": {
+        "measured_sha256": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+        "current_sha256": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+        "identical": true
+      },
+      "examples/chuck_architect_lived.h": {
+        "measured_sha256": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+        "current_sha256": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+        "identical": true
+      },
+      "examples/chuck_architect_future.c": {
+        "measured_sha256": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+        "current_sha256": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+        "identical": true
+      },
+      "examples/chuck-loss-architect.json": {
+        "measured_sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+        "current_sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/run.py": {
+        "measured_sha256": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+        "current_sha256": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/scenarios/run.py": {
+        "measured_sha256": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+        "current_sha256": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/future/run.py": {
+        "measured_sha256": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+        "current_sha256": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/conditional/run.py": {
+        "measured_sha256": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+        "current_sha256": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/lived/run.py": {
+        "measured_sha256": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+        "current_sha256": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/lived/protocol.json": {
+        "measured_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+        "current_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+        "identical": true
+      }
+    },
+    "incoming_commit": "bbc885d08881ee37d95c8c4c588080661bb49af2",
+    "incoming_changed_count": 53,
+    "shared_exclusions": [
+      ".gitignore",
+      "Makefile",
+      "README.md",
+      "NOTORCHLOG.md"
+    ],
+    "incoming": {
+      "docs/spa-agent.md": {
+        "incoming_sha256": "f74f7647fe78ab6b33236553761628e24c6b51181deaf2ea56ba5bf48ea1373f",
+        "current_sha256": "f74f7647fe78ab6b33236553761628e24c6b51181deaf2ea56ba5bf48ea1373f",
+        "bytes": 10778,
+        "identical": true
+      },
+      "docs/spa-python.md": {
+        "incoming_sha256": "e2394b2821fe8bc5563a558bdf3ba91fe88cf6837c638865145016b0d232e093",
+        "current_sha256": "e2394b2821fe8bc5563a558bdf3ba91fe88cf6837c638865145016b0d232e093",
+        "bytes": 9461,
+        "identical": true
+      },
+      "examples/spa_agent_replicates.c": {
+        "incoming_sha256": "b886d3c9851a366247128a3385c67868b14770d4f7df62fcdae06ea63b82bec6",
+        "current_sha256": "b886d3c9851a366247128a3385c67868b14770d4f7df62fcdae06ea63b82bec6",
+        "bytes": 26488,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/README.md": {
+        "incoming_sha256": "33398c324747d93c4024b2d2371db872f4a6ab2cb0c470fe8028fbc749989d29",
+        "current_sha256": "33398c324747d93c4024b2d2371db872f4a6ab2cb0c470fe8028fbc749989d29",
+        "bytes": 18357,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/archive_verification.json": {
+        "incoming_sha256": "3c8d7beae734107d14613b0f9377df3417690b3b47c2f791a6eae45c9cf01cb9",
+        "current_sha256": "3c8d7beae734107d14613b0f9377df3417690b3b47c2f791a6eae45c9cf01cb9",
+        "bytes": 821,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/audit.json": {
+        "incoming_sha256": "a4e9f16c05e617105235c7a709eea58ca7166adc30765a88587659e16d4a27d7",
+        "current_sha256": "a4e9f16c05e617105235c7a709eea58ca7166adc30765a88587659e16d4a27d7",
+        "bytes": 25616,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/audit.py": {
+        "incoming_sha256": "a608692f3404364f295bff9df2923a9fcd4dc0db3fd29f79c640e2a7e1d7db08",
+        "current_sha256": "a608692f3404364f295bff9df2923a9fcd4dc0db3fd29f79c640e2a7e1d7db08",
+        "bytes": 15963,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/conditioning.json": {
+        "incoming_sha256": "e790afc0eaf94fdbf5957579e8a624bd9f9933c7563890ecf741c59dcf2cf6c0",
+        "current_sha256": "e790afc0eaf94fdbf5957579e8a624bd9f9933c7563890ecf741c59dcf2cf6c0",
+        "bytes": 53049,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/conditioning.py": {
+        "incoming_sha256": "381ac87691378c649f86cbdebbb5b757a98ff59304f6c3ce3b764ca7ffc8eeee",
+        "current_sha256": "381ac87691378c649f86cbdebbb5b757a98ff59304f6c3ce3b764ca7ffc8eeee",
+        "bytes": 14800,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/core_mutations.json": {
+        "incoming_sha256": "08635b7ccc2fbcaf47149cad273e9a7e39025e4546cc205c3e044fc0f4142aad",
+        "current_sha256": "08635b7ccc2fbcaf47149cad273e9a7e39025e4546cc205c3e044fc0f4142aad",
+        "bytes": 5940,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/core_mutations_before_main.json": {
+        "incoming_sha256": "1530a974053afdfa83d38121a77a64d8c8728c25248919c550b100131ad31f99",
+        "current_sha256": "1530a974053afdfa83d38121a77a64d8c8728c25248919c550b100131ad31f99",
+        "bytes": 5940,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/dataset_recovery.json": {
+        "incoming_sha256": "78e33a3ef31fcafa9d4c5a2661c3aebfd3427017051506cf9a2ce50f6210aa91",
+        "current_sha256": "78e33a3ef31fcafa9d4c5a2661c3aebfd3427017051506cf9a2ce50f6210aa91",
+        "bytes": 1910,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/diagnosis.json": {
+        "incoming_sha256": "c32f512db7a309c61c5ab76fa89256f2ba8a722356690c8053266b2966683291",
+        "current_sha256": "c32f512db7a309c61c5ab76fa89256f2ba8a722356690c8053266b2966683291",
+        "bytes": 481364,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/diagnosis.py": {
+        "incoming_sha256": "4c3924b15a95c6a20c17bbcb2272a36fcdf1aa6cbcc39529c6b42d6004d115e5",
+        "current_sha256": "4c3924b15a95c6a20c17bbcb2272a36fcdf1aa6cbcc39529c6b42d6004d115e5",
+        "bytes": 23443,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/durability_failure.json": {
+        "incoming_sha256": "a7a566bed07f4218113b5ab7805f19993b9da142ee6eeeeb4b718073d02f9804",
+        "current_sha256": "a7a566bed07f4218113b5ab7805f19993b9da142ee6eeeeb4b718073d02f9804",
+        "bytes": 11132,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/durability_failure2.json": {
+        "incoming_sha256": "6b0d801eb2d66a2d1c8f2295a9d0e824ae6b402109c599a760169034fee506ff",
+        "current_sha256": "6b0d801eb2d66a2d1c8f2295a9d0e824ae6b402109c599a760169034fee506ff",
+        "bytes": 8441,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/durability_failure3.json": {
+        "incoming_sha256": "a251057169ddc22117de831e77176cc2d131c6b325196534483bc47eb9b7b90d",
+        "current_sha256": "a251057169ddc22117de831e77176cc2d131c6b325196534483bc47eb9b7b90d",
+        "bytes": 2642,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/finalize.py": {
+        "incoming_sha256": "5c2cb784cf397ba8408ba77cc881f46c085ec149f0f9735ddee29172bbe544ec",
+        "current_sha256": "5c2cb784cf397ba8408ba77cc881f46c085ec149f0f9735ddee29172bbe544ec",
+        "bytes": 11248,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/finish.py": {
+        "incoming_sha256": "dfbbfc299d0a561309634d8c0fdb594695733d71f8a3436a4c0e1f7a58150702",
+        "current_sha256": "dfbbfc299d0a561309634d8c0fdb594695733d71f8a3436a4c0e1f7a58150702",
+        "bytes": 10969,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/host_trace_recovery.json": {
+        "incoming_sha256": "dafff24b83c8653647ed3d3480a2261bce63809562bcf8cecff53e761cddd6d6",
+        "current_sha256": "dafff24b83c8653647ed3d3480a2261bce63809562bcf8cecff53e761cddd6d6",
+        "bytes": 1734,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/merge_verification.json": {
+        "incoming_sha256": "89a46feeaeae2527d46feda77bea3fd82276dc95edcea98863544fb0388e2090",
+        "current_sha256": "89a46feeaeae2527d46feda77bea3fd82276dc95edcea98863544fb0388e2090",
+        "bytes": 122046,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/policy.py": {
+        "incoming_sha256": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca",
+        "current_sha256": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca",
+        "bytes": 19319,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/preflight_notes.json": {
+        "incoming_sha256": "130677b921788f1005bfbd32aba6d47930362a9c84d8e2c6a63503cb52149b73",
+        "current_sha256": "130677b921788f1005bfbd32aba6d47930362a9c84d8e2c6a63503cb52149b73",
+        "bytes": 1302,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/protocol.json": {
+        "incoming_sha256": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75",
+        "current_sha256": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75",
+        "bytes": 16304,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/publication.json": {
+        "incoming_sha256": "6f8e723c8d68738f6c457539a9e288a1e0c8f284664598bb12130f671d4e1f7f",
+        "current_sha256": "6f8e723c8d68738f6c457539a9e288a1e0c8f284664598bb12130f671d4e1f7f",
+        "bytes": 3350,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/python.json": {
+        "incoming_sha256": "ba5e6eccc1623828cc274e62821795db69b862c03f5a77570c92b2ae591cbe7b",
+        "current_sha256": "ba5e6eccc1623828cc274e62821795db69b862c03f5a77570c92b2ae591cbe7b",
+        "bytes": 3465,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/python_initial_fixture_failure.json": {
+        "incoming_sha256": "e645ad1dca4aac67ee0047fee5d39b0281461693cf828589f4de1d0dae1426c7",
+        "current_sha256": "e645ad1dca4aac67ee0047fee5d39b0281461693cf828589f4de1d0dae1426c7",
+        "bytes": 3991,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/raw_manifest.json": {
+        "incoming_sha256": "5c7ba4c79f8eceeb9d2bafb8812739d9289afd4eb278e6fe8f0f495f74b7b407",
+        "current_sha256": "5c7ba4c79f8eceeb9d2bafb8812739d9289afd4eb278e6fe8f0f495f74b7b407",
+        "bytes": 887,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/raw_traces.jsonl.gz.part-00": {
+        "incoming_sha256": "fd029dc82a718aa4a38e1181b44e33f0324cd637a627fcd14c5ea9e4fff64604",
+        "current_sha256": "fd029dc82a718aa4a38e1181b44e33f0324cd637a627fcd14c5ea9e4fff64604",
+        "bytes": 8011776,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/raw_traces.jsonl.gz.part-01": {
+        "incoming_sha256": "41390ffb7598c53d98536116e1266f3f7efc90b63447d7a8134f5b5310568c51",
+        "current_sha256": "41390ffb7598c53d98536116e1266f3f7efc90b63447d7a8134f5b5310568c51",
+        "bytes": 8011776,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/raw_traces.jsonl.gz.part-02": {
+        "incoming_sha256": "0d675606bab2c35b328cb6b2906c6eb8d1505342fc51bd1d457573b4c228468a",
+        "current_sha256": "0d675606bab2c35b328cb6b2906c6eb8d1505342fc51bd1d457573b4c228468a",
+        "bytes": 2420831,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/receipts.json": {
+        "incoming_sha256": "de80eb47b78ce0a4474decb1a5317b26d3c27400756eef3829b2dc7d2d2296de",
+        "current_sha256": "de80eb47b78ce0a4474decb1a5317b26d3c27400756eef3829b2dc7d2d2296de",
+        "bytes": 10403967,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/recover.py": {
+        "incoming_sha256": "f33050372060e7f6e60f6769aeefa9bff84cf6049312a6c6f82ca2b78ac457c1",
+        "current_sha256": "f33050372060e7f6e60f6769aeefa9bff84cf6049312a6c6f82ca2b78ac457c1",
+        "bytes": 20030,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/recovery.json": {
+        "incoming_sha256": "d6c26bbd2cf5322922d12291fbaebb808caae25eb2f3a7cde777959cde473da9",
+        "current_sha256": "d6c26bbd2cf5322922d12291fbaebb808caae25eb2f3a7cde777959cde473da9",
+        "bytes": 3387,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/result_audit.json": {
+        "incoming_sha256": "38c5abed77993a52adc57453e7b862f7c3fdb407b5e441c25a4f3ee687cb1be6",
+        "current_sha256": "38c5abed77993a52adc57453e7b862f7c3fdb407b5e441c25a4f3ee687cb1be6",
+        "bytes": 119361,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/run.py": {
+        "incoming_sha256": "046b1bea1f0676b516afa1125a69d47c401b19e33ef838ad12c2d2be95cdd257",
+        "current_sha256": "046b1bea1f0676b516afa1125a69d47c401b19e33ef838ad12c2d2be95cdd257",
+        "bytes": 46543,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/traces.py": {
+        "incoming_sha256": "b9881a0857790ad0cbcde7d5d12bfb40264b67a21cc4b5bc95ee66228e75d611",
+        "current_sha256": "b9881a0857790ad0cbcde7d5d12bfb40264b67a21cc4b5bc95ee66228e75d611",
+        "bytes": 3097,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/v1.json": {
+        "incoming_sha256": "f000a50a40e58accba9bcbc8ee71580c64bd02aa49f4a7a515a30d0b5ce5de18",
+        "current_sha256": "f000a50a40e58accba9bcbc8ee71580c64bd02aa49f4a7a515a30d0b5ce5de18",
+        "bytes": 4351,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/verification.json": {
+        "incoming_sha256": "908ec6a4f7756bf87e801cf3470d33a53f8e93ddfee186509ac35f4c504e83e6",
+        "current_sha256": "908ec6a4f7756bf87e801cf3470d33a53f8e93ddfee186509ac35f4c504e83e6",
+        "bytes": 91342,
+        "identical": true
+      },
+      "python/SPA.py": {
+        "incoming_sha256": "6620ee7b7333fd9956022e6b1460cc8991966d42a16046a33b462ee77d19c86f",
+        "current_sha256": "6620ee7b7333fd9956022e6b1460cc8991966d42a16046a33b462ee77d19c86f",
+        "bytes": 22901,
+        "identical": true
+      },
+      "python/test_spa_binding.py": {
+        "incoming_sha256": "44ca4f535ab28652d267fa831d51e416b0d2566c34318994aebe55d55d269d16",
+        "current_sha256": "44ca4f535ab28652d267fa831d51e416b0d2566c34318994aebe55d55d269d16",
+        "bytes": 19129,
+        "identical": true
+      },
+      "spa_agent.c": {
+        "incoming_sha256": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+        "current_sha256": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+        "bytes": 51242,
+        "identical": true
+      },
+      "spa_agent.h": {
+        "incoming_sha256": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730",
+        "current_sha256": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730",
+        "bytes": 13018,
+        "identical": true
+      },
+      "spa_binding.c": {
+        "incoming_sha256": "5bbab8e95e937361dbf1c25d2c4b4296878977493eb7f0c68033e9fa981dbe84",
+        "current_sha256": "5bbab8e95e937361dbf1c25d2c4b4296878977493eb7f0c68033e9fa981dbe84",
+        "bytes": 6338,
+        "identical": true
+      },
+      "tests/spa_layout.c": {
+        "incoming_sha256": "8748bf036e59c053ce95e5ceda6682e03ce6fcc773da09037cc515ab482c845b",
+        "current_sha256": "8748bf036e59c053ce95e5ceda6682e03ce6fcc773da09037cc515ab482c845b",
+        "bytes": 5944,
+        "identical": true
+      },
+      "tests/spa_replicates_fixture.c": {
+        "incoming_sha256": "00ef2c829b3a03147a680b334e34935e66412407ec3de2cbe1e76f10ee754889",
+        "current_sha256": "00ef2c829b3a03147a680b334e34935e66412407ec3de2cbe1e76f10ee754889",
+        "bytes": 17112,
+        "identical": true
+      },
+      "tests/test_spa_agent_repeated.c": {
+        "incoming_sha256": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+        "current_sha256": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+        "bytes": 18021,
+        "identical": true
+      },
+      "tests/test_spa_repeated_mutations.py": {
+        "incoming_sha256": "7ccf90abe98126e5da41cc8d669281d5fa5aac08d9a8a02c7782044ddce21866",
+        "current_sha256": "7ccf90abe98126e5da41cc8d669281d5fa5aac08d9a8a02c7782044ddce21866",
+        "bytes": 6835,
+        "identical": true
+      },
+      "tests/test_spa_replicates.py": {
+        "incoming_sha256": "a2a3e06e8aa9b68382e789b514a1f53afd620d8b62154e10a5687f054b237d32",
+        "current_sha256": "a2a3e06e8aa9b68382e789b514a1f53afd620d8b62154e10a5687f054b237d32",
+        "bytes": 12163,
+        "identical": true
+      }
+    },
+    "passed": true
+  },
+  "recipe": [
+    "./notorch_test",
+    "./test_bitnet_ops",
+    "./test_spa_agent",
+    "./test_spa_agent_state",
+    "./test_spa_agent_durability",
+    "./test_spa_agent_future",
+    "./test_spa_agent_repeated",
+    "./test_chuck_architect",
+    "./test_chuck_actions_edge",
+    "sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state",
+    "./test_chuck_architect_scenarios",
+    "./test_vision",
+    "./test_chuck_architect_future",
+    "./test_chuck_architect_conditioned",
+    "./test_chuck_architect_durability",
+    "./test_chuck_lived",
+    "./test_conv1d",
+    "./test_logmel",
+    "NT_LOGMEL_THREADS=1 ./test_logmel",
+    "./test_qpool",
+    "NT_QMV_CHUNKS=1 ./test_qpool",
+    "NT_QMV_CHUNKS=64 ./test_qpool",
+    "NT_QMV_SPIN=0 ./test_qpool",
+    "./test_qmatmul",
+    "./test_quantize",
+    "./test_gguf_write",
+    "./test_gguf_write rss19",
+    "./test_gguf_write rss91",
+    "./test_gguf_keys",
+    "./test_qmatvec_leak",
+    "./test_affinity",
+    "NT_QMV_BIG_ONLY=0 ./test_affinity off",
+    "./test_affinity narrowed",
+    "NT_QMV_PIN=0 ./test_affinity nopin",
+    "./test_plan_race",
+    "./test_wt_expert",
+    "./test_residual",
+    "./test_multi_decode",
+    "./test_gemma3",
+    "./test_smollm_tokenizer",
+    "./test_qgather",
+    "NT_QMV_CHUNKS=1 ./test_qgather",
+    "./test_f16_matvec",
+    "./test_q8_0_rows"
+  ],
+  "command_count": 44,
+  "builds": [
+    {
+      "command": [
+        "make",
+        "-j2",
+        "-B",
+        "shared",
+        "lib",
+        "chuck_architect_train",
+        "chuck_architect_future",
+        "spa_agent_demo",
+        "spa_agent_future",
+        "spa_agent_replicates",
+        "test_chuck_lived",
+        "test_spa_agent_future",
+        "test_spa_agent_repeated",
+        "notorch_test",
+        "test_spa_agent",
+        "test_spa_agent_state",
+        "test_spa_agent_durability",
+        "test_bitnet_ops",
+        "test_chuck_architect",
+        "test_chuck_actions_edge",
+        "test_chuck_architect_state",
+        "test_chuck_architect_scenarios",
+        "test_chuck_architect_future",
+        "test_chuck_architect_conditioned",
+        "test_chuck_architect_durability",
+        "test_vision",
+        "test_qpool",
+        "test_qmatmul",
+        "test_quantize",
+        "test_gguf_write",
+        "test_gguf_keys",
+        "test_qmatvec_leak",
+        "test_affinity",
+        "test_plan_race",
+        "test_wt_expert",
+        "test_qgather",
+        "test_f16_matvec",
+        "test_q8_0_rows",
+        "test_conv1d",
+        "test_logmel",
+        "test_residual",
+        "test_multi_decode",
+        "test_gemma3",
+        "test_smollm_tokenizer",
+        "BLAS_FLAGS=",
+        "BLAS_LIBS="
+      ],
+      "returncode": 0,
+      "seconds": 73.70756865700241,
+      "log": "build.log",
+      "bytes": 71841,
+      "sha256": "ec2a968b998d1b6471632016b8e7a0901434dd8e082d51a02b1d91632f121925",
+      "result_lines": [
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o test_spa_agent_future tests/test_spa_agent_future.c spa_agent.c notorch.c -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o test_spa_agent_repeated tests/test_spa_agent_repeated.c spa_agent.c notorch.c -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o test_spa_agent tests/test_spa_agent.c spa_agent.c notorch.c -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -Dcalloc=spa_test_calloc -c notorch.c -o tests/spa_state_notorch.o",
+        "\t-Dopen=spa_durability_open -Dfstat=spa_durability_fstat \\",
+        "\t-Dmkstemp=spa_durability_mkstemp -Dfsync=spa_durability_fsync \\",
+        "\t-Drename=spa_durability_rename -Dclose=spa_durability_close -c spa_agent.c -o tests/spa_durability_agent.o",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect tests/test_chuck_architect.c notorch.c -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_actions_edge tests/test_chuck_actions_edge.c notorch.c -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect_state tests/test_chuck_architect_state.c notorch.c -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect_scenarios tests/test_chuck_architect_scenarios.c notorch.c -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect_future tests/test_chuck_architect_future.c notorch.c -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect_conditioned tests/test_chuck_architect_conditioned.c notorch.c -lm ",
+        "\t-Dopen=chuck_durability_open -Dfstat=chuck_durability_fstat \\",
+        "\t-Dmkstemp=chuck_durability_mkstemp -Dfsync=chuck_durability_fsync \\",
+        "\t-Drename=chuck_durability_rename -Dclose=chuck_durability_close -c notorch.c -o tests/chuck_durability_notorch.o",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o test_spa_agent_state tests/test_spa_agent_state.c spa_agent.c tests/spa_state_notorch.o -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o test_chuck_architect_durability tests/test_chuck_architect_durability.c tests/chuck_durability_notorch.o -lm ",
+        "ar rcs libnotorch.a notorch.o gguf.o spa_agent.o spa_binding.o",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o chuck_architect_train examples/chuck_architect_train.c ./libnotorch.a -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -I. -o chuck_architect_future examples/chuck_architect_future.c ./libnotorch.a -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o spa_agent_demo examples/spa_agent_demo.c ./libnotorch.a -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o spa_agent_future examples/spa_agent_future.c ./libnotorch.a -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o spa_agent_replicates examples/spa_agent_replicates.c ./libnotorch.a -lm ",
+        "cc -O2 -Wall -Wextra -std=gnu11 -pthread -I. -mavx2 -mfma -mf16c  -o test_spa_agent_durability tests/test_spa_agent_durability.c tests/spa_durability_agent.o ./libnotorch.a -lm "
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "command": "./notorch_test",
+      "returncode": 0,
+      "seconds": 0.006072549000236904,
+      "log": "cpu_01.log",
+      "bytes": 2068,
+      "sha256": "5ef88967cde36ce668f15eeb6b9a6f55e83f3a278d62bf44006c30ce04effba6",
+      "result_lines": [
+        "  PASS: schedule_step",
+        "  PASS: schedule_with_training",
+        "  PASS: nan_guard_clean",
+        "  PASS: nan_guard_detect",
+        "  PASS: dropout",
+        "  PASS: layernorm",
+        "  PASS: gradcheck_layernorm",
+        "  PASS: gradcheck_gelu",
+        "  PASS: profiler",
+        "  PASS: training_loop",
+        "  PASS: seq_training_loop",
+        "  PASS: attention_training",
+        "  PASS: chuck_convergence",
+        "  PASS: gradcheck_cross_entropy",
+        "  PASS: gradcheck_silu",
+        "  PASS: gradcheck_rmsnorm",
+        "  PASS: gradcheck_softmax",
+        "  PASS: gradcheck_linear",
+        "  PASS: gradcheck_seq_linear",
+        "  PASS: gradcheck_causal_attention",
+        "  PASS: gradcheck_embedding",
+        "  PASS: gradcheck_rope",
+        "  PASS: gradcheck_geglu",
+        "  PASS: gradcheck_arithmetic",
+        "Results: 51 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "./test_bitnet_ops",
+      "returncode": 0,
+      "seconds": 0.0019723549994523637,
+      "log": "cpu_02.log",
+      "bytes": 299,
+      "sha256": "6b1615ffba99e2c39e4486e982cf407901f21e70fba8ddf4bcd265848a6a1469",
+      "result_lines": [
+        "═══ 118 tests, 0 failures ═══"
+      ]
+    },
+    {
+      "command": "./test_spa_agent",
+      "returncode": 0,
+      "seconds": 0.03124983199813869,
+      "log": "cpu_03.log",
+      "bytes": 338,
+      "sha256": "e6c7f57f7e6efcc6da2bc0497d8c7013027adc7e6738df6f9849139eb1907ef0",
+      "result_lines": [
+        "PASS legacy",
+        "PASS config",
+        "PASS actions",
+        "PASS perception",
+        "PASS deterministic",
+        "PASS credit",
+        "PASS sequence",
+        "SPA_IMITATION_HELDOUT matched=108 total=108 score_ratio_margin=.2",
+        "SPA_IMITATION labels=9 matched=9 updates=10800 first_loss=0.830604666 last_loss=0.000535224142",
+        "PASS imitation",
+        "PASS memory",
+        "PASS persistence",
+        "SPA_AGENT_OK gates=10 checks=12618"
+      ]
+    },
+    {
+      "command": "./test_spa_agent_state",
+      "returncode": 0,
+      "seconds": 0.006387102999724448,
+      "log": "cpu_04.log",
+      "bytes": 196,
+      "sha256": "8fbec4f97b0e4e1e0c608d94ff8c0f0ecb7f20643749561085503e20a181ceaa",
+      "result_lines": [
+        "PASS checksum-valid malformed lives",
+        "PASS output aliases and exact reset",
+        "PASS counter limits",
+        "PASS native allocation failure",
+        "PASS atomic failed save",
+        "SPA_AGENT_STATE 5/5 groups, 78 checks, 0 skipped"
+      ]
+    },
+    {
+      "command": "./test_spa_agent_durability",
+      "returncode": 0,
+      "seconds": 0.00343778499882319,
+      "log": "cpu_05.log",
+      "bytes": 495,
+      "sha256": "0ca6316d2479dcb8e40bf7b0abad5d59fe67323d5b1198990e44e0772724be94",
+      "result_lines": [
+        "PASS durable successful replacement",
+        "PASS directory open failure before mutation",
+        "PASS directory stat failure before mutation",
+        "PASS non-directory refused before mutation",
+        "PASS temporary creation failure",
+        "PASS file sync failure preserves prior file",
+        "PASS rename failure preserves prior file",
+        "PASS directory sync failure reports installed replacement",
+        "PASS directory close failure reports installed replacement",
+        "PASS relative path uses current parent directory",
+        "SPA_AGENT_DURABILITY 10/10 cases, 111 checks"
+      ]
+    },
+    {
+      "command": "./test_spa_agent_future",
+      "returncode": 0,
+      "seconds": 0.008391772000322817,
+      "log": "cpu_06.log",
+      "bytes": 307,
+      "sha256": "4f7c95c178c12f642ef5b4d11860fad3443837eb33d97d4391e399f72cb11579",
+      "result_lines": [
+        "PASS capture",
+        "PASS validation",
+        "PASS gradient",
+        "PASS masks",
+        "PASS credit",
+        "PASS persistence",
+        "PASS SPA future: 6 groups, 6277 checks"
+      ]
+    },
+    {
+      "command": "./test_spa_agent_repeated",
+      "returncode": 0,
+      "seconds": 0.007463507001375547,
+      "log": "cpu_07.log",
+      "bytes": 274,
+      "sha256": "2b970755c2153bb6963981346a0a817ae1e31d372eb3eb34947dd9ea0affb1c7",
+      "result_lines": [
+        "PASS parity",
+        "PASS validation",
+        "PASS aggregate",
+        "PASS gradient",
+        "PASS persistence",
+        "PASS SPA repeated: 5 groups, 3457 checks"
+      ]
+    },
+    {
+      "command": "./test_chuck_architect",
+      "returncode": 0,
+      "seconds": 0.003231393002351979,
+      "log": "cpu_08.log",
+      "bytes": 168,
+      "sha256": "e2d06ba3a39411d5acbc78e62daa90c7fcb08a07d8390a10c697a306e22da5a3",
+      "result_lines": [
+        "PASS legacy",
+        "PASS observation",
+        "PASS actions",
+        "PASS action_rejection",
+        "PASS configuration",
+        "PASS policy_transactions",
+        "PASS credit",
+        "PASS resume",
+        "Chuck Architect: 8 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "./test_chuck_actions_edge",
+      "returncode": 0,
+      "seconds": 0.0030363849982677493,
+      "log": "cpu_09.log",
+      "bytes": 191,
+      "sha256": "970d74a11d1a5e5b2b78a623912ff5089f97b2d96f6f9e787588d76cc97edf6a",
+      "result_lines": [
+        "PASS empty-and-frozen",
+        "PASS gradient-refusals",
+        "PASS local-state-refusals",
+        "PASS controls-and-noise",
+        "PASS boundary-counters",
+        "PASS full-parameter-shapes",
+        "CHUCK_ACTIONS_EDGE groups=6/6 assertions=5196"
+      ]
+    },
+    {
+      "command": "sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state",
+      "returncode": 0,
+      "seconds": 1.093646692999755,
+      "log": "cpu_10.log",
+      "bytes": 174,
+      "sha256": "a99f7f187408167fad8bbbcd28c43d4736a3998339b2f6e898349fda2b025454",
+      "result_lines": [
+        "PASS numeric_locales",
+        "PASS hostile_lives",
+        "PASS pending_feedback",
+        "Chuck state: 3 passed, 0 failed, 106 checks, 0 locale skips"
+      ]
+    },
+    {
+      "command": "./test_chuck_architect_scenarios",
+      "returncode": 0,
+      "seconds": 0.05038545199931832,
+      "log": "cpu_11.log",
+      "bytes": 512,
+      "sha256": "694c6c2ffbc94f0ef76172c7ff4e3d12b84f6712712b865bdb3cd20a25a2fa26",
+      "result_lines": [
+        "PASS mixed_replay",
+        "PASS interruptions",
+        "PASS interleaved_lives",
+        "PASS mode_transitions",
+        "PASS temporal_readout",
+        "PASS masked_exploration",
+        "Chuck scenarios: 6 passed, 0 failed, 4672 selected/executed transitions"
+      ]
+    },
+    {
+      "command": "./test_vision",
+      "returncode": 0,
+      "seconds": 0.006966105000174139,
+      "log": "cpu_12.log",
+      "bytes": 3165,
+      "sha256": "ead5065d8106990b4c3f8c0a553d0b8e1df258df3d25fa7176a564078d0c3b51",
+      "result_lines": [
+        "  PASS: conv out[0,0] = 1+2+4+5 = 12",
+        "  PASS: conv out[0,1] = 2+3+5+6 = 16",
+        "  PASS: conv out[1,0] = 4+5+7+8 = 24",
+        "  PASS: conv out[1,1] = 5+6+8+9 = 28",
+        "  PASS: conv + bias 10 -> out[0,0] = 22",
+        "  PASS: nt_group_norm returns 0",
+        "  PASS: gn 2grp ch0[0] ~ -1",
+        "  PASS: gn 2grp ch0[1] ~ +1",
+        "  PASS: gn 2grp ch1[0] ~ -1",
+        "  PASS: gn 2grp ch1[1] ~ +1",
+        "  PASS: gn 1grp affine [0] = -1.683",
+        "  PASS: gn 1grp affine [3] =  3.683",
+        "  PASS: up[0,0] = 1",
+        "  PASS: up[0,3] = 2",
+        "  PASS: up[1,1] = 1",
+        "  PASS: up[2,0] = 3",
+        "  PASS: up[3,3] = 4",
+        "  PASS: nt_attention returns 0",
+        "  PASS: attn out[0,0]",
+        "  PASS: attn out[0,1]",
+        "  PASS: attn out[1,0]",
+        "  PASS: attn out[1,1]",
+        "  PASS: cross-attn out[0]",
+        "  PASS: cross-attn out[1]",
+        "Results: 73 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "./test_chuck_architect_future",
+      "returncode": 0,
+      "seconds": 0.003980112000135705,
+      "log": "cpu_13.log",
+      "bytes": 227,
+      "sha256": "5ec0b6e92a8620a7dcb434047fee25a31838fb0515a2ba2e92d7701c3693a800",
+      "result_lines": [
+        "PASS measured_reversal",
+        "PASS refusals",
+        "PASS nonfinite_alternatives",
+        "PASS gradient_and_determinism",
+        "PASS pending_and_online",
+        "PASS save_resume",
+        "CHUCK_FUTURE groups=6/6 checks=647"
+      ]
+    },
+    {
+      "command": "./test_chuck_architect_conditioned",
+      "returncode": 0,
+      "seconds": 0.010832264000782743,
+      "log": "cpu_14.log",
+      "bytes": 311,
+      "sha256": "0d7bc35251934f58b5b306e60d9b21dc6c1b89b3627e382c17a5391355633559",
+      "result_lines": [
+        "PASS conditioned_scale",
+        "PASS conditioned_choice",
+        "PASS conditioned_refusals",
+        "PASS nonfinite_alternatives",
+        "PASS frozen_feedback",
+        "PASS frozen_refusals_and_nonfinite",
+        "PASS deterministic_fit_resume",
+        "CHUCK_CONDITIONED groups=7/7 checks=2474"
+      ]
+    },
+    {
+      "command": "./test_chuck_architect_durability",
+      "returncode": 0,
+      "seconds": 0.0044379520004440565,
+      "log": "cpu_15.log",
+      "bytes": 501,
+      "sha256": "ec29baa8a4c3a676c1d051b542e614b987c86b85d1de4a24af544f7980ab1aae",
+      "result_lines": [
+        "PASS durable successful replacement",
+        "PASS directory open failure before mutation",
+        "PASS directory stat failure before mutation",
+        "PASS non-directory refused before mutation",
+        "PASS temporary creation failure",
+        "PASS file sync failure preserves prior file",
+        "PASS rename failure preserves prior file",
+        "PASS directory sync failure reports installed replacement",
+        "PASS directory close failure reports installed replacement",
+        "PASS relative path uses current parent directory",
+        "CHUCK_ARCHITECT_DURABILITY 10/10 cases, 111 checks"
+      ]
+    },
+    {
+      "command": "./test_chuck_lived",
+      "returncode": 0,
+      "seconds": 0.0032028400019044057,
+      "log": "cpu_16.log",
+      "bytes": 125,
+      "sha256": "690707fab97fad6e0719c31a57921b708e43593a842a4a28d6fe45fcaaa369ec",
+      "result_lines": [
+        "PASS selected_equivalence",
+        "PASS unselected_resume",
+        "PASS refusals",
+        "PASS nonfinite_consequences",
+        "CHUCK_LIVED groups=4/4 checks=292"
+      ]
+    },
+    {
+      "command": "./test_conv1d",
+      "returncode": 0,
+      "seconds": 0.9401508420014579,
+      "log": "cpu_17.log",
+      "bytes": 2187,
+      "sha256": "a79b7bf64c16c03caaedc509580e4f132384289eaa57af097a8da57134302ddb",
+      "result_lines": [
+        "  PASS conv1d Cin=1 Lin=16 Cout=1 K=3 s=1 p=1 bias=0 vs the triple loop — max|d| = 5.960e-08 at 6, limit 3.000e-07 (3 terms)",
+        "  PASS conv1d Cin=4 Lin=32 Cout=8 K=3 s=1 p=1 bias=1 vs the triple loop — max|d| = 4.768e-07 at 18, limit 1.200e-06 (12 terms)",
+        "  PASS conv1d Cin=4 Lin=32 Cout=8 K=3 s=2 p=1 bias=1 vs the triple loop — max|d| = 4.768e-07 at 29, limit 1.200e-06 (12 terms)",
+        "  PASS conv1d Cin=3 Lin=17 Cout=5 K=5 s=1 p=2 bias=1 vs the triple loop — max|d| = 2.980e-07 at 4, limit 1.500e-06 (15 terms)",
+        "  PASS conv1d Cin=3 Lin=17 Cout=5 K=5 s=3 p=2 bias=0 vs the triple loop — max|d| = 2.384e-07 at 4, limit 1.500e-06 (15 terms)",
+        "  PASS conv1d Cin=8 Lin=64 Cout=16 K=1 s=1 p=0 bias=1 vs the triple loop — max|d| = 2.980e-07 at 540, limit 8.000e-07 (8 terms)",
+        "  PASS conv1d Cin=16 Lin=100 Cout=32 K=7 s=2 p=3 bias=1 vs the triple loop — max|d| = 3.815e-06 at 156, limit 1.120e-05 (112 terms)",
+        "  PASS conv1d Cin=80 Lin=300 Cout=384 K=3 s=1 p=1 bias=1 vs the triple loop — max|d| = 1.526e-05 at 83183, limit 2.400e-05 (240 terms)",
+        "  PASS conv1d Cin=384 Lin=300 Cout=384 K=3 s=2 p=1 bias=1 vs the triple loop — max|d| = 5.341e-05 at 14925, limit 1.152e-04 (1152 terms)",
+        "  PASS conv1d_f16cols Cin=4 Lin=32 Cout=8 K=3 s=1 p=1 bias=1 vs the triple loop — max|d| = 4.768e-07 at 146, limit 1.200e-06 (12 terms)",
+        "  PASS conv1d_f16cols Cin=80 Lin=300 Cout=384 K=3 s=1 p=1 bias=1 vs the triple loop — max|d| = 1.717e-05 at 75757, limit 2.400e-05 (240 terms)",
+        "  PASS conv1d_f16cols Cin=384 Lin=300 Cout=384 K=3 s=2 p=1 bias=1 vs the triple loop — max|d| = 6.485e-05 at 44946, limit 1.152e-04 (1152 terms)",
+        "  PASS f16 columns change the result — max|d| vs f32 columns = 8.316e-04 at 60 (zero would mean the rounding never ran)",
+        "  PASS f16 columns stay within an f16 mantissa of the f32 path — 8.316e-04 < 1e-2",
+        "  PASS nt_im2col_1d lays taps out as row (c*K + k) across output positions",
+        "  PASS nt_im2col_1d zeroes the taps that fall outside the signal",
+        "  PASS a kernel longer than the signal is refused",
+        "  PASS stride 0 is refused",
+        "  PASS negative padding is refused",
+        "  PASS a NULL weight is refused",
+        "Results: 20 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "./test_logmel",
+      "returncode": 0,
+      "seconds": 0.08446890000050189,
+      "log": "cpu_18.log",
+      "bytes": 2040,
+      "sha256": "dfae60404e9610cb45e1535df55d899db6261301e9ba34670e46a0baf604e22d",
+      "result_lines": [
+        "  PASS periodic Hann peaks at 1 in the middle — w[200] = 1.000000",
+        "  PASS periodic Hann is symmetric about n/2 — w[i] == w[n-i]",
+        "  PASS periodic Hann does NOT return to zero at n-1 (w[399] = 6.169081e-05); the symmetric window does, and is a different window",
+        "  PASS nt_stft n_fft=400 hop=160 frames=12 window=1 vs a direct DFT — worst relative 3.779e-07 at frame 1 bin 48, limit 1e-05",
+        "  PASS nt_stft n_fft=400 hop=160 frames=12 window=0 vs a direct DFT — worst relative 3.410e-07 at frame 7 bin 191, limit 1e-05",
+        "  PASS nt_stft n_fft=512 hop=256 frames=8 window=1 vs a direct DFT — worst relative 3.168e-07 at frame 5 bin 49, limit 1e-05",
+        "  PASS nt_stft n_fft=256 hop=128 frames=8 window=1 vs a direct DFT — worst relative 2.685e-07 at frame 1 bin 62, limit 1e-05",
+        "  PASS nt_stft n_fft=480 hop=160 frames=6 window=1 vs a direct DFT — worst relative 2.341e-07 at frame 0 bin 202, limit 1e-05",
+        "  PASS nt_stft n_fft=64 hop=32 frames=4 window=1 vs a direct DFT — worst relative 3.034e-07 at frame 0 bin 5, limit 1e-05",
+        "  PASS nt_stft n_fft=400 hop=160 frames=8 window=1 vs a direct DFT — worst relative 2.747e-07 at frame 0 bin 64, limit 1e-05",
+        "  PASS n_len over the padded signal — 300, expected 300",
+        "  PASS n_len_org counts only frames carrying audio — 99, expected 99",
+        "  PASS the silence tail adds frames — 99 real of 300",
+        "  PASS clamp eight decades under the peak then (x+4)/4 gives a range of exactly 2 — 2.0000000",
+        "  PASS every bin of the last silent frame sits on the floor",
+        "  PASS no NaN or inf anywhere in 24000 values",
+        "  PASS nt_mel_free clears the struct it frees",
+        "  PASS 1 thread and 6 threads agree bit for bit over 12000 values (0 differ)",
+        "  PASS nt_stft is bit-identical at 1 and 6 threads over 12864 values",
+        "  PASS a filter bank that is not 1 + n_fft/2 wide is refused",
+        "  PASS a NULL signal is refused",
+        "  PASS hop 0 is refused",
+        "  PASS nt_stft refuses n_fft 0",
+        "  PASS nt_stft refuses a zero frame count",
+        "Results: 25 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "NT_LOGMEL_THREADS=1 ./test_logmel",
+      "returncode": 0,
+      "seconds": 0.08573918500042055,
+      "log": "cpu_19.log",
+      "bytes": 2040,
+      "sha256": "137df1ab13e3fcc72381b34008b24960f529a36b31892a8319be9d8068f3371e",
+      "result_lines": [
+        "  PASS periodic Hann peaks at 1 in the middle — w[200] = 1.000000",
+        "  PASS periodic Hann is symmetric about n/2 — w[i] == w[n-i]",
+        "  PASS periodic Hann does NOT return to zero at n-1 (w[399] = 6.169081e-05); the symmetric window does, and is a different window",
+        "  PASS nt_stft n_fft=400 hop=160 frames=12 window=1 vs a direct DFT — worst relative 3.779e-07 at frame 1 bin 48, limit 1e-05",
+        "  PASS nt_stft n_fft=400 hop=160 frames=12 window=0 vs a direct DFT — worst relative 3.410e-07 at frame 7 bin 191, limit 1e-05",
+        "  PASS nt_stft n_fft=512 hop=256 frames=8 window=1 vs a direct DFT — worst relative 3.168e-07 at frame 5 bin 49, limit 1e-05",
+        "  PASS nt_stft n_fft=256 hop=128 frames=8 window=1 vs a direct DFT — worst relative 2.685e-07 at frame 1 bin 62, limit 1e-05",
+        "  PASS nt_stft n_fft=480 hop=160 frames=6 window=1 vs a direct DFT — worst relative 2.341e-07 at frame 0 bin 202, limit 1e-05",
+        "  PASS nt_stft n_fft=64 hop=32 frames=4 window=1 vs a direct DFT — worst relative 3.034e-07 at frame 0 bin 5, limit 1e-05",
+        "  PASS nt_stft n_fft=400 hop=160 frames=8 window=1 vs a direct DFT — worst relative 2.747e-07 at frame 0 bin 64, limit 1e-05",
+        "  PASS n_len over the padded signal — 300, expected 300",
+        "  PASS n_len_org counts only frames carrying audio — 99, expected 99",
+        "  PASS the silence tail adds frames — 99 real of 300",
+        "  PASS clamp eight decades under the peak then (x+4)/4 gives a range of exactly 2 — 2.0000000",
+        "  PASS every bin of the last silent frame sits on the floor",
+        "  PASS no NaN or inf anywhere in 24000 values",
+        "  PASS nt_mel_free clears the struct it frees",
+        "  PASS 1 thread and 6 threads agree bit for bit over 12000 values (0 differ)",
+        "  PASS nt_stft is bit-identical at 1 and 6 threads over 12864 values",
+        "  PASS a filter bank that is not 1 + n_fft/2 wide is refused",
+        "  PASS a NULL signal is refused",
+        "  PASS hop 0 is refused",
+        "  PASS nt_stft refuses n_fft 0",
+        "  PASS nt_stft refuses a zero frame count",
+        "Results: 25 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "./test_qpool",
+      "returncode": 0,
+      "seconds": 0.11375870800111443,
+      "log": "cpu_20.log",
+      "bytes": 419,
+      "sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+      "result_lines": [
+        "ALL PASS"
+      ]
+    },
+    {
+      "command": "NT_QMV_CHUNKS=1 ./test_qpool",
+      "returncode": 0,
+      "seconds": 0.10676722700009122,
+      "log": "cpu_21.log",
+      "bytes": 419,
+      "sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+      "result_lines": [
+        "ALL PASS"
+      ]
+    },
+    {
+      "command": "NT_QMV_CHUNKS=64 ./test_qpool",
+      "returncode": 0,
+      "seconds": 0.1086992390009982,
+      "log": "cpu_22.log",
+      "bytes": 419,
+      "sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+      "result_lines": [
+        "ALL PASS"
+      ]
+    },
+    {
+      "command": "NT_QMV_SPIN=0 ./test_qpool",
+      "returncode": 0,
+      "seconds": 0.11111166699993191,
+      "log": "cpu_23.log",
+      "bytes": 419,
+      "sha256": "27d08f436b17a86e97fde2231a1c0926375821c974ba03ee43b58b6bc5e56f6a",
+      "result_lines": [
+        "ALL PASS"
+      ]
+    },
+    {
+      "command": "./test_qmatmul",
+      "returncode": 0,
+      "seconds": 0.7957095989986556,
+      "log": "cpu_24.log",
+      "bytes": 3207,
+      "sha256": "82e7ebc1971220dad3bff152f9be72d3cf3f45d40d714f438dc5a69b4bc92582",
+      "result_lines": [
+        "  PASS dtype= 8 m= 128 k= 512 n= 33: 4224 outputs identical",
+        "  PASS dtype= 8 m=2048 k=4096 n=  8: 16384 outputs identical",
+        "  PASS dtype=14 m=  64 k= 256 n=  3: 192 outputs identical",
+        "  PASS dtype=14 m= 128 k= 512 n= 32: 4096 outputs identical",
+        "  PASS dtype=14 m= 128 k= 512 n= 33: 4224 outputs identical",
+        "  PASS dtype=14 m=2048 k=4096 n=  8: 16384 outputs identical",
+        "  PASS dtype=14 m= 896 k=4864 n= 17: 15232 outputs identical",
+        "  PASS dtype= 1 m=  64 k= 256 n=  1: 64 outputs identical",
+        "  PASS dtype= 1 m=  64 k= 256 n=  3: 192 outputs identical",
+        "  PASS dtype= 1 m= 128 k= 512 n=  7: 896 outputs identical",
+        "  PASS dtype= 1 m= 128 k= 512 n=  8: 1024 outputs identical",
+        "  PASS dtype= 1 m= 128 k= 512 n=  9: 1152 outputs identical",
+        "  PASS dtype= 1 m= 128 k= 512 n= 33: 4224 outputs identical",
+        "  PASS dtype= 1 m=2048 k=4096 n=  8: 16384 outputs identical",
+        "  PASS dtype= 1 m= 127 k= 517 n=  9: 1143 outputs identical",
+        "  PASS dtype= 1 m=   1 k= 515 n=  8: 8 outputs identical",
+        "  PASS dtype= 1 m=  64 k=   5 n=  8: 512 outputs identical",
+        "  PASS dtype= 0 batched entry refuses and writes nothing",
+        "  PASS a null weight is refused",
+        "  PASS dtype= 6 m= 127 k= 512 n= 32: 4064 outputs identical",
+        "  PASS dtype= 8 m= 127 k= 512 n= 32: 4064 outputs identical",
+        "  PASS dtype=12 m= 127 k= 512 n= 32: 4064 outputs identical",
+        "  PASS dtype=14 m= 127 k= 512 n= 32: 4064 outputs identical",
+        "  PASS dtype=14 m= 127 k= 512 n= 31: 3937 outputs identical",
+        "Results: 46 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "./test_quantize",
+      "returncode": 0,
+      "seconds": 0.001965023002412636,
+      "log": "cpu_25.log",
+      "bytes": 330,
+      "sha256": "dd64c7c9fe108efba63299c64e04074022dcdb8eb5ebb38b282a15004fe2b200",
+      "result_lines": [
+        "  PASS Q4_0: round-trip worst error 5.637e-03, bound 6.526e-03",
+        "  PASS Q5_0: round-trip worst error 2.667e-03, bound 3.263e-03",
+        "  PASS Q8_0: round-trip worst error 1.947e-04, bound 2.056e-04",
+        "  (no files given — pass ours.gguf and a llama-quantize reference for the byte gate)",
+        "Results: 3 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "./test_gguf_write",
+      "returncode": 0,
+      "seconds": 0.06321168399881572,
+      "log": "cpu_26.log",
+      "bytes": 5150,
+      "sha256": "15fd3a29568b6950f63c8d073730695610cfbb21426e6fad19148f4fb9ea9d26",
+      "result_lines": [
+        "  PASS 91 MB written through begin/chunk/end",
+        "  PASS the file is 91201344 bytes",
+        "  PASS every chunk boundary of every streamed tensor holds the value written there",
+        "  PASS streamed tensors are aligned too",
+        "  PASS the streamed F16 tensor is inside its half-ULP budget across 100000 values — worst 1.000 of it",
+        "  PASS a duplicate tensor name is refused",
+        "  PASS the refusal poisons the writer: close says no as well",
+        "  PASS and removes the file rather than leaving a partial GGUF to load",
+        "  PASS tensor data out of declaration order is refused",
+        "  PASS gguf_write_abort leaves no file behind",
+        "  PASS a tensor short of its declared size is refused",
+        "  PASS a tensor longer than declared is refused",
+        "  PASS the same tensor at its declared size is accepted",
+        "  PASS metadata after the header is refused",
+        "  PASS closing with a declared tensor undelivered is refused",
+        "  PASS and that file is removed too",
+        "  PASS 48 values of Q8_0 — not a whole number of blocks — is refused at declaration",
+        "  PASS 64 values of Q8_0 is two whole blocks and is accepted",
+        "  PASS a dtype nothing can size is refused",
+        "  PASS a zero dimension is refused",
+        "  PASS a fifth dimension is refused",
+        "  PASS a tensor name the reader would drop is refused here instead",
+        "  PASS a key the reader would truncate is refused too",
+        "  PASS nothing of any of that is left on disk",
+        "Results: 66 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "./test_gguf_write rss19",
+      "returncode": 0,
+      "seconds": 0.011221501001273282,
+      "log": "cpu_27.log",
+      "bytes": 191,
+      "sha256": "b2523bfd9d29c6f4abcb34c29257c55b0b666df1aa2dfe7662bb407bddca6e61",
+      "result_lines": [
+        "  PASS rss19: wrote 19341056 bytes",
+        "Results: 1 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "./test_gguf_write rss91",
+      "returncode": 0,
+      "seconds": 0.042356823996669846,
+      "log": "cpu_28.log",
+      "bytes": 191,
+      "sha256": "2d49d94ccbbbf83af3492b8d5af8aa61e060d1d00347150e1ad9753268003b24",
+      "result_lines": [
+        "  PASS rss91: wrote 91201344 bytes",
+        "Results: 1 passed, 0 failed"
+      ]
+    },
+    {
+      "command": "./test_gguf_keys",
+      "returncode": 0,
+      "seconds": 0.002909466998971766,
+      "log": "cpu_29.log",
+      "bytes": 108,
+      "sha256": "c1ef53371406c6d7ff8291816d394394db3e3953a87740d31d7669c2768ef578",
+      "result_lines": []
+    },
+    {
+      "command": "./test_qmatvec_leak",
+      "returncode": 0,
+      "seconds": 0.10757556399767054,
+      "log": "cpu_30.log",
+      "bytes": 219,
+      "sha256": "04dd2ac6199921908709079a41bcbb23427b07dd176b3566b3237a8a3c52367d",
+      "result_lines": [
+        "  PASS NULL weight returns -1",
+        "  PASS NULL activation returns -1",
+        "  PASS NULL output returns -1",
+        "  PASS nothing retained per call — 0 bytes held after 2000 calls",
+        "Results: all passed"
+      ]
+    },
+    {
+      "command": "./test_affinity",
+      "returncode": 0,
+      "seconds": 0.004402017999382224,
+      "log": "cpu_31.log",
+      "bytes": 429,
+      "sha256": "c7520a55a2ca6baf2b382a6f4e91f83a6dc1da72b110db7337a69d2034b6721b",
+      "result_lines": [
+        "  PASS thread count matches the core plan — planned 9, expected 9 over cpus 0 1 2 3 4 5 6 7 8 ",
+        "  PASS the driving thread holds the whole chosen set — on cpus 0 1 2 3 4 5 6 7 8 , expected the plan's cores 0 1 2 3 4 5 6 7 8 ",
+        "  PASS a thread born after the pool inherits every chosen core — a thread opened after the pool sees cpus 0 1 2 3 4 5 6 7 8 , expected 0 1 2 3 4 5 6 7 8 ",
+        "Results: all passed"
+      ]
+    },
+    {
+      "command": "NT_QMV_BIG_ONLY=0 ./test_affinity off",
+      "returncode": 0,
+      "seconds": 0.007068910002999473,
+      "log": "cpu_32.log",
+      "bytes": 425,
+      "sha256": "db9d95cd96bfd409952179027d24a40c40969bea9f2bc5c188f2995f415be468",
+      "result_lines": [
+        "  PASS thread count matches the core plan — planned 9, expected 9 over cpus 0 1 2 3 4 5 6 7 8 ",
+        "  PASS the driving thread holds the whole chosen set — on cpus 0 1 2 3 4 5 6 7 8 , expected the plan's cores 0 1 2 3 4 5 6 7 8 ",
+        "  PASS a thread born after the pool inherits every chosen core — a thread opened after the pool sees cpus 0 1 2 3 4 5 6 7 8 , expected 0 1 2 3 4 5 6 7 8 ",
+        "Results: all passed"
+      ]
+    },
+    {
+      "command": "./test_affinity narrowed",
+      "returncode": 0,
+      "seconds": 0.00278794399855542,
+      "log": "cpu_33.log",
+      "bytes": 360,
+      "sha256": "1df1d0597102c9693cc6089838f44dd7b7f68bcb17d3283603eac162706fe8c7",
+      "result_lines": [
+        "  PASS thread count matches the core plan — planned 2, expected 2 over cpus 0 1 ",
+        "  PASS the driving thread holds the whole chosen set — on cpus 0 1 , expected the plan's cores 0 1 ",
+        "  PASS a thread born after the pool inherits every chosen core — a thread opened after the pool sees cpus 0 1 , expected 0 1 ",
+        "Results: all passed"
+      ]
+    },
+    {
+      "command": "NT_QMV_PIN=0 ./test_affinity nopin",
+      "returncode": 0,
+      "seconds": 0.007469594002031954,
+      "log": "cpu_34.log",
+      "bytes": 418,
+      "sha256": "a0d9ea89005a77bb4ab0488f526a0a12f6e97b11e526f44afbf3a50f58de393f",
+      "result_lines": [
+        "  PASS thread count matches the core plan — planned 9, expected 9 over cpus 0 1 2 3 4 5 6 7 8 ",
+        "  PASS nothing touched the affinity mask — on cpus 0 1 2 3 4 5 6 7 8 , expected the mask untouched: 0 1 2 3 4 5 6 7 8 ",
+        "  PASS a thread born after the pool inherits every chosen core — a thread opened after the pool sees cpus 0 1 2 3 4 5 6 7 8 , expected 0 1 2 3 4 5 6 7 8 ",
+        "Results: all passed"
+      ]
+    },
+    {
+      "command": "./test_plan_race",
+      "returncode": 0,
+      "seconds": 0.02361453000048641,
+      "log": "cpu_35.log",
+      "bytes": 195,
+      "sha256": "e8f29340659a55a20d8c313fd5393f87ae6432ac56fe391aec8c8a5c477a6983",
+      "result_lines": [
+        "  PASS both pools agree on the plan — 9 threads",
+        "  PASS float path matches its own serial run",
+        "  PASS integer path matches its own serial run",
+        "Results: all passed"
+      ]
+    },
+    {
+      "command": "./test_wt_expert",
+      "returncode": 0,
+      "seconds": 0.0021977450014674105,
+      "log": "cpu_36.log",
+      "bytes": 657,
+      "sha256": "39db24b7a687ef3b4652b02ea161b58fc9d68b173fc0f32200392e90ef7d6eae",
+      "result_lines": [
+        "  PASS packed slice has the right base and height",
+        "  PASS packed slice has the right base and height",
+        "  PASS packed slice has the right base and height",
+        "  PASS packed slice has the right base and height",
+        "  PASS packed slice has the right base and height",
+        "  PASS f32 slice has the right base and height",
+        "  PASS f32 slice has the right base and height",
+        "  PASS f32 slice has the right base and height",
+        "  PASS f32 slice has the right base and height",
+        "  PASS f32 slice has the right base and height",
+        "  PASS a slice past the end is refused",
+        "  PASS a negative index is refused",
+        "  PASS a weight with no data is refused",
+        "Results: all passed"
+      ]
+    },
+    {
+      "command": "./test_residual",
+      "returncode": 0,
+      "seconds": 0.002803637002216419,
+      "log": "cpu_37.log",
+      "bytes": 382,
+      "sha256": "a9c565cb97a755fb06ed5d3a431b91a3f3979685e3fd6dc441e7cc790f479d20",
+      "result_lines": []
+    },
+    {
+      "command": "./test_multi_decode",
+      "returncode": 0,
+      "seconds": 0.7345274109975435,
+      "log": "cpu_38.log",
+      "bytes": 653,
+      "sha256": "cd97adf0d27185ea10e1d0c2a6951f098d42f6aa68926c5c41c6c7cab9f60877",
+      "result_lines": []
+    },
+    {
+      "command": "./test_gemma3",
+      "returncode": 0,
+      "seconds": 0.004571354002109729,
+      "log": "cpu_39.log",
+      "bytes": 374,
+      "sha256": "a2d2c2654e33aaac1863a9512901955f71051d3c3449f6a36c1b10e4f4cfa138",
+      "result_lines": []
+    },
+    {
+      "command": "./test_smollm_tokenizer",
+      "returncode": 0,
+      "seconds": 0.003242378999857465,
+      "log": "cpu_40.log",
+      "bytes": 40,
+      "sha256": "e480a50b3a996dbb32b7ae451660aed8cbb3e67a27d85b0051a6ab06670da87e",
+      "result_lines": [
+        "SmolLM tokenizer: 92 checks, 0 failures"
+      ]
+    },
+    {
+      "command": "./test_qgather",
+      "returncode": 0,
+      "seconds": 0.7043141290014319,
+      "log": "cpu_41.log",
+      "bytes": 511,
+      "sha256": "1a004e68984aff7d2a865d55540c4a76284344788c08c619fc447d40d91bd34e",
+      "result_lines": [
+        "  PASS Q4_0",
+        "  PASS gathered result is identical to the loop",
+        "  PASS Q5_0",
+        "  PASS gathered result is identical to the loop",
+        "  PASS Q8_0",
+        "  PASS gathered result is identical to the loop",
+        "  PASS Q4_K",
+        "  PASS gathered result is identical to the loop",
+        "  PASS Q6_K",
+        "  PASS gathered result is identical to the loop",
+        "  PASS Q4_0 at the OLMoE shape",
+        "  PASS gathered result is identical to the loop",
+        "  PASS a NULL slice is refused",
+        "  PASS no slices at all is refused",
+        "Results: all passed"
+      ]
+    },
+    {
+      "command": "NT_QMV_CHUNKS=1 ./test_qgather",
+      "returncode": 0,
+      "seconds": 0.7427618889996666,
+      "log": "cpu_42.log",
+      "bytes": 511,
+      "sha256": "1a004e68984aff7d2a865d55540c4a76284344788c08c619fc447d40d91bd34e",
+      "result_lines": [
+        "  PASS Q4_0",
+        "  PASS gathered result is identical to the loop",
+        "  PASS Q5_0",
+        "  PASS gathered result is identical to the loop",
+        "  PASS Q8_0",
+        "  PASS gathered result is identical to the loop",
+        "  PASS Q4_K",
+        "  PASS gathered result is identical to the loop",
+        "  PASS Q6_K",
+        "  PASS gathered result is identical to the loop",
+        "  PASS Q4_0 at the OLMoE shape",
+        "  PASS gathered result is identical to the loop",
+        "  PASS a NULL slice is refused",
+        "  PASS no slices at all is refused",
+        "Results: all passed"
+      ]
+    },
+    {
+      "command": "./test_f16_matvec",
+      "returncode": 0,
+      "seconds": 0.021979093999107135,
+      "log": "cpu_43.log",
+      "bytes": 5198,
+      "sha256": "b7bf5f79a022e32d8d6cbfe92a4c14d44e5cbf6ee3008e80749bac47cccee322",
+      "result_lines": [
+        "  PASS f16 matvec matches a double accumulation — k=25 worst relative error 7.32e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=26 worst relative error 6.18e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=27 worst relative error 4.1e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=28 worst relative error 3.82e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=29 worst relative error 4.22e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=30 worst relative error 4.24e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=31 worst relative error 5.27e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=32 worst relative error 4.58e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=33 worst relative error 4.16e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=34 worst relative error 3.74e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=35 worst relative error 4.14e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=36 worst relative error 5.7e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=37 worst relative error 3.92e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=38 worst relative error 4.8e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=39 worst relative error 4.13e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=40 worst relative error 5.37e-08 at row 4, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=2048 worst relative error 6.04e-08 at row 45, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=2049 worst relative error 6e-08 at row 45, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=2055 worst relative error 6.25e-08 at row 45, limit 1e-05",
+        "  PASS f16 matvec matches a double accumulation — k=2048 worst relative error 6.04e-08 at row 45, limit 1e-05",
+        "  PASS f32 matvec matches a double accumulation — k=33 worst relative error 1.04e-07, limit 1e-05",
+        "  PASS f32 matvec matches a double accumulation — k=2053 worst relative error 1.94e-07, limit 1e-05",
+        "  PASS f32 matvec matches a double accumulation — k=2048 worst relative error 2.38e-07, limit 1e-05",
+        "  PASS an unknown dtype is refused",
+        "Results: all passed"
+      ]
+    },
+    {
+      "command": "./test_q8_0_rows",
+      "returncode": 0,
+      "seconds": 0.015007301000878215,
+      "log": "cpu_44.log",
+      "bytes": 2149,
+      "sha256": "2295ff94313b3864e936d50afb70b7d6147bd8c3ef10ffe69f9297025e6916a8",
+      "result_lines": [
+        "  PASS q8_0 matvec matches a double accumulation — k=32 worst 4.95e-08 at row 1 (scalar order 8.72e-08), limit 1e-05",
+        "  PASS q8_0 matvec reproduces its documented summation order — k=32 7/7 rows",
+        "  PASS threaded and single-thread results are bit-identical — rows=7 k=64",
+        "  PASS q8_0 matvec matches a double accumulation — k=64 worst 3.96e-08 at row 1 (scalar order 1.09e-07), limit 1e-05",
+        "  PASS q8_0 matvec reproduces its documented summation order — k=64 7/7 rows",
+        "  PASS threaded and single-thread results are bit-identical — rows=7 k=96",
+        "  PASS q8_0 matvec matches a double accumulation — k=96 worst 4.24e-08 at row 1 (scalar order 1.05e-07), limit 1e-05",
+        "  PASS q8_0 matvec reproduces its documented summation order — k=96 7/7 rows",
+        "  PASS threaded and single-thread results are bit-identical — rows=64 k=1152",
+        "  PASS q8_0 matvec matches a double accumulation — k=1152 worst 1.71e-07 at row 42 (scalar order 1.45e-06), limit 1e-05",
+        "  PASS q8_0 matvec reproduces its documented summation order — k=1152 64/64 rows",
+        "  PASS threaded and single-thread results are bit-identical — rows=64 k=2048",
+        "  PASS q8_0 matvec matches a double accumulation — k=2048 worst 1.73e-07 at row 0 (scalar order 8.12e-07), limit 1e-05",
+        "  PASS q8_0 matvec reproduces its documented summation order — k=2048 64/64 rows",
+        "  PASS threaded and single-thread results are bit-identical — rows=64 k=6912",
+        "  PASS q8_0 matvec matches a double accumulation — k=6912 worst 3.42e-07 at row 16 (scalar order 1.54e-06), limit 1e-05",
+        "  PASS q8_0 matvec reproduces its documented summation order — k=6912 64/64 rows",
+        "  PASS large finite products cancel without SIMD overflow",
+        "  PASS scalar retry is bit-identical across thread counts",
+        "  PASS genuine overflow remains positive infinity",
+        "  PASS NaN input remains NaN",
+        "  PASS q8_0 batched matmul takes float activations",
+        "  PASS q8_0 batched matmul equals per-vector matvec bit for bit — m=67 k=1152 n=2..11, threaded and not",
+        "  PASS q8_0 batched matmul keeps the overflow retry",
+        "ALL PASS (0 failed)"
+      ]
+    }
+  ],
+  "additional": [
+    {
+      "command": [
+        "make",
+        "test_spa_python",
+        "BLAS_FLAGS=",
+        "BLAS_LIBS="
+      ],
+      "returncode": 0,
+      "seconds": 0.26182216400047764,
+      "log": "spa_python.log",
+      "bytes": 1430,
+      "sha256": "496fcd8c210ac602e282a35183600b5de57300ad4b5b7b57054bdfdbf7576068",
+      "result_lines": [
+        "python3 python/test_spa_binding.py",
+        "Ran 10 tests in 0.182s",
+        "OK"
+      ]
+    }
+  ],
+  "started_utc": "2026-10-07T04:14:27Z",
+  "built_executables": {
+    "test_chuck_lived": {
+      "mode": "0o755",
+      "bytes": 198288,
+      "sha256": "894b82aa499c68c7ec14876efc3a87227064cb3f00a9126b3f01a0f87fa958b8"
+    },
+    "test_spa_agent_future": {
+      "mode": "0o755",
+      "bytes": 245200,
+      "sha256": "3e315303dc66b4186cef3c84212f5f7e10d60652ddc88b31caf315f0bfc15e51"
+    },
+    "test_spa_agent_repeated": {
+      "mode": "0o755",
+      "bytes": 236872,
+      "sha256": "96df502f8665474d858e29a32289b91a3f22cae8533566b212eacdbd13981861"
+    },
+    "notorch_test": {
+      "mode": "0o755",
+      "bytes": 219808,
+      "sha256": "e03252ad824df10cce1f53f46cf658efac6239537fb131f2eb22801e9d43f47d"
+    },
+    "test_spa_agent": {
+      "mode": "0o755",
+      "bytes": 253320,
+      "sha256": "4b2f119a5cdcc672fd7e23a0e55cfdf90d40e3d7fed05671af5fe73c1e10dece"
+    },
+    "test_spa_agent_state": {
+      "mode": "0o755",
+      "bytes": 233472,
+      "sha256": "ba5ce337d989f966bb9216bdd9374137909cf8d2e4840bbd320bf1ddea9c5177"
+    },
+    "test_spa_agent_durability": {
+      "mode": "0o755",
+      "bytes": 225320,
+      "sha256": "d82dc4777635be3631d329348bb5c7c374361c0663dfc9560e40eacc6676f3a3"
+    },
+    "test_bitnet_ops": {
+      "mode": "0o755",
+      "bytes": 193856,
+      "sha256": "b2d9a3dadccb618ebd6b7ef84523fd016179fa63f043aeb1b87567abbf0bb15a"
+    },
+    "test_chuck_architect": {
+      "mode": "0o755",
+      "bytes": 210936,
+      "sha256": "d3d26189f236bb9ae457da356590ec553ed01268149fb66a189b07361d58ff16"
+    },
+    "test_chuck_actions_edge": {
+      "mode": "0o755",
+      "bytes": 198224,
+      "sha256": "b05852e0aa559f73c72a1d2cd38a64f77f83f3b8979f9bfdadc03a4301fec06c"
+    },
+    "test_chuck_architect_state": {
+      "mode": "0o755",
+      "bytes": 198600,
+      "sha256": "f6851cf84d6c78c46fb55ec97b7c7622a0baa09b4be36994b7b652eb6f0a80d0"
+    },
+    "test_chuck_architect_scenarios": {
+      "mode": "0o755",
+      "bytes": 202600,
+      "sha256": "36bcd417591dbd8bf1111c3dd53ed4a664130fe5855eea4a016dde4118b517fa"
+    },
+    "test_chuck_architect_future": {
+      "mode": "0o755",
+      "bytes": 202424,
+      "sha256": "e27530d5a5d7da9576a3ed7f711ca5e9b1fbe87109b9fbe19788cb1671da49bb"
+    },
+    "test_chuck_architect_conditioned": {
+      "mode": "0o755",
+      "bytes": 202680,
+      "sha256": "4146d3be8c8146c0025c6c8875bc04f4441da3332b4826417d2f00c9cacc6572"
+    },
+    "test_chuck_architect_durability": {
+      "mode": "0o755",
+      "bytes": 198904,
+      "sha256": "2fe86ba7c38c468c3887d980f2b229a43faf16d0493fa2f4ec369bd017868b3f"
+    },
+    "test_vision": {
+      "mode": "0o755",
+      "bytes": 266072,
+      "sha256": "61c76e52b8b0dfd69fdc0f273baff5e02040d1f071b650390978bb272c1be1c8"
+    },
+    "test_qpool": {
+      "mode": "0o755",
+      "bytes": 189600,
+      "sha256": "3ee5a3678d0575e3554ddeb9c4708eb25d66daba73372bd2830e279519386072"
+    },
+    "test_qmatmul": {
+      "mode": "0o755",
+      "bytes": 198080,
+      "sha256": "9bfb664292a176c5bf629ef83858ffade8db8c15591176bae7313e51e4622b76"
+    },
+    "test_quantize": {
+      "mode": "0o755",
+      "bytes": 220872,
+      "sha256": "2fa62079aafaec5b253ad90dfefd3a522a2bebd126669768741b9e7fad68c4bf"
+    },
+    "test_gguf_write": {
+      "mode": "0o755",
+      "bytes": 237840,
+      "sha256": "f26eea2ddcc43d84df5f3ceee3686bf47f39bb096e13de6a4c961e6bb691df69"
+    },
+    "test_gguf_keys": {
+      "mode": "0o755",
+      "bytes": 220888,
+      "sha256": "ddd936f68d7e15f32b9ba9cf5447dcef23b8aa936ea2ce10102543fc8f72463d"
+    },
+    "test_qmatvec_leak": {
+      "mode": "0o755",
+      "bytes": 189600,
+      "sha256": "e400425cba4bae3dd5ad3bfda94402f20cd53612fe127652b825ad254f0389b3"
+    },
+    "test_affinity": {
+      "mode": "0o755",
+      "bytes": 193912,
+      "sha256": "e8b9f7c638ac8a0e733d01847a2016b52b938a77d3734b541b95eade932dd1f4"
+    },
+    "test_plan_race": {
+      "mode": "0o755",
+      "bytes": 189936,
+      "sha256": "b93ccea3226f72380d9908fc1249882a0c77704b1d206c567f664d46bb491230"
+    },
+    "test_wt_expert": {
+      "mode": "0o755",
+      "bytes": 225912,
+      "sha256": "c17a3efb1c70034376ea4f4ac79935a576f3177b2dbe43cd3a584809c0e7b6f7"
+    },
+    "test_qgather": {
+      "mode": "0o755",
+      "bytes": 189592,
+      "sha256": "0c467fa0ad11022cc3d75a9be5449b6b95c8b4ef98902a2ba6dc594eb0ff0892"
+    },
+    "test_f16_matvec": {
+      "mode": "0o755",
+      "bytes": 193824,
+      "sha256": "3bcf70339a63bcef6d3929ce40b7fae270e5d08fc253240c00e874bc213d829a"
+    },
+    "test_q8_0_rows": {
+      "mode": "0o755",
+      "bytes": 198048,
+      "sha256": "57ce42d6f07798831963220d19579e58b853f47c2ce7aff1d095c57f5ee469fc"
+    },
+    "test_conv1d": {
+      "mode": "0o755",
+      "bytes": 193864,
+      "sha256": "5a1263e12eb4e88417f8f91b8bbd5b39dffaf5fb3fd8c554f075d5e5d1a84792"
+    },
+    "test_logmel": {
+      "mode": "0o755",
+      "bytes": 194192,
+      "sha256": "dc9d562efe0875136b1d4f5d2c7ba589c0c1d4dce47887393f5bc6eb5c232577"
+    },
+    "test_residual": {
+      "mode": "0o755",
+      "bytes": 44224,
+      "sha256": "3d5b9963d45c1b41e4617786b7791b5c0ef6ef384c8a26d1cced031ca6330c72"
+    },
+    "test_multi_decode": {
+      "mode": "0o755",
+      "bytes": 61432,
+      "sha256": "7c0fb5d070e48e4af9aab733c7ff544d6e9de05543738e9af8b4ee03f600f138"
+    },
+    "test_gemma3": {
+      "mode": "0o755",
+      "bytes": 134088,
+      "sha256": "8c068eae9229c8d519bb2cc0e6560399428f2ea39ad02d98bb7dd431476e635a"
+    },
+    "test_smollm_tokenizer": {
+      "mode": "0o755",
+      "bytes": 34424,
+      "sha256": "64dd3ada07243725bd3fe19f43f1c21cbc224b6972e00cbe91e5be7a0a6f1c1c"
+    }
+  },
+  "source_after": {
+    "Makefile": "c96f236dda5e40965c78ec57eb511da1fb55f12ed10110d2c8ddfabc127ebfb8",
+    "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+    "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+    "examples/bench_gguf_metal.sh": "0da14e22beed7a6797e0bde1ccb219fec430543f909d083800baad1f374a86bc",
+    "examples/bpe.c": "f89e648cb10ae2b7f93af9a31eafe5537a974fab11d9d960d7884355cccba9c5",
+    "examples/bpe.h": "2e5769426da001c944851a876724de40ed481f44f2ce13669fbde13c1c0aa32f",
+    "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+    "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+    "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+    "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+    "examples/chuck_architect_train.c": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+    "examples/infer_gemma.c": "fef9d64f9b36577925d2625f99562f99fedc298b32f9012789e9efb7b30e6533",
+    "examples/infer_gguf_metal.c": "fcda92e219fefe4ae7e1974b7be8c4fde00b7a1b6e64bd64d15c0766cd94cff9",
+    "examples/infer_janus.c": "adc4fa228fb69ab1f8387e18a15a26236b9e658d57e0be22bc52913f77f52439",
+    "examples/infer_llama.c": "907b18af3b7e9df7990b4082057f4d0a1f06f43fd06ee1669ee9a8f3846e40a5",
+    "examples/infer_llama3_bpe.c": "8305ac44642716be453dd7cb37a56f82ed39b9050eb05fc3e0070ccfa11ed7d3",
+    "examples/infer_llama3_char.c": "ebcea67ac9dffaaf9234443c64aeeac94c03b481d5d3caaf944b2e63d58eb9f1",
+    "examples/spa_agent_demo.c": "23ec38602e902ffa50d2d3ac191848edb1e048ddf2f8357c7d35a3ee6fb11d31",
+    "examples/spa_agent_future.c": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661",
+    "examples/spa_agent_replicates.c": "b886d3c9851a366247128a3385c67868b14770d4f7df62fcdae06ea63b82bec6",
+    "examples/spa_agent_scenarios.h": "9f6fadfaceb1b10148742deb1d5887b0fd02eb9b24d271af90de48fa27aaae28",
+    "examples/spa_python.py": "039b96f01ad4a174e23368ecbf339903a6b6c83901b4330018645f706e93483b",
+    "examples/train_distillation.c": "ebb97751d359b3b9983178cc09993566df4547fe31270a54522ab7da602da1e6",
+    "examples/train_dpo.c": "511c12c0b3d9a7e95bbac4b5589dfd89b944dd61cd3de2fd21aa44dcaea0da4c",
+    "examples/train_grpo.c": "dd91669897458c8f8f29886af85de9e5068ce16bc828eac80d5017270f6f463f",
+    "examples/train_llama3_bpe.c": "5a949c422773d131b32a42d9a710c18051eadb91c5ab9b99e5034b46d0d3028f",
+    "examples/train_llama3_char.c": "7689607c1cd67e8b91626ca38fa2bd4c4957f242d80ebb7078c8bd51c97e47ce",
+    "examples/train_q.c": "0f4fe321c0d22677046739789aa7bfe60bc4076af4e4eef1064255bcffb38639",
+    "examples/train_resonance_lora.c": "47cfe412ec9057208c39ce353af82cd858f18f8ac7ebebb5f91ab1604801499a",
+    "examples/train_yent.c": "c54ba2adb9021bc71580a0b307b18d336466f6fa24f22ac9d80d0131a04f2a17",
+    "examples/unicode_numbers.h": "c77829428be33a7d0e71d3c851cea86ca8121e34c969d4744fcb6279e759944c",
+    "gguf.c": "39bfb68692bb025b23844bb8e56eef8add56a2660bc9f731ab9c9ef15d5879e9",
+    "gguf.h": "cc657d588e2ef47e3cdaf0e3ea017ef422cbbd5ab394730b6bc412bd3adb6589",
+    "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+    "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+    "notorch_cuda.h": "8fb573ec4182586d7bc83fc02164a74d804763540cc71060dbb139eb1d2daac4",
+    "notorch_metal.h": "735f2feb3293ac13bd7360d1e97cfbcfbab984a3333944d4b34175401cead737",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "notorch_simd_scalar.h": "c3fa8f3ec388f7398bfbcb5fba7f67055354873775398c306e2340d42d50dc86",
+    "notorch_vision.h": "7f00d29a9c9c9318638ad38110ee850c95d7d26bc081f4f4295ad98e70a48363",
+    "python/SPA.py": "6620ee7b7333fd9956022e6b1460cc8991966d42a16046a33b462ee77d19c86f",
+    "python/__init__.py": "6abc2f96fd7f91e26527c99f0163bfe54a82bf4b431799d16081e43393acfd87",
+    "python/notorch.py": "1e8d3551fe45fc5b6e4321ff036dac46198dd19b1feda7d4638352cf8e1031d1",
+    "python/test_binding.py": "07b7bfdf94a18a8b9a8f800389f383535678b07e6293c72942c2af92a72b3303",
+    "python/test_spa_binding.py": "44ca4f535ab28652d267fa831d51e416b0d2566c34318994aebe55d55d269d16",
+    "spa_agent.c": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+    "spa_agent.h": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730",
+    "spa_binding.c": "5bbab8e95e937361dbf1c25d2c4b4296878977493eb7f0c68033e9fa981dbe84",
+    "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+    "stb_image.h": "fd0e815d15ee3f7c0fc516db7ad067454d2bee37311974cab6d83a7f1ed0512b",
+    "tests/bench_claim.c": "317a98ec763d0f2a3a8aeacecae9aa280ee50bbae9b941204398745821b477b2",
+    "tests/bench_dtype.c": "48eceae0af429b57a4ca76cad6bb24d3043b6e3e0c28ffc7c9cf699acc68ec6c",
+    "tests/bench_metal_batch.c": "8939dea91793f760156f0247282abe01d6842b84ee02bfa779624f767ce80175",
+    "tests/bench_multi_decode.c": "31ff6e7b2370aab59eb9b1e4ebeb2634c60fdbcccc0b44842d95e3cad377b1d2",
+    "tests/bench_qmatmul.c": "4d2f83d3b882ebf1e26b4dca703eb10e955551554be436c46d5199cedcf4d561",
+    "tests/bench_qmatvec.c": "8ce7a5d9e574305f569a56af091c07d580503b959b450348ecb108426e61f383",
+    "tests/check_requant.c": "cc599657faf754e479640cc08483a15a06416f9512cd44d180be770620c26486",
+    "tests/chuck_device_host_backend.c": "8f0adbdb5093889c1da1ba555e66a39deef4704f4ffb27ad773551696b4b9be9",
+    "tests/chuck_legacy_parity.c": "1816bdbbc48aa439bc81ae7e6b4723d5f21d7427c084fefb8d90f1d930abebee",
+    "tests/consumer_link.c": "d74aa239e414109ae993a6d0db6bd6d0ed6b470e7e0d94222a262dfd962158c7",
+    "tests/decode_fixtures.h": "68cce552d7e46987add54aae0577c738d31bf01cceb6de65e055b7651100526b",
+    "tests/gguf_dequant_ref.c": "fb5eb28c442cd8aacf23ad0c958656b253d9b2b4886e7332f51ee5a896726312",
+    "tests/gguf_layout.c": "a482aae472bdf85052664a1784539345660ec4fa4d6f326c8e6b87ae33afe6a5",
+    "tests/js_qmatvec_ref.c": "ec8db7ec9ee3ed3606b72f3f7a1bce568350c77a91d354baba3989da766cc60b",
+    "tests/run_chuck_architect_device.sh": "3e6768f2d29df4e310fde8304fbed17f62c84265c1ecd567b452c14c85c846c4",
+    "tests/run_chuck_architect_state.sh": "dac0d7f59608ec9db340c15a41fe20b765032ce4726c7b63e70bbffcb4f79292",
+    "tests/spa_layout.c": "8748bf036e59c053ce95e5ceda6682e03ce6fcc773da09037cc515ab482c845b",
+    "tests/spa_python_parity.c": "0063dd77b34aff02c7a5aa56e1fa6b843f2be51e68b3d20cd13365e2f84a055a",
+    "tests/spa_replicates_fixture.c": "00ef2c829b3a03147a680b334e34935e66412407ec3de2cbe1e76f10ee754889",
+    "tests/test_affinity.c": "11dbab2f93f79a24eeca3e86adcf469fdd8c62e74f56348ff54ed2693a2e178c",
+    "tests/test_bitnet_ops.c": "50e27e83401463122caa80afa20d856e98e991f8542cf004aa831b49b6df96a9",
+    "tests/test_chuck_actions_edge.c": "fca423cf4d4b34d95763e7285db50c70ce187f55111fb353576107d120df89ae",
+    "tests/test_chuck_architect.c": "1ecf25b69621387a085bf8263571a9d3985f966395f76cb4bac167ed7a2f95d6",
+    "tests/test_chuck_architect_conditioned.c": "f0e6c7931e8df265ed73c0edef7dc89a1a3b7118534ef25eaac40db3ccdb73c3",
+    "tests/test_chuck_architect_device.c": "144c82d9d4343f040f85cc0d5e68d9580e9b8a763b2bfa285604cfc6a81c8886",
+    "tests/test_chuck_architect_durability.c": "991e7501703c6c8737450004111c027c507ac59ce92cb9fc3783aab51a9d98a3",
+    "tests/test_chuck_architect_future.c": "0d31b5abd3bbc76cce7db76fa08040dcbf4828e10f44027ba60487116396ff86",
+    "tests/test_chuck_architect_mutations.py": "5bbe42317c201303ce87bcc11b5166e34bb1bc3b4ccac57720cbd84ce67523d6",
+    "tests/test_chuck_architect_scenarios.c": "7c2dfd524d6ed86a2518186e21fb934cb60f056977d5558b4c4c091d9314c298",
+    "tests/test_chuck_architect_state.c": "171ae259562c5e2a1a527cfb18debdb558183e20be7a3a19ff0869668da9d9c5",
+    "tests/test_chuck_conditioned_mutations.py": "01827e6f27c53c44db01c9e956dfb4d8fc53eeb9f5cbb19c232e641573b0ccb5",
+    "tests/test_chuck_future_mutations.py": "23852b2421e679061c89dcbde5912aff4bfbc9613d31fd16d3ac23be16cb8de7",
+    "tests/test_chuck_legacy_parity.sh": "4cf353249fbaf175a0df9c7c8b684f47b5b6dba0fccd53a90b1fac80b6042183",
+    "tests/test_chuck_lived.c": "fd1fe7e12b3b91560af3f3f7d46846a6d5706165159f9097dffb54726cb67470",
+    "tests/test_chuck_lived_mutations.py": "5ca46f152b02633bcacfd493282ad58fa1203559569342d76b07ba4916f8bfb3",
+    "tests/test_chuck_scenario_mutations.py": "9c1909ccba509e70e1cb92c59eeb230f03a958fe9b50880055087545a120b23d",
+    "tests/test_conv1d.c": "aa6fecf173d3b2fb96274ec23c1327688689e5ba6e4cb4f2d67033d52d184f67",
+    "tests/test_cuda_decode.c": "0cc29e404945e3ded99a1b81b535ce6f1b95c3eaf6698c013b966b0c081ca1b0",
+    "tests/test_f16_matvec.c": "fa0ac33fc0abdfe25004c8cac8d36ea7a0a21bf26b20482e1b0d4e062bdb6c28",
+    "tests/test_gemma3.c": "23450dca37332f548229c05d530479eca2eb619afd99eabb873a4a212f6ff47c",
+    "tests/test_gguf.c": "e3f5e4d636a377e24f98a08885711d52e892e43a4b8f6998eecffe2e24a2d259",
+    "tests/test_gguf_keys.c": "e5089011374ab9be1de114941ef8a979e3a2ccea28901f1cd733d905113fac68",
+    "tests/test_gguf_q4k_real.c": "8eef4e87c030e1136ff54c0d5b120c641859e42aba4fc1e002312d7d485d82d7",
+    "tests/test_gguf_tokens.c": "97a625ae9168b4fc70e935f4465fb8c55b7a2d13bc34f89a69593c70016a8386",
+    "tests/test_gguf_write.c": "ecac0ca1cde7b4f14bafd7455f33ed260e1c4e96511be6cf4fdbae2a1e98b890",
+    "tests/test_janus_parity.c": "7967633574d10c12870261d156ab359e888b99d5d5a885b143315b0263e157ca",
+    "tests/test_libnotorch_lib.sh": "7a8c7713b120d2d1f6407f29c4ec032c10fd6323211eb4587d4311128ad1452b",
+    "tests/test_logmel.c": "8656241a1f9396b977170a53e95387d50ca1f9e84acdf6d0f98198761ee68e6f",
+    "tests/test_metal_f16.c": "4be64d36fbbf51cb349aa706d47e629b16eb2fd1c629309039c465d01d04a51f",
+    "tests/test_metal_q4k.c": "83a2834897faed758b259a1675a7d5c28dc07c6b0bf6aaf89af5048b75f5db79",
+    "tests/test_multi_decode.c": "483da0eaf39a12d384ab39558d45fe1044adae4f0d662d5b94e11501b2e45fa2",
+    "tests/test_notorch.c": "ba7e01dada38781d85afa54ee1c6312d1c423a4ceed053a8668805f12e96029a",
+    "tests/test_parliament_elect.c": "14de5cba4af0e09ea65a4a1f21a3f0326a7e5a43083c0687ea4177b427dd379b",
+    "tests/test_parliament_inject.c": "c011c90df51fd801d7d0a028d1a58c9e22c097975b0234c6e625a7f27bea4bd1",
+    "tests/test_plan_race.c": "f6e96cd7a5d44027ba76616080b53cb1d053f1db04285bcb1321d2c8dfe83b59",
+    "tests/test_q8_0_rows.c": "d5d8b0537e78b37d0e4c44d79fca5f917a27ad30d875392c4e2a101dffab9a47",
+    "tests/test_qgather.c": "70a6d2c05e437eea352f6b9b5451a7b936b25ce40aaea45168079a48eec97790",
+    "tests/test_qmatmul.c": "2c8f4a3af85f7cd767813e4f196446783b7751f66bf8b41b8bbe53795c574d98",
+    "tests/test_qmatvec.c": "529a180f96ff26437c848a91be430fdbd621822a1c67c43a75f871fe037c9c9c",
+    "tests/test_qmatvec_leak.c": "da70b9a29109fa2906b509adfff2495eca155600de43fddc54a3000e3837eb38",
+    "tests/test_qpool.c": "233371910be8cc65439a5495b76d33e4edaf4af0c993c711b0f5559e6265dce5",
+    "tests/test_quantize.c": "6e2418922ee3330bf969d2fddbb2cf3f75302f4dbfcd4faa63f17cc20691a55a",
+    "tests/test_repeat.c": "c47e38362100effea8013695fc3b631261d5f0aaf0d9de6cc9e5cd82e361bc70",
+    "tests/test_residual.c": "7662da34af81d140cdbc00320c991d64b155c03398ebdbe07b92a12ac87e4433",
+    "tests/test_resonance_parity.c": "00297808a947c3577f9159a52a5858ed2f2da01bcae4d74997a3891afdcbba4c",
+    "tests/test_rrpram_broadcast.c": "65c9f978b31337eda1043804fa87f61cda1ffef7790050ac88a992a69e749f49",
+    "tests/test_rrpram_lr.c": "27e2ac6a805adc35a24f5d746ba09fcbf092c1225f25c5578e3ae01cb7c8e2c1",
+    "tests/test_sigmoid_scale.c": "1d69d4d7810b11fb899df2b60ef86e9156104b5cd82ce2bf69ce6ce6b7d31ed6",
+    "tests/test_simd_correctness.c": "f5675e676332c0bfc547880649b02f4ae3f8fac1d034ceccb8a220f0faf4a079",
+    "tests/test_simd_loss.c": "ccd0da69e2cdc3aa4693ff56e03147a41bd90da789f50d73775c7872b232e1ec",
+    "tests/test_simd_tails.c": "32db6b873ea8f5c39c2e6a0d24359e490767614fb08cd5d41dec34cd092faba7",
+    "tests/test_smollm_tokenizer.c": "e33e8f9b3076094217af98a0d4ffce8a939229f382f2afc6e65fbad5f286b29c",
+    "tests/test_spa_agent.c": "69c448800225511db7f66a3959de98cd366640234c23647bd43767ec9ba86345",
+    "tests/test_spa_agent_durability.c": "49855ecfa9324eaf28ba1b69d1837734b6684fcb014d8bfb980c4db8a3d330ab",
+    "tests/test_spa_agent_future.c": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+    "tests/test_spa_agent_mutations.py": "47c1166aa293f1bfd56f9af3a7afaee3801175bdf07196f5e5e5e3850e512905",
+    "tests/test_spa_agent_repeated.c": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+    "tests/test_spa_agent_state.c": "82c217a802a1a2711cc1781ccbe992688abd7f8e3c06792fa9d65b894dedbaed",
+    "tests/test_spa_future.py": "87fbed5560d6d89c3918fb32e7a9fa9c10e58056677c32d83cddc40bb069784e",
+    "tests/test_spa_future_mutations.py": "d3d583ed2640ccf73d62e1d100b05fee3a190d2c1e5d091c0709bc605686744e",
+    "tests/test_spa_legacy_parity.c": "4d8f0589cf8562e36540bafdfb4aabfacedaf58fa078a6930130e8bac60dc01c",
+    "tests/test_spa_legacy_parity.sh": "e2275989ffa7253d1e967601ae207d4e1ff3069da9a32229c50af6223e40a193",
+    "tests/test_spa_repeated_mutations.py": "7ccf90abe98126e5da41cc8d669281d5fa5aac08d9a8a02c7782044ddce21866",
+    "tests/test_spa_replicates.py": "a2a3e06e8aa9b68382e789b514a1f53afd620d8b62154e10a5687f054b237d32",
+    "tests/test_spa_scenarios.py": "465e2d910f2be06fc97c8e92bdcb7a7c4021e9bae8e59bb659f1c3804e2eb6a2",
+    "tests/test_spa_trace_io.py": "f4cc9893b03d641653a5ca8e4efb7ca37e90fa0717d9b98db2f3980df18c288d",
+    "tests/test_vision.c": "328350ccbddac4257eb36b564faa2f0ec36a2c519b7da4c98859ef2c69adc0eb",
+    "tests/test_wt_expert.c": "5b9b41743e2f8a00c4fa7747780a9a328808cfb3b2df4fd19b0bf89a2f6a7ffb"
+  },
+  "source_changes": [],
+  "identities_after": {
+    "measured_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "chuck": {
+      "notorch.c": {
+        "measured_sha256": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+        "current_sha256": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+        "identical": true
+      },
+      "notorch.h": {
+        "measured_sha256": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+        "current_sha256": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+        "identical": true
+      },
+      "notorch_simd.h": {
+        "measured_sha256": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+        "current_sha256": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+        "identical": true
+      },
+      "chuck_architect.h": {
+        "measured_sha256": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+        "current_sha256": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+        "identical": true
+      },
+      "chuck_architect_impl.h": {
+        "measured_sha256": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+        "current_sha256": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+        "identical": true
+      },
+      "examples/chuck_architect_train.c": {
+        "measured_sha256": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+        "current_sha256": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+        "identical": true
+      },
+      "examples/chuck_architect_scenarios.h": {
+        "measured_sha256": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+        "current_sha256": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+        "identical": true
+      },
+      "examples/chuck_architect_rollout.h": {
+        "measured_sha256": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+        "current_sha256": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+        "identical": true
+      },
+      "examples/chuck_architect_lived.h": {
+        "measured_sha256": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+        "current_sha256": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+        "identical": true
+      },
+      "examples/chuck_architect_future.c": {
+        "measured_sha256": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+        "current_sha256": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+        "identical": true
+      },
+      "examples/chuck-loss-architect.json": {
+        "measured_sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+        "current_sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/run.py": {
+        "measured_sha256": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+        "current_sha256": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/scenarios/run.py": {
+        "measured_sha256": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+        "current_sha256": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/future/run.py": {
+        "measured_sha256": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+        "current_sha256": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/conditional/run.py": {
+        "measured_sha256": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+        "current_sha256": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/lived/run.py": {
+        "measured_sha256": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+        "current_sha256": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+        "identical": true
+      },
+      "experiments/chuck_loss_architect/lived/protocol.json": {
+        "measured_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+        "current_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+        "identical": true
+      }
+    },
+    "incoming_commit": "bbc885d08881ee37d95c8c4c588080661bb49af2",
+    "incoming_changed_count": 53,
+    "shared_exclusions": [
+      ".gitignore",
+      "Makefile",
+      "README.md",
+      "NOTORCHLOG.md"
+    ],
+    "incoming": {
+      "docs/spa-agent.md": {
+        "incoming_sha256": "f74f7647fe78ab6b33236553761628e24c6b51181deaf2ea56ba5bf48ea1373f",
+        "current_sha256": "f74f7647fe78ab6b33236553761628e24c6b51181deaf2ea56ba5bf48ea1373f",
+        "bytes": 10778,
+        "identical": true
+      },
+      "docs/spa-python.md": {
+        "incoming_sha256": "e2394b2821fe8bc5563a558bdf3ba91fe88cf6837c638865145016b0d232e093",
+        "current_sha256": "e2394b2821fe8bc5563a558bdf3ba91fe88cf6837c638865145016b0d232e093",
+        "bytes": 9461,
+        "identical": true
+      },
+      "examples/spa_agent_replicates.c": {
+        "incoming_sha256": "b886d3c9851a366247128a3385c67868b14770d4f7df62fcdae06ea63b82bec6",
+        "current_sha256": "b886d3c9851a366247128a3385c67868b14770d4f7df62fcdae06ea63b82bec6",
+        "bytes": 26488,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/README.md": {
+        "incoming_sha256": "33398c324747d93c4024b2d2371db872f4a6ab2cb0c470fe8028fbc749989d29",
+        "current_sha256": "33398c324747d93c4024b2d2371db872f4a6ab2cb0c470fe8028fbc749989d29",
+        "bytes": 18357,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/archive_verification.json": {
+        "incoming_sha256": "3c8d7beae734107d14613b0f9377df3417690b3b47c2f791a6eae45c9cf01cb9",
+        "current_sha256": "3c8d7beae734107d14613b0f9377df3417690b3b47c2f791a6eae45c9cf01cb9",
+        "bytes": 821,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/audit.json": {
+        "incoming_sha256": "a4e9f16c05e617105235c7a709eea58ca7166adc30765a88587659e16d4a27d7",
+        "current_sha256": "a4e9f16c05e617105235c7a709eea58ca7166adc30765a88587659e16d4a27d7",
+        "bytes": 25616,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/audit.py": {
+        "incoming_sha256": "a608692f3404364f295bff9df2923a9fcd4dc0db3fd29f79c640e2a7e1d7db08",
+        "current_sha256": "a608692f3404364f295bff9df2923a9fcd4dc0db3fd29f79c640e2a7e1d7db08",
+        "bytes": 15963,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/conditioning.json": {
+        "incoming_sha256": "e790afc0eaf94fdbf5957579e8a624bd9f9933c7563890ecf741c59dcf2cf6c0",
+        "current_sha256": "e790afc0eaf94fdbf5957579e8a624bd9f9933c7563890ecf741c59dcf2cf6c0",
+        "bytes": 53049,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/conditioning.py": {
+        "incoming_sha256": "381ac87691378c649f86cbdebbb5b757a98ff59304f6c3ce3b764ca7ffc8eeee",
+        "current_sha256": "381ac87691378c649f86cbdebbb5b757a98ff59304f6c3ce3b764ca7ffc8eeee",
+        "bytes": 14800,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/core_mutations.json": {
+        "incoming_sha256": "08635b7ccc2fbcaf47149cad273e9a7e39025e4546cc205c3e044fc0f4142aad",
+        "current_sha256": "08635b7ccc2fbcaf47149cad273e9a7e39025e4546cc205c3e044fc0f4142aad",
+        "bytes": 5940,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/core_mutations_before_main.json": {
+        "incoming_sha256": "1530a974053afdfa83d38121a77a64d8c8728c25248919c550b100131ad31f99",
+        "current_sha256": "1530a974053afdfa83d38121a77a64d8c8728c25248919c550b100131ad31f99",
+        "bytes": 5940,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/dataset_recovery.json": {
+        "incoming_sha256": "78e33a3ef31fcafa9d4c5a2661c3aebfd3427017051506cf9a2ce50f6210aa91",
+        "current_sha256": "78e33a3ef31fcafa9d4c5a2661c3aebfd3427017051506cf9a2ce50f6210aa91",
+        "bytes": 1910,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/diagnosis.json": {
+        "incoming_sha256": "c32f512db7a309c61c5ab76fa89256f2ba8a722356690c8053266b2966683291",
+        "current_sha256": "c32f512db7a309c61c5ab76fa89256f2ba8a722356690c8053266b2966683291",
+        "bytes": 481364,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/diagnosis.py": {
+        "incoming_sha256": "4c3924b15a95c6a20c17bbcb2272a36fcdf1aa6cbcc39529c6b42d6004d115e5",
+        "current_sha256": "4c3924b15a95c6a20c17bbcb2272a36fcdf1aa6cbcc39529c6b42d6004d115e5",
+        "bytes": 23443,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/durability_failure.json": {
+        "incoming_sha256": "a7a566bed07f4218113b5ab7805f19993b9da142ee6eeeeb4b718073d02f9804",
+        "current_sha256": "a7a566bed07f4218113b5ab7805f19993b9da142ee6eeeeb4b718073d02f9804",
+        "bytes": 11132,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/durability_failure2.json": {
+        "incoming_sha256": "6b0d801eb2d66a2d1c8f2295a9d0e824ae6b402109c599a760169034fee506ff",
+        "current_sha256": "6b0d801eb2d66a2d1c8f2295a9d0e824ae6b402109c599a760169034fee506ff",
+        "bytes": 8441,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/durability_failure3.json": {
+        "incoming_sha256": "a251057169ddc22117de831e77176cc2d131c6b325196534483bc47eb9b7b90d",
+        "current_sha256": "a251057169ddc22117de831e77176cc2d131c6b325196534483bc47eb9b7b90d",
+        "bytes": 2642,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/finalize.py": {
+        "incoming_sha256": "5c2cb784cf397ba8408ba77cc881f46c085ec149f0f9735ddee29172bbe544ec",
+        "current_sha256": "5c2cb784cf397ba8408ba77cc881f46c085ec149f0f9735ddee29172bbe544ec",
+        "bytes": 11248,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/finish.py": {
+        "incoming_sha256": "dfbbfc299d0a561309634d8c0fdb594695733d71f8a3436a4c0e1f7a58150702",
+        "current_sha256": "dfbbfc299d0a561309634d8c0fdb594695733d71f8a3436a4c0e1f7a58150702",
+        "bytes": 10969,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/host_trace_recovery.json": {
+        "incoming_sha256": "dafff24b83c8653647ed3d3480a2261bce63809562bcf8cecff53e761cddd6d6",
+        "current_sha256": "dafff24b83c8653647ed3d3480a2261bce63809562bcf8cecff53e761cddd6d6",
+        "bytes": 1734,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/merge_verification.json": {
+        "incoming_sha256": "89a46feeaeae2527d46feda77bea3fd82276dc95edcea98863544fb0388e2090",
+        "current_sha256": "89a46feeaeae2527d46feda77bea3fd82276dc95edcea98863544fb0388e2090",
+        "bytes": 122046,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/policy.py": {
+        "incoming_sha256": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca",
+        "current_sha256": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca",
+        "bytes": 19319,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/preflight_notes.json": {
+        "incoming_sha256": "130677b921788f1005bfbd32aba6d47930362a9c84d8e2c6a63503cb52149b73",
+        "current_sha256": "130677b921788f1005bfbd32aba6d47930362a9c84d8e2c6a63503cb52149b73",
+        "bytes": 1302,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/protocol.json": {
+        "incoming_sha256": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75",
+        "current_sha256": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75",
+        "bytes": 16304,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/publication.json": {
+        "incoming_sha256": "6f8e723c8d68738f6c457539a9e288a1e0c8f284664598bb12130f671d4e1f7f",
+        "current_sha256": "6f8e723c8d68738f6c457539a9e288a1e0c8f284664598bb12130f671d4e1f7f",
+        "bytes": 3350,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/python.json": {
+        "incoming_sha256": "ba5e6eccc1623828cc274e62821795db69b862c03f5a77570c92b2ae591cbe7b",
+        "current_sha256": "ba5e6eccc1623828cc274e62821795db69b862c03f5a77570c92b2ae591cbe7b",
+        "bytes": 3465,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/python_initial_fixture_failure.json": {
+        "incoming_sha256": "e645ad1dca4aac67ee0047fee5d39b0281461693cf828589f4de1d0dae1426c7",
+        "current_sha256": "e645ad1dca4aac67ee0047fee5d39b0281461693cf828589f4de1d0dae1426c7",
+        "bytes": 3991,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/raw_manifest.json": {
+        "incoming_sha256": "5c7ba4c79f8eceeb9d2bafb8812739d9289afd4eb278e6fe8f0f495f74b7b407",
+        "current_sha256": "5c7ba4c79f8eceeb9d2bafb8812739d9289afd4eb278e6fe8f0f495f74b7b407",
+        "bytes": 887,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/raw_traces.jsonl.gz.part-00": {
+        "incoming_sha256": "fd029dc82a718aa4a38e1181b44e33f0324cd637a627fcd14c5ea9e4fff64604",
+        "current_sha256": "fd029dc82a718aa4a38e1181b44e33f0324cd637a627fcd14c5ea9e4fff64604",
+        "bytes": 8011776,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/raw_traces.jsonl.gz.part-01": {
+        "incoming_sha256": "41390ffb7598c53d98536116e1266f3f7efc90b63447d7a8134f5b5310568c51",
+        "current_sha256": "41390ffb7598c53d98536116e1266f3f7efc90b63447d7a8134f5b5310568c51",
+        "bytes": 8011776,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/raw_traces.jsonl.gz.part-02": {
+        "incoming_sha256": "0d675606bab2c35b328cb6b2906c6eb8d1505342fc51bd1d457573b4c228468a",
+        "current_sha256": "0d675606bab2c35b328cb6b2906c6eb8d1505342fc51bd1d457573b4c228468a",
+        "bytes": 2420831,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/receipts.json": {
+        "incoming_sha256": "de80eb47b78ce0a4474decb1a5317b26d3c27400756eef3829b2dc7d2d2296de",
+        "current_sha256": "de80eb47b78ce0a4474decb1a5317b26d3c27400756eef3829b2dc7d2d2296de",
+        "bytes": 10403967,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/recover.py": {
+        "incoming_sha256": "f33050372060e7f6e60f6769aeefa9bff84cf6049312a6c6f82ca2b78ac457c1",
+        "current_sha256": "f33050372060e7f6e60f6769aeefa9bff84cf6049312a6c6f82ca2b78ac457c1",
+        "bytes": 20030,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/recovery.json": {
+        "incoming_sha256": "d6c26bbd2cf5322922d12291fbaebb808caae25eb2f3a7cde777959cde473da9",
+        "current_sha256": "d6c26bbd2cf5322922d12291fbaebb808caae25eb2f3a7cde777959cde473da9",
+        "bytes": 3387,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/result_audit.json": {
+        "incoming_sha256": "38c5abed77993a52adc57453e7b862f7c3fdb407b5e441c25a4f3ee687cb1be6",
+        "current_sha256": "38c5abed77993a52adc57453e7b862f7c3fdb407b5e441c25a4f3ee687cb1be6",
+        "bytes": 119361,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/run.py": {
+        "incoming_sha256": "046b1bea1f0676b516afa1125a69d47c401b19e33ef838ad12c2d2be95cdd257",
+        "current_sha256": "046b1bea1f0676b516afa1125a69d47c401b19e33ef838ad12c2d2be95cdd257",
+        "bytes": 46543,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/traces.py": {
+        "incoming_sha256": "b9881a0857790ad0cbcde7d5d12bfb40264b67a21cc4b5bc95ee66228e75d611",
+        "current_sha256": "b9881a0857790ad0cbcde7d5d12bfb40264b67a21cc4b5bc95ee66228e75d611",
+        "bytes": 3097,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/v1.json": {
+        "incoming_sha256": "f000a50a40e58accba9bcbc8ee71580c64bd02aa49f4a7a515a30d0b5ce5de18",
+        "current_sha256": "f000a50a40e58accba9bcbc8ee71580c64bd02aa49f4a7a515a30d0b5ce5de18",
+        "bytes": 4351,
+        "identical": true
+      },
+      "experiments/spa_agent/replicates/verification.json": {
+        "incoming_sha256": "908ec6a4f7756bf87e801cf3470d33a53f8e93ddfee186509ac35f4c504e83e6",
+        "current_sha256": "908ec6a4f7756bf87e801cf3470d33a53f8e93ddfee186509ac35f4c504e83e6",
+        "bytes": 91342,
+        "identical": true
+      },
+      "python/SPA.py": {
+        "incoming_sha256": "6620ee7b7333fd9956022e6b1460cc8991966d42a16046a33b462ee77d19c86f",
+        "current_sha256": "6620ee7b7333fd9956022e6b1460cc8991966d42a16046a33b462ee77d19c86f",
+        "bytes": 22901,
+        "identical": true
+      },
+      "python/test_spa_binding.py": {
+        "incoming_sha256": "44ca4f535ab28652d267fa831d51e416b0d2566c34318994aebe55d55d269d16",
+        "current_sha256": "44ca4f535ab28652d267fa831d51e416b0d2566c34318994aebe55d55d269d16",
+        "bytes": 19129,
+        "identical": true
+      },
+      "spa_agent.c": {
+        "incoming_sha256": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+        "current_sha256": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+        "bytes": 51242,
+        "identical": true
+      },
+      "spa_agent.h": {
+        "incoming_sha256": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730",
+        "current_sha256": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730",
+        "bytes": 13018,
+        "identical": true
+      },
+      "spa_binding.c": {
+        "incoming_sha256": "5bbab8e95e937361dbf1c25d2c4b4296878977493eb7f0c68033e9fa981dbe84",
+        "current_sha256": "5bbab8e95e937361dbf1c25d2c4b4296878977493eb7f0c68033e9fa981dbe84",
+        "bytes": 6338,
+        "identical": true
+      },
+      "tests/spa_layout.c": {
+        "incoming_sha256": "8748bf036e59c053ce95e5ceda6682e03ce6fcc773da09037cc515ab482c845b",
+        "current_sha256": "8748bf036e59c053ce95e5ceda6682e03ce6fcc773da09037cc515ab482c845b",
+        "bytes": 5944,
+        "identical": true
+      },
+      "tests/spa_replicates_fixture.c": {
+        "incoming_sha256": "00ef2c829b3a03147a680b334e34935e66412407ec3de2cbe1e76f10ee754889",
+        "current_sha256": "00ef2c829b3a03147a680b334e34935e66412407ec3de2cbe1e76f10ee754889",
+        "bytes": 17112,
+        "identical": true
+      },
+      "tests/test_spa_agent_repeated.c": {
+        "incoming_sha256": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+        "current_sha256": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+        "bytes": 18021,
+        "identical": true
+      },
+      "tests/test_spa_repeated_mutations.py": {
+        "incoming_sha256": "7ccf90abe98126e5da41cc8d669281d5fa5aac08d9a8a02c7782044ddce21866",
+        "current_sha256": "7ccf90abe98126e5da41cc8d669281d5fa5aac08d9a8a02c7782044ddce21866",
+        "bytes": 6835,
+        "identical": true
+      },
+      "tests/test_spa_replicates.py": {
+        "incoming_sha256": "a2a3e06e8aa9b68382e789b514a1f53afd620d8b62154e10a5687f054b237d32",
+        "current_sha256": "a2a3e06e8aa9b68382e789b514a1f53afd620d8b62154e10a5687f054b237d32",
+        "bytes": 12163,
+        "identical": true
+      }
+    },
+    "passed": true
+  },
+  "all_logs_authenticated": true,
+  "finished_utc": "2026-10-07T04:15:48Z",
+  "passed": true,
+  "raw_receipt_sha256": "cb54761def7031bd22bfd06a4c13383f5bcf7493143ca92a483e589bc20f73e7",
+  "normalization": "Repository, integration, scratch and temporary absolute paths are normalized in this Git summary; the original raw receipt hash binds retained bytes.",
+  "publication_byte_gate": {
+    "status": "PASS after correction before any commit/ref update",
+    "initial_tree": "b9a55664a1d65ed4d0b40a5fc77e0beab26ebd84",
+    "expected_and_corrected_tree_before_this_metadata": "7789053b0461990b2ed24ffc8800e06a54050b1e",
+    "finding": "Text-mode export normalized CSV CRLF to LF; values were unchanged, but the remote tree failed exact index equality. Raw UTF-8 byte decoding preserved original line endings and reproduced the expected tree exactly.",
+    "files": [
+      {
+        "file": "experiments/chuck_loss_architect/lived/common_state.csv",
+        "crlf_lines": 769,
+        "original_blob_sha": "b34422fa731398532ee5d4b0a478cb556dcef567",
+        "newline_normalized_blob_sha": "a5ed8572b91c4e3946d363e614941eb1d3e207df"
+      },
+      {
+        "file": "experiments/chuck_loss_architect/lived/deployment.csv",
+        "crlf_lines": 141,
+        "original_blob_sha": "b397bf77fd9c2c6d6742af3301bc9408a46dfba5",
+        "newline_normalized_blob_sha": "6420b473346e68f6d8c8ddd5ad3d54d7751f8cf6"
+      }
+    ],
+    "numerical_sources_changed": false,
+    "csv_whitespace_check": {
+      "default_exit": 2,
+      "default_crlf_flags": {
+        "experiments/chuck_loss_architect/lived/common_state.csv": 769,
+        "experiments/chuck_loss_architect/lived/deployment.csv": 141
+      },
+      "default_output_sha256": "61335e817af323af9ba85081f21da7006431142e24d32b86a907a7ec2c1f5804",
+      "accepted_csv_eol_command": [
+        "git",
+        "-c",
+        "core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol",
+        "diff",
+        "--cached",
+        "--check"
+      ],
+      "accepted_csv_eol_exit": 0,
+      "scope": "Preserve the validated CSV CRLF bytes; all other whitespace checks remain enabled. No file contents or repository configuration changed for this check."
+    }
+  }
+}

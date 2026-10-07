@@ -557,12 +557,22 @@ its next credit must learn from the trajectories those choices create.
 `nt_chuck_architect_intervene` executes an explicit available action and invokes
 one same-window evaluator to acquire its actual consequence. The completed life
 retains the executed action and advances native history with frozen weights.
-This lets the [next fixed experience](experiments/chuck_loss_architect/lived/README.md)
+This lets the [lived-state experience](experiments/chuck_loss_architect/lived/README.md)
 branch from the Architect's own visited training states: after HOLD, BRAKE or
 PUSH, the parent keeps selecting actions from each branch's evolving history.
 A paired HOLD-continuation student receives the same source worlds and fitting
 schedule. The selected parent branch must reproduce the ordinary parent's next
 sixteen transitions, and every diagnostic returns the host to its exact state.
+
+The clean run fits two 163-parameter students from thirty-two visited worlds,
+16,384 updates each, then seals both before seeds 701/907. Continuation changes
+the measured-best action sets at 11/32 new worlds. Under parent-policy
+continuation, the policy-taught student reaches 12/16 optimal SimpleLLM choices
+against the parent's 10/16; HeVLM stays at 9/16 with higher mean regret. In full
+512-step deployments, both students finish behind the parent on all four
+body/seed pairs. Policy continuation improves over the HOLD-taught student on
+both SimpleLLM seeds and one HeVLM seed. All 1,024 selected-branch transitions,
+4,096 paired host steps and four policy save/load continuations remain exact.
 
 ---
 
@@ -671,6 +681,12 @@ captured sentence/history input and the life's online state. The
 [future-credit experiment](experiments/spa_agent/future/README.md) records
 training, new-state evaluation, shuffled credit, and fixed-action controls.
 
+`fit_repeated` accepts repeated consequences from the same sentence state.
+It averages individually clipped native rewards, forms KEEP-relative targets,
+and makes one policy update. The host retains each raw outcome and its RNG
+provenance. The [paired-continuation experiment](experiments/spa_agent/replicates/README.md)
+compares one continuation with eight while holding the policy and fit budget fixed.
+
 Python uses the same native engine and canonical saved life:
 
 ```python
@@ -682,7 +698,8 @@ agent = SPA.Agent(SPA.Config.default(mode=SPA.Mode.LEARNED))
 
 Build `make shared`, put `python/` on `PYTHONPATH`, and run
 `python3 examples/spa_python.py`. [Python API and host loop](docs/spa-python.md)
-cover perception, action execution, comparison learning, and C/Python resume.
+cover perception, action execution, comparison and repeated-consequence learning,
+and C/Python resume.
 `make test_spa_python` checks the loaded C ABI and byte-identical continuation.
 
 ---

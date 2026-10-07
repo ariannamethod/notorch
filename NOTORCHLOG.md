@@ -13,6 +13,185 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Lived Chuck and repeated-consequence SPA share the verified build
+
+Fresh main `bbc885d` arrived during publication. Integrated its SPA repeated
+comparisons and Python binding with the lived-state Chuck branch. Both README
+sections and complete log histories remain; Makefile prerequisites, aggregate
+recipes and cleanup lists contain both agents' targets. All seventeen measured
+Chuck sources remain identical to `6029e13`; all forty-nine incoming non-shared
+files remain identical to `bbc885d`. The fixed experience and its sealed lives
+retain their original source and archive identities.
+
+Forced shared/static, five-host and aggregate-prerequisite rebuilds pass all
+44 combined CPU recipe commands. Python SPA passes ten tests; narrow gates
+include 3,457 SPA repeated checks and 292 Chuck intervention checks. All 138
+captured sources stay unchanged and all 46 logs authenticate. This integration
+passes on its first attempt, with no body training or experiment repetition.
+
+The pre-publication byte gate catches text-mode export normalizing the two
+CSV files from CRLF to LF. Preserving their raw UTF-8 bytes restores exact
+remote/index tree equality before any branch update; values stay unchanged.
+The mismatched and corrected tree identities remain in the merge receipt.
+
+`experiments/chuck_loss_architect/lived/merge_verification.json` records the
+combined build separately from the frozen numerical archive. Its original
+raw receipt SHA-256 is
+`cb54761def7031bd22bfd06a4c13383f5bcf7493143ca92a483e589bc20f73e7`.
+
+## 2026-10-07 — Chuck learns from visited worlds and their actual continuations
+
+Clean source `6029e1378986aa91518cc90ef82032a36a5cc6dd` executes the preregistered
+`ab438c3` protocol on SimpleLLM (450,688 parameters) and HeVLM (1,123,456).
+The sealed parent reaches thirty-two development worlds at seeds 42/73. Each
+world supplies HOLD/BRAKE/PUSH followed by fifteen HOLD updates or fifteen
+parent selections, with actual native history throughout. Two independent
+163-parameter students receive the same source features and fitting schedule:
+16,384 conditioned fits each. Both lives are sealed before seeds 701/907.
+No target, recipe, capacity or fitting change follows the new outcomes.
+
+The run completes 28,672 body updates, 32,768 policy fits and 768 common-state
+readouts. Changing continuation changes the measured-best action sets at
+11/32 new worlds: six SimpleLLM and five HeVLM. Exact F32 ties remain intact.
+The primary parent-policy continuation gives these fresh-state consequences;
+mean regret is selected H16 future-probe loss minus that world's best loss:
+
+| Body | Parent optimal / regret | HOLD-taught optimal / regret | Policy-taught optimal / regret |
+| --- | --- | --- | --- |
+| SimpleLLM | 10/16 / 0.0000560284 | 10/16 / 0.0000390559 | 12/16 / 0.0000367910 |
+| HeVLM | 9/16 / 0.0000735447 | 9/16 / 0.0003623068 | 9/16 / 0.0003623068 |
+
+Both students regress against the parent in all four complete deployments.
+Policy continuation improves over the HOLD-taught student on both SimpleLLM
+seeds and HeVLM 701; it regresses on HeVLM 907. Every full curve and action
+history is retained. Final held-out loss after 512 actual body updates:
+
+| Body / seed | Canonical | HOLD | PUSH | Parent | HOLD-taught | Policy-taught |
+| --- | --- | --- | --- | --- | --- | --- |
+| SimpleLLM / 701 | 2.552497 | 2.609178 | 2.546361 | 2.619849 | 2.702593 | 2.637685 |
+| SimpleLLM / 907 | 2.546984 | 2.593992 | 2.556480 | 2.597604 | 2.705638 | 2.624394 |
+| HeVLM / 701 | 1.593401 | 1.556773 | 1.565990 | 1.565244 | 1.569447 | 1.568890 |
+| HeVLM / 907 | 1.571676 | 1.554853 | 1.569487 | 1.577698 | 1.581973 | 1.583680 |
+
+The action histories expose earlier braking. On HeVLM, the HOLD-taught student
+first diverges at update 2 on both seeds: identical features, before-loss and
+pre-action Chuck state lead to BRAKE instead of the parent's PUSH. The
+policy-taught student's first divergence is at updates 8/7. The HOLD-taught
+life reaches the dampening floor at 42/42, the policy-taught life at 61/61,
+and the parent at 216/220. SimpleLLM floor entries are 72/120, 241/256 and
+287/303 respectively. These are observed trajectory changes alongside the
+regressions; the next credit question is the student's early action sequences
+and the worlds those choices create.
+
+All 1,024 selected parent-branch transitions reproduce the ordinary host.
+The 4,096 paired source steps, all final source states, four parent deployments
+and four save/load continuations remain exact. Terminal verification checks
+707 anchored identities across eight source cohorts and twenty-eight
+deployments. The full numerical run records no failed or non-finite branch.
+
+The independent native audit passes 586,956 checks on its first execution:
+32,768 fits, 768 readouts and all 22,528 policy-history transitions replay
+exactly. It authenticates 735 raw files and all 737 archive members, with no
+body rerun. The independent numerical interpretation passes 6,698 checks;
+the result-text audit passes 8,878. The audit program was frozen before outcome
+access; its static-review corrections and original hashes remain in the raw
+receipts. The numerical archive is 941,976,873 bytes, SHA-256
+`7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960`.
+Final compact/CSV publication audit passes 21,923 checks. Three wording findings
+and five initial audit-harness scope/shape mistakes are retained with their
+corrections; no numerical source or measurement changes.
+
+The complete receipt archive `chuck-lived-credit-6029e13-receipts.tar.gz`
+contains 1,871 verified members / 1,000,727,844 bytes, SHA-256
+`3af5601adfd2f37b887ccdd47de6371e7cd3bf2723a96de5ff803501b6972d77`. It includes the numerical
+archive, first smoke, tests, mutations, audits and original failures. Seven
+redundant publication copies are retained as exact prefix-reconstruction
+receipts; every original byte is recoverable from the authenticated archive.
+The whole-file save failed during preparation; three lossless parts
+(400,000,000 / 400,000,000 / 200,727,844 bytes) and their hash manifest were
+saved successfully. Their concatenation reproduces the archive exactly.
+
+This is F32 on AMD EPYC 9V74, GCC 13.3, two SIMD threads, context 64, body LR
+0.0003 and clip 1.0, using the retained pinned corpora and architectures. Each
+process retains elapsed time and peak RSS. `lived/run.py` records the exact
+commands, source/config/corpus identities, source and branch states, fit traces,
+readouts and deployment curves. Compact receipts are under
+`experiments/chuck_loss_architect/lived/`.
+
+One read-only RunPod availability retry at 03:26:56 UTC returned HTTP 403,
+Cloudflare error 1010, Ray `a469cec78ce717d6-ORD`. No key was used and no pod was
+created; this phase has no CUDA execution. The implementation, CPU-suite,
+mutation, sanitizer and legacy/v1 parity gates are recorded in the entry below.
+
+## 2026-10-07 — SPA measures eight futures before assigning sentence-action credit
+
+Follow-up to merged PR #156, integrating fresh main `5eb709f` before real
+generation. Added native `nt_spa_agent_fit_repeated` and Python
+`Agent.fit_repeated`: validate 1–64 paired comparisons before mutation, average
+individually clipped rewards in double precision, and fit all valid action
+heads in one simultaneous mean-Huber update. Count one is byte-exact with
+`fit_comparison`. The 267-parameter policy, sensory primitives, temporal
+memory, online credit and 2,296-byte canonical life stay unchanged. Chuck
+sources match main; only isolated build wiring joins the two branches.
+
+The frozen protocol is
+`c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75`.
+Two complete F32 CPU executions use the same 450,688-parameter SimpleLLM
+Dracula body on AMD EPYC 9V74/GCC 13.3. Each trains on 48 retained states at
+seeds 42/73 and evaluates 48 new states at seeds 307/401. Every state has
+eight paired RNG continuations; r0 preserves the parent host's exact lines.
+Initial, single-H4, mean-eight-H4 and shuffled-mean-eight lives share the same
+features, order, rate and budget. All eight lives are sealed before new-seed
+generation; each fitted arm receives 24,576 updates per execution.
+
+Result: initial, mean-eight and shuffled all choose KEEP at 48/48 new states,
+the measured best choice at 46/48. Single-H4 chooses 27 KEEP, 20 LEFT and one
+RIGHT; its mean paired advantage over KEEP is -0.004025040505 and its mean
+regret 0.004662805361, versus 0.000637764857 for KEEP. It loses separately at
+both new seeds. On identical training states, the single-H4 advantage changes
+from +0.000479820912 on its fitted r0 outcomes to -0.004265352781 on the seven
+additional outcomes. Paired action advantage changes sign across repeats for
+52/72 training alternatives and 57/72 evaluation alternatives. Only four
+evaluation alternatives, at two states, have positive mean advantage.
+
+The mean-eight life has acquired different weights but changes no evaluation
+actions from initialization and does not separate from shuffled credit.
+Repeated measurement exposes stochastic noise and avoids the old policy's
+harm here; useful conditional intervention remains unproven. All raw axes,
+cost, per-state and per-target measurements remain separate. The known target-3
+continuation erases the initial intervention; all 192 paired target-3 draws
+have identical final chains/axes across actions, leaving cost-only harm.
+
+Three artifact refusals remain visible. Execution 2's fitting trace later
+shortened from 59,168,552 to 52,978,553 bytes; evaluation had not started.
+One explicitly recorded deterministic fitting replay reproduces the original
+full trace, four lives and entire seal exactly, restoring only the trace.
+At final inventory, execution 1's dataset and execution 2's ordinary seed-307
+trace are also found truncated. Their original mixed manifests are retained
+as failed evidence. Each complete member is authenticated by its own pinned
+closed archive; dataset reconstruction and 192 native readouts reproduce the
+original summary, and the host trace matches its immediate gzip mirror.
+These two restorations perform no generation or fitting. New final manifests
+pass all checks. The truncations' cause remains unknown.
+
+Independent audit checks all 57 repeated artifacts and 22 archived streams,
+recomputes 40,992 raw-axis values and 5,760 rewards, verifies 73,728 fit receipts,
+and reproduces 384 pure choices from decoded native weights. Narrow gates pass
+3,457 checks, including 1,602 finite differences across all 267 parameters;
+compiled credit/update/clipping/precision and host defects are caught.
+Python passes ten groups and 253 ABI coordinates; v1 life parity and original
+SPA sensory parity remain exact. The integrated SPA/Chuck build passes all
+43 CPU recipe commands. Earlier fixture/command refusals and validator holes
+are recorded alongside their fixes.
+
+Commands, frozen design, raw results, diagnostics, failures, recovery and
+independent audits are under `experiments/spa_agent/replicates/`. The complete
+18,444,383-byte archive is retained in three lossless parts, SHA-256
+`dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12`.
+Published results SHA is
+`de80eb47b78ce0a4474decb1a5317b26d3c27400756eef3829b2dc7d2d2296de`;
+path-only receipt normalization is explicit in `publication.json`.
+
 ## 2026-10-07 — Native interventions preserve real action history in every fork
 
 Added `nt_chuck_architect_intervene`: validate an available HOLD/BRAKE/PUSH,

@@ -1,0 +1,546 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "operation": "Independent synthetic repeated-consequence preflight",
+  "protocol_sha256": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75",
+  "body_generation_runs": 0,
+  "experiment_training_runs": 0,
+  "command": "python3 experiments/spa_agent/replicates/audit.py --json experiments/spa_agent/replicates/audit.json",
+  "script_sha256": "a608692f3404364f295bff9df2923a9fcd4dc0db3fd29f79c640e2a7e1d7db08",
+  "source_sha256": {
+    "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+    "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "spa_agent.c": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+    "spa_agent.h": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730",
+    "chuck_architect.h": "01e0969c176fa467930c05b1e85de0f8194814e8bb47d229aa60bde4a66a8caa",
+    "chuck_architect_impl.h": "6a0d79fe46d1d6c2859ecf7dda52a2c37482aa259dec199445e0926f4514c3dc",
+    "examples/spa_agent_demo.c": "23ec38602e902ffa50d2d3ac191848edb1e048ddf2f8357c7d35a3ee6fb11d31",
+    "examples/spa_agent_scenarios.h": "9f6fadfaceb1b10148742deb1d5887b0fd02eb9b24d271af90de48fa27aaae28",
+    "examples/spa_agent_replicates.c": "b886d3c9851a366247128a3385c67868b14770d4f7df62fcdae06ea63b82bec6",
+    "tests/spa_replicates_fixture.c": "00ef2c829b3a03147a680b334e34935e66412407ec3de2cbe1e76f10ee754889",
+    "experiments/spa_agent/replicates/protocol.json": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75",
+    "experiments/spa_agent/replicates/run.py": "046b1bea1f0676b516afa1125a69d47c401b19e33ef838ad12c2d2be95cdd257",
+    "experiments/spa_agent/replicates/policy.py": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca",
+    "tests/test_spa_replicates.py": "a2a3e06e8aa9b68382e789b514a1f53afd620d8b62154e10a5687f054b237d32",
+    "python/SPA.py": "6620ee7b7333fd9956022e6b1460cc8991966d42a16046a33b462ee77d19c86f",
+    "python/notorch.py": "1e8d3551fe45fc5b6e4321ff036dac46198dd19b1feda7d4638352cf8e1031d1",
+    "spa_binding.c": "5bbab8e95e937361dbf1c25d2c4b4296878977493eb7f0c68033e9fa981dbe84",
+    "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+    "tests/test_spa_agent_repeated.c": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+    "tests/test_spa_future_mutations.py": "d3d583ed2640ccf73d62e1d100b05fee3a190d2c1e5d091c0709bc605686744e",
+    "experiments/spa_agent/replicates/audit.py": "a608692f3404364f295bff9df2923a9fcd4dc0db3fd29f79c640e2a7e1d7db08"
+  },
+  "baseline_commit": "b2891195abd0a318e50d7a445e48d3ed2e6dbcf9",
+  "notorch_object_build": {
+    "command": [
+      "cc",
+      "-std=c11",
+      "-O2",
+      "-pthread",
+      "-I",
+      "<temporary>/base",
+      "-c",
+      "<temporary>/base/notorch.c",
+      "-o",
+      "<temporary>/base/notorch.o"
+    ],
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "host_baseline": {
+    "build": {
+      "command": [
+        "cc",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-pedantic",
+        "-pthread",
+        "-I",
+        "<temporary>/base",
+        "<temporary>/host-baseline/tests/spa_replicates_fixture.c",
+        "<temporary>/base/spa_agent.c",
+        "<temporary>/base/notorch.o",
+        "-lm",
+        "-o",
+        "<temporary>/host-baseline/fixture"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "write": {
+      "command": [
+        "<temporary>/host-baseline/fixture",
+        "write",
+        "<temporary>/valid"
+      ],
+      "returncode": 0,
+      "stdout": "{\"type\":\"fixture_written\",\"sources\":4,\"r0_measurements\":30}\n",
+      "stderr": ""
+    },
+    "run": {
+      "command": [
+        "<temporary>/host-baseline/fixture",
+        "run",
+        "<temporary>/valid.sources.txt",
+        "<temporary>/valid.output.jsonl"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": "spa_agent_replicates: source 1/4 complete (seed 42, episode 0, step 0; forwards 2750)\nspa_agent_replicates: source 2/4 complete (seed 42, episode 0, step 1; forwards 7496)\nspa_agent_replicates: source 3/4 complete (seed 42, episode 0, step 2; forwards 11962)\nspa_agent_replicates: source 4/4 complete (seed 42, episode 0, step 3; forwards 14522)\n"
+    },
+    "strict_cases": {
+      "command": [
+        "<temporary>/host-baseline/fixture",
+        "cases",
+        "<temporary>/cases"
+      ],
+      "returncode": 0,
+      "stdout": "{\"type\":\"fixture_gate\",\"name\":\"count_zero\",\"exit_code\":1,\"expected_diagnostic\":\"source count outside bounds\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"count_overflow\",\"exit_code\":1,\"expected_diagnostic\":\"source count outside bounds\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_coordinate\",\"exit_code\":1,\"expected_diagnostic\":\"source coordinates or body identity mismatch\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"duplicate_ordinal\",\"exit_code\":1,\"expected_diagnostic\":\"ordinals not strictly ordered\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_length\",\"exit_code\":1,\"expected_diagnostic\":\"sentence dimensions invalid\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_token\",\"exit_code\":1,\"expected_diagnostic\":\"token outside vocabulary\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_termination_flag\",\"exit_code\":1,\"expected_diagnostic\":\"sentence dimensions invalid\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"missed_stop\",\"exit_code\":1,\"expected_diagnostic\":\"passed an eligible stop\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_feature_witness\",\"exit_code\":1,\"expected_diagnostic\":\"source witness mismatch\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_snapshot_witness\",\"exit_code\":1,\"expected_diagnostic\":\"source witness mismatch\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_host_rng\",\"exit_code\":1,\"expected_diagnostic\":\"host RNG differs\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_body_identity\",\"exit_code\":1,\"expected_diagnostic\":\"body identity mismatch\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_vocabulary_hash\",\"exit_code\":1,\"expected_diagnostic\":\"vocabulary witness mismatch\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"false_raw_metrics\",\"exit_code\":1,\"expected_diagnostic\":\"metrics differ\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"false_sensory_features\",\"exit_code\":1,\"expected_diagnostic\":\"sensory features differ\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"truncated_input\",\"exit_code\":1,\"expected_diagnostic\":\"truncated replicate source\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"trailing_input\",\"exit_code\":1,\"expected_diagnostic\":\"trailing replicate source data\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_reseed_bound\",\"exit_code\":1,\"expected_diagnostic\":\"reseed count outside bounds\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_vocabulary_order\",\"exit_code\":1,\"expected_diagnostic\":\"sorted unique Unicode scalars\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_unicode\",\"exit_code\":1,\"expected_diagnostic\":\"sorted unique Unicode scalars\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"input_as_output\",\"exit_code\":1,\"expected_diagnostic\":\"destination must not exist\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"existing_output\",\"exit_code\":1,\"expected_diagnostic\":\"destination must not exist\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"input_symlink_output\",\"exit_code\":1,\"expected_diagnostic\":\"destination must not exist\",\"pass\":true}\n{\"type\":\"fixture_cases\",\"cases\":24,\"named_refusals\":23,\"finite_subnormal_roundtrip\":true,\"inputs_preserved\":true,\"pass\":true}\n",
+      "stderr": ""
+    },
+    "raw_sha256": "d04eeba6611d739400df4699849dfcfb2eac19d8af3b6af11692278d2ff56297",
+    "source_bytes_sha256": "1cdc6f20a6b75e9bbeffc962dfc8b0868687d02566cc908bafd4f71f88b6fb06",
+    "validation": {
+      "sources": 4,
+      "replicates": 32,
+      "alternatives": 80,
+      "measurements": 240,
+      "diagnostic_forwards": 14522,
+      "r0_raw_line_parity": true,
+      "paired_rng_and_consumption": true,
+      "raw_reward_and_cost": true,
+      "complete": true
+    }
+  },
+  "fixed_discovered_trace_gaps": {
+    "before_fix": "Both corruptions were accepted during the independent pre-freeze review on the same genuine cheap fixture.",
+    "current_red_hands": [
+      {
+        "name": "untouched_h1_sentence",
+        "caught": true,
+        "failure": "replicate untouched future sentence changed"
+      },
+      {
+        "name": "h4_generation_length",
+        "caught": true,
+        "failure": "replicate future token accounting"
+      }
+    ]
+  },
+  "compiled_host_mutations": [
+    {
+      "name": "initial_rng_pairing",
+      "mutant_source_sha256": "5bb8c0f4a425c99d9f808960ebd7473aa253701c33423e6a8f6b9fb55fc1791f",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c11",
+          "-O2",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-pthread",
+          "-I",
+          "<temporary>/base",
+          "<temporary>/initial_rng_pairing/tests/spa_replicates_fixture.c",
+          "<temporary>/base/spa_agent.c",
+          "<temporary>/base/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/initial_rng_pairing/fixture"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/initial_rng_pairing/fixture",
+          "run",
+          "<temporary>/valid.sources.txt",
+          "<temporary>/initial_rng_pairing.jsonl"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "spa_agent_demo: replicate initial RNG pairing mismatch\n"
+      },
+      "gate": "replicate initial RNG pairing mismatch",
+      "caught": true
+    },
+    {
+      "name": "future_rng_pairing",
+      "mutant_source_sha256": "e45afec93f1d3f9a1d235ffd2c4b6b60cec0e1921617abaa9cec2f1e29bd3aa7",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c11",
+          "-O2",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-pthread",
+          "-I",
+          "<temporary>/base",
+          "<temporary>/future_rng_pairing/tests/spa_replicates_fixture.c",
+          "<temporary>/base/spa_agent.c",
+          "<temporary>/base/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/future_rng_pairing/fixture"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/future_rng_pairing/fixture",
+          "run",
+          "<temporary>/valid.sources.txt",
+          "<temporary>/future_rng_pairing.jsonl"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "spa_agent_demo: replicate future RNG pairing mismatch\n"
+      },
+      "gate": "replicate future RNG pairing mismatch",
+      "caught": true
+    },
+    {
+      "name": "source_restoration",
+      "mutant_source_sha256": "b9bc007c4e518bc7d7087333cbe9699304bfbbc3fab5e7b52e7060fa63929313",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c11",
+          "-O2",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-pthread",
+          "-I",
+          "<temporary>/base",
+          "<temporary>/source_restoration/tests/spa_replicates_fixture.c",
+          "<temporary>/base/spa_agent.c",
+          "<temporary>/base/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/source_restoration/fixture"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/source_restoration/fixture",
+          "run",
+          "<temporary>/valid.sources.txt",
+          "<temporary>/source_restoration.jsonl"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "spa_agent_demo: replicate branch leaked into its fixed source\n"
+      },
+      "gate": "replicate branch leaked into its fixed source",
+      "caught": true
+    },
+    {
+      "name": "output_preservation",
+      "mutant_source_sha256": "bbe69b65ecb19e327ed8bcdd03cfe15b84ae8fbf972361637428935793b33f4f",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c11",
+          "-O2",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-pthread",
+          "-I",
+          "<temporary>/base",
+          "<temporary>/output_preservation/tests/spa_replicates_fixture.c",
+          "<temporary>/base/spa_agent.c",
+          "<temporary>/base/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/output_preservation/fixture"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/output_preservation/fixture",
+          "cases",
+          "<temporary>/output_preservation-cases"
+        ],
+        "returncode": 1,
+        "stdout": "{\"type\":\"fixture_gate\",\"name\":\"count_zero\",\"exit_code\":1,\"expected_diagnostic\":\"source count outside bounds\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"count_overflow\",\"exit_code\":1,\"expected_diagnostic\":\"source count outside bounds\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_coordinate\",\"exit_code\":1,\"expected_diagnostic\":\"source coordinates or body identity mismatch\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"duplicate_ordinal\",\"exit_code\":1,\"expected_diagnostic\":\"ordinals not strictly ordered\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_length\",\"exit_code\":1,\"expected_diagnostic\":\"sentence dimensions invalid\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_token\",\"exit_code\":1,\"expected_diagnostic\":\"token outside vocabulary\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_termination_flag\",\"exit_code\":1,\"expected_diagnostic\":\"sentence dimensions invalid\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"missed_stop\",\"exit_code\":1,\"expected_diagnostic\":\"passed an eligible stop\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_feature_witness\",\"exit_code\":1,\"expected_diagnostic\":\"source witness mismatch\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_snapshot_witness\",\"exit_code\":1,\"expected_diagnostic\":\"source witness mismatch\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_host_rng\",\"exit_code\":1,\"expected_diagnostic\":\"host RNG differs\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_body_identity\",\"exit_code\":1,\"expected_diagnostic\":\"body identity mismatch\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_vocabulary_hash\",\"exit_code\":1,\"expected_diagnostic\":\"vocabulary witness mismatch\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"false_raw_metrics\",\"exit_code\":1,\"expected_diagnostic\":\"metrics differ\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"false_sensory_features\",\"exit_code\":1,\"expected_diagnostic\":\"sensory features differ\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"truncated_input\",\"exit_code\":1,\"expected_diagnostic\":\"truncated replicate source\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"trailing_input\",\"exit_code\":1,\"expected_diagnostic\":\"trailing replicate source data\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_reseed_bound\",\"exit_code\":1,\"expected_diagnostic\":\"reseed count outside bounds\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_vocabulary_order\",\"exit_code\":1,\"expected_diagnostic\":\"sorted unique Unicode scalars\",\"pass\":true}\n{\"type\":\"fixture_gate\",\"name\":\"bad_unicode\",\"exit_code\":1,\"expected_diagnostic\":\"sorted unique Unicode scalars\",\"pass\":true}\n",
+        "stderr": "fixture refusal gate input_as_output failed: status=0 stderr=spa_agent_replicates: source 1/4 complete (seed 42, episode 0, step 0; forwards 2750)\nspa_agent_replicates: source 2/4 complete (seed 42, episode 0, step 1; forwards 7496)\nspa_agent_replicates: source 3/4 complete (seed 42, episode 0, step 2; forwards 11962)\nspa_agent_replicates: source 4/4 complete (seed 42, episode 0, step 3; forwards 14522)\n\nspa_agent_demo: fixture expected a named normal-exit refusal\n"
+      },
+      "gate": "fixture expected a named normal-exit refusal",
+      "caught": true
+    },
+    {
+      "name": "measurement_target",
+      "mutant_source_sha256": "8de925c4f15b0efbe2e51d9e088f15a326c26d99e4ce3af6106f6df0ad2f7c42",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c11",
+          "-O2",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-pthread",
+          "-I",
+          "<temporary>/base",
+          "<temporary>/measurement_target/tests/spa_replicates_fixture.c",
+          "<temporary>/base/spa_agent.c",
+          "<temporary>/base/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/measurement_target/fixture"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/measurement_target/fixture",
+          "run",
+          "<temporary>/valid.sources.txt",
+          "<temporary>/measurement_target.jsonl"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "spa_agent_replicates: source 1/4 complete (seed 42, episode 0, step 0; forwards 2750)\nspa_agent_replicates: source 2/4 complete (seed 42, episode 0, step 1; forwards 7496)\nspa_agent_replicates: source 3/4 complete (seed 42, episode 0, step 2; forwards 11962)\nspa_agent_replicates: source 4/4 complete (seed 42, episode 0, step 3; forwards 14522)\n"
+      },
+      "gate": "host_measurement_target",
+      "independent_gate": {
+        "command": [
+          "python3",
+          "<source>/experiments/spa_agent/replicates/audit.py",
+          "--validate-host",
+          "<temporary>/valid",
+          "<temporary>/measurement_target.jsonl",
+          "host_measurement_target"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "FAIL host_measurement_target: replicate repetition metric uses wrong target\n"
+      },
+      "caught": true
+    }
+  ],
+  "native_double_accumulation": {
+    "driver_sha256": "b7eb4b3fe679ec8102a16a41d8656b63e18ecc8f1da69aa068eb0f6e3110f60a",
+    "executions": [
+      {
+        "name": "baseline",
+        "source_sha256": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+        "build": {
+          "command": [
+            "cc",
+            "-std=c11",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-pedantic",
+            "-pthread",
+            "-I",
+            "<temporary>/base",
+            "<temporary>/precision.c",
+            "<temporary>/precision-baseline.c",
+            "<temporary>/base/notorch.o",
+            "-lm",
+            "-o",
+            "<temporary>/precision-baseline"
+          ],
+          "returncode": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "run": {
+          "command": [
+            "<temporary>/precision-baseline"
+          ],
+          "returncode": 0,
+          "stdout": "PASS native_double_accumulation: counts1/2/3/8/64, exact mean bits, rate0 life unchanged\n",
+          "stderr": ""
+        }
+      },
+      {
+        "name": "float_sum",
+        "source_sha256": "a67637e2673cfb8c143f97e2f8cb408741b24479d74f99997b306d5a9907bc1c",
+        "build": {
+          "command": [
+            "cc",
+            "-std=c11",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-pedantic",
+            "-pthread",
+            "-I",
+            "<temporary>/base",
+            "<temporary>/precision.c",
+            "<temporary>/precision-float_sum.c",
+            "<temporary>/base/notorch.o",
+            "-lm",
+            "-o",
+            "<temporary>/precision-float_sum"
+          ],
+          "returncode": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "run": {
+          "command": [
+            "<temporary>/precision-float_sum"
+          ],
+          "returncode": 1,
+          "stdout": "",
+          "stderr": "FAIL native_double_accumulation: count=3 expected=0x1.555558p-2 actual=0x1.555556p-2\n"
+        }
+      }
+    ],
+    "float_sum_mutant_caught": true
+  },
+  "v1_compatibility": {
+    "baseline_commit": "b2891195abd0a318e50d7a445e48d3ed2e6dbcf9",
+    "baseline_source_sha256": {
+      "spa_agent.c": "a039bc04644b094c16ada64f0c08f08d853a1ffca8f750c830d9e1cd4acf00ea",
+      "spa_agent.h": "f47b2bb9347b9613c96a4ef56a101f9c28a9253fccf2bc2a61781a1401d1d19d",
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "638aa0f0c77b21a1d70a5e306d25f269faed1035d85d1ca4501612fc3340b313",
+      "chuck_architect_impl.h": "f679f0004c4dbd6ffdeeedb84471eeab5f157b1f63fa4f5aecb36f7daec1851e"
+    },
+    "emitter_sha256": "96bd8c268c084ee25ac13c05210207a3daeadc459b05cece5d1c419bb1648ebb",
+    "files": [
+      {
+        "name": "initial.bin",
+        "bytes": 2296,
+        "old_sha256": "48980fc07e9a2bcff221120cb3471c43574f9f96c63e3f967ea53290f929eece",
+        "new_sha256": "48980fc07e9a2bcff221120cb3471c43574f9f96c63e3f967ea53290f929eece",
+        "identical": true
+      },
+      {
+        "name": "pending.bin",
+        "bytes": 2296,
+        "old_sha256": "5505aa5402310cc540043eb078d70591d676074c6df7ca34e5aee4fb0e908e1f",
+        "new_sha256": "5505aa5402310cc540043eb078d70591d676074c6df7ca34e5aee4fb0e908e1f",
+        "identical": true
+      },
+      {
+        "name": "completed.bin",
+        "bytes": 2296,
+        "old_sha256": "8d8ae7df678891baaab69e1af94b4466a08a165491f0357d4e27b6de1e78569d",
+        "new_sha256": "8d8ae7df678891baaab69e1af94b4466a08a165491f0357d4e27b6de1e78569d",
+        "identical": true
+      },
+      {
+        "name": "imitation.bin",
+        "bytes": 2296,
+        "old_sha256": "e493e0c06a4621ebfe49b0214949a2bbef7c5b0cc234acd1acd0fbd022462b58",
+        "new_sha256": "e493e0c06a4621ebfe49b0214949a2bbef7c5b0cc234acd1acd0fbd022462b58",
+        "identical": true
+      }
+    ],
+    "v1-old": {
+      "build": {
+        "command": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I",
+          "<temporary>/v1-old",
+          "-I",
+          "<source>",
+          "<temporary>/v1-old/gate.c",
+          "<temporary>/v1-old/spa_agent.c",
+          "<temporary>/v1-old/notorch.c",
+          "-lm",
+          "-o",
+          "<temporary>/v1-old/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/v1-old/gate",
+          "<temporary>/v1-old-output"
+        ],
+        "returncode": 0,
+        "stdout": "PASS v1_compatibility: initial, pending, completed and imitation lives\n",
+        "stderr": ""
+      }
+    },
+    "v1-current": {
+      "build": {
+        "command": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I",
+          "<temporary>/v1-current",
+          "-I",
+          "<source>",
+          "<temporary>/v1-current/gate.c",
+          "<temporary>/v1-current/spa_agent.c",
+          "<temporary>/v1-current/notorch.c",
+          "-lm",
+          "-o",
+          "<temporary>/v1-current/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/v1-current/gate",
+          "<temporary>/v1-current-output"
+        ],
+        "returncode": 0,
+        "stdout": "PASS v1_compatibility: initial, pending, completed and imitation lives\n",
+        "stderr": ""
+      }
+    },
+    "passed": true
+  },
+  "sources_unchanged": true,
+  "review": {
+    "mean_native_reward": "All members validate before mutation; each reward clips before double accumulation, one float mean and one simultaneous update; count1 delegates unchanged comparison API.",
+    "source_only_readout": "policy.score_samples reads features and source identities. Parent preflight separately poisons/removes outcomes, verifies unchanged complete lives and all192 readouts.",
+    "barrier": "Runner anchors both training datasets, both complete fit traces, both seals and all8 life files in an in-memory barrier before any new-seed process; it rechecks the barrier and sources/binaries between stages.",
+    "fixed_helper_gaps": [
+      "snapshot_witness now requires 16 lowercase hexadecimal characters",
+      "verify_seal now pins the historical single_h4 SHA and native life hash",
+      "immutable binary identities now participate in runner stable()"
+    ],
+    "sample_unit": "48 captured source states; eight paired realizations per state remain nested outcomes."
+  }
+}

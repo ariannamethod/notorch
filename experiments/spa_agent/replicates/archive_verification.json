@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "script_sha256": "b9881a0857790ad0cbcde7d5d12bfb40264b67a21cc4b5bc95ee66228e75d611",
+  "synthetic": {
+    "exact": {
+      "bytes": 246900,
+      "sha256": "a03fd95951eac1c18c588c6941d56f6a8b8b2c8e5d163f3e2c2f132c67b49951",
+      "parts": 2
+    },
+    "existing_destination_refused": "destination already exists",
+    "corrupt_part_refused": "part SHA256 mismatch: raw.part01.bin",
+    "partial_destination_absent": true
+  },
+  "real_archive": {
+    "command": [
+      "python3",
+      "experiments/spa_agent/replicates/traces.py"
+    ],
+    "returncode": 0,
+    "bytes": 18444383,
+    "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12",
+    "parts": 3,
+    "existing_destination_refused": true,
+    "second_returncode": 1,
+    "full_native_archive_byte_identity": true
+  }
+}

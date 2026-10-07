@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "status": "FAIL",
+  "phase": "remaining closed-artifact inventory after dataset recovery",
+  "paths": "Semantic paths only; raw byte/hash/inode observations unchanged.",
+  "file": {
+    "path": "execution-2/off-s307.jsonl",
+    "fd_before": {
+      "st_dev": 27,
+      "st_ino": 788089,
+      "st_mode": 33188,
+      "st_size": 211683,
+      "st_mtime_ns": 1791344013587077784,
+      "st_ctime_ns": 1791344015779132280
+    },
+    "fd_after": {
+      "st_dev": 27,
+      "st_ino": 788089,
+      "st_mode": 33188,
+      "st_size": 211683,
+      "st_mtime_ns": 1791344013587077784,
+      "st_ctime_ns": 1791344015779132280
+    },
+    "path_after": {
+      "st_dev": 27,
+      "st_ino": 788089,
+      "st_mode": 33188,
+      "st_size": 211683,
+      "st_mtime_ns": 1791344013587077784,
+      "st_ctime_ns": 1791344015779132280
+    },
+    "bytes_read": 211683,
+    "sha256": "6d6792ad20dc5c50eed3c75d811140c6bc826d59afbe405f15d3ec506bf932d2",
+    "complete_newline": false,
+    "physical_lines": 122,
+    "tail": ",69,64,61,53,1,57,54,52,55,64,67,69,54,53,54,54,53,7,0,69,58,63,9]},{\"length\":64,\"terminated\":false,\"tokens\":[54,1,51,67,58,68,1,68,8,0,0,92,31,1,69,57,64,72,1,57,54,1,68,57,54,1,68,61,54,1,63,58,69,1,70,68,1,31,1,53,54,1,68,1,61,54,74,1,69,57,54,68,1,62,54,1,62,54,50,63,53,1,69,57]}]}\n{\"type\":\"deci",
+    "registered_artifact": {
+      "bytes": 211683,
+      "sha256": "6d6792ad20dc5c50eed3c75d811140c6bc826d59afbe405f15d3ec506bf932d2"
+    }
+  },
+  "original_manifest": {
+    "path": "execution-2/result.json",
+    "bytes": 5179449,
+    "sha256": "4128dfd75f02bc41b2ea468182f19e67d1a6ca8c3b926d008a8630a1cff17f11"
+  },
+  "own_archive": {
+    "path": "execution-2/raw_traces.jsonl.gz",
+    "bytes": 18444383,
+    "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12",
+    "registered_artifact": {
+      "bytes": 18444383,
+      "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12"
+    },
+    "member": {
+      "seed": 307,
+      "stream": "ordinary_off",
+      "bytes": 223818,
+      "sha256": "30c9c9d1acb5fee8a308b3942f000bd01e978c1c38a4398eac77e5623c2991bb",
+      "physical_lines": 128
+    }
+  },
+  "immediate_mirror": {
+    "path": "execution-2/off-s307.verified.jsonl.gz",
+    "bytes": 12771,
+    "sha256": "2f69b9ac541b75c24827ef4beb05d886e497f0d9bd18a9fbab27b10e24341ae0",
+    "decoded_bytes": 223818,
+    "decoded_sha256": "30c9c9d1acb5fee8a308b3942f000bd01e978c1c38a4398eac77e5623c2991bb"
+  },
+  "relation": {
+    "actual_is_exact_own_member_prefix": true,
+    "own_member_and_immediate_mirror_byte_equal": true,
+    "missing_bytes": 12135
+  }
+}

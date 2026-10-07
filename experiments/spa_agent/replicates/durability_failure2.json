@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "status": "FAIL",
+  "phase": "final two-execution artifact identity after all readouts",
+  "paths": "Semantic paths only; raw byte/hash/inode observations unchanged.",
+  "files": {
+    "execution-1/evaluation.json": {
+      "fd_before": {
+        "st_dev": 27,
+        "st_ino": 788254,
+        "st_mode": 33188,
+        "st_size": 2016208,
+        "st_mtime_ns": 1791344600605907620,
+        "st_ctime_ns": 1791344602761961636
+      },
+      "fd_after": {
+        "st_dev": 27,
+        "st_ino": 788254,
+        "st_mode": 33188,
+        "st_size": 2016208,
+        "st_mtime_ns": 1791344600605907620,
+        "st_ctime_ns": 1791344602761961636
+      },
+      "path_after": {
+        "st_dev": 27,
+        "st_ino": 788254,
+        "st_mode": 33188,
+        "st_size": 2016208,
+        "st_mtime_ns": 1791344600605907620,
+        "st_ctime_ns": 1791344602761961636
+      },
+      "bytes_read": 2016208,
+      "sha256": "843ad9b6b1e7d9006b440b2fa429b27935a3515f9a74b4337211268027bbed2b",
+      "valid_json": false,
+      "parse_error": "Expecting ':' delimiter: line 1 column 2016209 (char 2016208)",
+      "tail": ",72,1,57,54,1,68,57,54,1,68,61,54,1,63,58,69,1,70,68,1,31,1,53,54,1,68,1,61,54,74,1,69,57,54,68,1,62,54,1,62,54,50,63,53,1,69,57]}],\"cost\":0,\"cumulative_generated\":0,\"initial_generated\":0,\"raw_sha256\"",
+      "registered_artifact": {
+        "bytes": 2016208,
+        "sha256": "843ad9b6b1e7d9006b440b2fa429b27935a3515f9a74b4337211268027bbed2b"
+      }
+    },
+    "execution-2/evaluation.json": {
+      "fd_before": {
+        "st_dev": 27,
+        "st_ino": 788116,
+        "st_mode": 33188,
+        "st_size": 4723513,
+        "st_mtime_ns": 1791344601273924338,
+        "st_ctime_ns": 1791344601273924338
+      },
+      "fd_after": {
+        "st_dev": 27,
+        "st_ino": 788116,
+        "st_mode": 33188,
+        "st_size": 4723513,
+        "st_mtime_ns": 1791344601273924338,
+        "st_ctime_ns": 1791344601273924338
+      },
+      "path_after": {
+        "st_dev": 27,
+        "st_ino": 788116,
+        "st_mode": 33188,
+        "st_size": 4723513,
+        "st_mtime_ns": 1791344601273924338,
+        "st_ctime_ns": 1791344601273924338
+      },
+      "bytes_read": 4723513,
+      "sha256": "0390b75e463657f4adb4eccaa54dfefb2a6699665d3dedb673dfd76d1ed7550a",
+      "valid_json": true,
+      "parse_error": null,
+      "tail": "c3694a7175627dd01b19e87023eb5009c55\",\"snapshot_witness\":\"c32755027e04896a\",\"source_archive_sha256\":\"2091520fb5eef037bb306653b1b35bb75a334d674b5938d45f451241a3c451d9\",\"step\":3,\"target\":0}],\"schema\":1}\n",
+      "registered_artifact": {
+        "bytes": 4723513,
+        "sha256": "0390b75e463657f4adb4eccaa54dfefb2a6699665d3dedb673dfd76d1ed7550a"
+      }
+    }
+  },
+  "archives": {
+    "execution-1/raw_traces.jsonl.gz": {
+      "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12",
+      "bytes": 18444383,
+      "evaluation_dataset": {
+        "sha256": "0390b75e463657f4adb4eccaa54dfefb2a6699665d3dedb673dfd76d1ed7550a",
+        "bytes": 4723513,
+        "raw_physical_lines": 1,
+        "complete_json": true
+      },
+      "actual_file_is_exact_member_prefix": true,
+      "original_member_matches_registered_identity": false
+    },
+    "execution-2/raw_traces.jsonl.gz": {
+      "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12",
+      "bytes": 18444383,
+      "evaluation_dataset": {
+        "sha256": "0390b75e463657f4adb4eccaa54dfefb2a6699665d3dedb673dfd76d1ed7550a",
+        "bytes": 4723513,
+        "raw_physical_lines": 1,
+        "complete_json": true
+      },
+      "actual_file_is_exact_member_prefix": true,
+      "original_member_matches_registered_identity": true
+    }
+  },
+  "stages": [
+    {
+      "order": 1,
+      "phase": "training_repeat_generation_started",
+      "independent_processes": 4,
+      "source_sha256": {
+        "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+        "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+        "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+        "chuck_architect.h": "01e0969c176fa467930c05b1e85de0f8194814e8bb47d229aa60bde4a66a8caa",
+        "chuck_architect_impl.h": "6a0d79fe46d1d6c2859ecf7dda52a2c37482aa259dec199445e0926f4514c3dc",
+        "spa_agent.h": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730",
+        "spa_agent.c": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+        "examples/spa_agent_demo.c": "23ec38602e902ffa50d2d3ac191848edb1e048ddf2f8357c7d35a3ee6fb11d31",
+        "examples/spa_agent_scenarios.h": "9f6fadfaceb1b10148742deb1d5887b0fd02eb9b24d271af90de48fa27aaae28",
+        "experiments/spa_agent/run.py": "4dc7152c421cd5d1812669f117673ca721a6800d3ee15020c6581d4cfeda85f7",
+        "experiments/spa_agent/protocol.json": "0a1272697270e93b8d0dbdeb2d8ce7706dbbbda77fcc146c2f29be7eddc1fae2",
+        "experiments/spa_agent/scenarios/run.py": "3da78ceb56bc50a0bb341db029373c9941003ad0a8a60ed422d2db091ef29195",
+        "experiments/spa_agent/scenarios/protocol.json": "25aeed3248bcde9920a4a4eed29fd5ef06e5373da670c26fbb87696d819edcf4",
+        "tests/test_spa_scenarios.py": "465e2d910f2be06fc97c8e92bdcb7a7c4021e9bae8e59bb659f1c3804e2eb6a2",
+        "examples/spa_agent_future.c": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661",
+        "experiments/spa_agent/future/run.py": "6131057ffe1f25c42f4888af644012a91f21ad6adfb93b32f5be5ada223a7df1",
+        "experiments/spa_agent/future/protocol.json": "134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861",
+        "tests/test_spa_future.py": "87fbed5560d6d89c3918fb32e7a9fa9c10e58056677c32d83cddc40bb069784e",
+        "tests/test_spa_trace_io.py": "f4cc9893b03d641653a5ca8e4efb7ca37e90fa0717d9b98db2f3980df18c288d",
+        "tests/test_spa_agent_future.c": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+        "experiments/spa_agent/scenarios/receipts.json": "fd13d4c256fb10ea1e31c7616da6fc8a9d94250063da683bcfcad475c11f05aa",
+        "experiments/spa_agent/scenarios/raw_traces.jsonl.gz": "dcee2f733f8a7a4063a44f0654b574dad55ce6b57ea258ee81a7582d39370d22",
+        "spa_binding.c": "5bbab8e95e937361dbf1c25d2c4b4296878977493eb7f0c68033e9fa981dbe84",
+        "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+        "python/SPA.py": "6620ee7b7333fd9956022e6b1460cc8991966d42a16046a33b462ee77d19c86f",
+        "python/notorch.py": "1e8d3551fe45fc5b6e4321ff036dac46198dd19b1feda7d4638352cf8e1031d1",
+        "examples/spa_agent_replicates.c": "b886d3c9851a366247128a3385c67868b14770d4f7df62fcdae06ea63b82bec6",
+        "tests/spa_replicates_fixture.c": "00ef2c829b3a03147a680b334e34935e66412407ec3de2cbe1e76f10ee754889",
+        "tests/test_spa_agent_repeated.c": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+        "tests/test_spa_replicates.py": "a2a3e06e8aa9b68382e789b514a1f53afd620d8b62154e10a5687f054b237d32",
+        "experiments/spa_agent/replicates/run.py": "046b1bea1f0676b516afa1125a69d47c401b19e33ef838ad12c2d2be95cdd257",
+        "experiments/spa_agent/replicates/policy.py": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca",
+        "experiments/spa_agent/replicates/protocol.json": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75"
+      }
+    },
+    {
+      "order": 2,
+      "phase": "training_repeats_complete",
+      "measurements": 5760.0
+    },
+    {
+      "order": 3,
+      "phase": "recovery_authenticated_then_all_eight_lives_sealed",
+      "barrier_sha256": "f090fd0bc58e77eb6952e8e7a9692e9370f6d92cef490cf32626114af2b6bb0f",
+      "recovery_sha256": "3d7c8a40ba0d095675803c76d69525282e0af68b35ec0092ade0c09b3a8e9693"
+    },
+    {
+      "order": 4,
+      "phase": "unseen_source_generation_started",
+      "seeds": [
+        307,
+        401
+      ],
+      "independent_processes": 4,
+      "barrier_sha256": "f090fd0bc58e77eb6952e8e7a9692e9370f6d92cef490cf32626114af2b6bb0f"
+    },
+    {
+      "order": 5,
+      "phase": "unseen_repeated_generation_started",
+      "independent_processes": 4
+    },
+    {
+      "order": 6,
+      "phase": "unseen_repeats_complete"
+    }
+  ],
+  "two_execution_relation": {
+    "shorter_exact_prefix": true,
+    "shorter_bytes": 2016208,
+    "longer_bytes": 4723513,
+    "missing_bytes": 2707305
+  }
+}

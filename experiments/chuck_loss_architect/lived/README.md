@@ -144,6 +144,122 @@ expected identity sets and save/load continuation. Terminal verification
 rereads recorded artifacts against their earlier anchors. Failed gates and
 measured regressions remain part of the report.
 
-Implementation and measurements will be recorded here after the fixed run.
-The earlier relative-loss objective, conditioned objective, ordinary online
-feedback and canonical Chuck remain available with their existing contracts.
+## Measured result: changed futures, deployment regression
+
+The first full fixed run completed on clean source
+`6029e1378986aa91518cc90ef82032a36a5cc6dd`, under the preregistered
+protocol SHA-256 `790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5`.
+Both students changed their acquired choices. **Neither student beat the parent
+on final held-out loss in any of the four complete deployments.** This result
+includes both bodies and both previously unseen seeds; no recipe was changed
+and no world was discarded after evaluation began.
+
+Changing only the continuation changed the exact set of best H16 actions in
+11/32 new worlds: 6/16 SimpleLLM and 5/16 HeVLM. On development worlds it changed
+7/32. Thus the future policy changes what an intervention earns. For example,
+on SimpleLLM seed 701 before update 64, BRAKE is best under fifteen HOLD updates;
+HOLD and PUSH tie for best when the parent continues selecting. Both branches
+begin at the same world with global dampening 2.
+
+Under the primary **parent-policy continuation**, the new-state comparisons
+are below. Regret is selected H16 future loss minus the measured best loss at
+that same world; lower is better. Counts include all actions tied at the exact
+F32 minimum. Displayed mean regrets are rounded; full precision is retained in
+the tables and receipts.
+
+| Body | Life | Best action | Mean regret |
+| --- | --- | ---: | ---: |
+| SimpleLLM | `parent` | 10/16 | 0.000056028 |
+| SimpleLLM | `lived-hold` | 10/16 | 0.000039056 |
+| SimpleLLM | `lived-policy` | 12/16 | 0.000036791 |
+| HeVLM | `parent` | 9/16 | 0.000073545 |
+| HeVLM | `lived-hold` | 9/16 | 0.000362307 |
+| HeVLM | `lived-policy` | 9/16 | 0.000362307 |
+
+The POLICY student improves the SimpleLLM common-state count from 10/16 to
+12/16 and lowers mean regret. On HeVLM both students still choose a best action
+in 9/16 worlds, yet mean regret increases from approximately .000073545 to
+.000362307. The same best-choice count can conceal more costly misses. Both
+continuation tables, all six fixed/learned readouts and every miss remain in
+[common_state.csv](common_state.csv).
+
+Complete 512-update deployments answer a different question. Final held-out
+losses are:
+
+| Body / seed | Canonical | HOLD | PUSH | Parent | `lived-hold` | `lived-policy` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| SimpleLLM / 701 | 2.55249667 | 2.60917759 | 2.54636097 | 2.61984873 | 2.70259333 | 2.6376853 |
+| SimpleLLM / 907 | 2.54698443 | 2.59399152 | 2.55647969 | 2.59760356 | 2.70563793 | 2.62439394 |
+| HeVLM / 701 | 1.59340107 | 1.55677295 | 1.56599045 | 1.56524408 | 1.56944704 | 1.56889033 |
+| HeVLM / 907 | 1.5716759 | 1.55485332 | 1.56948733 | 1.57769823 | 1.58197331 | 1.58368015 |
+
+The POLICY student beats the HOLD student on three of four final comparisons,
+but both finish behind the parent in every case. All learned deployments use
+HOLD, BRAKE and PUSH. This is a measured regression after a real change in
+acquired behavior.
+
+The traces locate an early trajectory change. On HeVLM, the HOLD student first
+chooses BRAKE where the parent chooses PUSH at update 2 on both seeds. The
+POLICY student first makes that choice at updates 8 and 7. At each first
+separation, the recorded observation, features, pre-action Chuck state and
+before-loss still agree exactly. Dampening first reaches its floor at update
+42 for the HOLD student and 61 for the POLICY student, compared with 216 and
+220 for the parent. These facts identify changed choices and the subsequent
+trajectories recorded in this run.
+Late HOLD/BRAKE action aliases at the floor remain explicit ties in the
+common-state comparisons.
+
+[deployment.csv](deployment.csv) retains all five held-out checkpoints for all
+24 primary deployments and four save/load repeats. Its action and history
+counts are **final-run totals**, repeated on each curve row. Learned-policy
+weights remain frozen throughout; only real feedback history advances.
+Canonical and fixed-action arms have no learned-policy frozen-weight claim.
+
+## Exact receipts and reproduction
+
+[results.json](results.json) contains the compact measured receipt: all 128
+state/continuation records (64 distinct worlds), their observations, features,
+three measured action consequences and exact F32 conditioned targets; sealed
+life identities; all common-state summaries; complete deployment curves;
+source/probe and resume parity; and raw artifact identities.
+[smoke_validation.json](smoke_validation.json) is the separate seed-42 wiring
+run. The first smoke and first full numerical attempt both passed.
+
+The full run executed 28,672 body updates and 32,768 native policy fits. Gates
+validated 4,096 probe-on/off source transitions, 1,024 selected-branch ordinary
+continuation transitions, all 6,144 fork updates, four exact policy save/load
+continuations, and four independently reproduced parent deployments. Terminal
+verification reread 707 anchored identities and all semantic traces; the final
+raw inventory contains 735 artifacts. Source hashes and all sealed lives were
+unchanged. The two students were sealed before seeds 701/907 produced outcomes.
+
+The raw result is SHA-256
+`a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354`.
+The complete numerical archive `chuck-lived-final-6029e13-raw.tar.gz` has
+941,976,873 bytes, 737 verified members and SHA-256
+`7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960`.
+It retains corpora, initial and final bodies, policy lives, every raw action and
+outcome trace, source/binary identities and the archive index. Two independent
+member-reading methods authenticated the same bytes; the slower backward-link
+reader completed normally. These large raw artifacts remain outside Git.
+
+To reproduce, use the measured source commit and the verified preceding
+conditional raw run identified in [protocol.json](protocol.json):
+
+```sh
+python3 experiments/chuck_loss_architect/lived/run.py \
+  --previous-run "$CONDITIONAL_RAW" --output "$RUN_OUTPUT"
+```
+
+Use a fresh output directory on the host's temporary filesystem. The runner
+builds against the current upstream tree, checks the preceding run's identities,
+acquires the fixed development worlds, seals both students, and only then runs
+the new seeds. This receipt covers CPU F32/SIMD with two threads, compiler and
+binary hashes in `results.json`; it contains no GPU measurement.
+
+The next architectural question follows from the retained failure: how can
+Chuck value repeated choices over the longer trajectory that they create?
+The present H16 parent-continuation experience is real and changes its next
+choices, but this fixed round does not improve complete deployment. The earlier
+relative-loss objective, conditioned objective, ordinary online feedback and
+canonical Chuck remain available with their existing contracts.

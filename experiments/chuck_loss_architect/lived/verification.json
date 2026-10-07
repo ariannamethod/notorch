@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "scope": "pre-experiment native intervention, lived-host and fixed-run validation",
+  "scope": "Native intervention, fixed lived-state experience and independent result verification",
   "base_commit": "5eb709f12eca7089551d349e93b07daec3c5e2c7",
   "preregistration_commit": "ab438c36c700d9086830100c7c273ea98ed043c2",
   "protocol_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
@@ -40,6 +40,54 @@
     "audit/current-verifier-mutations.json": {
       "bytes": 5581,
       "sha256": "b2fb0c49f7ac6910585fa89d6b1dd9e8ae4786fe898a5762b96f54524fe27e10"
+    },
+    "audit/final-seal-anchor.json": {
+      "bytes": 2178,
+      "sha256": "988868caeca8b3953cb5bc0496856e8e0cce7ca3275d52a3d1a7f3872180efd4"
+    },
+    "audit/final-auditor-review.json": {
+      "bytes": 2564,
+      "sha256": "2ae9aff744c3e4a333ba234a3c8aed04ec0ae0e19b7575e3eeee4762ce01b344"
+    },
+    "audit/final-receipt.json": {
+      "bytes": 1222913,
+      "sha256": "992003c48d8a191b3b4ffb09c388042535cafaa301202563b6dd01fcb7b2e61a"
+    },
+    "interpretation/interpretation.json": {
+      "bytes": 152585,
+      "sha256": "488d3febacbf4b48ab2c6342a2e4f8d09b6f2fa167bbfa33564d27c4d20bb71b"
+    },
+    "interpretation/trajectory_findings.json": {
+      "bytes": 14566,
+      "sha256": "2b125e54e34843abcedb5b191880cae8095541cdbf041328c77192931694074d"
+    },
+    "interpretation/trajectory_source_points.json": {
+      "bytes": 35478,
+      "sha256": "953c73e615dfd2c709ef29d87081701a89761302d56ae24534986533f45fb783"
+    },
+    "tests/documentation_semantics_pre_results.json": {
+      "bytes": 2248,
+      "sha256": "19f5af5cdf8c980a2863a764d0640d868ffcbd694417a8a371b060f2afb291ee"
+    },
+    "tests/root_result_docs_review.json": {
+      "bytes": 14255,
+      "sha256": "26d334d76d7a22086875370abc9b0af08fffa21fc0c0085f551f7cdf95bf785e"
+    },
+    "experiment/chuck-lived-final-6029e13-raw.tar.verification.json": {
+      "bytes": 1726,
+      "sha256": "a5965549c6715c7ca310d5e26062c1f1c058fb059e920fcdcbf885a365b3caad"
+    },
+    "runpod-availability.json": {
+      "bytes": 406,
+      "sha256": "df6d4dfd7ad18851ca057ef7898b3bf27210b9eaa8ab34f7ee5ec486a648530e"
+    },
+    "tests/final_documentation_review.json": {
+      "bytes": 4228,
+      "sha256": "37427789d60898677f2baa6bc272cc6af3b96995fede7731c79849c591d95fde"
+    },
+    "packaging/publication-prefixes.json": {
+      "bytes": 3235,
+      "sha256": "f3a17356ab42bdd70db383033bb54e2e3ea9377f87ddda2c3f7dd12a661e19d6"
     }
   },
   "cpu_recipe": {
@@ -2361,5 +2409,747 @@
     "current_sources_unchanged": true,
     "passed": true,
     "script_sha256": "e1adfe9bb870deb68509e2a10a43f2b6e13d4ceb7958312a6c7cb021457743b5"
+  },
+  "measured_source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+  "measured_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+  "early_independent_seal": {
+    "status": "PASS",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "acquisition_scope": "32 parent-visited worlds and two16384-fit students",
+    "files": {
+      "parent.policy.bin": {
+        "bytes": 1016,
+        "sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb"
+      },
+      "lived-hold.policy.bin": {
+        "bytes": 1016,
+        "sha256": "341af53d98beaa0a551f5d278c8d2518a599370699e56ea2a6ac75d9ec4bc364"
+      },
+      "lived-policy.policy.bin": {
+        "bytes": 1016,
+        "sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1"
+      },
+      "lived-hold.samples.bin": {
+        "bytes": 7312,
+        "sha256": "b1c071f1fbce06fc1991b7209f762f3edcde5dad7bf731676d2cae25bc164144"
+      },
+      "lived-policy.samples.bin": {
+        "bytes": 7312,
+        "sha256": "0270e406475aafe87001f44d9994f6351181fe59cf32dcc3b82eae640b7aaab5"
+      },
+      "sealed_lives.json": {
+        "bytes": 1741,
+        "sha256": "f9a200733a9cf48d3770b120dad7f2748ed0521be17008043c1970620e1bc6a5"
+      },
+      "manifest.json": {
+        "bytes": 16659,
+        "sha256": "9c27b6a0b85fa2eaadaff16e3ca0d0fe94e71294cd1a70083dbc2f5316fae7f3"
+      },
+      "protocol.json": {
+        "bytes": 11800,
+        "sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5"
+      },
+      "architect-config.json": {
+        "bytes": 313,
+        "sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5"
+      }
+    },
+    "timeline_prefix": [
+      {
+        "phase": "acquisition_started",
+        "time_ns": 1791343495727954169,
+        "parent_sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb"
+      },
+      {
+        "phase": "lives_sealed",
+        "time_ns": 1791343831423710685,
+        "sealed_lives_sha256": "f9a200733a9cf48d3770b120dad7f2748ed0521be17008043c1970620e1bc6a5"
+      },
+      {
+        "phase": "evaluation_generation_started",
+        "time_ns": 1791343831450222973,
+        "sealed_lives_sha256": "f9a200733a9cf48d3770b120dad7f2748ed0521be17008043c1970620e1bc6a5"
+      }
+    ],
+    "audit_time_ns": 1791343963924832390,
+    "scope": "Early independent seal/source/sample-table identity anchor; no evaluation trace or body execution read."
+  },
+  "final_auditor_static_review": {
+    "status": "STATIC_REVIEW_PASS",
+    "measured_source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "auditor_sources_sha256": {
+      "final-audit.py": "11244bb6ca9af695b64679837a2310daf53d1b64b5418b6093fa9cf4f0362338",
+      "final-policy-replay.c": "9c2e35cdbb0646561581a80408d44c653c3c4653f5da5e208ea0035ba6840981"
+    },
+    "findings_and_corrections": [
+      {
+        "finding": "Student fit tables lacked direct association with their prescribed development continuation.",
+        "correction": "Require exact JSON and binary table equality, then independently decode wire fields and source-life paths before native replay."
+      },
+      {
+        "finding": "Native raw readouts and enriched result readouts were checked separately.",
+        "correction": "Join every result row to its exact native row and allow only the five declared enrichment fields."
+      },
+      {
+        "finding": "Aggregate counts allowed repeated cohort/deployment/pair entries to substitute for omitted identities.",
+        "correction": "Require exact unique Cartesian identity sets and canonical source, deployment and resume endpoints."
+      },
+      {
+        "finding": "Replay cache omitted source lives reached indirectly through sample tables, and output-set completeness.",
+        "correction": "Fingerprint every decoded source life, exact output path set and cached command log identity."
+      },
+      {
+        "finding": "Replay adapter/caller needed explicit finite receipt, action/forced flag and positive count assertions.",
+        "correction": "Enforce finite recorded observations/consequences/scores; strict action and bool flags; native nonfinite/learned/error/actual-action and before/after receipt guards."
+      },
+      {
+        "finding": "Replay wire format assumed host scalar sizes and byte order.",
+        "correction": "C verifies little-endian IEEE binary32/binary64 and integer sizes; Python asserts72-byte inputs and136-byte outputs."
+      }
+    ],
+    "independent_delta_review": {
+      "agent": "/root/audit_next/review_final_auditor",
+      "result": "All original four coverage gaps closed; no new producer schema, offset or valid-input mismatch found.",
+      "scope": "Read-only static source review. No final outcome reads, builds, execution or edits."
+    },
+    "execution_boundary": "Auditor source frozen before reading full outcomes. Native adapter will be rebuilt from this exact C source and all tiny-policy replay will start only after experiment body processes finish.",
+    "early_seal_anchor_sha256": "988868caeca8b3953cb5bc0496856e8e0cce7ca3275d52a3d1a7f3872180efd4"
+  },
+  "independent_final_audit": {
+    "status": "PASS",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "source_sha256": {
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/chuck_architect_train.c": "915423b694b29a7da6088cf0c2c54659d9f5f0a804ce505ed314b5363aa3cc2e",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+      "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+      "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+      "examples/chuck-loss-architect.json": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+      "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+      "experiments/chuck_loss_architect/scenarios/run.py": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+      "experiments/chuck_loss_architect/future/run.py": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+      "experiments/chuck_loss_architect/conditional/run.py": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+      "experiments/chuck_loss_architect/lived/run.py": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+      "experiments/chuck_loss_architect/lived/protocol.json": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5"
+    },
+    "results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+    "early_independent_seal_anchor_sha256": "988868caeca8b3953cb5bc0496856e8e0cce7ca3275d52a3d1a7f3872180efd4",
+    "manifest_sha256": "9c27b6a0b85fa2eaadaff16e3ca0d0fe94e71294cd1a70083dbc2f5316fae7f3",
+    "sealed_lives_sha256": "f9a200733a9cf48d3770b120dad7f2748ed0521be17008043c1970620e1bc6a5",
+    "artifacts": {
+      "files": 735,
+      "bytes": 1436263462,
+      "archive_members": 737,
+      "archive_hardlinks": 173,
+      "archive_identity": {
+        "bytes": 941976873,
+        "sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960"
+      }
+    },
+    "fit_updates": 32768,
+    "readouts": 768,
+    "source_host_updates": 8192,
+    "paired_source_steps": 4096,
+    "source_worlds": 64,
+    "branches": 384,
+    "branch_updates": 6144,
+    "comparison_measurements": 1152,
+    "selected_branch_real_host_matches": 1024,
+    "rollout_runs": 28,
+    "rollout_updates": 14336,
+    "native_policy_transitions": {
+      "source_hosts": 8192,
+      "branches": 6144,
+      "deployments": 8192
+    },
+    "all_body_updates": 28672,
+    "resume_pairs": 4,
+    "source_deployment_pairs": 4,
+    "total_checks": 586956,
+    "audit_source_sha256": "11244bb6ca9af695b64679837a2310daf53d1b64b5418b6093fa9cf4f0362338",
+    "policy_replay_source_sha256": "9c2e35cdbb0646561581a80408d44c653c3c4653f5da5e208ea0035ba6840981",
+    "policy_replay_binary_sha256": "30fbbbbebdb397024093ff58d2a929261318d1768a341b0ec66f66dddc769402",
+    "scope": "No target-body training rerun. Native policy fits/readouts and every source/branch/deployment life transition replayed through recorded-observation/consequence adapters; all raw/archive artifacts authenticated."
+  },
+  "independent_interpretation": {
+    "schema": 1,
+    "name": "independent-lived-credit-result-interpretation",
+    "status": "PASS",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "protocol_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+    "raw_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+    "parser_sha256": "782d149bee80f8f19f39b90cf071d1a22d63eb84e15930f3bda343769b74b84f",
+    "checks": 6698,
+    "sealed_before_new_outcomes": true,
+    "counts": {
+      "development_worlds": 32,
+      "evaluation_worlds": 32,
+      "readouts": 768,
+      "policy_fits": 32768,
+      "primary_deployments": 24,
+      "resume_deployments": 4,
+      "primary_deployment_updates": 12288,
+      "resume_deployment_updates": 2048,
+      "source_host_updates": 8192,
+      "branch_updates": 6144,
+      "selected_policy_transitions_compared": 1024,
+      "all_body_updates": 28672
+    },
+    "continuation_best_action_contrasts": [
+      {
+        "split": "development",
+        "body": "simple",
+        "worlds": 16,
+        "changed_best_sets": 4,
+        "all_tied_hold": 0,
+        "all_tied_policy": 0,
+        "hold_best_counts": {
+          "push": 6,
+          "hold": 6,
+          "brake": 10
+        },
+        "policy_best_counts": {
+          "push": 6,
+          "brake": 10,
+          "hold": 6
+        }
+      },
+      {
+        "split": "development",
+        "body": "hevlm",
+        "worlds": 16,
+        "changed_best_sets": 3,
+        "all_tied_hold": 0,
+        "all_tied_policy": 0,
+        "hold_best_counts": {
+          "push": 5,
+          "brake": 11,
+          "hold": 5
+        },
+        "policy_best_counts": {
+          "push": 6,
+          "hold": 6,
+          "brake": 8
+        }
+      },
+      {
+        "split": "evaluation",
+        "body": "simple",
+        "worlds": 16,
+        "changed_best_sets": 6,
+        "all_tied_hold": 0,
+        "all_tied_policy": 0,
+        "hold_best_counts": {
+          "push": 3,
+          "brake": 13,
+          "hold": 5
+        },
+        "policy_best_counts": {
+          "push": 7,
+          "hold": 6,
+          "brake": 9
+        }
+      },
+      {
+        "split": "evaluation",
+        "body": "hevlm",
+        "worlds": 16,
+        "changed_best_sets": 5,
+        "all_tied_hold": 0,
+        "all_tied_policy": 0,
+        "hold_best_counts": {
+          "push": 6,
+          "brake": 10,
+          "hold": 6
+        },
+        "policy_best_counts": {
+          "push": 8,
+          "brake": 7,
+          "hold": 5
+        }
+      }
+    ],
+    "interpretation_status": "Numerical report complete; next-learning question must reference these retained measurements, without altering this run."
+  },
+  "measured_trajectory_findings": {
+    "schema": 1,
+    "name": "lived-credit-measured-trajectory-findings",
+    "raw_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+    "base_interpretation_sha256": "488d3febacbf4b48ab2c6342a2e4f8d09b6f2fa167bbfa33564d27c4d20bb71b",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "dampening_floor_arrival": [
+      {
+        "body": "simple",
+        "seed": 701,
+        "arm": "parent",
+        "first_post_action_floor_step": 287,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 9,
+          "brake": 27,
+          "push": 92
+        },
+        "final128_floor_steps": 124
+      },
+      {
+        "body": "simple",
+        "seed": 701,
+        "arm": "lived-hold",
+        "first_post_action_floor_step": 72,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 98,
+          "push": 30
+        },
+        "final128_floor_steps": 118
+      },
+      {
+        "body": "simple",
+        "seed": 701,
+        "arm": "lived-policy",
+        "first_post_action_floor_step": 241,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 29,
+          "push": 99
+        },
+        "final128_floor_steps": 126
+      },
+      {
+        "body": "simple",
+        "seed": 907,
+        "arm": "parent",
+        "first_post_action_floor_step": 303,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 7,
+          "brake": 29,
+          "push": 92
+        },
+        "final128_floor_steps": 123
+      },
+      {
+        "body": "simple",
+        "seed": 907,
+        "arm": "lived-hold",
+        "first_post_action_floor_step": 120,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 2,
+          "brake": 86,
+          "push": 40
+        },
+        "final128_floor_steps": 123
+      },
+      {
+        "body": "simple",
+        "seed": 907,
+        "arm": "lived-policy",
+        "first_post_action_floor_step": 256,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 26,
+          "push": 102
+        },
+        "final128_floor_steps": 127
+      },
+      {
+        "body": "hevlm",
+        "seed": 701,
+        "arm": "parent",
+        "first_post_action_floor_step": 216,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 16,
+          "brake": 47,
+          "push": 65
+        },
+        "final128_floor_steps": 128
+      },
+      {
+        "body": "hevlm",
+        "seed": 701,
+        "arm": "lived-hold",
+        "first_post_action_floor_step": 42,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 127,
+          "push": 1
+        },
+        "final128_floor_steps": 128
+      },
+      {
+        "body": "hevlm",
+        "seed": 701,
+        "arm": "lived-policy",
+        "first_post_action_floor_step": 61,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 8,
+          "brake": 111,
+          "push": 9
+        },
+        "final128_floor_steps": 128
+      },
+      {
+        "body": "hevlm",
+        "seed": 907,
+        "arm": "parent",
+        "first_post_action_floor_step": 220,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 13,
+          "brake": 46,
+          "push": 69
+        },
+        "final128_floor_steps": 128
+      },
+      {
+        "body": "hevlm",
+        "seed": 907,
+        "arm": "lived-hold",
+        "first_post_action_floor_step": 42,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 127,
+          "push": 1
+        },
+        "final128_floor_steps": 128
+      },
+      {
+        "body": "hevlm",
+        "seed": 907,
+        "arm": "lived-policy",
+        "first_post_action_floor_step": 61,
+        "first128_actions": {
+          "legacy": 0,
+          "hold": 4,
+          "brake": 114,
+          "push": 10
+        },
+        "final128_floor_steps": 128
+      }
+    ],
+    "measured_action_aliases": [
+      {
+        "split": "development",
+        "body": "simple",
+        "source_worlds": 16,
+        "source_worlds_at_floor": 6,
+        "exact_hold_brake_H16_ties_at_floor_hold_continuation": 6,
+        "exact_hold_brake_H16_ties_at_floor_policy_continuation": 6
+      },
+      {
+        "split": "development",
+        "body": "hevlm",
+        "source_worlds": 16,
+        "source_worlds_at_floor": 8,
+        "exact_hold_brake_H16_ties_at_floor_hold_continuation": 8,
+        "exact_hold_brake_H16_ties_at_floor_policy_continuation": 8
+      },
+      {
+        "split": "evaluation",
+        "body": "simple",
+        "source_worlds": 16,
+        "source_worlds_at_floor": 6,
+        "exact_hold_brake_H16_ties_at_floor_hold_continuation": 6,
+        "exact_hold_brake_H16_ties_at_floor_policy_continuation": 6
+      },
+      {
+        "split": "evaluation",
+        "body": "hevlm",
+        "source_worlds": 16,
+        "source_worlds_at_floor": 8,
+        "exact_hold_brake_H16_ties_at_floor_hold_continuation": 8,
+        "exact_hold_brake_H16_ties_at_floor_policy_continuation": 8
+      }
+    ],
+    "next_learning_question": {
+      "status": "question for a separately fixed future experiment; no change to this run",
+      "question": "Can the next acquisition round learn from the students own early decisions and arrival at the dampening floor, while preserving useful parent choices?",
+      "evidence": [
+        "Acquisition worlds and fifteen-step policy continuations came from the fixed parent; deployment then used the newly fitted student itself.",
+        "Every first student-parent action divergence has identical recorded observations/features and before-loss; student choices subsequently reach the dampening floor earlier on both bodies and both seeds.",
+        "Matched continuation changes11of32evaluation best-action sets and improves SimpleLLM common-state regret and optimality, while both students finish allfourfull deployments worse than parent.",
+        "HeVLM lived-hold changes toBRAKE atstep2 under parent-identical observation/features; parent-sourced acquisition checkpoints are1,64,128,192,256,320,384,448."
+      ],
+      "potential_control_question": "A further parent-data replay versus the same fitting budget using actually reached student states would separate extra updates from new acquired trajectory experience."
+    }
+  },
+  "documentation_semantics": {
+    "scope": "Pre-result public API / README / fixed protocol semantic review; no experiment outcome files read",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "source_sha256": {
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/chuck_architect_lived.h": "c1efe9b281e61b0cdbb0fc52a5ff58029ee04fbbf5ac7441242e5f98ab83dde0",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_rollout.h": "44014043a783572178168afc3c21ebd91ed8291acb66bfe46c7a08645118018e",
+      "experiments/chuck_loss_architect/lived/README.md": "e3527e86afe1322b846e7dbf10378e7357b2c0632e414ad147b081aca2045c31",
+      "experiments/chuck_loss_architect/lived/protocol.json": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5"
+    },
+    "status": "PASS",
+    "findings": [],
+    "checked_contracts": [
+      "Intervene validates idle learned life, bounded available HOLD/BRAKE/PUSH zero-valued action, callback and source observation before core action",
+      "One same-window callback, no exposed intervention pending state, actual-action completed cache, explored=0",
+      "Native frozen consequence: real reward/history/counters, unchanged policy weights/configuration/RNG, nonfinite outcome reward -1",
+      "Six branches per identical source world; forced first action, subsequent HOLD or parent selections with actual native history",
+      "H1/H4/H16 diagnostics share four future windows at indices16-19; only H16 supplies conditioned fit targets",
+      "Full source restoration and selected-parent branch equality before optional probe forwards",
+      "Single fixed acquisition round,32 source worlds, two32-sample students,512epochs,32768fits",
+      "32new-seed evaluationworlds aftersealedlives, bothcontinuationtables,768totalreadouts",
+      "8192sourcehost+6144branch+14336deployment=28672bodyupdates;4save-loadrepeats",
+      "CPU-only F32 two-SIMD-thread execution scope; no GPU outcome claims"
+    ],
+    "final_results_audit": "awaiting root authorization to read completed run and final result documentation"
+  },
+  "root_result_documentation_review": {
+    "status": "PASS",
+    "checks": 8878,
+    "findings": [],
+    "raw_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "protocol_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+    "reviewed_document_sha256": {
+      "README.md": "f4864ffebc534e6ceaad49a8d0414f281c7ca67fba56edfbb482cc7e07d61ea5",
+      "NOTORCHLOG.md": "ac4155a9785df8579e78a47df585e297995b581be656e9feb1df6fe33ab53f71"
+    },
+    "continuation_changes": {
+      "development-simple": {
+        "worlds": 16,
+        "changed_best_sets": 4
+      },
+      "development-hevlm": {
+        "worlds": 16,
+        "changed_best_sets": 3
+      },
+      "evaluation-simple": {
+        "worlds": 16,
+        "changed_best_sets": 6
+      },
+      "evaluation-hevlm": {
+        "worlds": 16,
+        "changed_best_sets": 5
+      }
+    },
+    "runpod_receipt_sha256": "df6d4dfd7ad18851ca057ef7898b3bf27210b9eaa8ab34f7ee5ec486a648530e",
+    "scope": "Top README and newest NOTORCHLOG entry before final archive/audit metadata; final lived compact files pending separate review"
+  },
+  "numerical_archive_verification": {
+    "status": "PASS",
+    "archive_file": "chuck-lived-final-6029e13-raw.tar.gz",
+    "archive_bytes": 941976873,
+    "archive_sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960",
+    "members_verified": 737,
+    "original_verification": {
+      "status": "PASS",
+      "run": "chuck-lived-final-v1",
+      "results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+      "archive_file": "chuck-lived-final-v1.tar.gz",
+      "archive_bytes": 941976873,
+      "archive_sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960",
+      "members_verified": 737,
+      "completed_ns": 1791345187254375908
+    },
+    "forward_verification": {
+      "status": "PASS",
+      "method": "single forward gzip stream; hardlinks resolve only to earlier byte-verified members",
+      "run": "chuck-lived-final-v1",
+      "results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+      "archive_file": "chuck-lived-final-v1.tar.gz",
+      "archive_bytes": 941976873,
+      "archive_sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960",
+      "members_verified": 737,
+      "raw_artifacts_rechecked": 735,
+      "completed_ns": 1791345200044309555
+    },
+    "member_modes_match_raw": true,
+    "atomic_published_copy_verified": true,
+    "attempts": [
+      {
+        "method": "Python tarfile getmembers/extractfile",
+        "status": "PASS",
+        "note": "Backward hardlink resolution repeatedly decompresses gzip; completed normally."
+      },
+      {
+        "method": "Forward gzip stream with earlier verified hardlink targets",
+        "status": "PASS",
+        "note": "Run concurrently after slow original verification; same archive unchanged; no process was terminated."
+      }
+    ]
+  },
+  "runpod_availability_retry": {
+    "utc": "2026-10-07T03:26:56.632180+00:00",
+    "endpoint": "https://api.runpod.io/graphql",
+    "scope": "single unauthenticated read-only availability retry after support contact; no API key, pod creation or spend",
+    "http_status": 403,
+    "headers": {
+      "Content-Type": "text/plain; charset=UTF-8",
+      "Server": "cloudflare",
+      "CF-RAY": "a469cec78ce717d6-ORD"
+    },
+    "body": "error code: 1010\n"
+  },
+  "final_publication_review": {
+    "status": "PASS",
+    "checks": 21923,
+    "findings": [],
+    "scope": "Final tracked result publication and top-level documentation; later outer-archive name/size/hash and receipt-identity-only additions excluded. No numerical runs or tracked-file edits.",
+    "source_commit": "6029e1378986aa91518cc90ef82032a36a5cc6dd",
+    "raw_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+    "reviewed_file_identities": {
+      "README.md": {
+        "bytes": 93975,
+        "sha256": "f4864ffebc534e6ceaad49a8d0414f281c7ca67fba56edfbb482cc7e07d61ea5"
+      },
+      "NOTORCHLOG.md": {
+        "bytes": 427957,
+        "sha256": "db838827cd25c7c60462b45136759aedf1d9e215293147a7f2546327e68d0748"
+      },
+      "experiments/chuck_loss_architect/lived/README.md": {
+        "bytes": 14747,
+        "sha256": "0067d19e36027c709dd6398173c6043130b45acf9fd66cf8793a368417b2b95d"
+      },
+      "experiments/chuck_loss_architect/lived/results.json": {
+        "bytes": 649236,
+        "sha256": "7cfcb5c80ced6c610f5a5814bba00e5a099d2a19dd507ac465485add0d882fc6"
+      },
+      "experiments/chuck_loss_architect/lived/common_state.csv": {
+        "bytes": 187138,
+        "sha256": "01895c97417888219c1d4451d51167fbceca86da44fd9a9a741cb07d8428308b"
+      },
+      "experiments/chuck_loss_architect/lived/deployment.csv": {
+        "bytes": 14963,
+        "sha256": "0cc82a151c955ee27441ac2c4da57c214632012cba0da685fdf9134c756c9d06"
+      },
+      "experiments/chuck_loss_architect/lived/verification.json": {
+        "bytes": 143752,
+        "sha256": "b61ddaef92aabcc013d3a8df9fa738258e473cd920f2a2683177ac1db094f757"
+      }
+    },
+    "prior_root_metrics_review": {
+      "identity": {
+        "bytes": 14255,
+        "sha256": "26d334d76d7a22086875370abc9b0af08fffa21fc0c0085f551f7cdf95bf785e"
+      },
+      "checks": 8878,
+      "status": "PASS"
+    },
+    "resolved_wording_findings": [
+      {
+        "file": "lived/README.md",
+        "removed": "not a failure to execute the architecture",
+        "resolution": "affirmative measured-regression sentence"
+      },
+      {
+        "file": "lived/README.md",
+        "removed": "they do not establish one cause for the final loss difference",
+        "resolution": "affirmative observed-trajectory scope"
+      },
+      {
+        "file": "lived/results.json",
+        "removed": "No superiority claim",
+        "resolution": "fixed one-round protocol sentence"
+      }
+    ],
+    "verification_receipt_count": 19,
+    "csv_rows": {
+      "common_state": 768,
+      "deployment": 140
+    },
+    "samples_verified": 128,
+    "source_hashes_unchanged": {
+      "notorch.c": true,
+      "notorch.h": true,
+      "notorch_simd.h": true,
+      "chuck_architect.h": true,
+      "chuck_architect_impl.h": true,
+      "examples/chuck_architect_train.c": true,
+      "examples/chuck_architect_scenarios.h": true,
+      "examples/chuck_architect_rollout.h": true,
+      "examples/chuck_architect_lived.h": true,
+      "examples/chuck_architect_future.c": true,
+      "examples/chuck-loss-architect.json": true,
+      "experiments/chuck_loss_architect/run.py": true,
+      "experiments/chuck_loss_architect/scenarios/run.py": true,
+      "experiments/chuck_loss_architect/future/run.py": true,
+      "experiments/chuck_loss_architect/conditional/run.py": true,
+      "experiments/chuck_loss_architect/lived/run.py": true,
+      "experiments/chuck_loss_architect/lived/protocol.json": true
+    },
+    "git_status_at_review": " M NOTORCHLOG.md\n M README.md\n M experiments/chuck_loss_architect/lived/README.md\n M experiments/chuck_loss_architect/lived/verification.json\n?? experiments/chuck_loss_architect/lived/common_state.csv\n?? experiments/chuck_loss_architect/lived/deployment.csv\n?? experiments/chuck_loss_architect/lived/results.json\n",
+    "staged_files_at_review": [],
+    "audit_harness_corrections": {
+      "initial_receipt": {
+        "bytes": 4093,
+        "sha256": "cf82409fc9b4d53a9edaab5d8d7e45a640a15cac3c5f3c6f42c49a1bb08e85fe"
+      },
+      "resolved": "CSV identity projection excludes extra rows/scope; compact trajectory excerpt excludes two named nonnumeric metadata fields; path scan covers changed log lines and preserves the exact canonical collaboration-agent identifier."
+    },
+    "no_unresolved_findings": true,
+    "audit_script_sha256": "35d0d0057b4c162957056980e9f38e6233f2583eafe3ae039186f6b92030f182"
+  },
+  "outer_archive_note": "The raw copy of this consolidated verification precedes the outer archive identity to avoid a circular hash. The Git copy appends that archive identity after full member verification.",
+  "publication_prefix_delivery": {
+    "status": "PASS",
+    "reconstructible_prefixes": 7,
+    "reconstructible_bytes": 3575382016,
+    "source_sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960",
+    "scope": "Seven post-run partial publication copies are represented by exact prefix reconstruction receipts instead of duplicate bytes. Every buffer matched a prefix of the complete authenticated numerical archive. No numerical artifact, experiment attempt or outcome is excluded; originals remain untouched. No creator is assigned to unexplained residual copies."
+  },
+  "raw_archive": {
+    "file": "chuck-lived-credit-6029e13-receipts.tar.gz",
+    "bytes": 1000727844,
+    "sha256": "3af5601adfd2f37b887ccdd47de6371e7cd3bf2723a96de5ff803501b6972d77",
+    "members": 1871,
+    "hardlinks": 241,
+    "index_sha256": "31adb0e370e9eb109eed3079d2bad3efa874232217ca3cc369b3edc10f141b8d",
+    "verified_all_members": true,
+    "published_copy_verified": true
+  },
+  "raw_archive_parts": {
+    "archive": {
+      "file": "chuck-lived-credit-6029e13-receipts.tar.gz",
+      "bytes": 1000727844,
+      "sha256": "3af5601adfd2f37b887ccdd47de6371e7cd3bf2723a96de5ff803501b6972d77"
+    },
+    "parts": [
+      {
+        "file": "chuck-lived-credit-6029e13-receipts.tar.gz.part01",
+        "bytes": 400000000,
+        "sha256": "52a4ff2cb2164fc5563d7b04fc8d00a169b59ed22601764a07e73acba95b8791"
+      },
+      {
+        "file": "chuck-lived-credit-6029e13-receipts.tar.gz.part02",
+        "bytes": 400000000,
+        "sha256": "023f6a31c57f8a89feb5fa0935e80cb41a9a86f318c4e89ba446b8de198ffbee"
+      },
+      {
+        "file": "chuck-lived-credit-6029e13-receipts.tar.gz.part03",
+        "bytes": 200727844,
+        "sha256": "ab4c2024474a85fd54b19b8509c484157c79f9294bf0b5b951ab3fa1a0fd93f0"
+      }
+    ],
+    "reconstruct": "Concatenate part01, part02 and part03 in that order, then verify the archive SHA-256 before extraction.",
+    "save_attempt": {
+      "whole_archive": "prepare_uploads failed; helper exited1 before finalization",
+      "cause": "Not established",
+      "recovery": "Same prepared helper route with three bounded lossless byte-range parts."
+    },
+    "manifest_file": "chuck-lived-credit-6029e13-parts.json",
+    "manifest_sha256": "7ae2ab61a50cdab545fa3f7fb13cf8eb9e16adb3bd060871b00e62f4a07f4dac",
+    "all_saved": true,
+    "whole_reconstruction_verified": true
   }
 }

@@ -680,6 +680,23 @@ spa_agent_future: examples/spa_agent_future.c spa_agent.h libnotorch.a
 
 test: test_spa_agent_future
 
+# SPA repeated consequences retain one native policy update per source state.
+.PHONY: check_spa_repeated test_spa_repeated_mutations
+test_spa_agent_repeated: tests/test_spa_agent_repeated.c spa_agent.c spa_agent.h notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_spa_agent_repeated.c spa_agent.c notorch.c -lm $(BLAS_LIBS)
+
+check_spa_repeated: test_spa_agent_repeated
+	./test_spa_agent_repeated
+	python3 tests/test_spa_replicates.py
+
+test_spa_repeated_mutations:
+	python3 tests/test_spa_repeated_mutations.py
+
+spa_agent_replicates: examples/spa_agent_replicates.c examples/spa_agent_demo.c examples/spa_agent_scenarios.h spa_agent.h libnotorch.a
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch.a -lm $(BLAS_LIBS)
+
+test: test_spa_agent_repeated
+
 # ── Test & Clean ──
 
 test_qpool: tests/test_qpool.c notorch.c notorch.h $(CHUCK_HEADERS)
@@ -778,6 +795,7 @@ test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability
 	./test_spa_agent_state
 	./test_spa_agent_durability
 	./test_spa_agent_future
+	./test_spa_agent_repeated
 	./test_chuck_architect
 	./test_chuck_actions_edge
 	sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state
@@ -866,6 +884,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
+	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o
 	rm -f test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_chuck_architect_conditioned test_chuck_architect_durability test_chuck_lived tests/chuck_durability_notorch.o chuck_architect_train chuck_architect_future
