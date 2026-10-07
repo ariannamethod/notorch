@@ -534,6 +534,26 @@ scores but no choices. The separately untouched seed 211 has the same 2/4
 optimal choices per body. Learning conditional BRAKE choices is the next
 question; all 4,096 paired host steps and final saved states remain exact.
 
+`nt_chuck_architect_fit_conditioned` gives each saved world's measured action
+differences their own scale. Its HOLD-relative targets divide by the largest
+finite absolute action difference, with a documented floor. The raw losses and
+the scale stay in the receipt. The same 163 parameters learn these conditioned
+action scores; the earlier relative-loss objective remains available unchanged.
+`nt_chuck_architect_feedback_frozen` then lets a saved policy act throughout a
+real training trajectory: consequences advance its temporal history while its
+acquired weights stay fixed. The [conditional-credit protocol](experiments/chuck_loss_architect/conditional/README.md)
+separates common-state action comparisons from this repeated-action deployment.
+
+The clean two-body run acquires conditional choices on new seeds 307/509:
+SimpleLLM selects an optimal H16 action at 6/8 states; HeVLM reaches 5/8 before
+adaptation and 6/8 afterward, against the old policy's 4/8 on each body. In
+24 complete 512-step deployments, both conditioned lives use HOLD, BRAKE and
+PUSH. Final held-out loss regresses against the old PUSH life on both SimpleLLM
+seeds; HeVLM improves on seed 307 and regresses on 509. Four policy save/load
+repeats preserve the complete continuation and final bytes. The experiment now
+records acquired conditionality and the consequences of repeated deployment;
+its next credit must learn from the trajectories those choices create.
+
 ---
 
 ## bit-level precision — BitNet b1.58
