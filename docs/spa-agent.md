@@ -138,6 +138,22 @@ The [future-credit protocol](../experiments/spa_agent/future/protocol.json)
 fixes training on retained sentence scenarios, an immediate-outcome control,
 a declared shuffled-outcome control, and evaluation on new generation seeds.
 
+`nt_spa_agent_fit_repeated` accepts 1–64 comparisons of the same captured
+state, action mask and horizon. Every action and repetition must share the
+same before-measurements. Native reward calculation and clipping happen
+separately for each outcome; their double-precision sum is averaged and
+rounded to float once per action. The target is that mean reward minus
+the mean KEEP reward. One simultaneous mean-Huber update fits all valid heads.
+Count 1 delegates to `fit_comparison` and preserves its exact state and receipt.
+
+The existing `nt_spa_comparison_receipt` reports mean rewards, relative targets,
+scores and losses. The caller retains the repeat count, raw consequences and
+their source/RNG provenance. Validation covers the entire comparison array
+before mutation; replay preserves temporal state, configuration, RNG and the
+v1 save format. The [paired-continuation protocol](../experiments/spa_agent/replicates/protocol.json)
+uses eight paired continuations per state with the original policy capacity
+and update budget.
+
 ## Lineage and research sources
 
 The code lineage is **PostGPT → SPA → Q → Sentence Phonon Agent**.

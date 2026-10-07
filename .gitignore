@@ -131,3 +131,10 @@ bench_cuda_decode
 !tests/test_spa_future_mutations.py
 # Reconstruct from the three lossless tracked transport parts.
 /experiments/spa_agent/future/raw_traces.jsonl.gz
+
+# SPA paired repeated consequences
+/test_spa_agent_repeated
+/spa_agent_replicates
+!tests/test_spa_replicates.py
+!tests/test_spa_repeated_mutations.py
+/experiments/spa_agent/replicates/raw_traces.jsonl.gz

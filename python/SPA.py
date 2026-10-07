@@ -18,6 +18,7 @@ from notorch import find_library
 
 NO_SOURCE = 0xFFFFFFFF
 EMBED, FEATURES, HIDDEN, ACTIONS, HISTORY = 4, 29, 8, 3, 8
+MAX_REPEATS = 64
 
 
 class Mode(IntEnum):
@@ -239,6 +240,7 @@ def _layout():
               "NT_SPA_AGENT_PARAMETERS": 267, "NT_SPA_AGENT_HISTORY": HISTORY,
               "NT_SPA_AGENT_MAX_SENTENCES": 4096, "NT_SPA_AGENT_MAX_DIM": 4096,
               "NT_SPA_AGENT_NO_SOURCE": NO_SOURCE, "NT_SPA_COMPARISON_MAX_HORIZON": 4096,
+              "NT_SPA_COMPARISON_MAX_REPEATS": MAX_REPEATS,
               "sizeof.float": C.sizeof(C.c_float), "sizeof.double": C.sizeof(C.c_double),
               "sizeof.nt_spa_action_kind": C.sizeof(C.c_int),
               "sizeof.nt_spa_agent_mode": C.sizeof(C.c_int)}
@@ -345,6 +347,9 @@ class Native:
             "fit_comparison": ([C.POINTER(AgentState), C.POINTER(Experience),
                                 C.POINTER(Comparison), C.c_float,
                                 C.POINTER(ComparisonReceipt)], C.c_int),
+            "fit_repeated": ([C.POINTER(AgentState), C.POINTER(Experience),
+                              C.POINTER(Comparison), C.c_uint32, C.c_float,
+                              C.POINTER(ComparisonReceipt)], C.c_int),
             "save": ([C.POINTER(AgentState), C.c_char_p], C.c_int),
             "load": ([C.POINTER(AgentState), C.c_char_p], C.c_int),
             "hash": ([C.POINTER(AgentState)], C.c_uint64),
@@ -514,6 +519,23 @@ class Agent:
                    _float(learning_rate, "learning_rate"), C.byref(out))
         return out
 
+    def fit_repeated(self, experience, comparisons, learning_rate):
+        """Fit mean native rewards from 1..64 paired outcomes of one state.
+
+        Each repeat is a complete Comparison. Clipping, averaging, target
+        construction and gradients all execute in C.
+        """
+        _require(experience, Experience)
+        comparisons = list(comparisons)
+        _integer(len(comparisons), "repeat count", 1, MAX_REPEATS)
+        for comparison in comparisons:
+            _require(comparison, Comparison)
+        array = (Comparison * len(comparisons))(*comparisons)
+        out = ComparisonReceipt()
+        self._call("fit_repeated", C.byref(experience), array, len(array),
+                   _float(learning_rate, "learning_rate"), C.byref(out))
+        return out
+
     def validate(self):
         self._call("validate")
 
@@ -533,4 +555,4 @@ class Agent:
 __all__ = ["Native", "Agent", "Config", "Mode", "ActionKind", "Action", "Metrics",
            "Consequence", "Observation", "Policy", "Decision", "Receipt", "AgentState",
            "Experience", "Alternative", "Comparison", "Readout", "ComparisonReceipt",
-           "Status", "Error", "ABIError", "NO_SOURCE", "default_native"]
+           "Status", "Error", "ABIError", "NO_SOURCE", "MAX_REPEATS", "default_native"]

@@ -1,0 +1,123 @@
+{
+  "schema": 1,
+  "passed": true,
+  "source_sha256": {
+    "spa_agent.c": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+    "spa_agent.h": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730",
+    "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+    "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "chuck_architect.h": "638aa0f0c77b21a1d70a5e306d25f269faed1035d85d1ca4501612fc3340b313",
+    "chuck_architect_impl.h": "f679f0004c4dbd6ffdeeedb84471eeab5f157b1f63fa4f5aecb36f7daec1851e"
+  },
+  "v1_compatibility": {
+    "baseline_commit": "47cb6f8207b8ca2c3fc02be898eeb19d0f6bbad7",
+    "baseline_source_sha256": {
+      "spa_agent.c": "a30ebef08cd453ba2aa41133aecddf22d0468f11783d23eb469b61743aabfbb0",
+      "spa_agent.h": "c0dc6202c816131d81de26aae1393812573fea091b5ddd5fc2c0e52711b06115",
+      "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+      "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "638aa0f0c77b21a1d70a5e306d25f269faed1035d85d1ca4501612fc3340b313",
+      "chuck_architect_impl.h": "f679f0004c4dbd6ffdeeedb84471eeab5f157b1f63fa4f5aecb36f7daec1851e"
+    },
+    "emitter_sha256": "96bd8c268c084ee25ac13c05210207a3daeadc459b05cece5d1c419bb1648ebb",
+    "files": [
+      {
+        "name": "initial.bin",
+        "bytes": 2296,
+        "old_sha256": "48980fc07e9a2bcff221120cb3471c43574f9f96c63e3f967ea53290f929eece",
+        "new_sha256": "48980fc07e9a2bcff221120cb3471c43574f9f96c63e3f967ea53290f929eece",
+        "identical": true
+      },
+      {
+        "name": "pending.bin",
+        "bytes": 2296,
+        "old_sha256": "5505aa5402310cc540043eb078d70591d676074c6df7ca34e5aee4fb0e908e1f",
+        "new_sha256": "5505aa5402310cc540043eb078d70591d676074c6df7ca34e5aee4fb0e908e1f",
+        "identical": true
+      },
+      {
+        "name": "completed.bin",
+        "bytes": 2296,
+        "old_sha256": "8d8ae7df678891baaab69e1af94b4466a08a165491f0357d4e27b6de1e78569d",
+        "new_sha256": "8d8ae7df678891baaab69e1af94b4466a08a165491f0357d4e27b6de1e78569d",
+        "identical": true
+      },
+      {
+        "name": "imitation.bin",
+        "bytes": 2296,
+        "old_sha256": "e493e0c06a4621ebfe49b0214949a2bbef7c5b0cc234acd1acd0fbd022462b58",
+        "new_sha256": "e493e0c06a4621ebfe49b0214949a2bbef7c5b0cc234acd1acd0fbd022462b58",
+        "identical": true
+      }
+    ],
+    "v1-old": {
+      "build": {
+        "command": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I",
+          "<temporary>/v1-old",
+          "-I",
+          "<source>",
+          "<temporary>/v1-old/gate.c",
+          "<temporary>/v1-old/spa_agent.c",
+          "<temporary>/v1-old/notorch.c",
+          "-lm",
+          "-o",
+          "<temporary>/v1-old/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/v1-old/gate",
+          "<temporary>/v1-old-output"
+        ],
+        "returncode": 0,
+        "stdout": "PASS v1_compatibility: initial, pending, completed and imitation lives\n",
+        "stderr": ""
+      }
+    },
+    "v1-current": {
+      "build": {
+        "command": [
+          "cc",
+          "-O2",
+          "-std=gnu11",
+          "-pthread",
+          "-I",
+          "<temporary>/v1-current",
+          "-I",
+          "<source>",
+          "<temporary>/v1-current/gate.c",
+          "<temporary>/v1-current/spa_agent.c",
+          "<temporary>/v1-current/notorch.c",
+          "-lm",
+          "-o",
+          "<temporary>/v1-current/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/v1-current/gate",
+          "<temporary>/v1-current-output"
+        ],
+        "returncode": 0,
+        "stdout": "PASS v1_compatibility: initial, pending, completed and imitation lives\n",
+        "stderr": ""
+      }
+    },
+    "passed": true
+  },
+  "changed_sources": [],
+  "working_sources_unchanged": true
+}

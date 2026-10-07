@@ -25,6 +25,7 @@ extern "C" {
 #define NT_SPA_AGENT_NO_SOURCE UINT32_MAX
 #define NT_SPA_EXPERIENCE_VERSION 1u
 #define NT_SPA_COMPARISON_MAX_HORIZON 4096u
+#define NT_SPA_COMPARISON_MAX_REPEATS 64u
 
 typedef enum {
     NT_SPA_AGENT_DISABLED = 0,
@@ -252,6 +253,17 @@ int nt_spa_agent_score_experience(const nt_spa_agent *agent,
 int nt_spa_agent_fit_comparison(nt_spa_agent *agent,
     const nt_spa_experience *experience, const nt_spa_comparison *comparison,
     float learning_rate, nt_spa_comparison_receipt *receipt);
+// Repeated same-state comparisons: count1..64, identical feature source,
+// action mask, horizon and before metrics across every repetition. Compute
+// each native clipped reward first, accumulate in double, then round its mean
+// to float once. Targets are mean_reward[a]-mean_reward[KEEP]. One simultaneous
+// mean-Huber policy update uses those targets; receipt rewards are the means.
+// count1 is byte-identical to fit_comparison. No persistent field is added.
+// All source comparisons stay unchanged. Overlapping inputs/output/life and
+// malformed members are refused before any update, including later members.
+int nt_spa_agent_fit_repeated(nt_spa_agent *agent,
+    const nt_spa_experience *experience, const nt_spa_comparison *comparisons,
+    uint32_t count, float learning_rate, nt_spa_comparison_receipt *receipt);
 
 // Versioned canonical little-endian IEEE binary32 with checksum, exact length,
 // strict structural/range/cache checks, transactional load and atomic save

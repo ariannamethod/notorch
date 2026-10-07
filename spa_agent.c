@@ -775,6 +775,83 @@ int nt_spa_agent_fit_comparison(nt_spa_agent *a,const nt_spa_experience *e,
     return NT_SPA_OK;
 }
 
+int nt_spa_agent_fit_repeated(nt_spa_agent *a,const nt_spa_experience *e,
+    const nt_spa_comparison *comparisons,uint32_t count,float rate,
+    nt_spa_comparison_receipt *out) {
+    nt_spa_comparison_receipt r;
+    nt_spa_policy next;
+    nt_spa_observation bounds;
+    nt_spa_alternative zero;
+    double sums[NT_SPA_AGENT_ACTIONS]={0};
+    float hidden[NT_SPA_AGENT_HIDDEN],post_hidden[NT_SPA_AGENT_HIDDEN];
+    float gradient[NT_SPA_AGENT_ACTIONS]={0};
+    size_t comparison_bytes;
+    uint32_t repetition,mask;
+    unsigned i,valid_count=0;
+    int status;
+    if(count==1) return nt_spa_agent_fit_comparison(a,e,comparisons,rate,out);
+    if(!count || count>NT_SPA_COMPARISON_MAX_REPEATS) return NT_SPA_E_COMPARISON;
+    status=learned_idle(a);
+    if(status!=NT_SPA_OK) return status;
+    if(nt_spa_experience_validate(e)!=NT_SPA_OK) return NT_SPA_E_EXPERIENCE;
+    if(!comparisons || !in_range(rate,0,1)) return NT_SPA_E_COMPARISON;
+    comparison_bytes=(size_t)count*sizeof(*comparisons);
+    if(overlaps_agent(a,e,sizeof(*e)) || overlaps_agent(a,comparisons,comparison_bytes) ||
+        overlaps_agent(a,out,sizeof(*out)) || buffer_overlap(e,sizeof(*e),comparisons,comparison_bytes) ||
+        buffer_overlap(e,sizeof(*e),out,sizeof(*out)) ||
+        buffer_overlap(comparisons,comparison_bytes,out,sizeof(*out))) return NT_SPA_E_COMPARISON;
+    mask=experience_mask(e);
+    memset(&bounds,0,sizeof(bounds)); bounds.temperature=1;
+    bounds.sentence_index=e->sentence_index; bounds.sentence_count=e->sentence_count;
+    memset(&zero,0,sizeof(zero)); memset(&r,0,sizeof(r));
+    for(repetition=0;repetition<count;++repetition) {
+        const nt_spa_comparison *c=&comparisons[repetition];
+        if(c->source_life_hash!=e->source_life_hash || c->action_mask!=mask ||
+            c->horizon>NT_SPA_COMPARISON_MAX_HORIZON || c->horizon!=comparisons[0].horizon)
+            return NT_SPA_E_COMPARISON;
+        for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) {
+            const nt_spa_alternative *alternative=&c->alternatives[i];
+            if(!(mask&(1u<<i))) {
+                if(memcmp(alternative,&zero,sizeof(zero))) return NT_SPA_E_COMPARISON;
+                continue;
+            }
+            if(alternative->action.kind!=(nt_spa_action_kind)i ||
+                nt_spa_action_validate(&alternative->action,&bounds)!=NT_SPA_OK) return NT_SPA_E_ACTION;
+            if(!consequence_valid(&alternative->consequence) ||
+                !metrics_equal(&alternative->consequence.before,&comparisons[0].alternatives[0].consequence.before))
+                return NT_SPA_E_CONSEQUENCE;
+            // NT_SPA_REPEATED_CLIP_FIRST: average individually clipped native rewards.
+            sums[i]+=reward_for(&a->config,&alternative->consequence);
+        }
+    }
+    r.source_life_hash=e->source_life_hash; r.action_mask=mask;
+    r.horizon=comparisons[0].horizon; r.learning_rate=rate;
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) if(mask&(1u<<i)) {
+        r.rewards[i]=(float)(sums[i]/count);
+        ++valid_count;
+    }
+    forward(&a->policy,e->features,hidden,r.scores_before);
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) if(mask&(1u<<i)) {
+        // NT_SPA_REPEATED_TARGET_SIGN: paired advantage follows mean native reward.
+        r.targets[i]=r.rewards[i]-r.rewards[NT_SPA_KEEP];
+        gradient[i]=bounded(r.targets[i]-r.scores_before[i],-1,1)/(float)valid_count;
+    }
+    r.loss_before=comparison_loss(r.scores_before,r.targets,mask);
+    next=a->policy;
+    // NT_SPA_REPEATED_UPDATE: exactly one update from the pre-comparison policy.
+    if(rate>0) train_policy(&next,e->features,hidden,gradient,rate);
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) if(!(mask&(1u<<i))) {
+        memcpy(next.w2[i],a->policy.w2[i],sizeof(next.w2[i]));
+        next.b2[i]=a->policy.b2[i];
+    }
+    if(!policy_valid(&next)) return NT_SPA_E_STATE;
+    forward(&next,e->features,post_hidden,r.scores_after);
+    r.loss_after=comparison_loss(r.scores_after,r.targets,mask);
+    a->policy=next;
+    if(out) *out=r;
+    return NT_SPA_OK;
+}
+
 // Canonical fields are explicitly encoded. No padding, enum representation or
 // host byte order enters the file. One codec defines both directions.
 typedef struct {
