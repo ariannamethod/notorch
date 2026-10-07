@@ -13,6 +13,26 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — preregister Chuck experience from student-reached worlds
+
+Merged lived-state credit on fresh main `420fa54` supplies the next question:
+the policy-taught student brakes earlier and regresses on all four complete
+body/seed deployments. Fix one acquisition round with two copies of that sealed
+student, equal 32-state / 16,384-fit budgets, and the same student continuation.
+Only their experience source differs: parent-reached or student-reached worlds.
+
+Early nonoverlapping checkpoints 1/17/33/49/65/97/129/193 retain all sixteen-step
+source-continuation checks. Preserve both bodies, development seeds 42/73,
+the 163-parameter policy and conditioned objective. Seal refits before new
+1013/1217 outcomes; retain common-state readouts, six full deployment arms and
+four save/load repeats. The fixed plan has 26,624 body updates, 32,768 fits and
+576 readouts. No acquisition or new evaluation has run at this commit.
+
+The prior complete archive is restored byte-exactly from its three saved parts;
+its numerical archive and raw result match their published SHA-256 identities.
+See `experiments/chuck_loss_architect/trajectories/protocol.json` for the frozen
+source, continuation, objective, failure and identity contracts.
+
 ## 2026-10-07 — each learner carries its own weights
 
 Fresh main `beccbdb` supplies the baseline. Seven allocation-free CPU value
