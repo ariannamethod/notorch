@@ -39,7 +39,8 @@ static int rollout_main(int argc, char **argv) {
     int forced = !strcmp(arm, "hold") ? NT_CHUCK_ACTION_HOLD :
                  !strcmp(arm, "push") ? NT_CHUCK_ACTION_PUSH : -1;
     int learned = !strcmp(arm, "oldfuture-simple") || !strcmp(arm, "conditional-simple") ||
-                  !strcmp(arm, "conditional-adapted");
+                  !strcmp(arm, "conditional-adapted") || !strcmp(arm, "parent") ||
+                  !strcmp(arm, "lived-hold") || !strcmp(arm, "lived-policy");
     if (!canonical && forced < 0 && !learned) die("unknown rollout arm");
     if (!learned && strcmp(argv[10], "-")) die("fixed rollout arm must use LIFE=-");
     int steps = (int)parse_integer(argv[5], 1, 1000000);
@@ -112,7 +113,7 @@ static int rollout_main(int argc, char **argv) {
             if (nt_tape_chuck_step_action(lr, before, &decision.action, &config.limits)) die("rollout fixed action refused");
         }
         nt_chuck_state post = nt_tape_get()->chuck;
-        float after = read_loss(body_forward(&m, data, offset, 0));
+        float after = read_loss_raw(body_forward(&m, data, offset, 0));
         nt_chuck_architect_receipt receipt = {0};
         if (learned) {
             if (nt_chuck_architect_feedback_frozen(&architect, after, &receipt)) die("rollout frozen feedback refused");

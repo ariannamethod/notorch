@@ -13,6 +13,57 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Native interventions preserve real action history in every fork
+
+Added `nt_chuck_architect_intervene`: validate an available HOLD/BRAKE/PUSH,
+capture actual pre-action features and scores, execute it, invoke one same-window
+evaluator and complete its measured consequence in native history. Weights,
+configuration and RNG remain unchanged. No pending intervention is exposed;
+the completed cache retains the action actually executed. A refused action
+never calls the evaluator. Non-finite outcomes complete reward -1 with their
+explicit failure receipt. The existing v1 codec reads the completed life.
+
+The new `--lived` host captures worlds reached by the sealed parent's repeated
+choices, measures six branches with real history at every update, and restores
+each complete source. It records H1/H4/H16 consequences on identical probes.
+Its source-selected POLICY branch must reproduce the parent's next sixteen
+ordinary transitions. First and subsequent branch gradients consistently
+record the pre-clipping norm; native observations retain the post-clipping norm.
+Branch failures retain exact update/reason/raw statuses before source restoration
+and a nonzero exit. The earlier rollout's non-finite completion was unreachable
+through fail-fast `read_loss`; its after-action read now reaches the existing
+failure receipt, with finite numerical behavior unchanged.
+
+The API gate passes four groups/292 checks in scalar, SIMD and ASan/UBSan builds.
+Independent audit passes 281 checks and the previous codec loads/resaves a
+nonargmax intervention life byte for byte. A real 450,688-parameter SimpleLLM
+on synthetic tokens preserves all thirty-two probe-on/off host steps and final
+artifacts, all ninety-six branch updates, eighteen measurements and the complete
+sixteen-step selected continuation. Four compiled defects, eight semantic
+corruptions and four persisted-artifact corruptions are caught.
+Independent fixture reconstruction checks 3,735 assertions across all 128
+feature/score/reward transitions and the selected continuation. The current
+verifier catches all twelve retained semantic/artifact mutants again after a
+provenance-only runner edit; both source identities remain in the receipt.
+
+Forced shared/static, four-host and aggregate-prerequisite rebuilds pass all
+43 CPU recipe commands; 117 source identities and 44 logs are rechecked.
+Rebuilt canonical Chuck keeps 6,000 identical steps / 3,336,000 bytes. All three
+pinned v1 initial/pending/completed lives remain identical. Twelve existing
+Architect functions remain byte-identical. The compatibility harness's initial
+binary/directory name collision and scoped correction are retained. LeakSanitizer
+remains disabled for the recorded sandbox task-inspection limitation.
+
+The first development smoke uses seed 42 and eight host updates on both bodies:
+560 body updates, 2,048 fits, 48 readouts, two save/load repeats and thirty-two
+available selected-continuation transitions. All 241 anchored identities pass;
+its verified archive contains 271 members / 51,532,259 bytes, SHA-256
+`45ca2279930cecba77455146b51972216e2d091d5efb20f028e9da7e8175835e`.
+The reduced smoke compares eight available continuation steps per checkpoint;
+the full fixed run requires sixteen. No 701/907 outcome has been generated.
+Receipts are in `experiments/chuck_loss_architect/lived/verification.json` and
+`smoke_validation.json`; the numerical sources remain frozen for the clean run.
+
 ## 2026-10-07 — Preregister credit on the Architect's own visited states
 
 Start the next Chuck branch from merged `5eb709f`. The frozen protocol

@@ -611,6 +611,54 @@ int nt_chuck_architect_feedback_frozen(nt_chuck_architect *architect,
     return NT_CHUCK_OK;
 }
 
+int nt_chuck_architect_intervene(nt_chuck_architect *architect,
+    float lr, float before_loss, const nt_chuck_action *action,
+    nt_chuck_architect_after_fn after, void *context,
+    nt_chuck_architect_decision *decision, nt_chuck_architect_receipt *receipt) {
+    if (!architect || !action || !after) return NT_CHUCK_E_ARGUMENT;
+    if (!nt_ca_state_valid(architect) || architect->pending ||
+        architect->config.mode != NT_CHUCK_ARCHITECT_LEARNED ||
+        architect->decisions == UINT64_MAX) return NT_CHUCK_E_STATE;
+    if (action->kind < NT_CHUCK_ACTION_HOLD || action->kind > NT_CHUCK_ACTION_PUSH ||
+        !isfinite(action->value) || action->value != 0 ||
+        !(architect->config.limits.enabled_actions & NT_CHUCK_ACTION_BIT(action->kind)))
+        return NT_CHUCK_E_ACTION;
+    nt_chuck_architect a = *architect;
+    nt_chuck_architect_decision d;
+    memset(&d, 0, sizeof d);
+    int rc = nt_tape_chuck_observe(before_loss, &d.observation);
+    if (rc != NT_CHUCK_OK) return rc;
+    if (!nt_ca_observation_valid(&d.observation)) return NT_CHUCK_E_STATE;
+    nt_ca_features(&a, &d.observation, d.features);
+    nt_ca_forward(&a, d.features, a.pending_hidden, d.scores);
+    d.action = *action;
+    d.sequence = a.decisions + 1;
+    rc = nt_tape_chuck_step_action(lr, before_loss, &d.action, &a.config.limits);
+    if (rc != NT_CHUCK_OK) return rc;
+    float after_loss = after(context); // NT_CA_INTERVENTION_CALLBACK: actual executed consequence.
+    nt_chuck_architect_receipt r;
+    memset(&r, 0, sizeof r);
+    r.before_loss = before_loss;
+    r.after_loss = after_loss;
+    r.loss_delta = (double)before_loss - (double)after_loss;
+    r.nonfinite = !isfinite(after_loss);
+    r.reward = r.nonfinite ? -1 : nt_ca_ratio(r.loss_delta, fabs((double)before_loss) + 1e-6);
+    r.predicted = d.scores[d.action.kind - NT_CHUCK_ACTION_HOLD];
+    r.action = d.action;
+    r.decision = d.sequence;
+    a.pending_decision = d;
+    a.prev_loss = before_loss;
+    a.prev_trend = d.observation.loss_trend;
+    a.prev_reward = r.reward; // NT_CA_INTERVENTION_HISTORY: the consequence enters native memory.
+    a.has_history = 1;
+    ++a.decisions;
+    ++a.updates;
+    *architect = a;
+    if (decision) *decision = d;
+    if (receipt) *receipt = r;
+    return NT_CHUCK_OK;
+}
+
 int nt_chuck_architect_capture(const nt_chuck_architect *architect,
     const nt_chuck_observation *observation,
     float features[NT_CHUCK_ARCHITECT_FEATURES]) {

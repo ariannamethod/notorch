@@ -147,6 +147,25 @@ int nt_chuck_architect_feedback(nt_chuck_architect *architect, float after_loss,
 int nt_chuck_architect_feedback_frozen(nt_chuck_architect *architect,
     float after_loss, nt_chuck_architect_receipt *receipt);
 
+typedef float (*nt_chuck_architect_after_fn)(void *context);
+
+// Execute an explicit HOLD/BRAKE/PUSH intervention and acquire its measured
+// consequence synchronously. The learned life must be idle; action.value is
+// zero and the action must be enabled. Features and scores come from the real
+// pre-action observation/history/weights. The callback runs once after the
+// successful core action and measures that same training window; it may run
+// the body's evaluator, but must not mutate/reenter this Architect or execute
+// another optimizer step. Its non-finite result completes failure reward -1.
+// The completed decision records the executed action, explored=0. Frozen
+// history/counters advance, weights/configuration/RNG remain exact, and no
+// pending intervention is exposed. Receipt.learned/error are zero; caller
+// event context records that this API executed an intervention. Refusal occurs
+// before callback and leaves life, outputs and training state unchanged.
+int nt_chuck_architect_intervene(nt_chuck_architect *architect,
+    float lr, float before_loss, const nt_chuck_action *action,
+    nt_chuck_architect_after_fn after, void *context,
+    nt_chuck_architect_decision *decision, nt_chuck_architect_receipt *receipt);
+
 // Read-only replay interfaces. Capture uses the observation and this life's
 // actual history; scores reads the supplied finite features in [-1,1]. Both
 // require no pending action. Scores additionally requires learned mode and

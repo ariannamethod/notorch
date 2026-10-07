@@ -554,6 +554,16 @@ repeats preserve the complete continuation and final bytes. The experiment now
 records acquired conditionality and the consequences of repeated deployment;
 its next credit must learn from the trajectories those choices create.
 
+`nt_chuck_architect_intervene` executes an explicit available action and invokes
+one same-window evaluator to acquire its actual consequence. The completed life
+retains the executed action and advances native history with frozen weights.
+This lets the [next fixed experience](experiments/chuck_loss_architect/lived/README.md)
+branch from the Architect's own visited training states: after HOLD, BRAKE or
+PUSH, the parent keeps selecting actions from each branch's evolving history.
+A paired HOLD-continuation student receives the same source worlds and fitting
+schedule. The selected parent branch must reproduce the ordinary parent's next
+sixteen transitions, and every diagnostic returns the host to its exact state.
+
 ---
 
 ## bit-level precision — BitNet b1.58
