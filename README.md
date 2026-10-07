@@ -414,6 +414,7 @@ every operation you need to build a modern transformer, and some you didn't know
 | SiLU | `nt_silu` | x × σ(x) — the swish |
 | GELU | `nt_gelu` | tanh approximation |
 | sigmoid | `nt_sigmoid` | 1 / (1 + exp(-x)) |
+| tanh | `nt_tanh` | shape-preserving hyperbolic tangent, gradient 1 − y² |
 | GEGLU | `nt_geglu` | GELU-gated linear unit (Gemma-3 FFN) |
 | SwiGLU | `nt_swiglu` | SiLU(gate) * up — LLaMA/Qwen/BitNet FFN |
 | BitLinear | `nt_bit_linear` | y = bitquant(W) @ x — BitNet 1.58 |
@@ -431,6 +432,22 @@ every single one has a correct backward pass. every single one passes numerical 
 ---
 
 ## optimizers
+
+### plain SGD
+
+`nt_tape_sgd_step(lr)` applies `p -= lr * grad` to trainable parameters.
+Frozen parameters and parameters without gradients stay fixed. Adam/Chuck
+state and current gradients stay intact; the caller owns clipping and decay.
+Haiku's MathBrain and recursive selector use tanh at both layers and scalar
+squared error, composed from the existing arithmetic:
+
+```c
+int diff = nt_add(score_idx, nt_scale(target_idx, -1.0f));
+int loss = nt_mul(diff, diff);
+nt_tape_backward(loss);
+nt_tape_sgd_step(0.01f);
+// Haiku then clamps its own parameters to [-5, 5].
+```
 
 ### the diagonal baseline
 
@@ -899,7 +916,7 @@ each is a single self-contained C file under `examples/` (~550–610 LOC) with i
 
 ## autograd
 
-the backward pass supports **37 operation types** (op IDs 0–36, each with a `NT_OP_*` constant). the tape records operations during forward, then backward walks it in reverse computing local gradients via the chain rule. standard reverse-mode AD.
+the backward pass supports **38 operation types** (op IDs 0–37, each with a `NT_OP_*` constant). the tape records operations during forward, then backward walks it in reverse computing local gradients via the chain rule. standard reverse-mode AD.
 
 **gradient checking**: every op is verified against finite differences (`(f(x+h) - f(x-h)) / 2h`). relative error tolerances from 0.01 to 0.3 depending on op complexity. all pass. including the annoying ones — GEGLU, SwiGLU, multi-head attention with multi-path gradients through Q/K/V, BitLinear with STE identity passthrough.
 
@@ -1000,6 +1017,7 @@ ten test binaries (run output is the source of truth for counts):
 - **`tests/test_bitnet_ops.c`** — 118 gradient assertions: SwiGLU, BitLinear forward + seq, STE backward, SPA smoke, finite-difference gradient checks
 - **`tests/test_rrpram_lr.c` / `test_metal_q4k.c` / `test_simd_correctness.c` / `test_simd_loss.c`** — low-rank RRPRAM, Apple-Silicon Q4_K matvec, and AVX2+FMA SIMD parity
 - **`tests/test_sigmoid_scale.c`** — 4 tests: `nt_sigmoid` forward/backward, `nt_scale_by_t` forward/backward (scalar × tensor with grad flowing to both)
+- **`tests/test_tanh_sgd.c`** — tanh gradients and shape, frozen/unused parameters, optimizer state preservation, external clipping, and 24-step 5→8→1 / 6→4→1 SGD trajectories against a double-precision reference. `make check_tanh_sgd BLAS_FLAGS= BLAS_LIBS=` runs with C and libm.
 - **`tests/test_gguf.c`** — GGUF parser smoke test (F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K dequant)
 - **`tests/test_qmatvec.c`** — packed quantized matvec (`nt_qmatvec`) vs the dequant→cblas oracle across all 7 GGUF dtypes (F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K), relative error ~1e-6
 
