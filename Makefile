@@ -688,6 +688,15 @@ test: test_spa_agent_repeated
 
 # ── Test & Clean ──
 
+.PHONY: check_tanh_sgd
+test_tanh_sgd: tests/test_tanh_sgd.c notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_tanh_sgd.c notorch.c -lm $(BLAS_LIBS)
+
+check_tanh_sgd: test_tanh_sgd
+	./test_tanh_sgd
+
+test: test_tanh_sgd
+
 test_qpool: tests/test_qpool.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qpool tests/test_qpool.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qpool (threading determinism, $(BLAS_NAME))"
@@ -779,6 +788,7 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h $(CHUCK_HEADERS)
 
 test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_chuck_architect_conditioned test_chuck_architect_durability test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
 	./notorch_test
+	./test_tanh_sgd
 	./test_bitnet_ops
 	./test_spa_agent
 	./test_spa_agent_state
@@ -872,6 +882,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
+	rm -f test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o

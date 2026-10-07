@@ -125,6 +125,7 @@ void nt_tensor_print(const nt_tensor* t, const char* name);
 #define NT_OP_RRPRAM_BCAST  34   // broadcast RRPRAM — mid[h,r] = Σ_t x[t]·Wr_a[h] (canonical Janus pattern, sc=1/sqrt(D))
 #define NT_OP_RELU          35   // y = max(0, x) — rectified linear unit
 #define NT_OP_SEQ_GATE      36   // out[t,d] = x[t,d] * gate[t,gi] — per-position mechanism gate
+#define NT_OP_TANH          37   // y = tanh(x) — shape-preserving activation
 
 typedef struct {
     nt_tensor* output;          // forward result
@@ -250,6 +251,9 @@ int  nt_tape_param_frozen(nt_tensor* param);
 void nt_tape_backward(int loss_idx);
 
 // Optimizers
+// Plain SGD: p -= lr * grad. Frozen / absent-gradient params are skipped.
+// Leaves gradients and Adam/Chuck state intact; clipping belongs to the caller.
+void  nt_tape_sgd_step(float lr);
 void  nt_tape_adam_step(float lr);
 void  nt_tape_adamw_step(float lr, float weight_decay, float beta1, float beta2);
 void  nt_tape_chuck_step(float lr, float loss_val);
@@ -432,6 +436,9 @@ int nt_silu(int x_idx);
 
 // Sigmoid activation: y = 1 / (1 + exp(-x))
 int nt_sigmoid(int x_idx);
+
+// Tanh activation: y = tanh(x), preserving shape; dy/dx = 1 - y*y.
+int nt_tanh(int x_idx);
 
 // ReLU activation: y = max(0, x)
 int nt_relu(int x_idx);

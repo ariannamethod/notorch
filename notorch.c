@@ -752,6 +752,22 @@ void nt_tape_backward(int loss_idx) {
             break;
         }
 
+        case NT_OP_TANH: {
+            if (e->parent1 >= 0) {
+                nt_tensor_sync_cpu(e->output);
+                float* gx = (float*)calloc(out_len, sizeof(float));
+                if (gx) {
+                    for (int i = 0; i < out_len; i++) {
+                        float y = e->output->data[i];
+                        gx[i] = dout[i] * (1.0f - y * y);
+                    }
+                    tape_acc_grad(e->parent1, gx, out_len);
+                }
+                free(gx);
+            }
+            break;
+        }
+
         case NT_OP_RELU: {
             /* y = max(0, x); dy/dx = (y > 0) ? 1 : 0  (y>0 ⟺ x>0) */
             if (e->parent1 >= 0) {
@@ -2435,6 +2451,25 @@ void nt_tape_backward(int loss_idx) {
 // OPTIMIZERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+void nt_tape_sgd_step(float lr) {
+    for (int i = 0; i < g_tape.count; i++) {
+        nt_tape_entry* e = &g_tape.entries[i];
+        if (!e->is_param || e->frozen || !e->grad) continue;
+        nt_tensor_sync_cpu(e->output);
+        nt_tensor_sync_cpu(e->grad);
+        int n = e->output->len;
+        if (e->grad->len < n) n = e->grad->len;
+        for (int j = 0; j < n; j++)
+            e->output->data[j] -= lr * e->grad->data[j];
+#ifdef USE_CUDA
+        nt_tensor_mark_cpu_dirty(e->output);
+#endif
+    }
+#ifdef USE_CUDA
+    if (g_use_gpu) gpu_mark_all_dirty();
+#endif
+}
+
 void nt_tape_adam_step(float lr) {
     float beta1 = 0.9f, beta2 = 0.999f, eps = 1e-8f;
     for (int i = 0; i < g_tape.count; i++) {
@@ -3653,6 +3688,19 @@ int nt_sigmoid(int x_idx) {
                                 : expf(x) / (1.0f + expf(x));
     }
     int idx = nt_tape_record(out, NT_OP_SIGMOID, x_idx, -1, 0);
+    nt_tensor_free(out);
+    return idx;
+}
+
+int nt_tanh(int x_idx) {
+    if (!g_tape.active || x_idx < 0 || x_idx >= g_tape.count) return -1;
+    nt_tensor* x = g_tape.entries[x_idx].output;
+    if (!x) return -1;
+    nt_tensor* out = nt_tensor_new_shape(x->shape, x->ndim);
+    if (!out) return -1;
+    nt_tensor_sync_cpu(x);
+    for (int i = 0; i < x->len; i++) out->data[i] = tanhf(x->data[i]);
+    int idx = nt_tape_record(out, NT_OP_TANH, x_idx, -1, 0);
     nt_tensor_free(out);
     return idx;
 }
