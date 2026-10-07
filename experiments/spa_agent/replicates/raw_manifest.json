@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "archive": {
+    "path": "raw_traces.jsonl.gz",
+    "bytes": 18444383,
+    "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12"
+  },
+  "parts": [
+    {
+      "path": "raw_traces.jsonl.gz.part-00",
+      "bytes": 8011776,
+      "sha256": "fd029dc82a718aa4a38e1181b44e33f0324cd637a627fcd14c5ea9e4fff64604",
+      "git_blob_sha": "9b2fee7d564a05db98a021cef630f318af75ea61"
+    },
+    {
+      "path": "raw_traces.jsonl.gz.part-01",
+      "bytes": 8011776,
+      "sha256": "41390ffb7598c53d98536116e1266f3f7efc90b63447d7a8134f5b5310568c51",
+      "git_blob_sha": "c2dc96a3729c7c82d7fcff8fbe58939ca0c36908"
+    },
+    {
+      "path": "raw_traces.jsonl.gz.part-02",
+      "bytes": 2420831,
+      "sha256": "0d675606bab2c35b328cb6b2906c6eb8d1505342fc51bd1d457573b4c228468a",
+      "git_blob_sha": "7cc44b477a3597841a836d303f6f406731467924"
+    }
+  ]
+}

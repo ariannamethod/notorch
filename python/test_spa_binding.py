@@ -282,6 +282,61 @@ class BindingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 agent.save(path)
 
+    def test_repeated_single_exact_parity_and_refusals(self):
+        single, repeated = self.learned(exploration=0), self.learned(exploration=0)
+        experience = single.capture(self.native.perceive(FIELD, 1))
+        comparison = SPA.Comparison.from_outcomes(experience, {k: outcome(k) for k in SPA.ActionKind}, horizon=4)
+        for _ in range(16):
+            expected = single.fit_comparison(experience, comparison, .03)
+            actual = repeated.fit_repeated(experience, [comparison], .03)
+            self.assertEqual(bytes(expected), bytes(actual))
+            self.assertEqual(bytes(single.state), bytes(repeated.state))
+        single.save(self.work / "single-repeat.life")
+        repeated.save(self.work / "repeated-one.life")
+        self.assertEqual((self.work / "single-repeat.life").read_bytes(),
+                         (self.work / "repeated-one.life").read_bytes())
+        before = repeated.hash
+        for comparisons in ([], [comparison] * 65, [None]):
+            with self.assertRaises((ValueError, TypeError)):
+                repeated.fit_repeated(experience, comparisons, .03)
+            self.assertEqual(repeated.hash, before)
+        bad = comparison.copy()
+        bad.source_life_hash ^= 1
+        with self.assertRaises(SPA.Error) as failure:
+            repeated.fit_repeated(experience, [comparison, bad], .03)
+        self.assertEqual(failure.exception.status, SPA.Status.COMPARISON)
+        self.assertEqual(repeated.hash, before)
+        RECEIPT["repeated_count_one"] = "16 receipts, states and checkpoint bytes equal fit_comparison"
+
+    def test_repeated_averages_clipped_native_rewards(self):
+        agent = self.learned(exploration=0, reward_weights=SPA.Metrics(1, 1, 1, 1, 0, 0, 0), cost_weight=0)
+        experience = agent.capture(self.native.perceive(FIELD, 1))
+        before = SPA.Metrics(.5, .5, .5, .5, .5, .5, .5)
+        def comparison(local):
+            outcomes = {}
+            for kind in SPA.ActionKind:
+                after = before.copy()
+                if kind == SPA.ActionKind.RESEED_LEFT:
+                    after.local_connectedness = after.global_connectedness = local
+                    after.coherence = after.novelty = local
+                outcomes[kind] = SPA.Consequence(before, after, 0)
+            return SPA.Comparison.from_outcomes(experience, outcomes, horizon=4)
+        initial = agent.hash
+        receipt = agent.fit_repeated(experience, [comparison(1), comparison(.4)], 0)
+        self.assertAlmostEqual(receipt.rewards[SPA.ActionKind.RESEED_LEFT], .3, places=6)
+        self.assertAlmostEqual(receipt.targets[SPA.ActionKind.RESEED_LEFT], .3, places=6)
+        self.assertEqual(receipt.loss_before, receipt.loss_after)
+        self.assertEqual(agent.hash, initial)
+        mean_raw = agent.fit_comparison(experience, comparison(.7), 0)
+        self.assertGreater(abs(receipt.rewards[1] - mean_raw.rewards[1]), .49)
+        before_state = agent.state
+        fitted = agent.fit_repeated(experience, [comparison(1), comparison(.4)] * 4, .03)
+        after_state = agent.state
+        self.assertLess(fitted.loss_after, fitted.loss_before)
+        after_state.policy = before_state.policy
+        self.assertEqual(bytes(after_state), bytes(before_state))
+        RECEIPT["repeated_reward_order"] = "clip each repeat in C, then average; mean=.3, mean-raw route=.8"
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)

@@ -661,6 +661,12 @@ captured sentence/history input and the life's online state. The
 [future-credit experiment](experiments/spa_agent/future/README.md) records
 training, new-state evaluation, shuffled credit, and fixed-action controls.
 
+`fit_repeated` accepts repeated consequences from the same sentence state.
+It averages individually clipped native rewards, forms KEEP-relative targets,
+and makes one policy update. The host retains each raw outcome and its RNG
+provenance. The [paired-continuation experiment](experiments/spa_agent/replicates/README.md)
+compares one continuation with eight while holding the policy and fit budget fixed.
+
 Python uses the same native engine and canonical saved life:
 
 ```python
@@ -672,7 +678,8 @@ agent = SPA.Agent(SPA.Config.default(mode=SPA.Mode.LEARNED))
 
 Build `make shared`, put `python/` on `PYTHONPATH`, and run
 `python3 examples/spa_python.py`. [Python API and host loop](docs/spa-python.md)
-cover perception, action execution, comparison learning, and C/Python resume.
+cover perception, action execution, comparison and repeated-consequence learning,
+and C/Python resume.
 `make test_spa_python` checks the loaded C ABI and byte-identical continuation.
 
 ---

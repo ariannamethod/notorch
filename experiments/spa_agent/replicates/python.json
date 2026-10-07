@@ -1,0 +1,119 @@
+{
+  "schema": "notorch.spa.python.v1",
+  "commands": [
+    {
+      "argv": [
+        "cc",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I",
+        "<repo>",
+        "<repo>/tests/spa_layout.c",
+        "-o",
+        "<tmp>/layout"
+      ],
+      "returncode": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "cc",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I",
+        "<repo>",
+        "<repo>/tests/spa_python_parity.c",
+        "<repo>/libnotorch.so",
+        "-Wl,-rpath,<repo>",
+        "-pthread",
+        "-lm",
+        "-o",
+        "<tmp>/oracle"
+      ],
+      "returncode": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "<tmp>/layout"
+      ],
+      "returncode": 0,
+      "stdout_sha256": "60ac43f0b1931dd0a81229d74c35b68b399e9911d316d816f7ab4e0c962356d7",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "cc",
+        "-std=c11",
+        "-fPIC",
+        "-shared",
+        "-I",
+        "<repo>",
+        "<tmp>/bad_abi.c",
+        "-o",
+        "<tmp>/bad_abi.so"
+      ],
+      "returncode": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "cc",
+        "-fPIC",
+        "-shared",
+        "<tmp>/old.c",
+        "-o",
+        "<tmp>/old.so"
+      ],
+      "returncode": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "<tmp>/oracle",
+        "<tmp>"
+      ],
+      "returncode": 0,
+      "stdout_sha256": "5b7af7fe98a779ccecb34710b5e9f91c18069bd60547e751ae05b21225993543",
+      "stderr": ""
+    }
+  ],
+  "abi_coordinates": 253,
+  "value_types": 14,
+  "compiled_abi_mutation": "caught before any agent pointer call",
+  "comparison_counterfactual": "fixed input: KEEP -> RESEED_LEFT; only policy bytes change",
+  "native_python_parity": {
+    "records": 59,
+    "decisions": 10,
+    "imitation_updates": 8,
+    "comparison_fits": 16,
+    "pending_checkpoint_bytes": 2296,
+    "final_checkpoint_sha256": "4c8b13fe015aa252af32f068ca66131f58a64ce51aac5824dd127906ba9395ef",
+    "resumed_continuation": "byte-identical"
+  },
+  "repeated_reward_order": "clip each repeat in C, then average; mean=.3, mean-raw route=.8",
+  "repeated_count_one": "16 receipts, states and checkpoint bytes equal fit_comparison",
+  "passed": true,
+  "tests": 10,
+  "failures": 0,
+  "errors": 0,
+  "source_sha256": {
+    "python/SPA.py": "6620ee7b7333fd9956022e6b1460cc8991966d42a16046a33b462ee77d19c86f",
+    "python/test_spa_binding.py": "44ca4f535ab28652d267fa831d51e416b0d2566c34318994aebe55d55d269d16",
+    "tests/spa_layout.c": "8748bf036e59c053ce95e5ceda6682e03ce6fcc773da09037cc515ab482c845b",
+    "tests/spa_python_parity.c": "0063dd77b34aff02c7a5aa56e1fa6b843f2be51e68b3d20cd13365e2f84a055a",
+    "spa_binding.c": "5bbab8e95e937361dbf1c25d2c4b4296878977493eb7f0c68033e9fa981dbe84",
+    "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+    "spa_agent.c": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+    "spa_agent.h": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730"
+  }
+}

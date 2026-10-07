@@ -13,6 +13,75 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — SPA measures eight futures before assigning sentence-action credit
+
+Follow-up to merged PR #156, integrating fresh main `5eb709f` before real
+generation. Added native `nt_spa_agent_fit_repeated` and Python
+`Agent.fit_repeated`: validate 1–64 paired comparisons before mutation, average
+individually clipped rewards in double precision, and fit all valid action
+heads in one simultaneous mean-Huber update. Count one is byte-exact with
+`fit_comparison`. The 267-parameter policy, sensory primitives, temporal
+memory, online credit and 2,296-byte canonical life stay unchanged. Chuck
+sources match main; only isolated build wiring joins the two branches.
+
+The frozen protocol is
+`c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75`.
+Two complete F32 CPU executions use the same 450,688-parameter SimpleLLM
+Dracula body on AMD EPYC 9V74/GCC 13.3. Each trains on 48 retained states at
+seeds 42/73 and evaluates 48 new states at seeds 307/401. Every state has
+eight paired RNG continuations; r0 preserves the parent host's exact lines.
+Initial, single-H4, mean-eight-H4 and shuffled-mean-eight lives share the same
+features, order, rate and budget. All eight lives are sealed before new-seed
+generation; each fitted arm receives 24,576 updates per execution.
+
+Result: initial, mean-eight and shuffled all choose KEEP at 48/48 new states,
+the measured best choice at 46/48. Single-H4 chooses 27 KEEP, 20 LEFT and one
+RIGHT; its mean paired advantage over KEEP is -0.004025040505 and its mean
+regret 0.004662805361, versus 0.000637764857 for KEEP. It loses separately at
+both new seeds. On identical training states, the single-H4 advantage changes
+from +0.000479820912 on its fitted r0 outcomes to -0.004265352781 on the seven
+additional outcomes. Paired action advantage changes sign across repeats for
+52/72 training alternatives and 57/72 evaluation alternatives. Only four
+evaluation alternatives, at two states, have positive mean advantage.
+
+The mean-eight life has acquired different weights but changes no evaluation
+actions from initialization and does not separate from shuffled credit.
+Repeated measurement exposes stochastic noise and avoids the old policy's
+harm here; useful conditional intervention remains unproven. All raw axes,
+cost, per-state and per-target measurements remain separate. The known target-3
+continuation erases the initial intervention; all 192 paired target-3 draws
+have identical final chains/axes across actions, leaving cost-only harm.
+
+Three artifact refusals remain visible. Execution 2's fitting trace later
+shortened from 59,168,552 to 52,978,553 bytes; evaluation had not started.
+One explicitly recorded deterministic fitting replay reproduces the original
+full trace, four lives and entire seal exactly, restoring only the trace.
+At final inventory, execution 1's dataset and execution 2's ordinary seed-307
+trace are also found truncated. Their original mixed manifests are retained
+as failed evidence. Each complete member is authenticated by its own pinned
+closed archive; dataset reconstruction and 192 native readouts reproduce the
+original summary, and the host trace matches its immediate gzip mirror.
+These two restorations perform no generation or fitting. New final manifests
+pass all checks. The truncations' cause remains unknown.
+
+Independent audit checks all 57 repeated artifacts and 22 archived streams,
+recomputes 40,992 raw-axis values and 5,760 rewards, verifies 73,728 fit receipts,
+and reproduces 384 pure choices from decoded native weights. Narrow gates pass
+3,457 checks, including 1,602 finite differences across all 267 parameters;
+compiled credit/update/clipping/precision and host defects are caught.
+Python passes ten groups and 253 ABI coordinates; v1 life parity and original
+SPA sensory parity remain exact. The integrated SPA/Chuck build passes all
+43 CPU recipe commands. Earlier fixture/command refusals and validator holes
+are recorded alongside their fixes.
+
+Commands, frozen design, raw results, diagnostics, failures, recovery and
+independent audits are under `experiments/spa_agent/replicates/`. The complete
+18,444,383-byte archive is retained in three lossless parts, SHA-256
+`dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12`.
+Published results SHA is
+`de80eb47b78ce0a4474decb1a5317b26d3c27400756eef3829b2dc7d2d2296de`;
+path-only receipt normalization is explicit in `publication.json`.
+
 ## 2026-10-07 — Conditional Chuck and SPA future credit share the final build
 
 Fresh main `b289119` arrived before publication. Integrated its SPA future

@@ -1,0 +1,197 @@
+{
+  "schema": 1,
+  "operation": "synthetic compiled repeated-credit mutations",
+  "source_sha256": {
+    "spa_agent.c": "68ff0295d623dfd0ab95478772f6adce98376158e85f5b99a1da85a137ae15fb",
+    "spa_agent.h": "6c18fb23115c7128ed5c260c2b8fcd7982b8d9a0332d8dc69ed07b5fdaf46730",
+    "tests/test_spa_agent_repeated.c": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+    "notorch.c": "b1053f97c96374fe232906439a46fe5801eb77a9db1a15fd56c55e2eacad1e96",
+    "notorch.h": "532e0038370774f802afa9dba465dcca54677d3085306b752a8b9f8668beaa7a",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "chuck_architect.h": "01e0969c176fa467930c05b1e85de0f8194814e8bb47d229aa60bde4a66a8caa",
+    "chuck_architect_impl.h": "6a0d79fe46d1d6c2859ecf7dda52a2c37482aa259dec199445e0926f4514c3dc"
+  },
+  "script_sha256": "7ccf90abe98126e5da41cc8d669281d5fa5aac08d9a8a02c7782044ddce21866",
+  "mutations": [
+    {
+      "name": "reversed_mean_credit",
+      "gate": "aggregate",
+      "source_anchor": "NT_SPA_REPEATED_TARGET_SIGN",
+      "expression": "r.targets[i]=r.rewards[i]-r.rewards[NT_SPA_KEEP];",
+      "mutant_source_sha256": "4b48a51326b8a3bb063100ffbf96e7bd5e833187370ed9b706806f5b041a74d2",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c99",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-O2",
+          "-pthread",
+          "-I",
+          "<temporary>/reversed_mean_credit",
+          "-I",
+          "<source>",
+          "<temporary>/reversed_mean_credit/test.c",
+          "<temporary>/reversed_mean_credit/spa_agent.c",
+          "<temporary>/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/reversed_mean_credit/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/reversed_mean_credit/gate",
+          "aggregate"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "FAIL aggregate:205: positive and negative comparison targets retain their signs\n"
+      },
+      "caught": true
+    },
+    {
+      "name": "suppressed_repeated_update",
+      "gate": "aggregate",
+      "source_anchor": "NT_SPA_REPEATED_UPDATE",
+      "expression": "if(rate>0) train_policy(&next,e->features,hidden,gradient,rate);",
+      "mutant_source_sha256": "a846c88d06c2e4ebfccbef50a1f507eaf951904445e1a46166e466ebff25357e",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c99",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-O2",
+          "-pthread",
+          "-I",
+          "<temporary>/suppressed_repeated_update",
+          "-I",
+          "<source>",
+          "<temporary>/suppressed_repeated_update/test.c",
+          "<temporary>/suppressed_repeated_update/spa_agent.c",
+          "<temporary>/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/suppressed_repeated_update/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/suppressed_repeated_update/gate",
+          "aggregate"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "FAIL aggregate:209: one update credits positive and negative mean consequences exactly once\n"
+      },
+      "caught": true
+    },
+    {
+      "name": "mean_before_clamp",
+      "gate": "aggregate",
+      "source_anchor": "NT_SPA_REPEATED_CLIP_FIRST",
+      "expression": "unclipped reward sum followed by bounded mean",
+      "mutant_source_sha256": "43b9721110e33ce5f2f962bdfc58de4cc89a1c7efc35158793b8a24a5b298789",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c99",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-O2",
+          "-pthread",
+          "-I",
+          "<temporary>/mean_before_clamp",
+          "-I",
+          "<source>",
+          "<temporary>/mean_before_clamp/test.c",
+          "<temporary>/mean_before_clamp/spa_agent.c",
+          "<temporary>/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/mean_before_clamp/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/mean_before_clamp/gate",
+          "aggregate"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "FAIL aggregate:203: clip before average yields plus/minus half, not plus/minus one\n"
+      },
+      "caught": true
+    }
+  ],
+  "build_notorch": {
+    "command": [
+      "cc",
+      "-std=gnu11",
+      "-O2",
+      "-pthread",
+      "-I",
+      "<source>",
+      "-c",
+      "<source>/notorch.c",
+      "-o",
+      "<temporary>/notorch.o"
+    ],
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "baseline": {
+    "build": {
+      "command": [
+        "cc",
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-pedantic",
+        "-O2",
+        "-pthread",
+        "-I",
+        "<temporary>/baseline",
+        "-I",
+        "<source>",
+        "<temporary>/baseline/test.c",
+        "<temporary>/baseline/spa_agent.c",
+        "<temporary>/notorch.o",
+        "-lm",
+        "-o",
+        "<temporary>/baseline/gate"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "run": {
+      "command": [
+        "<temporary>/baseline/gate"
+      ],
+      "returncode": 0,
+      "stdout": "PASS parity\nPASS validation\naggregate: native rewards [+1,0]/[-1,0] -> means +0.5/-0.5; one update\nPASS aggregate\ngradient: comparisons=1602 nonzero_parameters=267 maximum_absolute_error=2.78056312e-05\nPASS gradient\nPASS persistence\nPASS SPA repeated: 5 groups, 3457 checks\n",
+      "stderr": ""
+    }
+  },
+  "working_sources_unchanged": true,
+  "passed": true
+}

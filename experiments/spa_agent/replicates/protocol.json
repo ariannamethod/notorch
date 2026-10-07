@@ -1,0 +1,245 @@
+{
+  "schema": 1,
+  "name": "SPA paired repeated future consequences v1",
+  "frozen_before_new_rollouts_and_experiment_training": true,
+  "base_commit": "b2891195abd0a318e50d7a445e48d3ed2e6dbcf9",
+  "question": "Does averaging paired stochastic continuations improve acquired sentence-action selection with identical source features, model capacity, objective, state order and fit budget?",
+  "parents": {
+    "protocol.json": {
+      "path": "experiments/spa_agent/future/protocol.json",
+      "sha256": "134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861"
+    },
+    "receipts.json": {
+      "path": "experiments/spa_agent/future/receipts.json",
+      "sha256": "b2caeead7ca5c3a02234f60a37d28e81dec2f6feb6f694a0d069bbf79d4c8dbf"
+    },
+    "raw_traces.jsonl.gz": {
+      "path": "experiments/spa_agent/future/raw_traces.jsonl.gz",
+      "sha256": "359d2983c0c58d35ca025d7bfbcb26e55b0556beff3a4eb4ac95859ea3c95cf5"
+    }
+  },
+  "body": {
+    "repository": "ariannamethod/notorch-simple-llm",
+    "commit": "80b3bd611ed8c937efdc481dc07895c8e13e345d",
+    "recipe": "train_dracula.py",
+    "checkpoint": "weights/dracula.weights",
+    "checkpoint_sha256": "22ce6e5dfe4efb4a00477a9652784970dc53a69fea2825174398af749acda00d",
+    "corpus": "dracula.txt",
+    "corpus_sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c",
+    "parameters": 450688,
+    "architecture": "128-wide, two-layer, four-head RoPE/RMSNorm/SwiGLU transformer; hidden 384; 94 Unicode characters; context 64",
+    "numerical_engine": "upstream notorch.c linked with the independent C experiment runner",
+    "weights_frozen": true
+  },
+  "source_exposure": {
+    "training": "The 48 states at seeds42/73 and their original r0 outcomes were inspected in the scenario and future experiments. Repeat1..7 outcomes have not been generated before this protocol.",
+    "diagnostic_only": "All48 previous evaluation states at seeds101/211 are exposed. Diagnosis and conditioning receipts use them; they are excluded from new training and evaluation.",
+    "evaluation": "Seeds307/401 have not been generated or inspected before this protocol.",
+    "known_geometry": "Target3 H4 continuation overwrites the initial intervention before reading it. Report each target separately; do not change the continuation."
+  },
+  "diagnosis": {
+    "diagnosis.py": {
+      "path": "experiments/spa_agent/replicates/diagnosis.py",
+      "sha256": "4c3924b15a95c6a20c17bbcb2272a36fcdf1aa6cbcc39529c6b42d6004d115e5"
+    },
+    "diagnosis.json": {
+      "path": "experiments/spa_agent/replicates/diagnosis.json",
+      "sha256": "c32f512db7a309c61c5ab76fa89256f2ba8a722356690c8053266b2966683291"
+    },
+    "conditioning.py": {
+      "path": "experiments/spa_agent/replicates/conditioning.py",
+      "sha256": "381ac87691378c649f86cbdebbb5b757a98ff59304f6c3ce3b764ca7ffc8eeee"
+    },
+    "conditioning.json": {
+      "path": "experiments/spa_agent/replicates/conditioning.json",
+      "sha256": "e790afc0eaf94fdbf5957579e8a624bd9f9933c7563890ecf741c59dcf2cf6c0"
+    }
+  },
+  "training": {
+    "seeds": [
+      42,
+      73
+    ],
+    "snapshots_per_seed": 24,
+    "rows": 48,
+    "order": "Seed42 snapshot0..23, then seed73 snapshot0..23, repeated in the same order every epoch.",
+    "epochs": 512,
+    "learning_rate": 0.03,
+    "fits_per_arm": 24576,
+    "policy_seed": 1,
+    "policy_mode": "LEARNED",
+    "exploration": 0.0,
+    "other_config": "nt_spa_agent_config_default unchanged, including raw reward coefficients and costweight.",
+    "architecture": "Existing29->8tanh->3action head native policy,267parameters.",
+    "initialization": "Each arm starts from the same canonical newly initialized life. Its online history,counters and RNG remain unchanged during replay; captured source features carry the original sentence/action history.",
+    "arms": [
+      "initial",
+      "single_h4",
+      "mean8_h4",
+      "shuffled_mean8"
+    ],
+    "arm_horizons": {
+      "single_h4": 4,
+      "mean8_h4": 4,
+      "shuffled_mean8": 4
+    },
+    "initial_arm": "Saved before fitting and never fitted.",
+    "target": "Per-action native mean clipped reward minus native mean clipped KEEP reward. single_h4 uses r0 only; both mean8 arms use r0..7.",
+    "objective": "Mean Huber loss with delta1 across all and only valid action heads. Compute all head/hidden gradients from one pre-update policy; SGD rate0.03, existing parameter bounds[-8,8].",
+    "shuffle": {
+      "group": "Identical(sentence_count,target index), preserving typed action coordinates and mask.",
+      "order": "Original global training row order within each group.",
+      "donor": "The next row in the group with cyclic wraparound: donor_index=(receiver_index+1)mod group_size.",
+      "transform": "Keep receiver features and feature-source identity; copy all8 fullH4 comparisons from the donor and bind each training-input source field to the receiver. Retain donor identities and every raw outcome record separately.",
+      "question": "Does correct association of a sentence state with its future outcomes improve selection beyond acquired action preferences?"
+    },
+    "no_adaptation": "No changes to target,horizon,rate,epoch count,ordering,capacity or body recipe after experiment fitting/evaluation begins.",
+    "replicates_per_arm": {
+      "single_h4": 1,
+      "mean8_h4": 8,
+      "shuffled_mean8": 8
+    },
+    "control_question": "Does repeated consequence measurement improve selection at the same feature/model/update budget?"
+  },
+  "evaluation": {
+    "seeds": [
+      307,
+      401
+    ],
+    "snapshots_per_seed": 24,
+    "rows": 48,
+    "seal_before_generation": "All8 canonical life files, both complete training fit traces, both training datasets and their source/protocol hashes are sealed before any307/401 body process starts. Verify both seals before and after evaluation.",
+    "state_source": "Unchanged spa_agent_demo learned-arm ordinary trajectory with diagnostics enabled. The policy under evaluation reads captured features; the reference host retains its existing online behavior.",
+    "generation": {
+      "minimum_generated_characters": 12,
+      "maximum_generated_characters": 64,
+      "stop_characters": ".!?",
+      "temperature": 0.8,
+      "initial_prompt_characters": 16,
+      "initial_prompt_selection": "SplitMix64 samples the sorted corpus sentence-start offsets (first character and the character after .!? followed by whitespace); choose 16 following codepoints.",
+      "base_chain": "Generate the complete four-sentence chain once per episode and seed; clone it into every arm before intervention. Store every generated token and termination flag.",
+      "rng": "Independent SplitMix64 generation stream per episode/slot. Reseeds use the same per-seed/episode/decision stream in every arm. Policy RNG is separate."
+    },
+    "intervention_rng": "Exactly the replication section streams for each source and replicate.",
+    "continuation": {
+      "horizons": [
+        0,
+        1,
+        4
+      ],
+      "horizon_meaning": "Number of additional fixed host reseeds after the initial intervention; horizon 0 is its immediate consequence.",
+      "future_target": "(original_target + hop) modulo 4, hop starts at 1.",
+      "future_action": "RESEED_LEFT if future_target>0; otherwise RESEED_RIGHT. This is a frozen diagnostic host continuation and performs no agent learning.",
+      "future_host_rng": "stream(seed, 0x7370615f66757472, episode_index*4 + decision_index, hop), independently constructed at every hop and identical across initial alternatives.",
+      "generation": "The same parent 3-character-neighbor, min 12/max 64, temperature 0.8 recipe at every hop.",
+      "max_hop": 4,
+      "measurements_per_seed": 180
+    },
+    "horizons_measured": [
+      0,
+      1,
+      4
+    ],
+    "readout": "Actual import SPA calls native pure greedy score_experience on identical29features for all4saved lives; boundary masks and KEEP-first exact ties unchanged. No learning or RNG/history mutation.",
+    "execution_association": "Join each native typed choice to that source state's actually executed alternative branch and complete raw measured trajectory. Retain both source identity and selected outcome-record identity.",
+    "fixed_policies": {
+      "keep": "KEEP",
+      "left": "RESEED_LEFT when available, otherwise KEEP",
+      "right": "RESEED_RIGHT when available, otherwise KEEP"
+    },
+    "paired_host_gate": "For each new seed run ordinary diagnosticsOFF andON; require complete byte-identical ordinary JSONL and all five saved lives. Complete scenario stream must contain24snapshots60forks180measurements."
+  },
+  "replication": {
+    "replicates": 8,
+    "replicate_order": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "source": "Restore the exact imported sentence chain, reseed counts, captured29features, source identities, and RNG witnesses for each source and initial action. No reconstruction claim for the unavailable original online agent struct.",
+    "r0_initial": "stream(seed,0x7370615f6163746e,episode,step)",
+    "r0_future": "stream(seed,0x7370615f66757472,episode*4+step,hop)",
+    "packed": "(episode*4+step)*8+replicate",
+    "r1_to_r7_initial": "stream(seed,0x7370615f72696e69,packed,0)",
+    "r1_to_r7_future": "stream(seed,0x7370615f72667574,packed,hop)",
+    "paired": "Precompute each (source,replicate,hop) start RNG outside the action loop. Every valid initial action shares that start. Each future hop has its own independently constructed start, regardless of earlier consumption.",
+    "continuation": {
+      "horizons": [
+        0,
+        1,
+        4
+      ],
+      "horizon_meaning": "Number of additional fixed host reseeds after the initial intervention; horizon 0 is its immediate consequence.",
+      "future_target": "(original_target + hop) modulo 4, hop starts at 1.",
+      "future_action": "RESEED_LEFT if future_target>0; otherwise RESEED_RIGHT. This is a frozen diagnostic host continuation and performs no agent learning.",
+      "future_host_rng": "stream(seed, 0x7370615f66757472, episode_index*4 + decision_index, hop), independently constructed at every hop and identical across initial alternatives.",
+      "generation": "The same parent 3-character-neighbor, min 12/max 64, temperature 0.8 recipe at every hop.",
+      "max_hop": 4,
+      "measurements_per_seed": 180
+    },
+    "measurements": "Retain complete H0,H1,H4 token chains, termination, RNG consumption, seven raw axes and cumulative cost. Fit H4 only.",
+    "native_aggregation": "Compute each consequence reward using existing native float component arithmetic, double weighted sum, float cast and clipping to[-1,1]. Accumulate those clipped float rewards in double in replicate order and cast the mean to float for each action. Target is float(mean_reward[action]-mean_reward[KEEP]). Never average raw axes before reward clipping.",
+    "count1": "Native fit_repeated with count1 delegates to fit_comparison exactly, including receipt and state bytes.",
+    "one_update": "Exactly one simultaneous native mean-Huber SGD update per state per epoch, regardless of replicate count."
+  },
+  "measurement": {
+    "axes": [
+      "local_connectedness",
+      "global_connectedness",
+      "coherence",
+      "novelty",
+      "repetition",
+      "collapse",
+      "continuity"
+    ],
+    "reward": "clamp(0.15*dlocal + 0.15*dglobal + 0.20*dcoherence + 0.20*dnovelty - 0.15*drepetition - 0.10*dcollapse + 0.05*dcontinuity - 0.05*cost,-1,1)",
+    "cost": "Cumulative generated characters / (64*(horizon+1)), exactly the parent host.",
+    "primary": "Across48 new source states, mean paired H4 advantage over KEEP averaged across r0..7. Compare mean8_h4 with single_h4, initial/KEEP and shuffled_mean8.",
+    "secondary": [
+      "Separate r0 and r1..7 mean paired advantage",
+      "Measured-best choices and mean regret against per-state mean8 best valid action",
+      "Each raw axis and generation cost separately, including chosen-minus-KEEP differences",
+      "Action counts, per-seed and per-target tables",
+      "Within-state sample variance of paired action-minus-KEEP reward over8replicates; paired standard error sqrt(variance/8)",
+      "Between-state variance of each mean paired advantage; sign disagreements across replicates",
+      "Selected-action source and raw outcome identity joins for every arm",
+      "Training results reported separately from new-state results"
+    ],
+    "sample_unit": "48 source states, nested in two generation seeds. The384 state/replicate combinations are repeated outcomes, not384 independent states.",
+    "reward_precision": "Report native clipped rewards and targets as authoritative; any independent arithmetic check names its tolerance."
+  },
+  "execution": {
+    "repetitions": 2,
+    "schedule": "Generate training repeats for both complete executions, fit all4arms in both executions and seal them, then generate any307/401 ordinary source or repeated outcome. Up to4 independent native child processes per stage (two seeds times two executions), each owning its body, RNG, files and counters.",
+    "threads": "Retain the parent host native thread settings. Parallel child processes change scheduling, not numerical configuration.",
+    "sources": "Compile and run an immutable snapshot of all measured sources and protocol. Recheck hashes before and after every stage.",
+    "barrier": "All8 canonical life files, both complete training fit traces, both training datasets and their source/protocol hashes are sealed before any307/401 body process starts. Verify both seals before and after evaluation.",
+    "determinism": "Compare all retained raw traces, datasets, native fit/readout records, policy lives and summaries byte-for-byte across the two executions. Timing metadata is reported separately."
+  },
+  "gates": [
+    "Existing SPA sensory arithmetic, disabled path and original v1 life continuation remain byte-identical.",
+    "Native repeated API count bounds1..64, malformed sources/actions/masks/horizons/common-before, pending state and overlap rejected before mutation.",
+    "Count1 repeated fit reproduces the original comparison update, receipt and canonical life exactly.",
+    "Synthetic clipped-before-average fixture distinguishes mean reward from reward of mean axes.",
+    "Finite differences cover all267 policy parameters; replay changes only policy bytes; save/resume and acquired-weight counterfactual hold.",
+    "Deliberate action, credit-sign and aggregation defects are caught.",
+    "Strict source import rejects malformed coordinates, lengths, IDs, termination, witnesses and trailing input; output creation preserves all input files.",
+    "Exactly48 ordered sources,8 ordered replicates, all valid actions and H0/H1/H4 measurements; missing, duplicate, reordered and misassociated records are caught.",
+    "Every source r0 measurement line is byte-identical to the retained parent measurement at the same source/action/horizon.",
+    "New single_h4 canonical life SHA256 is3f8fa08f331a1c34d50201e0c5c567ca1b2b1853e6c9b54de265c9886b0d02cb before new-seed generation.",
+    "Fresh source diagnosticsOFF/ON reproduce ordinary trace and all5lives exactly; diagnosticsON has24snapshots60forks180measurements perseed.",
+    "Every action branch restores body weights, counters, training mode, tape and imported source bytes; paired RNG starts and consumption match the protocol.",
+    "Policy readout uses captured source features only and changes no life bytes; outcomes enter only the subsequent measured-choice join.",
+    "Source stability, whole-trace completeness, archive readback and two-execution byte identity are mandatory."
+  ],
+  "scope": {
+    "frozen": "No adaptation of capacity, features, reward coefficients, continuation, rate, epochs, row order, seeds or replicate count after new rollout generation or fitting begins. Negative results retained.",
+    "deferred": "Feature conditioning, different fit budgets/order, explicit neighbor suffix representation and second model bodies are separate future experiments.",
+    "architecture": "Native upstream notorch, stdlib Python binding to C arithmetic, independent SPA files. No dependency on unmerged Chuck code; no model/checkpoint vendoring."
+  }
+}

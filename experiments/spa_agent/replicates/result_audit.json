@@ -1,0 +1,1810 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "name": "Independent paired-replicate result audit",
+  "gates": {
+    "one_authenticated_trace_recovery": {
+      "status": "PASS",
+      "failure_observation_sha256": "a7a566bed07f4218113b5ab7805f19993b9da142ee6eeeeb4b718073d02f9804",
+      "recovery_receipt": {
+        "sha256": "3d7c8a40ba0d095675803c76d69525282e0af68b35ec0092ade0c09b3a8e9693",
+        "bytes": 3699
+      },
+      "recovery_source_sha256": "f33050372060e7f6e60f6769aeefa9bff84cf6049312a6c6f82ca2b78ac457c1",
+      "extra_deterministic_training_replays": 1,
+      "original_fit_bytes": 59168552,
+      "damaged_prefix_bytes": 52978553,
+      "lost_bytes": 6189999,
+      "damaged_prefix_sha256": "daefc3efdeb9545ea3d521de4aea57d74bf9257ecf8892241222f3d8d4745f1a",
+      "original_full_fit_sha256": "a4ae3d8492c240cc91d419b0b78f576e43c36fcb12882ee84538d2fd49ad55ad",
+      "all_four_original_lives_and_whole_seal_unchanged": true,
+      "no_training_outcome_regeneration": true,
+      "failure_classification": "Artifact durability failure before evaluation; not a policy outcome.",
+      "lossless_failed_trace_reconstruction": {
+        "archive_stream": {
+          "seed": 0,
+          "stream": "fit"
+        },
+        "method": "Concatenate the UTF-8 raw values for this stream in envelope order; take the first damaged_prefix_bytes bytes; verify damaged_prefix_sha256.",
+        "verified_exact_prefix": true
+      }
+    },
+    "same_execution_closed_archive_restorations": {
+      "status": "PASS",
+      "failure_observation_sha256": [
+        "6b0d801eb2d66a2d1c8f2295a9d0e824ae6b402109c599a760169034fee506ff",
+        "a251057169ddc22117de831e77176cc2d131c6b325196534483bc47eb9b7b90d"
+      ],
+      "enclosing_archive": {
+        "bytes": 18444383,
+        "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12"
+      },
+      "preserved_original_mixed_manifests": [
+        {
+          "execution": 1,
+          "identity": {
+            "sha256": "1389cb4ee425b378217c5073a8ba686f6b61dbaf419eb8945b74d049b5cbc45e",
+            "bytes": 5179450
+          },
+          "classification": "Original mixed manifest preserved; standalone damaged entry does not pass."
+        },
+        {
+          "execution": 2,
+          "identity": {
+            "sha256": "4128dfd75f02bc41b2ea468182f19e67d1a6ca8c3b926d008a8630a1cff17f11",
+            "bytes": 5179449
+          },
+          "classification": "Original mixed manifest preserved; standalone damaged entry does not pass."
+        }
+      ],
+      "restored_dataset": {
+        "bytes": 4723513,
+        "sha256": "0390b75e463657f4adb4eccaa54dfefb2a6699665d3dedb673dfd76d1ed7550a",
+        "canonical_rebuild_and_source_readout_joins": "Checked by source_draw_pairing_and_complete_datasets and sealed_weight_readouts."
+      },
+      "restored_ordinary_trace": {
+        "bytes": 223818,
+        "sha256": "30c9c9d1acb5fee8a308b3942f000bd01e978c1c38a4398eac77e5623c2991bb",
+        "immediate_mirror_agrees": true
+      },
+      "lossless_failed_trace_reconstruction": [
+        {
+          "seed": 0,
+          "stream": "evaluation_dataset",
+          "prefix_bytes": 2016208,
+          "prefix_sha256": "843ad9b6b1e7d9006b440b2fa429b27935a3515f9a74b4337211268027bbed2b"
+        },
+        {
+          "seed": 307,
+          "stream": "ordinary_off",
+          "prefix_bytes": 211683,
+          "prefix_sha256": "6d6792ad20dc5c50eed3c75d811140c6bc826d59afbe405f15d3ec506bf932d2"
+        }
+      ],
+      "reconstruction_method": "Concatenate the named raw archive stream in envelope order, take the recorded prefix bytes and verify its SHA256.",
+      "new_body_generation_or_fitting": false
+    },
+    "all_artifact_source_body_identities": {
+      "status": "PASS",
+      "execution_artifacts": 180,
+      "sources": 33,
+      "binaries": 4,
+      "inputs": 4
+    },
+    "two_execution_byte_identity": {
+      "status": "PASS",
+      "count": 57,
+      "artifacts": [
+        "evaluation-repeats-s307.jsonl",
+        "evaluation-repeats-s307.verified.jsonl.gz",
+        "evaluation-repeats-s401.jsonl",
+        "evaluation-repeats-s401.verified.jsonl.gz",
+        "evaluation-sources-s307.txt",
+        "evaluation-sources-s401.txt",
+        "evaluation.json",
+        "evaluation.readout.jsonl",
+        "evaluation.summary.json",
+        "evaluation_sources.raw.jsonl.gz",
+        "fit.verified.jsonl.gz",
+        "off-s307.disabled.life.bin",
+        "off-s307.frozen.life.bin",
+        "off-s307.jsonl",
+        "off-s307.learned.life.bin",
+        "off-s307.legacy.life.bin",
+        "off-s307.random.life.bin",
+        "off-s307.verified.jsonl.gz",
+        "off-s401.disabled.life.bin",
+        "off-s401.frozen.life.bin",
+        "off-s401.jsonl",
+        "off-s401.learned.life.bin",
+        "off-s401.legacy.life.bin",
+        "off-s401.random.life.bin",
+        "off-s401.verified.jsonl.gz",
+        "on-s307.disabled.life.bin",
+        "on-s307.frozen.life.bin",
+        "on-s307.jsonl",
+        "on-s307.learned.life.bin",
+        "on-s307.legacy.life.bin",
+        "on-s307.random.life.bin",
+        "on-s307.verified.jsonl.gz",
+        "on-s401.disabled.life.bin",
+        "on-s401.frozen.life.bin",
+        "on-s401.jsonl",
+        "on-s401.learned.life.bin",
+        "on-s401.legacy.life.bin",
+        "on-s401.random.life.bin",
+        "on-s401.verified.jsonl.gz",
+        "policies/fit.jsonl",
+        "policies/initial.life",
+        "policies/mean8_h4.life",
+        "policies/seal.json",
+        "policies/shuffled_mean8.life",
+        "policies/single_h4.life",
+        "raw_traces.jsonl.gz",
+        "scenarios-s307.jsonl",
+        "scenarios-s307.verified.jsonl.gz",
+        "scenarios-s401.jsonl",
+        "scenarios-s401.verified.jsonl.gz",
+        "training-repeats-s42.jsonl",
+        "training-repeats-s73.jsonl",
+        "training-sources-s42.txt",
+        "training-sources-s73.txt",
+        "training.json",
+        "training.readout.jsonl",
+        "training.summary.json"
+      ]
+    },
+    "complete_raw_archive_membership": {
+      "status": "PASS",
+      "streams": [
+        {
+          "seed": 0,
+          "stream": "evaluation_dataset",
+          "physical_lines": 1,
+          "bytes": 4723513,
+          "sha256": "0390b75e463657f4adb4eccaa54dfefb2a6699665d3dedb673dfd76d1ed7550a"
+        },
+        {
+          "seed": 0,
+          "stream": "evaluation_readout",
+          "physical_lines": 192,
+          "bytes": 157287,
+          "sha256": "370dfd10413b17ad4ac4e1e2e54756372acc0b141890beb1392e66827776fb33"
+        },
+        {
+          "seed": 0,
+          "stream": "fit",
+          "physical_lines": 73873,
+          "bytes": 59168552,
+          "sha256": "a4ae3d8492c240cc91d419b0b78f576e43c36fcb12882ee84538d2fd49ad55ad"
+        },
+        {
+          "seed": 0,
+          "stream": "policy_seal",
+          "physical_lines": 61,
+          "bytes": 2277,
+          "sha256": "187ea2b57034af2a8a0954afd1bf6b713db1f5bfa6eb885d16df2e5f8a93e73f"
+        },
+        {
+          "seed": 0,
+          "stream": "training_dataset",
+          "physical_lines": 1,
+          "bytes": 4742198,
+          "sha256": "1e5f789daef52fc1a8d1bf35fc69a6b522115fafbacb4853bb16d852280af73c"
+        },
+        {
+          "seed": 0,
+          "stream": "training_readout",
+          "physical_lines": 192,
+          "bytes": 157124,
+          "sha256": "142d4726f28c7c67fa0428d61288f90b19b6c3c4564109196ede136297339c37"
+        },
+        {
+          "seed": 42,
+          "stream": "training_parent_ordinary_off",
+          "physical_lines": 128,
+          "bytes": 223280,
+          "sha256": "51abdaee81b0e5cf1689ce48f0ae5d3783fe343672b0e7ea16d995f66680bf6b"
+        },
+        {
+          "seed": 42,
+          "stream": "training_parent_ordinary_on",
+          "physical_lines": 128,
+          "bytes": 223280,
+          "sha256": "51abdaee81b0e5cf1689ce48f0ae5d3783fe343672b0e7ea16d995f66680bf6b"
+        },
+        {
+          "seed": 42,
+          "stream": "training_parent_scenarios",
+          "physical_lines": 253,
+          "bytes": 415411,
+          "sha256": "040283651e1abb4b33337a1865c9c1e2bfe68670d83bd4ff958fd3fd9049d319"
+        },
+        {
+          "seed": 42,
+          "stream": "training_replicates",
+          "physical_lines": 2330,
+          "bytes": 3244094,
+          "sha256": "302ddec36a406bdc47adf952acc7f07b8f4abce9118132ed5ddefdfc6ff20e72"
+        },
+        {
+          "seed": 73,
+          "stream": "training_parent_ordinary_off",
+          "physical_lines": 128,
+          "bytes": 226173,
+          "sha256": "fe65bd7d17447de9153a12f2787083138fab0bb20415bd44b6570c29991884c6"
+        },
+        {
+          "seed": 73,
+          "stream": "training_parent_ordinary_on",
+          "physical_lines": 128,
+          "bytes": 226173,
+          "sha256": "fe65bd7d17447de9153a12f2787083138fab0bb20415bd44b6570c29991884c6"
+        },
+        {
+          "seed": 73,
+          "stream": "training_parent_scenarios",
+          "physical_lines": 253,
+          "bytes": 416325,
+          "sha256": "16c8ac8c76c1c9893c9eaf1111aad0f50f3d793d32e4f202f6fb0d0ef2d586f9"
+        },
+        {
+          "seed": 73,
+          "stream": "training_replicates",
+          "physical_lines": 2330,
+          "bytes": 3271706,
+          "sha256": "39acebdc6fc1e738c39834bfff3c90f33fad68428c67edb696f6b7b054233c37"
+        },
+        {
+          "seed": 307,
+          "stream": "evaluation_replicates",
+          "physical_lines": 2330,
+          "bytes": 3263635,
+          "sha256": "9317bbc83112eb2a046346780e2ddf85e65850be36c9371602501b05a7578074"
+        },
+        {
+          "seed": 307,
+          "stream": "ordinary_off",
+          "physical_lines": 128,
+          "bytes": 223818,
+          "sha256": "30c9c9d1acb5fee8a308b3942f000bd01e978c1c38a4398eac77e5623c2991bb"
+        },
+        {
+          "seed": 307,
+          "stream": "ordinary_on",
+          "physical_lines": 128,
+          "bytes": 223818,
+          "sha256": "30c9c9d1acb5fee8a308b3942f000bd01e978c1c38a4398eac77e5623c2991bb"
+        },
+        {
+          "seed": 307,
+          "stream": "scenarios",
+          "physical_lines": 253,
+          "bytes": 415486,
+          "sha256": "ba5933a5162962b3fd290ab8e881e36b2dc1e3b5b474aeff304564e3caf92078"
+        },
+        {
+          "seed": 401,
+          "stream": "evaluation_replicates",
+          "physical_lines": 2330,
+          "bytes": 3241627,
+          "sha256": "dcf00006f166114b7a7960b8005168c91578fea3b89fc0f12ea23a5369f3e107"
+        },
+        {
+          "seed": 401,
+          "stream": "ordinary_off",
+          "physical_lines": 128,
+          "bytes": 221746,
+          "sha256": "633c61981b5394a83e7a80b1cddc58af54961a3a15ad1f1e5859eb6b297cb9c3"
+        },
+        {
+          "seed": 401,
+          "stream": "ordinary_on",
+          "physical_lines": 128,
+          "bytes": 221746,
+          "sha256": "633c61981b5394a83e7a80b1cddc58af54961a3a15ad1f1e5859eb6b297cb9c3"
+        },
+        {
+          "seed": 401,
+          "stream": "scenarios",
+          "physical_lines": 253,
+          "bytes": 411865,
+          "sha256": "466b2e5854b83db7d0b2c4494055632874e7a0850462e3c8f0e72f7798724269"
+        }
+      ]
+    },
+    "all_eight_sealed_policy_only_lives": {
+      "status": "PASS",
+      "lives": [
+        {
+          "execution": "execution-1",
+          "arm": "initial",
+          "sha256": "1bc29793c6cef28761f18f0e55645e8e5d59abaab60f6915c3a51eb25c1edf63",
+          "life_hash": "a860088f913c7cde"
+        },
+        {
+          "execution": "execution-1",
+          "arm": "single_h4",
+          "sha256": "3f8fa08f331a1c34d50201e0c5c567ca1b2b1853e6c9b54de265c9886b0d02cb",
+          "life_hash": "eaf732191c780118"
+        },
+        {
+          "execution": "execution-1",
+          "arm": "mean8_h4",
+          "sha256": "6fa4aeb4d40598a82728366f02efef20fa8ae8c2a145389864750ed27dab6cb9",
+          "life_hash": "fcbf95a7bf79af9f"
+        },
+        {
+          "execution": "execution-1",
+          "arm": "shuffled_mean8",
+          "sha256": "a605e83edc7aa3739be34c57232558ceaddeead0446e211c21069cd2d3b0805d",
+          "life_hash": "dce30dc11039ce12"
+        },
+        {
+          "execution": "execution-2",
+          "arm": "initial",
+          "sha256": "1bc29793c6cef28761f18f0e55645e8e5d59abaab60f6915c3a51eb25c1edf63",
+          "life_hash": "a860088f913c7cde"
+        },
+        {
+          "execution": "execution-2",
+          "arm": "single_h4",
+          "sha256": "3f8fa08f331a1c34d50201e0c5c567ca1b2b1853e6c9b54de265c9886b0d02cb",
+          "life_hash": "eaf732191c780118"
+        },
+        {
+          "execution": "execution-2",
+          "arm": "mean8_h4",
+          "sha256": "6fa4aeb4d40598a82728366f02efef20fa8ae8c2a145389864750ed27dab6cb9",
+          "life_hash": "fcbf95a7bf79af9f"
+        },
+        {
+          "execution": "execution-2",
+          "arm": "shuffled_mean8",
+          "sha256": "a605e83edc7aa3739be34c57232558ceaddeead0446e211c21069cd2d3b0805d",
+          "life_hash": "dce30dc11039ce12"
+        }
+      ],
+      "barrier_sha256": "f090fd0bc58e77eb6952e8e7a9692e9370f6d92cef490cf32626114af2b6bb0f",
+      "seal_before_new_seeds": true
+    },
+    "cross_cohort_frozen_body_parameter_identity": {
+      "status": "PASS",
+      "body_hash": "3c8ba62f5fa5551a",
+      "body_witnesses": 10808,
+      "checkpoint_sha256": "22ce6e5dfe4efb4a00477a9652784970dc53a69fea2825174398af749acda00d",
+      "cohorts": [
+        42,
+        73,
+        307,
+        401
+      ],
+      "all_input_hashes_checked": true
+    },
+    "source_draw_pairing_and_complete_datasets": {
+      "status": "PASS",
+      "cohorts": [
+        {
+          "split": "training",
+          "seed": 42,
+          "sources": 24,
+          "replicates": 192,
+          "alternatives": 480,
+          "measurements": 1440,
+          "diagnostic_forwards": 128000,
+          "r0_raw_line_parity": true,
+          "paired_rng_and_consumption": true,
+          "raw_reward_and_cost": true,
+          "complete": true
+        },
+        {
+          "split": "training",
+          "seed": 73,
+          "sources": 24,
+          "replicates": 192,
+          "alternatives": 480,
+          "measurements": 1440,
+          "diagnostic_forwards": 130237,
+          "r0_raw_line_parity": true,
+          "paired_rng_and_consumption": true,
+          "raw_reward_and_cost": true,
+          "complete": true
+        },
+        {
+          "split": "evaluation",
+          "seed": 307,
+          "sources": 24,
+          "replicates": 192,
+          "alternatives": 480,
+          "measurements": 1440,
+          "diagnostic_forwards": 130993,
+          "r0_raw_line_parity": true,
+          "paired_rng_and_consumption": true,
+          "raw_reward_and_cost": true,
+          "complete": true
+        },
+        {
+          "split": "evaluation",
+          "seed": 401,
+          "sources": 24,
+          "replicates": 192,
+          "alternatives": 480,
+          "measurements": 1440,
+          "diagnostic_forwards": 128069,
+          "r0_raw_line_parity": true,
+          "paired_rng_and_consumption": true,
+          "raw_reward_and_cost": true,
+          "complete": true
+        }
+      ],
+      "source_states": 96,
+      "ordinary_records_per_seed_mode": 128,
+      "old_r0_raw_lines_exact": true
+    },
+    "target3_fixed_future_erasure": {
+      "status": "PASS",
+      "source_states": 24,
+      "paired_draws": 192,
+      "after_chains_and_all_axes_identical": true,
+      "extra_generated_min": 12,
+      "extra_generated_max": 64,
+      "interpretation": "The fixed H4 schedule overwrites target3 before reading its initial rewrite. LEFT has only extra recorded regeneration cost in this stratum.",
+      "scope": "Host causal invariant; does not redefine the registered success metric."
+    },
+    "all_native_fit_receipts": {
+      "status": "PASS",
+      "fits": 73728,
+      "comparisons": 144,
+      "epochs": 512,
+      "raw_reward_targets_recalculated": true,
+      "native_receipt_bytes": true,
+      "losses": {
+        "single_h4": {
+          "first_epoch_mean_pre_loss": 0.0002563801053461449,
+          "final_epoch_mean_post_loss": 0.00019601085096861842
+        },
+        "mean8_h4": {
+          "first_epoch_mean_pre_loss": 4.753545721831528e-05,
+          "final_epoch_mean_post_loss": 2.782953070163851e-05
+        },
+        "shuffled_mean8": {
+          "first_epoch_mean_pre_loss": 4.725452359485726e-05,
+          "final_epoch_mean_post_loss": 2.812295750710266e-05
+        }
+      }
+    },
+    "sealed_weight_readouts": {
+      "status": "PASS",
+      "choices": 384,
+      "score_components": 1152,
+      "maximum_absolute_error": 3.725290298461914e-09,
+      "tolerance": 2e-06,
+      "source_only": true
+    },
+    "independent_paired_variance_and_all_axes": {
+      "status": "PASS",
+      "state_label_horizon_rows": 2016,
+      "selected_draw_joins": 16128,
+      "all_registered_summary_groups_exact": true,
+      "variance_definition": "sample variance across eight paired action-minus-KEEP clipped rewards; SE=sqrt(variance/8)",
+      "per_action_groups": "each action over only states where valid; constant policies separately retain boundary fallback"
+    },
+    "independent_checkpoint_embedding_metrics": {
+      "status": "PASS",
+      "axis_values": 40992,
+      "unique_sentences": 6646,
+      "maximum_absolute_error_by_axis": {
+        "local_connectedness": 6.335994295891823e-08,
+        "global_connectedness": 3.8024157211768994e-08,
+        "coherence": 1.063808401369215e-07,
+        "novelty": 5.817769943572415e-08,
+        "repetition": 8.129032225134836e-09,
+        "collapse": 0.0,
+        "continuity": 5.032502625734736e-08
+      },
+      "metric_tolerance": 2e-06,
+      "reward_values": 5760,
+      "maximum_absolute_reward_error": 4.971084655025493e-10,
+      "reward_tolerance": 2e-07,
+      "minimum_cosine_distance_to_collapse_threshold": 0.0019999076991049636,
+      "reference_artifact_sha256": "4e9024918b0aa7535e13f02d2ac076e8f495246dd7ed8b93cb304b8879998eba",
+      "reference_script_sha256": "4ce3fc99ceb836a7630a5d4e73fd863bf708591fb599f5f087bc2bfcb046f522",
+      "model_generation_or_fitting": false
+    },
+    "later_receipt_archive_recheck": {
+      "status": "PASS",
+      "unchanged": true
+    },
+    "closed_recovery_records_and_programs": {
+      "status": "PASS",
+      "records": [
+        {
+          "path": "dataset_recovery.json",
+          "bytes": 1910,
+          "sha256": "78e33a3ef31fcafa9d4c5a2661c3aebfd3427017051506cf9a2ce50f6210aa91",
+          "source_sha256": "5c2cb784cf397ba8408ba77cc881f46c085ec149f0f9735ddee29172bbe544ec"
+        },
+        {
+          "path": "host_trace_recovery.json",
+          "bytes": 1734,
+          "sha256": "dafff24b83c8653647ed3d3480a2261bce63809562bcf8cecff53e761cddd6d6",
+          "source_sha256": "dfbbfc299d0a561309634d8c0fdb594695733d71f8a3436a4c0e1f7a58150702"
+        }
+      ],
+      "extra_fitting_replays_total": 1,
+      "distinct_artifact_failures": 3
+    },
+    "publication_path_only_normalization": {
+      "status": "PASS",
+      "records": [
+        {
+          "path": "verification.json",
+          "original": {
+            "bytes": 91343,
+            "sha256": "78452e303b8558c9265300b3c920d7eb1bad7aca8925a80d394a5aa43a22e700"
+          },
+          "published": {
+            "bytes": 91342,
+            "sha256": "908ec6a4f7756bf87e801cf3470d33a53f8e93ddfee186509ac35f4c504e83e6"
+          },
+          "path_only_exact_reconstruction": true
+        },
+        {
+          "path": "merge_verification.json",
+          "original": {
+            "bytes": 122047,
+            "sha256": "d4e41c2674a0a5c97ef4a5da6473423d7e80331535b2e161d3b562f8d5893b2b"
+          },
+          "published": {
+            "bytes": 122046,
+            "sha256": "89a46feeaeae2527d46feda77bea3fd82276dc95edcea98863544fb0388e2090"
+          },
+          "path_only_exact_reconstruction": true
+        },
+        {
+          "path": "receipts.json",
+          "original": {
+            "bytes": 10404220,
+            "sha256": "3cc691c032b7c96ffef87180d8af5290baa4797d5a73b5a9e54f6f911265523b"
+          },
+          "published": {
+            "bytes": 10403967,
+            "sha256": "de80eb47b78ce0a4474decb1a5317b26d3c27400756eef3829b2dc7d2d2296de"
+          },
+          "path_only_exact_reconstruction": true
+        },
+        {
+          "path": "recovery.json",
+          "original": {
+            "bytes": 3699,
+            "sha256": "3d7c8a40ba0d095675803c76d69525282e0af68b35ec0092ade0c09b3a8e9693"
+          },
+          "published": {
+            "bytes": 3387,
+            "sha256": "d6c26bbd2cf5322922d12291fbaebb808caae25eb2f3a7cde777959cde473da9"
+          },
+          "path_only_exact_reconstruction": true
+        }
+      ],
+      "portable_recovery_records_exact": [
+        "dataset_recovery.json",
+        "host_trace_recovery.json"
+      ],
+      "publication_sha256": "6f8e723c8d68738f6c457539a9e288a1e0c8f284664598bb12130f671d4e1f7f"
+    },
+    "published_exact_archive_parts_and_reassembler": {
+      "status": "PASS",
+      "parts": [
+        {
+          "path": "raw_traces.jsonl.gz.part-00",
+          "bytes": 8011776,
+          "sha256": "fd029dc82a718aa4a38e1181b44e33f0324cd637a627fcd14c5ea9e4fff64604",
+          "git_blob_sha": "9b2fee7d564a05db98a021cef630f318af75ea61"
+        },
+        {
+          "path": "raw_traces.jsonl.gz.part-01",
+          "bytes": 8011776,
+          "sha256": "41390ffb7598c53d98536116e1266f3f7efc90b63447d7a8134f5b5310568c51",
+          "git_blob_sha": "c2dc96a3729c7c82d7fcff8fbe58939ca0c36908"
+        },
+        {
+          "path": "raw_traces.jsonl.gz.part-02",
+          "bytes": 2420831,
+          "sha256": "0d675606bab2c35b328cb6b2906c6eb8d1505342fc51bd1d457573b4c228468a",
+          "git_blob_sha": "7cc44b477a3597841a836d303f6f406731467924"
+        }
+      ],
+      "archive": {
+        "bytes": 18444383,
+        "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12"
+      },
+      "reassembler_sha256": "b9881a0857790ad0cbcde7d5d12bfb40264b67a21cc4b5bc95ee66228e75d611",
+      "invocation": {
+        "command": [
+          "python3",
+          "<repository>/experiments/spa_agent/replicates/traces.py",
+          "--output",
+          "<temporary>/reassembled.jsonl.gz"
+        ],
+        "create_returncode": 0,
+        "create_stdout": "{\"bytes\": 18444383, \"parts\": 3, \"sha256\": \"dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12\"}\n",
+        "existing_returncode": 1,
+        "existing_stderr": "Traceback (most recent call last):\n  File \"<repository>/experiments/spa_agent/replicates/traces.py\", line 70, in <module>\n    main()\n  File \"<repository>/experiments/spa_agent/replicates/traces.py\", line 65, in main\n    result = rebuild(HERE / \"raw_manifest.json\", args.output)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<repository>/experiments/spa_agent/replicates/traces.py\", line 25, in rebuild\n    require(not destination.exists() and not destination.is_symlink(), \"destination already exists\")\n  File \"<repository>/experiments/spa_agent/replicates/traces.py\", line 15, in require\n    raise ValueError(message)\nValueError: destination already exists\n",
+        "existing_bytes_unchanged": true
+      }
+    },
+    "readme_numeric_and_causal_claims": {
+      "status": "PASS",
+      "policies": [
+        "initial",
+        "single_h4",
+        "mean8_h4",
+        "shuffled_mean8",
+        "left",
+        "right"
+      ],
+      "sign_mixing": {
+        "training": 52,
+        "evaluation": 57
+      },
+      "positive_mean_alternatives": 4,
+      "source_states_with_positive_mean_alternatives": 2,
+      "mean8_changes_from_initial": 0,
+      "readme_sha256": "33398c324747d93c4024b2d2371db872f4a6ab2cb0c470fe8028fbc749989d29",
+      "all_table_rounding_tolerance": 5.1e-10
+    }
+  },
+  "command": [
+    "python3",
+    "result_audit.py",
+    "<authoritative>",
+    "<repository>",
+    "<output>/result_audit.json"
+  ],
+  "reproducibility": {
+    "script_sha256": "a39eeacaaff9f5bfafb4f3102b76d6ef03325657f1b2fc5c3e4e5d0f2078c546",
+    "script": "#!/usr/bin/env python3\n\"\"\"Read-only final audit of the registered SPA repeated-consequence experiment.\n\nUsage: python3 result_audit.py AUTHORITATIVE_DIRECTORY REPOSITORY OUTPUT_JSON\nReads final artifacts only. It never launches model generation or fitting.\n\"\"\"\nfrom __future__ import annotations\nfrom collections import Counter, defaultdict\nimport copy\nimport gc\nimport gzip\nimport hashlib\nimport importlib.util\nimport io\nimport json\nimport math\nfrom pathlib import Path\nimport statistics\nimport struct\nimport sys\nimport traceback\n\nsys.dont_write_bytecode = True\nPROTOCOL_SHA = \"c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75\"\nPARENT_AUDIT_SHA = \"4e9024918b0aa7535e13f02d2ac076e8f495246dd7ed8b93cb304b8879998eba\"\nFAILURE_OBSERVATION_SHA = \"a7a566bed07f4218113b5ab7805f19993b9da142ee6eeeeb4b718073d02f9804\"\nFAILURE2_OBSERVATION_SHA = \"6b0d801eb2d66a2d1c8f2295a9d0e824ae6b402109c599a760169034fee506ff\"\nFAILURE3_OBSERVATION_SHA = \"a251057169ddc22117de831e77176cc2d131c6b325196534483bc47eb9b7b90d\"\nRECOVERY_SOURCE_SHA = \"f33050372060e7f6e60f6769aeefa9bff84cf6049312a6c6f82ca2b78ac457c1\"\nAXES = (\"local_connectedness\",\"global_connectedness\",\"coherence\",\"novelty\",\"repetition\",\"collapse\",\"continuity\")\nARMS = (\"initial\",\"single_h4\",\"mean8_h4\",\"shuffled_mean8\")\nLABELS = (*ARMS,\"keep\",\"left\",\"right\")\nTOLERANCE = 1e-7\nSCORE_TOLERANCE = 2e-6\n\n\ndef require(condition, message):\n    if not condition: raise AssertionError(message)\n\n\ndef sha(raw): return hashlib.sha256(raw).hexdigest()\ndef json_file(path): return json.loads(path.read_bytes())\ndef file_sha(path):\n    value = hashlib.sha256()\n    with path.open(\"rb\") as stream:\n        for chunk in iter(lambda: stream.read(1024*1024), b\"\"): value.update(chunk)\n    return value.hexdigest()\n\n\ndef identity(path): return {\"sha256\":file_sha(path),\"bytes\":path.stat().st_size}\ndef f32(value): return struct.unpack(\"<f\",struct.pack(\"<f\",value))[0]\ndef fnv(raw):\n    result=14695981039346656037\n    for value in raw: result=((result^value)*1099511628211)&((1<<64)-1)\n    return result\n\n\ndef mean(values): return sum(values)/len(values)\ndef variance(values):\n    center=mean(values)\n    return sum((v-center)**2 for v in values)/(len(values)-1) if len(values)>1 else 0.0\n\n\ndef module(name,path):\n    spec=importlib.util.spec_from_file_location(name,path)\n    value=importlib.util.module_from_spec(spec);spec.loader.exec_module(value)\n    return value\n\n\ndef native_reward(outcome):\n    value=0.0\n    for axis,weight in zip(AXES,(.15,.15,.20,.20,-.15,-.10,.05)):\n        value+=f32(weight)*f32(f32(outcome[\"after\"][axis])-f32(outcome[\"before\"][axis]))\n    value-=f32(.05)*f32(outcome[\"cost\"])\n    return max(-1.0,min(1.0,f32(value)))\n\n\ndef near(a,b,message,tolerance=2e-12):\n    require(math.isfinite(a) and math.isfinite(b) and abs(a-b)<=tolerance,\n            message+f\": {a!r} versus {b!r}\")\n\n\ndef all_near(a,b,message):\n    if isinstance(a,dict):\n        require(isinstance(b,dict) and set(a)==set(b),message+\" keys\")\n        for key in a: all_near(a[key],b[key],message+\".\"+str(key))\n    elif isinstance(a,list):\n        require(isinstance(b,list) and len(a)==len(b),message+\" size\")\n        for i,(x,y) in enumerate(zip(a,b)):all_near(x,y,message+\"[\"+str(i)+\"]\")\n    elif type(a) in (int,float) and type(b) in (int,float):near(a,b,message)\n    else:require(a==b,message+\" exact equality\")\n\n\ndef life(path):\n    raw=path.read_bytes()\n    require(len(raw)==2296 and raw[:8]==b\"NTSPA001\" and struct.unpack_from(\"<I\",raw,8)[0]==2296,\"canonical life framing\")\n    require(fnv(raw[:-8])==struct.unpack_from(\"<Q\",raw,len(raw)-8)[0],\"canonical life checksum\")\n    weights=struct.unpack_from(\"<267f\",raw,88)\n    require(all(math.isfinite(x) and abs(x)<=8 for x in weights),\"native policy bounds\")\n    return raw,weights\n\n\ndef checkpoint_body_hash(path):\n    raw=path.read_bytes()\n    require(struct.unpack_from(\"<II\",raw)==(0x4E544F52,21),\"checkpoint body framing\")\n    offset=8;parameters=bytearray();count=0\n    for _ in range(21):\n        ndim=struct.unpack_from(\"<i\",raw,offset)[0];offset+=4\n        require(1<=ndim<=4,\"checkpoint body dimension\")\n        shape=struct.unpack_from(\"<\"+\"i\"*ndim,raw,offset);offset+=4*ndim\n        require(all(v>0 for v in shape),\"checkpoint body shape\")\n        n=math.prod(shape);parameters.extend(raw[offset:offset+4*n]);offset+=4*n;count+=n\n    require(offset==len(raw) and count==450688,\"checkpoint complete parameter coverage\")\n    return f\"{fnv(parameters):016x}\"\n\n\ndef body_witnesses(value,expected):\n    checks=0\n    if isinstance(value,dict):\n        for key,item in value.items():\n            if key in (\"body_hash\",\"body_hash_before\",\"body_hash_after\"):\n                require(item==expected,\"cross-cohort body parameter identity\")\n                checks+=1\n            else:checks+=body_witnesses(item,expected)\n    elif isinstance(value,list):\n        for item in value:checks+=body_witnesses(item,expected)\n    return checks\n\n\ndef prediction(weights,features):\n    x=list(map(f32,features));hidden=[]\n    for i in range(8):\n        offset=i*30; value=weights[offset+29]\n        for j in range(29):value=f32(value+f32(weights[offset+j]*x[j]))\n        hidden.append(f32(math.tanh(value)))\n    scores=[]\n    for i in range(3):\n        offset=240+9*i;value=weights[offset+8]\n        for j in range(8):value=f32(value+f32(weights[offset+j]*hidden[j]))\n        scores.append(value)\n    return scores\n\n\ndef archive_check(path,directory,retained):\n    filenames={\n        (0,\"fit\"):\"policies/fit.jsonl\",(0,\"policy_seal\"):\"policies/seal.json\",\n        (0,\"training_readout\"):\"training.readout.jsonl\",(0,\"evaluation_readout\"):\"evaluation.readout.jsonl\",\n        (0,\"training_dataset\"):\"training.json\",(0,\"evaluation_dataset\"):\"evaluation.json\"}\n    for seed in (307,401):\n        filenames.update({(seed,\"ordinary_off\"):f\"off-s{seed}.jsonl\",(seed,\"ordinary_on\"):f\"on-s{seed}.jsonl\",\n            (seed,\"scenarios\"):f\"scenarios-s{seed}.jsonl\",(seed,\"evaluation_replicates\"):f\"evaluation-repeats-s{seed}.jsonl\"})\n    for seed in (42,73):filenames[seed,\"training_replicates\"]=f\"training-repeats-s{seed}.jsonl\"\n    handles={key:(directory/name).open(\"rb\") for key,name in filenames.items()}\n    handles.update({(seed,\"training_parent_\"+name):io.BytesIO(raw) for (seed,name),raw in retained.items()})\n    counts=Counter();digests={key:hashlib.sha256() for key in handles};sizes=Counter();order=[]\n    try:\n        with gzip.open(path,\"rb\") as archive:\n            for line in archive:\n                require(line.endswith(b\"\\n\"),\"truncated archive envelope\")\n                row=json.loads(line)\n                require(set(row)=={\"seed\",\"stream\",\"raw\"},\"raw archive envelope\")\n                key=row[\"seed\"],row[\"stream\"]\n                require(key in handles,\"unexpected archive stream\")\n                raw=row[\"raw\"].encode()\n                require(raw.endswith(b\"\\n\") and raw==handles[key].readline(),\"archive/source line mismatch\")\n                if not order or order[-1]!=key:order.append(key)\n                counts[key]+=1;sizes[key]+=len(raw);digests[key].update(raw)\n        require(order==sorted(handles) and all(counts.values()) and len(counts)==22,\"archive 22-stream coverage/order\")\n        require(all(f.read(1)==b\"\" for f in handles.values()),\"archive omitted source tail\")\n    finally:\n        for f in handles.values():f.close()\n    return [{\"seed\":key[0],\"stream\":key[1],\"physical_lines\":counts[key],\"bytes\":sizes[key],\"sha256\":digests[key].hexdigest()} for key in sorted(handles)]\n\n\ndef independent_rows(samples,choices,split):\n    rows=[]\n    for sample in samples:\n        ordinal=sample[\"ordinal\"]\n        valid=[0]+([1] if sample[\"target\"] else [])+([2] if sample[\"target\"]<3 else [])\n        selected={label:choices[ordinal,label] for label in ARMS}\n        selected.update(keep=0,left=1 if 1 in valid else 0,right=2 if 2 in valid else 0)\n        for horizon in (0,1,4):\n            by_repeat=[{o[\"action\"][\"kind\"]:o for o in r[\"outcomes\"][str(horizon)]} for r in sample[\"repeats\"]]\n            rewards={kind:[native_reward(rr[kind]) for rr in by_repeat] for kind in valid}\n            paired={kind:[rewards[kind][i]-rewards[0][i] for i in range(8)] for kind in valid}\n            means={kind:mean(rewards[kind]) for kind in valid};best=max(means.values())\n            actions=[{\"kind\":kind,\"mean_reward\":means[kind],\"mean_advantage_over_keep\":mean(paired[kind]),\n                \"paired_variance\":variance(paired[kind]),\"paired_standard_error\":math.sqrt(variance(paired[kind])/8),\n                \"positive_replicates\":sum(x>TOLERANCE for x in paired[kind]),\n                \"negative_replicates\":sum(x< -TOLERANCE for x in paired[kind]),\n                \"sign_disagreement\":any(x>TOLERANCE for x in paired[kind]) and any(x< -TOLERANCE for x in paired[kind]),\n                \"replicate_advantages\":paired[kind]} for kind in valid]\n            for label,kind in selected.items():\n                outcomes=[rr[kind] for rr in by_repeat]\n                rows.append({\"split\":split,\"ordinal\":ordinal,\"seed\":sample[\"seed\"],\"snapshot\":sample[\"snapshot\"],\n                    \"target\":sample[\"target\"],\"horizon\":horizon,\"label\":label,\"kind\":kind,\n                    \"source_snapshot_sha256\":sample[\"snapshot_raw_sha256\"],\"outcome_sha256\":[o[\"raw_sha256\"] for o in outcomes],\n                    \"mean_reward\":means[kind],\"mean_advantage_over_keep\":mean(paired[kind]),\"r0_advantage\":paired[kind][0],\n                    \"r1_to_r7_advantage\":mean(paired[kind][1:]),\"oracle_regret\":best-means[kind],\n                    \"optimal\":best-means[kind]<=TOLERANCE,\"changed_choice_from_initial\":kind!=selected[\"initial\"],\n                    \"paired_variance\":variance(paired[kind]),\"paired_standard_error\":math.sqrt(variance(paired[kind])/8),\n                    \"mean_cost\":mean([o[\"cost\"] for o in outcomes]),\n                    \"mean_cost_vs_keep\":mean([rr[kind][\"cost\"]-rr[0][\"cost\"] for rr in by_repeat]),\n                    \"mean_generated\":mean([o[\"cumulative_generated\"] for o in outcomes]),\n                    \"mean_after\":{axis:mean([o[\"after\"][axis] for o in outcomes]) for axis in AXES},\n                    \"mean_axis_delta_vs_keep\":{axis:mean([rr[kind][\"after\"][axis]-rr[0][\"after\"][axis] for rr in by_repeat]) for axis in AXES},\n                    \"actions\":actions})\n    return rows\n\n\ndef independent_groups(state_rows):\n    summaries=[]\n    groups=[(\"combined\",lambda row:True)]\n    for seed in sorted({r[\"seed\"] for r in state_rows}):\n        groups.append((\"seed:\"+str(seed),lambda row,seed=seed:row[\"seed\"]==seed))\n    for target in range(4):\n        groups.append((\"target:\"+str(target),lambda row,target=target:row[\"target\"]==target))\n    for group,includes in groups:\n        for horizon in (0,1,4):\n            for label in LABELS:\n                rows=[r for r in state_rows if includes(r) and r[\"horizon\"]==horizon and r[\"label\"]==label]\n                if not rows:continue\n                summary={\"group\":group,\"horizon\":horizon,\"label\":label,\"states\":len(rows)}\n                scalar_means=(\"mean_reward\",\"mean_advantage_over_keep\",\"r0_advantage\",\"r1_to_r7_advantage\",\n                    \"paired_variance\",\"paired_standard_error\",\"mean_cost\",\"mean_cost_vs_keep\",\"mean_generated\")\n                summary.update({key:mean([r[key] for r in rows]) for key in scalar_means})\n                summary.update(mean_oracle_regret=mean([r[\"oracle_regret\"] for r in rows]),\n                    optimal_count=sum(r[\"optimal\"] for r in rows),\n                    changed_choices_from_initial=sum(r[\"changed_choice_from_initial\"] for r in rows),\n                    action_counts={str(kind):sum(r[\"kind\"]==kind for r in rows) for kind in range(3)},\n                    between_state_advantage_variance=variance([r[\"mean_advantage_over_keep\"] for r in rows]))\n                for key in (\"mean_after\",\"mean_axis_delta_vs_keep\"):\n                    summary[key]={axis:mean([r[key][axis] for r in rows]) for axis in AXES}\n                summaries.append(summary)\n    return summaries\n\n\ndef valid_action_variance(samples):\n    result=[]\n    for target in (None,0,1,2,3):\n        for kind in (0,1,2):\n            states=[]\n            for sample in samples:\n                if target is not None and sample[\"target\"]!=target:continue\n                if not sample[\"action_mask\"]&(1<<kind):continue\n                rewards=[]\n                for repeat in sample[\"repeats\"]:\n                    outcomes={o[\"action\"][\"kind\"]:o for o in repeat[\"outcomes\"][\"4\"]}\n                    rewards.append(native_reward(outcomes[kind])-native_reward(outcomes[0]))\n                states.append(rewards)\n            if not states:continue\n            means=[mean(values) for values in states]\n            result.append({\"target\":target,\"kind\":kind,\"valid_source_states\":len(states),\"realizations_per_state\":8,\n                \"mean_paired_advantage\":mean(means),\"between_state_sample_variance_of_mean8\":variance(means),\n                \"mean_within_state_paired_sample_variance\":mean([variance(values) for values in states]),\n                \"mean_within_state_standard_error\":mean([math.sqrt(variance(values)/8) for values in states]),\n                \"sign_disagreement_states\":sum(any(x>TOLERANCE for x in values) and any(x< -TOLERANCE for x in values) for values in states),\n                \"positive_mean8_states\":sum(v>TOLERANCE for v in means),\"negative_mean8_states\":sum(v< -TOLERANCE for v in means),\n                \"positive_realizations\":sum(x>TOLERANCE for values in states for x in values),\n                \"negative_realizations\":sum(x< -TOLERANCE for values in states for x in values),\n                \"r0_vs_mean8_sign_changes\":sum((values[0]>TOLERANCE and mean(values)< -TOLERANCE) or\n                    (values[0]< -TOLERANCE and mean(values)>TOLERANCE) for values in states)})\n    return result\n\n\ndef authenticated_recovery(root,repo,receipts):\n    failure_path=repo/\"experiments/spa_agent/replicates/durability_failure.json\"\n    require(file_sha(failure_path)==FAILURE_OBSERVATION_SHA,\"pre-recovery observation changed\")\n    failure=json_file(failure_path)\n    require(failure[\"status\"]==\"FAIL\" and failure[\"evaluation_artifacts_present\"]==[],\"failure pre-evaluation boundary\")\n    observed=failure[\"files\"][\"execution-2/policies/fit.jsonl\"]\n    recovery=json_file(root/\"recovery.json\")\n    require(recovery[\"status\"]==\"AUTHENTICATED_DETERMINISTIC_TRACE_REPLAY\" and recovery[\"replays\"]==1,\"recovery count/status\")\n    require(recovery[\"protocol_sha256\"]==PROTOCOL_SHA and recovery[\"original_runner_sha256\"]==receipts[\"metadata\"][\"source_files_sha256\"][\"experiments/spa_agent/replicates/run.py\"],\"recovery frozen protocol/source\")\n    require(identity(repo/recovery[\"recovery_source\"][\"path\"])=={k:recovery[\"recovery_source\"][k] for k in (\"bytes\",\"sha256\")},\"recovery program identity\")\n    require(recovery[\"recovery_source\"][\"sha256\"]==RECOVERY_SOURCE_SHA,\"recovery program changed after launch\")\n    require(recovery[\"command\"][\"returncode\"]==0 and recovery[\"replay_directory\"]==\"recovery-replay\",\"closed separate replay\")\n    command=recovery[\"command\"][\"command\"]\n    expected=[str(root/\"source_snapshot/experiments/spa_agent/replicates/policy.py\"),\"train\",\"--dataset\",\n              str(root/\"execution-2/training.json\"),\"--protocol\",str(root/\"source_snapshot/experiments/spa_agent/replicates/protocol.json\"),\n              \"--library\",str(root/\"libnotorch.so\"),\"--output\",str(root/\"recovery-replay\")]\n    require(command[1:]==expected,\"recovery replay used different data/helper/config/library\")\n    for name,expected_input in recovery[\"input_identities\"].items():\n        require(identity(root/\"inputs\"/name)==expected_input and expected_input[\"sha256\"]==receipts[\"metadata\"][\"inputs\"][name][\"sha256\"],\"recovery input identity\")\n    replay=root/\"recovery-replay\"\n    require(set(recovery[\"replay_artifacts\"])=={\"fit.jsonl\",\"seal.json\",*(arm+\".life\" for arm in ARMS)},\"replay complete artifact coverage\")\n    for name,expected_artifact in recovery[\"replay_artifacts\"].items():require(identity(replay/name)==expected_artifact,\"replay artifact changed\")\n    original=root/\"execution-2/policies\"\n    seal_raw=(root/\"failure-lane/original-execution-2.seal.json\").read_bytes()\n    seal=json.loads(seal_raw)\n    require(seal_raw==(replay/\"seal.json\").read_bytes()==(original/\"seal.json\").read_bytes(),\"whole original seal changed\")\n    require(identity(original/\"seal.json\")==recovery[\"original_seal\"] and seal[\"trace\"]==observed[\"seal_trace\"],\"pre-recovery seal pin\")\n    for arm in ARMS:\n        raw=(original/(arm+\".life\")).read_bytes()\n        require(raw==(replay/(arm+\".life\")).read_bytes(),\"replay altered original policy life\")\n        require(identity(original/(arm+\".life\"))==observed[\"lives\"][arm][\"actual\"] and seal[\"lives\"][arm]==observed[\"lives\"][arm][\"sealed\"],\"surviving life differs from pre-recovery observation\")\n    damaged_path=root/recovery[\"damaged_trace\"][\"path\"]\n    require(identity(damaged_path)=={k:recovery[\"damaged_trace\"][k] for k in (\"bytes\",\"sha256\")},\"preserved damaged gzip identity\")\n    damaged=gzip.decompress(damaged_path.read_bytes())\n    require(len(damaged)==observed[\"bytes_read\"] and sha(damaged)==observed[\"sha256\"] and len(damaged.splitlines())==observed[\"physical_lines\"],\"preserved damaged bytes changed\")\n    full=(replay/\"fit.jsonl\").read_bytes()\n    require(full.startswith(damaged) and full==(original/\"fit.jsonl\").read_bytes(),\"restoration was not an authenticated trace-only replacement\")\n    require(full==gzip.decompress((root/\"recovered-fit.verified.jsonl.gz\").read_bytes()),\"closed recovery gzip witness\")\n    expected_fit={\"bytes\":observed[\"seal_trace\"][\"bytes\"],\"sha256\":observed[\"seal_trace\"][\"sha256\"]}\n    require({\"bytes\":len(full),\"sha256\":sha(full)}==expected_fit==recovery[\"original_expected_fit\"]==recovery[\"restored_fit\"],\"full replay did not reproduce original sealed trace\")\n    require(recovery[\"no_evaluation_before_recovery\"] is True and recovery[\"completed_unix_ns\"]>=recovery[\"started_unix_ns\"],\"recovery pre-evaluation record\")\n    require(file_sha(root/\"recovery.json\")==receipts[\"barrier\"][\"recovery_sha256\"] and identity(root/\"recovery.json\")==receipts[\"artifacts\"][\"recovery.json\"],\"recovery-to-barrier identity\")\n    return {\"failure_observation_sha256\":FAILURE_OBSERVATION_SHA,\"recovery_receipt\":identity(root/\"recovery.json\"),\n            \"recovery_source_sha256\":RECOVERY_SOURCE_SHA,\"extra_deterministic_training_replays\":1,\n            \"original_fit_bytes\":len(full),\"damaged_prefix_bytes\":len(damaged),\"lost_bytes\":len(full)-len(damaged),\n            \"damaged_prefix_sha256\":sha(damaged),\"original_full_fit_sha256\":sha(full),\n            \"all_four_original_lives_and_whole_seal_unchanged\":True,\"no_training_outcome_regeneration\":True,\n            \"failure_classification\":\"Artifact durability failure before evaluation; not a policy outcome.\",\n            \"lossless_failed_trace_reconstruction\":{\"archive_stream\":{\"seed\":0,\"stream\":\"fit\"},\n                \"method\":\"Concatenate the UTF-8 raw values for this stream in envelope order; take the first damaged_prefix_bytes bytes; verify damaged_prefix_sha256.\",\n                \"verified_exact_prefix\":True}}\n\n\ndef erased_target_control(datasets):\n    sources=draws=0;extra_generated=[]\n    for samples in datasets.values():\n        for sample in samples:\n            if sample[\"target\"]!=3:continue\n            sources+=1\n            for repeat in sample[\"repeats\"]:\n                outcomes={o[\"action\"][\"kind\"]:o for o in repeat[\"outcomes\"][\"4\"]}\n                require(set(outcomes)=={0,1},\"target3 boundary mask\")\n                keep,left=outcomes[0],outcomes[1]\n                require(left[\"chain\"]==keep[\"chain\"] and left[\"after\"]==keep[\"after\"],\"target3 H4 initial sentence survived fixed erasure\")\n                extra=left[\"cumulative_generated\"]-keep[\"cumulative_generated\"]\n                require(extra==left[\"initial_generated\"]>0 and keep[\"initial_generated\"]==0,\"target3 extra generation accounting\")\n                require(left[\"cost\"]>keep[\"cost\"] and native_reward(left)<native_reward(keep),\"target3 cost-only consequence\")\n                extra_generated.append(extra);draws+=1\n    require(sources==24 and draws==192,\"target3 structural-control coverage\")\n    return {\"source_states\":sources,\"paired_draws\":draws,\"after_chains_and_all_axes_identical\":True,\n            \"extra_generated_min\":min(extra_generated),\"extra_generated_max\":max(extra_generated),\n            \"interpretation\":\"The fixed H4 schedule overwrites target3 before reading its initial rewrite. LEFT has only extra recorded regeneration cost in this stratum.\",\n            \"scope\":\"Host causal invariant; does not redefine the registered success metric.\"}\n\n\ndef closed_archive_restorations(root,repo,receipts):\n    captured=[]\n    for filename,expected in ((\"durability_failure2.json\",FAILURE2_OBSERVATION_SHA),(\"durability_failure3.json\",FAILURE3_OBSERVATION_SHA)):\n        path=repo/\"experiments/spa_agent/replicates\"/filename\n        require(file_sha(path)==expected,\"closed-artifact failure observation changed\")\n        captured.append(json_file(path))\n    second,third=captured\n    expected_archive={k:second[\"archives\"][\"execution-1/raw_traces.jsonl.gz\"][k] for k in (\"bytes\",\"sha256\")}\n    for execution in (1,2):require(identity(root/f\"execution-{execution}/raw_traces.jsonl.gz\")==expected_archive,\"own enclosing archive changed after damage observation\")\n    members=defaultdict(list)\n    for execution,selected in ((1,(0,\"evaluation_dataset\")),(2,(307,\"ordinary_off\"))):\n        with gzip.open(root/f\"execution-{execution}/raw_traces.jsonl.gz\",\"rb\") as stream:\n            for line in stream:\n                row=json.loads(line);key=row[\"seed\"],row[\"stream\"]\n                if key==selected:members[key].append(row[\"raw\"].encode())\n    members={key:b\"\".join(chunks) for key,chunks in members.items()}\n    dataset=members[0,\"evaluation_dataset\"];ordinary=members[307,\"ordinary_off\"]\n    d2=second[\"files\"][\"execution-1/evaluation.json\"];d3=third[\"file\"]\n    require(sha(dataset[:d2[\"bytes_read\"]])==d2[\"sha256\"] and sha(ordinary[:d3[\"bytes_read\"]])==d3[\"sha256\"],\"lossless damaged-prefix reconstruction\")\n    require(dataset==(root/\"execution-1/evaluation.json\").read_bytes() and ordinary==(root/\"execution-2/off-s307.jsonl\").read_bytes(),\"closed restoration differs from own archived member\")\n    require({\"bytes\":len(dataset),\"sha256\":sha(dataset)}=={k:second[\"archives\"][\"execution-1/raw_traces.jsonl.gz\"][\"evaluation_dataset\"][k] for k in (\"bytes\",\"sha256\")},\"complete dataset member identity\")\n    require({\"bytes\":len(ordinary),\"sha256\":sha(ordinary)}=={k:third[\"own_archive\"][\"member\"][k] for k in (\"bytes\",\"sha256\")},\"complete ordinary member identity\")\n    require(ordinary==gzip.decompress((root/\"execution-2/off-s307.verified.jsonl.gz\").read_bytes()),\"ordinary immediate mirror differs from own archive\")\n    original_manifests=[]\n    for execution,damaged_name,observed in ((1,\"evaluation.json\",d2),(2,\"off-s307.jsonl\",d3)):\n        path=root/f\"failure-lane/execution-{execution}.result.before-finalization.json\"\n        old=json_file(path)\n        if execution==2:require(identity(path)=={k:third[\"original_manifest\"][k] for k in (\"bytes\",\"sha256\")},\"original mixed manifest byte identity\")\n        require(old[\"artifacts\"][damaged_name]==observed[\"registered_artifact\"],\"preserved mixed manifest differs from observation\")\n        require(old[\"artifacts\"][\"raw_traces.jsonl.gz\"]==expected_archive,\"old manifest did not pin complete own archive\")\n        require(old[\"artifacts\"][damaged_name]!=identity(root/f\"execution-{execution}\"/damaged_name),\"damaged standalone manifest wrongly treated as passing\")\n        original_manifests.append({\"execution\":execution,\"identity\":identity(path),\"classification\":\"Original mixed manifest preserved; standalone damaged entry does not pass.\"})\n    return {\"failure_observation_sha256\":[FAILURE2_OBSERVATION_SHA,FAILURE3_OBSERVATION_SHA],\n            \"enclosing_archive\":expected_archive,\"preserved_original_mixed_manifests\":original_manifests,\n            \"restored_dataset\":{\"bytes\":len(dataset),\"sha256\":sha(dataset),\"canonical_rebuild_and_source_readout_joins\":\"Checked by source_draw_pairing_and_complete_datasets and sealed_weight_readouts.\"},\n            \"restored_ordinary_trace\":{\"bytes\":len(ordinary),\"sha256\":sha(ordinary),\"immediate_mirror_agrees\":True},\n            \"lossless_failed_trace_reconstruction\":[\n                {\"seed\":0,\"stream\":\"evaluation_dataset\",\"prefix_bytes\":d2[\"bytes_read\"],\"prefix_sha256\":d2[\"sha256\"]},\n                {\"seed\":307,\"stream\":\"ordinary_off\",\"prefix_bytes\":d3[\"bytes_read\"],\"prefix_sha256\":d3[\"sha256\"]}],\n            \"reconstruction_method\":\"Concatenate the named raw archive stream in envelope order, take the recorded prefix bytes and verify its SHA256.\",\n            \"new_body_generation_or_fitting\":False}\n\n\ndef execute(root,repo,report):\n    receipts=json_file(root/\"receipts.json\");meta=receipts[\"metadata\"];source=root/\"source_snapshot\"\n    protocol=meta[\"protocol\"]\n    legacy_protocol=json_file(source/\"experiments/spa_agent/protocol.json\")\n    require(meta[\"inputs\"][\"simple.weights\"][\"sha256\"]==legacy_protocol[\"body\"][\"checkpoint_sha256\"],\"frozen checkpoint pin\")\n    require(meta[\"inputs\"][\"dracula.txt\"][\"sha256\"]==legacy_protocol[\"body\"][\"corpus_sha256\"],\"frozen corpus pin\")\n    require(meta[\"protocol_sha256\"]==PROTOCOL_SHA==file_sha(source/\"experiments/spa_agent/replicates/protocol.json\"),\"frozen protocol identity\")\n    report[\"identities\"]={\"receipt\":identity(root/\"receipts.json\"),\"archive\":identity(root/\"raw_traces.jsonl.gz\"),\"protocol_sha256\":PROTOCOL_SHA}\n    def gate(name,**values):\n        report[\"gates\"][name]={\"status\":\"PASS\",**values};print(\"PASS\",name,flush=True)\n    report[\"interruption\"]=authenticated_recovery(root,repo,receipts)\n    gate(\"one_authenticated_trace_recovery\",**report[\"interruption\"])\n    report[\"closed_artifact_restorations\"]=closed_archive_restorations(root,repo,receipts)\n    gate(\"same_execution_closed_archive_restorations\",**report[\"closed_artifact_restorations\"])\n    artifact_count=0\n    for index,result in enumerate(receipts[\"executions\"],1):\n        directory=root/f\"execution-{index}\"\n        actual=json_file(directory/\"result.json\")\n        require(all(actual[k]==result[k] for k in result if k!=\"commands\"),\"published scientific result differs\")\n        for name,expected in result[\"artifacts\"].items():\n            require(identity(directory/name)==expected,\"artifact changed: \"+name);artifact_count+=1\n    for name,expected in meta[\"source_files_sha256\"].items():require(file_sha(source/name)==expected,\"immutable source changed: \"+name)\n    for name,expected in meta[\"binaries\"].items():require(identity(root/name)==expected,\"compiled binary changed: \"+name)\n    for name,expected in meta[\"inputs\"].items():\n        require(file_sha(root/\"inputs\"/name)==expected[\"sha256\"],\"body/input changed: \"+name)\n    gate(\"all_artifact_source_body_identities\",execution_artifacts=artifact_count,sources=len(meta[\"source_files_sha256\"]),binaries=len(meta[\"binaries\"]),inputs=len(meta[\"inputs\"]))\n    repeated=receipts[\"repeat\"][\"byte_identical_artifacts\"]\n    require(len(repeated)==receipts[\"repeat\"][\"count\"] and receipts[\"repeat\"][\"all_passed\"] is True,\"repeat manifest\")\n    for name in repeated:require(identity(root/\"execution-1\"/name)==identity(root/\"execution-2\"/name),\"repeat changed: \"+name)\n    require(identity(root/\"raw_traces.jsonl.gz\")==identity(root/\"execution-1/raw_traces.jsonl.gz\")==receipts[\"artifacts\"][\"raw_traces.jsonl.gz\"],\"archive top-level identity\")\n    gate(\"two_execution_byte_identity\",count=len(repeated),artifacts=repeated)\n    runner=module(\"spa_replicate_final_independent\",source/\"experiments/spa_agent/replicates/run.py\")\n    old=source/\"experiments/spa_agent/scenarios/raw_traces.jsonl.gz\"\n    retained=runner.FUTURE.archive_streams(old,\"dcee2f733f8a7a4063a44f0654b574dad55ce6b57ea258ee81a7582d39370d22\")\n    directory=root/\"execution-1\"\n    gate(\"complete_raw_archive_membership\",streams=archive_check(root/\"raw_traces.jsonl.gz\",directory,retained))\n\n    barrier=json_file(root/\"all_eight_lives_sealed.json\")\n    require(barrier==receipts[\"barrier\"] and barrier[\"source_sha256\"]==meta[\"source_files_sha256\"] and barrier[\"binaries\"]==meta[\"binaries\"],\"anchored barrier provenance\")\n    stages=json_file(root/\"stages.json\");require(stages==receipts[\"stages\"],\"stage receipt identity\")\n    require([x[\"order\"] for x in stages]==list(range(1,len(stages)+1)),\"stage order\")\n    seal_stage=next(x for x in stages if x[\"phase\"]==\"recovery_authenticated_then_all_eight_lives_sealed\")\n    source_stage=next(x for x in stages if x[\"phase\"]==\"unseen_source_generation_started\")\n    require(seal_stage[\"order\"]<source_stage[\"order\"] and seal_stage[\"barrier_sha256\"]==source_stage[\"barrier_sha256\"]==file_sha(root/\"all_eight_lives_sealed.json\"),\"all eight lives before new seeds\")\n    require(source_stage[\"seeds\"]==[307,401] and set(barrier[\"executions\"])=={\"execution-1\",\"execution-2\"},\"new evaluation cohort\")\n    weights={};life_records=[]\n    for execution,entry in barrier[\"executions\"].items():\n        d=root/execution;required={\"training.json\",\"policies/fit.jsonl\",\"policies/seal.json\",*(\"policies/\"+arm+\".life\" for arm in ARMS)}\n        require(set(entry[\"files\"])==required,\"barrier exact file coverage\")\n        for name,expected in entry[\"files\"].items():require(identity(d/name)==expected,\"sealed barrier file changed\")\n        seal=json_file(d/\"policies/seal.json\")\n        require(seal[\"protocol_sha256\"]==PROTOCOL_SHA and seal[\"fits_per_arm\"]==24576,\"policy seal recipe\")\n        require(seal[\"dataset\"]==identity(d/\"training.json\") and seal[\"trace\"]=={\"file\":\"fit.jsonl\",**identity(d/\"policies/fit.jsonl\")},\"seal dataset/fit identity\")\n        require(seal[\"native_library\"]==meta[\"binaries\"][\"libnotorch.so\"],\"sealed native library\")\n        for name,expected in seal[\"source_sha256\"].items():require(expected==meta[\"source_files_sha256\"][name],\"seal source hash\")\n        initial,_=life(d/\"policies/initial.life\")\n        for arm in ARMS:\n            raw,decoded=life(d/(\"policies/\"+arm+\".life\"));record=seal[\"lives\"][arm]\n            require(record[\"sha256\"]==sha(raw) and record[\"bytes\"]==len(raw) and record[\"life_hash\"]==f\"{fnv(raw):016x}\",\"sealed life identity\")\n            require(raw[:88]==initial[:88] and raw[1156:-8]==initial[1156:-8],\"replay changed non-policy bytes\")\n            if arm==\"single_h4\":require(sha(raw)==\"3f8fa08f331a1c34d50201e0c5c567ca1b2b1853e6c9b54de265c9886b0d02cb\",\"historical single-H4 life\")\n            if execution==\"execution-1\":weights[arm]=decoded\n            life_records.append({\"execution\":execution,\"arm\":arm,\"sha256\":sha(raw),\"life_hash\":f\"{fnv(raw):016x}\"})\n    gate(\"all_eight_sealed_policy_only_lives\",lives=life_records,barrier_sha256=file_sha(root/\"all_eight_lives_sealed.json\"),seal_before_new_seeds=True)\n\n    scenario_protocol=json_file(source/\"experiments/spa_agent/scenarios/protocol.json\")\n    train_sources,train_refs=runner.source_samples(retained,[42,73],file_sha(old),scenario_protocol)\n    eval_streams={(seed,name):(directory/(f\"scenarios-s{seed}.jsonl\" if name==\"scenarios\" else f\"{name.removeprefix('ordinary_')}-s{seed}.jsonl\")).read_bytes()\n        for seed in (307,401) for name in (\"ordinary_off\",\"ordinary_on\",\"scenarios\")}\n    evaluation_archive=directory/\"evaluation_sources.raw.jsonl.gz\"\n    eval_sources,eval_refs=runner.source_samples(eval_streams,[307,401],file_sha(evaluation_archive),scenario_protocol)\n    for seed in (307,401):\n        for arm in (\"disabled\",\"legacy\",\"random\",\"frozen\",\"learned\"):\n            require((directory/f\"off-s{seed}.{arm}.life.bin\").read_bytes()==(directory/f\"on-s{seed}.{arm}.life.bin\").read_bytes(),\"diagnostics changed host life\")\n    datasets={};replicate_gates=[]\n    vocab_fnv=f\"{fnv((root/'inputs/vocabulary.u32').read_bytes()):016x}\"\n    for split,sources,refs,seeds in ((\"training\",train_sources,train_refs,(42,73)),(\"evaluation\",eval_sources,eval_refs,(307,401))):\n        joined=[]\n        for seed in seeds:\n            chunk=[s for s in sources if s[\"seed\"]==seed]\n            text=directory/f\"{split}-sources-s{seed}.txt\"\n            raw=(directory/f\"{split}-repeats-s{seed}.jsonl\").read_bytes()\n            projected,check=runner.validate_replicates(raw,chunk,refs,dataset_fnv=f\"{fnv(text.read_bytes()):016x}\",vocabulary_fnv=vocab_fnv)\n            joined.extend(projected);replicate_gates.append({\"split\":split,\"seed\":seed,**check})\n        joined.sort(key=lambda s:s[\"ordinal\"])\n        data=json_file(directory/(split+\".json\"))\n        reconstructed={\"schema\":1,\"protocol_sha256\":PROTOCOL_SHA,\"replicates\":8,\"samples\":joined}\n        require(data==reconstructed,\"serialized dataset differs from measured source/draw joins\")\n        canonical=(json.dumps(reconstructed,sort_keys=True,separators=(\",\",\":\"),allow_nan=False)+\"\\n\").encode()\n        require((directory/(split+\".json\")).read_bytes()==canonical,\"canonical dataset bytes differ from independent source/draw reconstruction\")\n        datasets[split]=joined\n    original_body=checkpoint_body_hash(root/\"inputs/simple.weights\")\n    body_checks=body_witnesses(train_sources,original_body)+body_witnesses(eval_sources,original_body)\n    for raw in (*retained.values(),*eval_streams.values()):\n        for line in raw.splitlines():body_checks+=body_witnesses(json.loads(line),original_body)\n    for split,seeds in ((\"training\",(42,73)),(\"evaluation\",(307,401))):\n        for seed in seeds:\n            with (directory/f\"{split}-repeats-s{seed}.jsonl\").open(\"rb\") as stream:\n                for line in stream:body_checks+=body_witnesses(json.loads(line),original_body)\n    require(body_checks>96,\"no body witnesses\")\n    gate(\"cross_cohort_frozen_body_parameter_identity\",body_hash=original_body,body_witnesses=body_checks,\n         checkpoint_sha256=meta[\"inputs\"][\"simple.weights\"][\"sha256\"],cohorts=[42,73,307,401],all_input_hashes_checked=True)\n    gate(\"source_draw_pairing_and_complete_datasets\",cohorts=replicate_gates,source_states=96,ordinary_records_per_seed_mode=128,old_r0_raw_lines_exact=True)\n    gate(\"target3_fixed_future_erasure\",**erased_target_control(datasets))\n\n    rows,_=runner.parse_raw((directory/\"policies/fit.jsonl\").read_bytes())\n    fit=runner.validate_fit(rows,datasets[\"training\"])\n    require(fit==receipts[\"executions\"][0][\"fit\"]==receipts[\"executions\"][1][\"fit\"],\"full replay fit receipt\")\n    del rows;gc.collect()\n    gate(\"all_native_fit_receipts\",**fit)\n\n    report[\"primary_h4\"]={};report[\"valid_action_h4_variance\"]={}\n    score_error=0.0;score_components=choices_checked=state_rows_checked=selected_draws=0\n    first_seal=json_file(directory/\"policies/seal.json\")\n    life_hashes={arm:first_seal[\"lives\"][arm][\"life_hash\"] for arm in ARMS}\n    for split,samples in datasets.items():\n        rows,_=runner.parse_raw((directory/(split+\".readout.jsonl\")).read_bytes())\n        choices=runner.validate_readouts(rows,samples,life_hashes)\n        for row in rows:\n            sample=samples[row[\"source\"][\"ordinal\"]];arm=row[\"arm\"]\n            scores=prediction(weights[arm],sample[\"features\"])\n            for x,y in zip(scores,row[\"scores\"]):\n                score_error=max(score_error,abs(x-y));near(x,y,\"sealed-weight readout\",SCORE_TOLERANCE);score_components+=1\n            valid=[kind for kind in range(3) if sample[\"action_mask\"]&(1<<kind)]\n            kind=max(valid,key=lambda k:scores[k])\n            require(kind==row[\"action\"][\"kind\"],\"independent decoded-weight action\")\n            choices_checked+=1\n        reported=json_file(directory/(split+\".summary.json\"))\n        require(reported==receipts[\"executions\"][0][split]==receipts[\"executions\"][1][split],\"reported summary identity\")\n        recalculated=runner.summarize(samples,choices,split)\n        require(recalculated==reported,\"registered all-groups summary recomputation\")\n        independent=independent_rows(samples,choices,split)\n        all_near(independent,reported[\"state_comparisons\"],\"independent state/action/draw statistics\")\n        all_near(independent_groups(independent),reported[\"summaries\"],\"independent aggregate policy/seed/target statistics\")\n        state_rows_checked+=len(independent);selected_draws+=len(independent)*8\n        report[\"primary_h4\"][split]=[r for r in reported[\"summaries\"] if r[\"group\"]==\"combined\" and r[\"horizon\"]==4]\n        report[\"valid_action_h4_variance\"][split]=valid_action_variance(samples)\n    gate(\"sealed_weight_readouts\",choices=choices_checked,score_components=score_components,maximum_absolute_error=score_error,tolerance=SCORE_TOLERANCE,source_only=True)\n    gate(\"independent_paired_variance_and_all_axes\",state_label_horizon_rows=state_rows_checked,selected_draw_joins=selected_draws,all_registered_summary_groups_exact=True,variance_definition=\"sample variance across eight paired action-minus-KEEP clipped rewards; SE=sqrt(variance/8)\",per_action_groups=\"each action over only states where valid; constant policies separately retain boundary fallback\")\n\n    parent_raw=(repo/\"experiments/spa_agent/future/result_audit.json\").read_bytes()\n    require(sha(parent_raw)==PARENT_AUDIT_SHA,\"independent metric reference identity\")\n    reference=json.loads(parent_raw)[\"reproducibility\"]\n    require(sha(reference[\"script\"].encode())==reference[\"script_sha256\"],\"metric reference source identity\")\n    namespace={\"__name__\":\"retained_spa_independent_math\",\"__file__\":\"<retained-independent-audit>\"}\n    exec(compile(reference[\"script\"],\"<retained-independent-audit>\",\"exec\"),namespace)\n    metrics=namespace[\"Metrics\"](namespace[\"token_table\"](root/\"inputs/simple.weights\"))\n    for samples in datasets.values():\n        for sample in samples:\n            metrics.check(sample[\"chain\"],sample[\"target\"],sample[\"before\"])\n            for repeat in sample[\"repeats\"]:\n                for outcomes in repeat[\"outcomes\"].values():\n                    for outcome in outcomes:\n                        require(outcome[\"before\"]==sample[\"before\"],\"replicate raw before drift\")\n                        metrics.check(outcome[\"chain\"],sample[\"target\"],outcome[\"after\"])\n                        metrics.reward(outcome[\"before\"],outcome[\"after\"],outcome[\"cost\"],outcome[\"reward\"])\n    gate(\"independent_checkpoint_embedding_metrics\",axis_values=metrics.checks,unique_sentences=len(metrics.cache),maximum_absolute_error_by_axis=metrics.maximum_error,\n        metric_tolerance=namespace[\"METRIC_TOLERANCE\"],reward_values=metrics.rewards,maximum_absolute_reward_error=metrics.reward_maximum_error,\n        reward_tolerance=namespace[\"REWARD_TOLERANCE\"],minimum_cosine_distance_to_collapse_threshold=metrics.collapse_threshold_distance,\n        reference_artifact_sha256=PARENT_AUDIT_SHA,reference_script_sha256=reference[\"script_sha256\"],model_generation_or_fitting=False)\n    require(identity(root/\"receipts.json\")==report[\"identities\"][\"receipt\"] and identity(root/\"raw_traces.jsonl.gz\")==report[\"identities\"][\"archive\"],\"final files changed during audit\")\n    gate(\"later_receipt_archive_recheck\",unchanged=True)\n    report[\"findings\"]={\"sample_unit\":\"48 new captured states nested in 12 episodes and generation seeds307/401; eight draws are paired repeated outcomes per state, not 384 independent source states.\",\n        \"training_sources\":[42,73],\"evaluation_sources\":[307,401],\"exposed_prior_diagnostic_sources_excluded\":[101,211],\n        \"mean8_vs_single_h4\":next(r[\"mean_advantage_over_keep\"] for r in report[\"primary_h4\"][\"evaluation\"] if r[\"label\"]==\"mean8_h4\")-next(r[\"mean_advantage_over_keep\"] for r in report[\"primary_h4\"][\"evaluation\"] if r[\"label\"]==\"single_h4\"),\n        \"measurement_or_protocol_changes\":False,\"audit_body_generation_runs\":0,\"audit_fit_runs\":0,\n        \"experiment_extra_deterministic_training_replays\":1,\"distinct_artifact_durability_failures\":3,\n        \"interruptions_disclosed\":True}\n\n\ndef main():\n    require(len(sys.argv)==4,\"usage: result_audit.py AUTHORITATIVE_DIRECTORY REPOSITORY OUTPUT_JSON\")\n    root,repo,output=map(Path,sys.argv[1:])\n    report={\"schema\":1,\"status\":\"RUNNING\",\"name\":\"Independent paired-replicate result audit\",\"gates\":{},\n        \"command\":[\"python3\",\"result_audit.py\",\"<authoritative>\",\"<repository>\",\"<output>/result_audit.json\"],\n        \"reproducibility\":{\"script_sha256\":file_sha(Path(__file__)),\"script\":Path(__file__).read_text()},\n        \"path_policy\":\"Semantic CLI paths only. Original experiment files remain unchanged; all identities refer to their actual bytes.\"}\n    code=0\n    try:execute(root,repo,report);report[\"status\"]=\"PASS\"\n    except Exception as error:\n        report[\"status\"]=\"FAIL\";report[\"error\"]={\"type\":type(error).__name__,\"message\":str(error)};traceback.print_exc();code=1\n    output.parent.mkdir(parents=True,exist_ok=True)\n    output.write_text(json.dumps(report,indent=2,ensure_ascii=False)+\"\\n\")\n    print(\"result audit\",report[\"status\"],\"gates\",len(report[\"gates\"]),\"sha256\",file_sha(output),flush=True)\n    return code\n\n\nif __name__==\"__main__\":raise SystemExit(main())\n",
+    "publication_audit": {
+      "raw_numerical_report_sha256": "13926988e91a7355ceffb7d1e05131b08e4fad11b54fb0ba55a1601afeb66ce7",
+      "script_sha256": "411148bbf22a03e7e514ccb7d2597f64eafc2d0bed52f06bd4849aa12cf4621f",
+      "script": "#!/usr/bin/env python3\n\"\"\"Append publication checks to the completed read-only SPA result audit.\"\"\"\nimport hashlib\nimport importlib.util\nimport json\nfrom pathlib import Path\nimport re\nimport subprocess\nimport sys\nimport tempfile\n\nsys.dont_write_bytecode=True\nRAW_AUDIT_SHA=\"13926988e91a7355ceffb7d1e05131b08e4fad11b54fb0ba55a1601afeb66ce7\"\nSOURCES={\"dataset_recovery.json\":(\"finalize.py\",\"5c2cb784cf397ba8408ba77cc881f46c085ec149f0f9735ddee29172bbe544ec\"),\n         \"host_trace_recovery.json\":(\"finish.py\",\"dfbbfc299d0a561309634d8c0fdb594695733d71f8a3436a4c0e1f7a58150702\")}\n\n\ndef require(condition,message):\n    if not condition:raise AssertionError(message)\ndef sha(raw):return hashlib.sha256(raw).hexdigest()\ndef identity(path):\n    raw=path.read_bytes();return {\"bytes\":len(raw),\"sha256\":sha(raw)}\ndef read_json(path):return json.loads(path.read_bytes())\n\n\ndef main():\n    require(len(sys.argv)==5,\"usage: publication_audit.py AUTHORITATIVE REPOSITORY RAW_AUDIT OUTPUT\")\n    root,repo,raw_audit_path,output=map(Path,sys.argv[1:])\n    here=repo/\"experiments/spa_agent/replicates\"\n    raw_audit=raw_audit_path.read_bytes();require(sha(raw_audit)==RAW_AUDIT_SHA,\"completed numerical audit changed\")\n    report=json.loads(raw_audit);require(report[\"status\"]==\"PASS\" and len(report[\"gates\"])==14,\"numeric gates incomplete\")\n    original=read_json(root/\"receipts.json\")\n    def gate(name,**fields):\n        report[\"gates\"][name]={\"status\":\"PASS\",**fields};print(\"PASS\",name,flush=True)\n\n    recovery_records=[]\n    for name,(script,expected_sha) in SOURCES.items():\n        record=read_json(root/name)\n        require(identity(root/name)==original[\"artifacts\"][name],\"recovery record manifest changed\")\n        require(record==original[name.removesuffix(\".json\")],\"recovery record differs from authoritative receipt\")\n        require(record[\"new_fitting\"] is False and record[\"new_generation\"] is False,\"unregistered numerical rerun\")\n        require(record[\"source\"][\"path\"]==\"experiments/spa_agent/replicates/\"+script and record[\"source\"][\"sha256\"]==expected_sha,\"postprocessing source pin\")\n        require(identity(here/script)=={k:record[\"source\"][k] for k in (\"bytes\",\"sha256\")},\"postprocessing source changed\")\n        for field in (\"original_result\",\"enclosing_archive\",\"damaged_preserved\"):\n            pinned=record[field]\n            require(identity(root/pinned[\"path\"])=={k:pinned[k] for k in (\"bytes\",\"sha256\")},\"preserved recovery evidence changed\")\n        recovery_records.append({\"path\":name,**identity(root/name),\"source_sha256\":expected_sha})\n    gate(\"closed_recovery_records_and_programs\",records=recovery_records,extra_fitting_replays_total=1,distinct_artifact_failures=3)\n\n    publication=read_json(here/\"publication.json\");changes=[]\n    for entry in publication[\"normalization\"]:\n        name=entry[\"path\"];published=(here/name).read_bytes()\n        if \"original_basename\" in entry:\n            require(sha(published)==entry[\"published_sha256\"],\"published integration receipt identity\")\n            marker=b\"<TEST_TMP>/nt_gguf_keys\"\n            require(published.count(marker)==entry[\"occurrences\"]==1,\"integration path normalization count\")\n            restored=published.replace(marker,(\"/tmp/\"+entry[\"original_basename\"]).encode())\n            require(sha(restored)==entry[\"original_sha256\"],\"integration normalization changed non-path bytes\")\n            before={\"bytes\":len(restored),\"sha256\":sha(restored)};after=identity(here/name)\n        else:\n            before=identity(root/name);after=identity(here/name)\n            require(before==entry[\"original\"] and after==entry[\"published\"],\"publication receipt pin\")\n            original_raw=(root/name).read_bytes();expected=original_raw.replace(str(root).encode(),b\"<output>\")\n            for basename in entry[\"original_test_directory_basenames\"]:\n                expected=expected.replace((\"/tmp/\"+basename).encode(),b\"<TEST_TMP>\")\n            require(expected==published,\"publication changed bytes other than declared path spellings\")\n        changes.append({\"path\":name,\"original\":before,\"published\":after,\"path_only_exact_reconstruction\":True})\n    for name in SOURCES:require((here/name).read_bytes()==(root/name).read_bytes(),\"already-portable recovery record changed\")\n    require(publication[\"authoritative_experiment\"][\"receipts.json\"]==identity(root/\"receipts.json\"),\"publication original receipt pin\")\n    gate(\"publication_path_only_normalization\",records=changes,portable_recovery_records_exact=list(SOURCES),publication_sha256=identity(here/\"publication.json\")[\"sha256\"])\n\n    manifest=read_json(here/\"raw_manifest.json\")\n    require(manifest==publication[\"archive_parts\"],\"part publication manifest mismatch\")\n    full=hashlib.sha256();count=0;parts=[]\n    for part in manifest[\"parts\"]:\n        require(Path(part[\"path\"]).name==part[\"path\"],\"unsafe part name\")\n        raw=(here/part[\"path\"]).read_bytes()\n        require({\"bytes\":len(raw),\"sha256\":sha(raw)}=={k:part[k] for k in (\"bytes\",\"sha256\")},\"part bytes/hash\")\n        blob=hashlib.sha1(b\"blob \"+str(len(raw)).encode()+b\"\\0\"+raw).hexdigest()\n        require(blob==part[\"git_blob_sha\"],\"Git blob identity\")\n        full.update(raw);count+=len(raw);parts.append(part)\n    assembled={\"bytes\":count,\"sha256\":full.hexdigest()}\n    require(assembled==identity(root/\"raw_traces.jsonl.gz\")=={k:manifest[\"archive\"][k] for k in (\"bytes\",\"sha256\")},\"ordered concatenation differs from authoritative archive\")\n    with tempfile.TemporaryDirectory(prefix=\"spa-published-trace-audit-\") as temporary:\n        destination=Path(temporary)/\"reassembled.jsonl.gz\"\n        command=[sys.executable,str(here/\"traces.py\"),\"--output\",str(destination)]\n        first=subprocess.run(command,capture_output=True,text=True)\n        require(first.returncode==0 and identity(destination)==assembled,\"real archive reassembler failed\")\n        second=subprocess.run(command,capture_output=True,text=True)\n        require(second.returncode!=0 and identity(destination)==assembled,\"reassembler changed existing destination\")\n        def portable(value):\n            return value.replace(temporary,\"<temporary>\").replace(str(repo),\"<repository>\").replace(sys.executable,\"python3\")\n        invocation={\"command\":[portable(v) for v in command],\"create_returncode\":first.returncode,\n                    \"create_stdout\":portable(first.stdout),\"existing_returncode\":second.returncode,\n                    \"existing_stderr\":portable(second.stderr),\"existing_bytes_unchanged\":True}\n    gate(\"published_exact_archive_parts_and_reassembler\",parts=parts,archive=assembled,reassembler_sha256=identity(here/\"traces.py\")[\"sha256\"],invocation=invocation)\n\n    readme=(here/\"README.md\").read_text();flat=re.sub(r\"\\s+\",\" \",readme).replace(\"−\",\"-\")\n    policies={row[\"label\"]:row for row in report[\"primary_h4\"][\"evaluation\"]}\n    label_names={\"initial\":\"initial\",\"single_h4\":\"single_h4\",\"mean8_h4\":\"mean8_h4\",\"shuffled_mean8\":\"shuffled_mean8\",\n                 \"fixed LEFT, KEEP at the left boundary\":\"left\",\"fixed RIGHT, KEEP at the right boundary\":\"right\"}\n    checked=[]\n    for line in readme.splitlines():\n        if not line.startswith(\"|\"):continue\n        fields=[x.strip() for x in line.split(\"|\")[1:-1]]\n        if len(fields)!=5 or fields[0] not in label_names:continue\n        label=label_names[fields[0]];value=policies[label]\n        require([int(x.strip()) for x in fields[1].split(\"/\")]==[value[\"action_counts\"][str(k)] for k in range(3)],\"README action counts\")\n        for text,key in ((fields[2],\"mean_advantage_over_keep\"),(fields[3],\"mean_oracle_regret\")):\n            require(abs(float(text.replace(\"−\",\"-\"))-value[key])<=5.1e-10,\"README rounded metric\")\n        require(fields[4]==str(value[\"optimal_count\"])+\" / 48\",\"README optimal count\")\n        checked.append(label)\n    require(set(checked)==set(label_names.values()),\"README table coverage\")\n    training=next(r for r in report[\"primary_h4\"][\"training\"] if r[\"label\"]==\"single_h4\")\n    evaluation=policies[\"single_h4\"]\n    for row in (training,evaluation):\n        for key in (\"r0_advantage\",\"r1_to_r7_advantage\"):\n            require(format(row[key],\".9f\") in flat,\"README split-draw number\")\n    require(format(training[\"mean_advantage_over_keep\"],\".9f\") in flat,\"README training mean\")\n    evaluation_summary=read_json(root/\"execution-1/evaluation.summary.json\")\n    for row in evaluation_summary[\"summaries\"]:\n        if row[\"group\"] in (\"seed:307\",\"seed:401\") and row[\"horizon\"]==4 and row[\"label\"]==\"single_h4\":\n            require(format(row[\"mean_advantage_over_keep\"],\".9f\") in flat,\"README per-seed utility\")\n    for axis in (\"coherence\",\"novelty\",\"repetition\"):\n        require(format(evaluation[\"mean_axis_delta_vs_keep\"][axis],\".9f\") in flat,\"README raw axis\")\n    require(format(evaluation[\"mean_cost_vs_keep\"],\".9f\") in flat,\"README raw cost\")\n    mixed={split:sum(row[\"sign_disagreement_states\"] for row in rows if row[\"target\"] is None and row[\"kind\"]!=0)\n           for split,rows in report[\"valid_action_h4_variance\"].items()}\n    positive=sum(row[\"positive_mean8_states\"] for row in report[\"valid_action_h4_variance\"][\"evaluation\"] if row[\"target\"] is None and row[\"kind\"]!=0)\n    beneficial_states=sum(any(a[\"mean_advantage_over_keep\"]>1e-7 for a in row[\"actions\"] if a[\"kind\"]!=0)\n        for row in evaluation_summary[\"state_comparisons\"] if row[\"horizon\"]==4 and row[\"label\"]==\"keep\")\n    require(mixed=={\"training\":52,\"evaluation\":57} and positive==4 and beneficial_states==2,\"README action sign/benefit counts\")\n    require(all(policies[arm][\"action_counts\"]=={\"0\":48,\"1\":0,\"2\":0} for arm in (\"initial\",\"mean8_h4\",\"shuffled_mean8\")),\"README acquired choice conclusion\")\n    require(\"finish.py\" in readme and \"finalize.py\" in readme,\"README recovery program attribution\")\n    gate(\"readme_numeric_and_causal_claims\",policies=checked,sign_mixing=mixed,positive_mean_alternatives=positive,\n         source_states_with_positive_mean_alternatives=beneficial_states,mean8_changes_from_initial=0,\n         readme_sha256=identity(here/\"README.md\")[\"sha256\"],all_table_rounding_tolerance=5.1e-10)\n    report[\"reproducibility\"][\"publication_audit\"]={\"raw_numerical_report_sha256\":RAW_AUDIT_SHA,\n        \"script_sha256\":sha(Path(__file__).read_bytes()),\"script\":Path(__file__).read_text(),\n        \"command\":[\"python3\",\"publication_audit.py\",\"<authoritative>\",\"<repository>\",\"<raw-numerical-audit>\",\"<output>/result_audit.json\"]}\n    output.write_text(json.dumps(report,indent=2,ensure_ascii=False)+\"\\n\")\n    print(\"final result audit PASS\",len(report[\"gates\"]),\"gates\",identity(output)[\"sha256\"],flush=True)\n\n\nif __name__==\"__main__\":main()\n",
+      "command": [
+        "python3",
+        "publication_audit.py",
+        "<authoritative>",
+        "<repository>",
+        "<raw-numerical-audit>",
+        "<output>/result_audit.json"
+      ]
+    }
+  },
+  "path_policy": "Semantic CLI paths only. Original experiment files remain unchanged; all identities refer to their actual bytes.",
+  "identities": {
+    "receipt": {
+      "sha256": "3cc691c032b7c96ffef87180d8af5290baa4797d5a73b5a9e54f6f911265523b",
+      "bytes": 10404220
+    },
+    "archive": {
+      "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12",
+      "bytes": 18444383
+    },
+    "protocol_sha256": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75"
+  },
+  "interruption": {
+    "failure_observation_sha256": "a7a566bed07f4218113b5ab7805f19993b9da142ee6eeeeb4b718073d02f9804",
+    "recovery_receipt": {
+      "sha256": "3d7c8a40ba0d095675803c76d69525282e0af68b35ec0092ade0c09b3a8e9693",
+      "bytes": 3699
+    },
+    "recovery_source_sha256": "f33050372060e7f6e60f6769aeefa9bff84cf6049312a6c6f82ca2b78ac457c1",
+    "extra_deterministic_training_replays": 1,
+    "original_fit_bytes": 59168552,
+    "damaged_prefix_bytes": 52978553,
+    "lost_bytes": 6189999,
+    "damaged_prefix_sha256": "daefc3efdeb9545ea3d521de4aea57d74bf9257ecf8892241222f3d8d4745f1a",
+    "original_full_fit_sha256": "a4ae3d8492c240cc91d419b0b78f576e43c36fcb12882ee84538d2fd49ad55ad",
+    "all_four_original_lives_and_whole_seal_unchanged": true,
+    "no_training_outcome_regeneration": true,
+    "failure_classification": "Artifact durability failure before evaluation; not a policy outcome.",
+    "lossless_failed_trace_reconstruction": {
+      "archive_stream": {
+        "seed": 0,
+        "stream": "fit"
+      },
+      "method": "Concatenate the UTF-8 raw values for this stream in envelope order; take the first damaged_prefix_bytes bytes; verify damaged_prefix_sha256.",
+      "verified_exact_prefix": true
+    }
+  },
+  "closed_artifact_restorations": {
+    "failure_observation_sha256": [
+      "6b0d801eb2d66a2d1c8f2295a9d0e824ae6b402109c599a760169034fee506ff",
+      "a251057169ddc22117de831e77176cc2d131c6b325196534483bc47eb9b7b90d"
+    ],
+    "enclosing_archive": {
+      "bytes": 18444383,
+      "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12"
+    },
+    "preserved_original_mixed_manifests": [
+      {
+        "execution": 1,
+        "identity": {
+          "sha256": "1389cb4ee425b378217c5073a8ba686f6b61dbaf419eb8945b74d049b5cbc45e",
+          "bytes": 5179450
+        },
+        "classification": "Original mixed manifest preserved; standalone damaged entry does not pass."
+      },
+      {
+        "execution": 2,
+        "identity": {
+          "sha256": "4128dfd75f02bc41b2ea468182f19e67d1a6ca8c3b926d008a8630a1cff17f11",
+          "bytes": 5179449
+        },
+        "classification": "Original mixed manifest preserved; standalone damaged entry does not pass."
+      }
+    ],
+    "restored_dataset": {
+      "bytes": 4723513,
+      "sha256": "0390b75e463657f4adb4eccaa54dfefb2a6699665d3dedb673dfd76d1ed7550a",
+      "canonical_rebuild_and_source_readout_joins": "Checked by source_draw_pairing_and_complete_datasets and sealed_weight_readouts."
+    },
+    "restored_ordinary_trace": {
+      "bytes": 223818,
+      "sha256": "30c9c9d1acb5fee8a308b3942f000bd01e978c1c38a4398eac77e5623c2991bb",
+      "immediate_mirror_agrees": true
+    },
+    "lossless_failed_trace_reconstruction": [
+      {
+        "seed": 0,
+        "stream": "evaluation_dataset",
+        "prefix_bytes": 2016208,
+        "prefix_sha256": "843ad9b6b1e7d9006b440b2fa429b27935a3515f9a74b4337211268027bbed2b"
+      },
+      {
+        "seed": 307,
+        "stream": "ordinary_off",
+        "prefix_bytes": 211683,
+        "prefix_sha256": "6d6792ad20dc5c50eed3c75d811140c6bc826d59afbe405f15d3ec506bf932d2"
+      }
+    ],
+    "reconstruction_method": "Concatenate the named raw archive stream in envelope order, take the recorded prefix bytes and verify its SHA256.",
+    "new_body_generation_or_fitting": false
+  },
+  "primary_h4": {
+    "training": [
+      {
+        "action_counts": {
+          "0": 48,
+          "1": 0,
+          "2": 0
+        },
+        "between_state_advantage_variance": 0.0,
+        "changed_choices_from_initial": 0,
+        "group": "combined",
+        "horizon": 4,
+        "label": "initial",
+        "mean_advantage_over_keep": 0.0,
+        "mean_after": {
+          "coherence": 0.763794960875,
+          "collapse": 0.0,
+          "continuity": 0.6950799770546875,
+          "global_connectedness": 0.3341687231901042,
+          "local_connectedness": 0.7607503640625,
+          "novelty": 0.3522255951419271,
+          "repetition": 0.07305386236197917
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0,
+          "collapse": 0.0,
+          "continuity": 0.0,
+          "global_connectedness": 0.0,
+          "local_connectedness": 0.0,
+          "novelty": 0.0,
+          "repetition": 0.0
+        },
+        "mean_cost": 0.7316731815520834,
+        "mean_cost_vs_keep": 0.0,
+        "mean_generated": 234.13541666666666,
+        "mean_oracle_regret": 0.0013633877968004526,
+        "mean_reward": -0.025757406569373604,
+        "optimal_count": 36,
+        "paired_standard_error": 0.0,
+        "paired_variance": 0.0,
+        "r0_advantage": 0.0,
+        "r1_to_r7_advantage": 0.0,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 31,
+          "1": 15,
+          "2": 2
+        },
+        "between_state_advantage_variance": 7.855063441364488e-05,
+        "changed_choices_from_initial": 17,
+        "group": "combined",
+        "horizon": 4,
+        "label": "single_h4",
+        "mean_advantage_over_keep": -0.0036722060694197958,
+        "mean_after": {
+          "coherence": 0.7657912713125,
+          "collapse": 0.0,
+          "continuity": 0.698430734125,
+          "global_connectedness": 0.3341748977057291,
+          "local_connectedness": 0.7630894789791666,
+          "novelty": 0.3463705315445313,
+          "repetition": 0.07403711942083334
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0019963104374999996,
+          "collapse": 0.0,
+          "continuity": 0.0033507570703124995,
+          "global_connectedness": 6.1745156249994335e-06,
+          "local_connectedness": 0.00233911491666667,
+          "novelty": -0.005855063597395834,
+          "repetition": 0.0009832570588541665
+        },
+        "mean_cost": 0.797119143984375,
+        "mean_cost_vs_keep": 0.06544596243229166,
+        "mean_generated": 255.078125,
+        "mean_oracle_regret": 0.005035593866220249,
+        "mean_reward": -0.0294296126387934,
+        "optimal_count": 28,
+        "paired_standard_error": 0.0027045687251179315,
+        "paired_variance": 0.00019689678697980305,
+        "r0_advantage": 0.0004798209120053798,
+        "r1_to_r7_advantage": -0.004265352781051964,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 48,
+          "1": 0,
+          "2": 0
+        },
+        "between_state_advantage_variance": 0.0,
+        "changed_choices_from_initial": 0,
+        "group": "combined",
+        "horizon": 4,
+        "label": "mean8_h4",
+        "mean_advantage_over_keep": 0.0,
+        "mean_after": {
+          "coherence": 0.763794960875,
+          "collapse": 0.0,
+          "continuity": 0.6950799770546875,
+          "global_connectedness": 0.3341687231901042,
+          "local_connectedness": 0.7607503640625,
+          "novelty": 0.3522255951419271,
+          "repetition": 0.07305386236197917
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0,
+          "collapse": 0.0,
+          "continuity": 0.0,
+          "global_connectedness": 0.0,
+          "local_connectedness": 0.0,
+          "novelty": 0.0,
+          "repetition": 0.0
+        },
+        "mean_cost": 0.7316731815520834,
+        "mean_cost_vs_keep": 0.0,
+        "mean_generated": 234.13541666666666,
+        "mean_oracle_regret": 0.0013633877968004526,
+        "mean_reward": -0.025757406569373604,
+        "optimal_count": 36,
+        "paired_standard_error": 0.0,
+        "paired_variance": 0.0,
+        "r0_advantage": 0.0,
+        "r1_to_r7_advantage": 0.0,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 48,
+          "1": 0,
+          "2": 0
+        },
+        "between_state_advantage_variance": 0.0,
+        "changed_choices_from_initial": 0,
+        "group": "combined",
+        "horizon": 4,
+        "label": "shuffled_mean8",
+        "mean_advantage_over_keep": 0.0,
+        "mean_after": {
+          "coherence": 0.763794960875,
+          "collapse": 0.0,
+          "continuity": 0.6950799770546875,
+          "global_connectedness": 0.3341687231901042,
+          "local_connectedness": 0.7607503640625,
+          "novelty": 0.3522255951419271,
+          "repetition": 0.07305386236197917
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0,
+          "collapse": 0.0,
+          "continuity": 0.0,
+          "global_connectedness": 0.0,
+          "local_connectedness": 0.0,
+          "novelty": 0.0,
+          "repetition": 0.0
+        },
+        "mean_cost": 0.7316731815520834,
+        "mean_cost_vs_keep": 0.0,
+        "mean_generated": 234.13541666666666,
+        "mean_oracle_regret": 0.0013633877968004526,
+        "mean_reward": -0.025757406569373604,
+        "optimal_count": 36,
+        "paired_standard_error": 0.0,
+        "paired_variance": 0.0,
+        "r0_advantage": 0.0,
+        "r1_to_r7_advantage": 0.0,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 48,
+          "1": 0,
+          "2": 0
+        },
+        "between_state_advantage_variance": 0.0,
+        "changed_choices_from_initial": 0,
+        "group": "combined",
+        "horizon": 4,
+        "label": "keep",
+        "mean_advantage_over_keep": 0.0,
+        "mean_after": {
+          "coherence": 0.763794960875,
+          "collapse": 0.0,
+          "continuity": 0.6950799770546875,
+          "global_connectedness": 0.3341687231901042,
+          "local_connectedness": 0.7607503640625,
+          "novelty": 0.3522255951419271,
+          "repetition": 0.07305386236197917
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0,
+          "collapse": 0.0,
+          "continuity": 0.0,
+          "global_connectedness": 0.0,
+          "local_connectedness": 0.0,
+          "novelty": 0.0,
+          "repetition": 0.0
+        },
+        "mean_cost": 0.7316731815520834,
+        "mean_cost_vs_keep": 0.0,
+        "mean_generated": 234.13541666666666,
+        "mean_oracle_regret": 0.0013633877968004526,
+        "mean_reward": -0.025757406569373604,
+        "optimal_count": 36,
+        "paired_standard_error": 0.0,
+        "paired_variance": 0.0,
+        "r0_advantage": 0.0,
+        "r1_to_r7_advantage": 0.0,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 12,
+          "1": 36,
+          "2": 0
+        },
+        "between_state_advantage_variance": 7.684793979980252e-05,
+        "changed_choices_from_initial": 36,
+        "group": "combined",
+        "horizon": 4,
+        "label": "left",
+        "mean_advantage_over_keep": -0.007126306621666838,
+        "mean_after": {
+          "coherence": 0.7659966262369792,
+          "collapse": 0.0,
+          "continuity": 0.6979969377395833,
+          "global_connectedness": 0.33416817728645837,
+          "local_connectedness": 0.7628948584661458,
+          "novelty": 0.3465402868179688,
+          "repetition": 0.07401174076432292
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0022016653619791665,
+          "collapse": 0.0,
+          "continuity": 0.002916960684895833,
+          "global_connectedness": -5.459036458340302e-07,
+          "local_connectedness": 0.002144494403645837,
+          "novelty": -0.005685308323958333,
+          "repetition": 0.0009578784023437499
+        },
+        "mean_cost": 0.8667399097916667,
+        "mean_cost_vs_keep": 0.13506672823958332,
+        "mean_generated": 277.3567708333333,
+        "mean_oracle_regret": 0.00848969441846729,
+        "mean_reward": -0.03288371319104044,
+        "optimal_count": 12,
+        "paired_standard_error": 0.003767867668426556,
+        "paired_variance": 0.00024845877212374836,
+        "r0_advantage": -0.00225652239438053,
+        "r1_to_r7_advantage": -0.007821990082707739,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 12,
+          "1": 0,
+          "2": 36
+        },
+        "between_state_advantage_variance": 0.00011988841547398422,
+        "changed_choices_from_initial": 36,
+        "group": "combined",
+        "horizon": 4,
+        "label": "right",
+        "mean_advantage_over_keep": -0.006620151037201556,
+        "mean_after": {
+          "coherence": 0.7643846138385416,
+          "collapse": 0.0,
+          "continuity": 0.7002549117760416,
+          "global_connectedness": 0.3341913402161458,
+          "local_connectedness": 0.7649198934973959,
+          "novelty": 0.34968890885937504,
+          "repetition": 0.07539752092083334
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0005896529635416667,
+          "collapse": 0.0,
+          "continuity": 0.005174934721354167,
+          "global_connectedness": 2.2617026041666315e-05,
+          "local_connectedness": 0.004169529434895835,
+          "novelty": -0.002536686282552082,
+          "repetition": 0.0023436585588541667
+        },
+        "mean_cost": 0.8670084647291666,
+        "mean_cost_vs_keep": 0.13533528317708332,
+        "mean_generated": 277.4427083333333,
+        "mean_oracle_regret": 0.00798353883400201,
+        "mean_reward": -0.03237755760657516,
+        "optimal_count": 20,
+        "paired_standard_error": 0.006346171986022963,
+        "paired_variance": 0.0005251860114464526,
+        "r0_advantage": -0.008289364705243921,
+        "r1_to_r7_advantage": -0.006381691941766934,
+        "states": 48
+      }
+    ],
+    "evaluation": [
+      {
+        "action_counts": {
+          "0": 48,
+          "1": 0,
+          "2": 0
+        },
+        "between_state_advantage_variance": 0.0,
+        "changed_choices_from_initial": 0,
+        "group": "combined",
+        "horizon": 4,
+        "label": "initial",
+        "mean_advantage_over_keep": 0.0,
+        "mean_after": {
+          "coherence": 0.7625324308645833,
+          "collapse": 0.0,
+          "continuity": 0.6948080504479166,
+          "global_connectedness": 0.3342097092708333,
+          "local_connectedness": 0.7595357382005208,
+          "novelty": 0.35345483634661456,
+          "repetition": 0.06998632196354167
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0,
+          "collapse": 0.0,
+          "continuity": 0.0,
+          "global_connectedness": 0.0,
+          "local_connectedness": 0.0,
+          "novelty": 0.0,
+          "repetition": 0.0
+        },
+        "mean_cost": 0.7339436898020834,
+        "mean_cost_vs_keep": 0.0,
+        "mean_generated": 234.86197916666666,
+        "mean_oracle_regret": 0.0006377648569468874,
+        "mean_reward": -0.03541938201134561,
+        "optimal_count": 46,
+        "paired_standard_error": 0.0,
+        "paired_variance": 0.0,
+        "r0_advantage": 0.0,
+        "r1_to_r7_advantage": 0.0,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 27,
+          "1": 20,
+          "2": 1
+        },
+        "between_state_advantage_variance": 5.582374780696095e-05,
+        "changed_choices_from_initial": 21,
+        "group": "combined",
+        "horizon": 4,
+        "label": "single_h4",
+        "mean_advantage_over_keep": -0.004025040504529898,
+        "mean_after": {
+          "coherence": 0.7626982565677083,
+          "collapse": 0.0,
+          "continuity": 0.6966068884218749,
+          "global_connectedness": 0.3341790308671875,
+          "local_connectedness": 0.7594034854036459,
+          "novelty": 0.3554117068138021,
+          "repetition": 0.07275125650598958
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.00016582570312500029,
+          "collapse": 0.0,
+          "continuity": 0.001798837973958331,
+          "global_connectedness": -3.067840364583274e-05,
+          "local_connectedness": -0.00013225279687500082,
+          "novelty": 0.0019568704671874995,
+          "repetition": 0.0027649345424479166
+        },
+        "mean_cost": 0.8159505234583334,
+        "mean_cost_vs_keep": 0.08200683365624999,
+        "mean_generated": 261.1041666666667,
+        "mean_oracle_regret": 0.004662805361476785,
+        "mean_reward": -0.03944442251587551,
+        "optimal_count": 28,
+        "paired_standard_error": 0.0033047459091461243,
+        "paired_variance": 0.00023337012405751564,
+        "r0_advantage": -0.0056904218581621535,
+        "r1_to_r7_advantage": -0.0037871288825824328,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 48,
+          "1": 0,
+          "2": 0
+        },
+        "between_state_advantage_variance": 0.0,
+        "changed_choices_from_initial": 0,
+        "group": "combined",
+        "horizon": 4,
+        "label": "mean8_h4",
+        "mean_advantage_over_keep": 0.0,
+        "mean_after": {
+          "coherence": 0.7625324308645833,
+          "collapse": 0.0,
+          "continuity": 0.6948080504479166,
+          "global_connectedness": 0.3342097092708333,
+          "local_connectedness": 0.7595357382005208,
+          "novelty": 0.35345483634661456,
+          "repetition": 0.06998632196354167
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0,
+          "collapse": 0.0,
+          "continuity": 0.0,
+          "global_connectedness": 0.0,
+          "local_connectedness": 0.0,
+          "novelty": 0.0,
+          "repetition": 0.0
+        },
+        "mean_cost": 0.7339436898020834,
+        "mean_cost_vs_keep": 0.0,
+        "mean_generated": 234.86197916666666,
+        "mean_oracle_regret": 0.0006377648569468874,
+        "mean_reward": -0.03541938201134561,
+        "optimal_count": 46,
+        "paired_standard_error": 0.0,
+        "paired_variance": 0.0,
+        "r0_advantage": 0.0,
+        "r1_to_r7_advantage": 0.0,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 48,
+          "1": 0,
+          "2": 0
+        },
+        "between_state_advantage_variance": 0.0,
+        "changed_choices_from_initial": 0,
+        "group": "combined",
+        "horizon": 4,
+        "label": "shuffled_mean8",
+        "mean_advantage_over_keep": 0.0,
+        "mean_after": {
+          "coherence": 0.7625324308645833,
+          "collapse": 0.0,
+          "continuity": 0.6948080504479166,
+          "global_connectedness": 0.3342097092708333,
+          "local_connectedness": 0.7595357382005208,
+          "novelty": 0.35345483634661456,
+          "repetition": 0.06998632196354167
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0,
+          "collapse": 0.0,
+          "continuity": 0.0,
+          "global_connectedness": 0.0,
+          "local_connectedness": 0.0,
+          "novelty": 0.0,
+          "repetition": 0.0
+        },
+        "mean_cost": 0.7339436898020834,
+        "mean_cost_vs_keep": 0.0,
+        "mean_generated": 234.86197916666666,
+        "mean_oracle_regret": 0.0006377648569468874,
+        "mean_reward": -0.03541938201134561,
+        "optimal_count": 46,
+        "paired_standard_error": 0.0,
+        "paired_variance": 0.0,
+        "r0_advantage": 0.0,
+        "r1_to_r7_advantage": 0.0,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 48,
+          "1": 0,
+          "2": 0
+        },
+        "between_state_advantage_variance": 0.0,
+        "changed_choices_from_initial": 0,
+        "group": "combined",
+        "horizon": 4,
+        "label": "keep",
+        "mean_advantage_over_keep": 0.0,
+        "mean_after": {
+          "coherence": 0.7625324308645833,
+          "collapse": 0.0,
+          "continuity": 0.6948080504479166,
+          "global_connectedness": 0.3342097092708333,
+          "local_connectedness": 0.7595357382005208,
+          "novelty": 0.35345483634661456,
+          "repetition": 0.06998632196354167
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0,
+          "collapse": 0.0,
+          "continuity": 0.0,
+          "global_connectedness": 0.0,
+          "local_connectedness": 0.0,
+          "novelty": 0.0,
+          "repetition": 0.0
+        },
+        "mean_cost": 0.7339436898020834,
+        "mean_cost_vs_keep": 0.0,
+        "mean_generated": 234.86197916666666,
+        "mean_oracle_regret": 0.0006377648569468874,
+        "mean_reward": -0.03541938201134561,
+        "optimal_count": 46,
+        "paired_standard_error": 0.0,
+        "paired_variance": 0.0,
+        "r0_advantage": 0.0,
+        "r1_to_r7_advantage": 0.0,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 12,
+          "1": 36,
+          "2": 0
+        },
+        "between_state_advantage_variance": 5.5484197649464686e-05,
+        "changed_choices_from_initial": 36,
+        "group": "combined",
+        "horizon": 4,
+        "label": "left",
+        "mean_advantage_over_keep": -0.007144096530254274,
+        "mean_after": {
+          "coherence": 0.7614453428697917,
+          "collapse": 0.0,
+          "continuity": 0.6946490107265625,
+          "global_connectedness": 0.3341839186067708,
+          "local_connectedness": 0.7575241144765625,
+          "novelty": 0.35710244828776044,
+          "repetition": 0.07275125650598958
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": -0.0010870879947916664,
+          "collapse": 0.0,
+          "continuity": -0.00015903972135416895,
+          "global_connectedness": -2.579066406249936e-05,
+          "local_connectedness": -0.002011623723958334,
+          "novelty": 0.0036476119411458334,
+          "repetition": 0.0027649345424479166
+        },
+        "mean_cost": 0.8725016291041667,
+        "mean_cost_vs_keep": 0.13855793930208332,
+        "mean_generated": 279.2005208333333,
+        "mean_oracle_regret": 0.007781861387201161,
+        "mean_reward": -0.042563478541599885,
+        "optimal_count": 13,
+        "paired_standard_error": 0.003865560111665068,
+        "paired_variance": 0.0002544383789841799,
+        "r0_advantage": -0.010938000047948057,
+        "r1_to_r7_advantage": -0.006602110313440876,
+        "states": 48
+      },
+      {
+        "action_counts": {
+          "0": 12,
+          "1": 0,
+          "2": 36
+        },
+        "between_state_advantage_variance": 5.0970472511447925e-05,
+        "changed_choices_from_initial": 36,
+        "group": "combined",
+        "horizon": 4,
+        "label": "right",
+        "mean_advantage_over_keep": -0.0066232394446312055,
+        "mean_after": {
+          "coherence": 0.7641661875104168,
+          "collapse": 0.0,
+          "continuity": 0.6990390214270833,
+          "global_connectedness": 0.334185388078125,
+          "local_connectedness": 0.7653277153723957,
+          "novelty": 0.34677412236875,
+          "repetition": 0.06954058485338542
+        },
+        "mean_axis_delta_vs_keep": {
+          "coherence": 0.0016337566458333329,
+          "collapse": 0.0,
+          "continuity": 0.004230970979166665,
+          "global_connectedness": -2.4321192708332835e-05,
+          "local_connectedness": 0.005791977171875001,
+          "novelty": -0.006680713977864583,
+          "repetition": -0.00044573711015624966
+        },
+        "mean_cost": 0.8690917979375,
+        "mean_cost_vs_keep": 0.13514810813541664,
+        "mean_generated": 278.109375,
+        "mean_oracle_regret": 0.007261004301578093,
+        "mean_reward": -0.042042621455976814,
+        "optimal_count": 13,
+        "paired_standard_error": 0.006402597265410613,
+        "paired_variance": 0.0005317027209135705,
+        "r0_advantage": -0.008189527713208614,
+        "r1_to_r7_advantage": -0.006399483977691575,
+        "states": 48
+      }
+    ]
+  },
+  "valid_action_h4_variance": {
+    "training": [
+      {
+        "target": null,
+        "kind": 0,
+        "valid_source_states": 48,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": 0.0,
+        "between_state_sample_variance_of_mean8": 0.0,
+        "mean_within_state_paired_sample_variance": 0.0,
+        "mean_within_state_standard_error": 0.0,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 0,
+        "positive_realizations": 0,
+        "negative_realizations": 0,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": null,
+        "kind": 1,
+        "valid_source_states": 36,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.00950174216222245,
+        "between_state_sample_variance_of_mean8": 7.998014952955762e-05,
+        "mean_within_state_paired_sample_variance": 0.0003312783628316645,
+        "mean_within_state_standard_error": 0.0050238235579020745,
+        "sign_disagreement_states": 20,
+        "positive_mean8_states": 5,
+        "negative_mean8_states": 31,
+        "positive_realizations": 53,
+        "negative_realizations": 235,
+        "r0_vs_mean8_sign_changes": 9
+      },
+      {
+        "target": null,
+        "kind": 2,
+        "valid_source_states": 36,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.008826868049602076,
+        "between_state_sample_variance_of_mean8": 0.00014095808946261386,
+        "mean_within_state_paired_sample_variance": 0.0007002480152619368,
+        "mean_within_state_standard_error": 0.008461562648030618,
+        "sign_disagreement_states": 32,
+        "positive_mean8_states": 9,
+        "negative_mean8_states": 27,
+        "positive_realizations": 92,
+        "negative_realizations": 196,
+        "r0_vs_mean8_sign_changes": 12
+      },
+      {
+        "target": 0,
+        "kind": 0,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": 0.0,
+        "between_state_sample_variance_of_mean8": 0.0,
+        "mean_within_state_paired_sample_variance": 0.0,
+        "mean_within_state_standard_error": 0.0,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 0,
+        "positive_realizations": 0,
+        "negative_realizations": 0,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": 0,
+        "kind": 2,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.009436026542971376,
+        "between_state_sample_variance_of_mean8": 0.00020282283754504622,
+        "mean_within_state_paired_sample_variance": 0.0011239233494159068,
+        "mean_within_state_standard_error": 0.01123611726462184,
+        "sign_disagreement_states": 11,
+        "positive_mean8_states": 4,
+        "negative_mean8_states": 8,
+        "positive_realizations": 35,
+        "negative_realizations": 61,
+        "r0_vs_mean8_sign_changes": 3
+      },
+      {
+        "target": 1,
+        "kind": 0,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": 0.0,
+        "between_state_sample_variance_of_mean8": 0.0,
+        "mean_within_state_paired_sample_variance": 0.0,
+        "mean_within_state_standard_error": 0.0,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 0,
+        "positive_realizations": 0,
+        "negative_realizations": 0,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": 1,
+        "kind": 1,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.008681437017306356,
+        "between_state_sample_variance_of_mean8": 0.00021560140549014642,
+        "mean_within_state_paired_sample_variance": 0.0007733724263897773,
+        "mean_within_state_standard_error": 0.009281485990269902,
+        "sign_disagreement_states": 11,
+        "positive_mean8_states": 4,
+        "negative_mean8_states": 8,
+        "positive_realizations": 33,
+        "negative_realizations": 63,
+        "r0_vs_mean8_sign_changes": 4
+      },
+      {
+        "target": 1,
+        "kind": 2,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.006026319592820073,
+        "between_state_sample_variance_of_mean8": 0.00020820791654994734,
+        "mean_within_state_paired_sample_variance": 0.0007216792572513122,
+        "mean_within_state_standard_error": 0.009030065334438977,
+        "sign_disagreement_states": 11,
+        "positive_mean8_states": 5,
+        "negative_mean8_states": 7,
+        "positive_realizations": 39,
+        "negative_realizations": 57,
+        "r0_vs_mean8_sign_changes": 4
+      },
+      {
+        "target": 2,
+        "kind": 0,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": 0.0,
+        "between_state_sample_variance_of_mean8": 0.0,
+        "mean_within_state_paired_sample_variance": 0.0,
+        "mean_within_state_standard_error": 0.0,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 0,
+        "positive_realizations": 0,
+        "negative_realizations": 0,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": 2,
+        "kind": 1,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.011029844105735265,
+        "between_state_sample_variance_of_mean8": 3.44977672481068e-05,
+        "mean_within_state_paired_sample_variance": 0.00021402654059012383,
+        "mean_within_state_standard_error": 0.004965723287882671,
+        "sign_disagreement_states": 9,
+        "positive_mean8_states": 1,
+        "negative_mean8_states": 11,
+        "positive_realizations": 20,
+        "negative_realizations": 76,
+        "r0_vs_mean8_sign_changes": 5
+      },
+      {
+        "target": 2,
+        "kind": 2,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.011018258013014778,
+        "between_state_sample_variance_of_mean8": 2.3272618885424394e-05,
+        "mean_within_state_paired_sample_variance": 0.0002551414391185911,
+        "mean_within_state_standard_error": 0.005118505345031038,
+        "sign_disagreement_states": 10,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 12,
+        "positive_realizations": 18,
+        "negative_realizations": 78,
+        "r0_vs_mean8_sign_changes": 5
+      },
+      {
+        "target": 3,
+        "kind": 0,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": 0.0,
+        "between_state_sample_variance_of_mean8": 0.0,
+        "mean_within_state_paired_sample_variance": 0.0,
+        "mean_within_state_standard_error": 0.0,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 0,
+        "positive_realizations": 0,
+        "negative_realizations": 0,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": 3,
+        "kind": 1,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.00879394536362573,
+        "between_state_sample_variance_of_mean8": 5.551513409058581e-07,
+        "mean_within_state_paired_sample_variance": 6.4361215150923845e-06,
+        "mean_within_state_standard_error": 0.0008242613955536522,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 12,
+        "positive_realizations": 0,
+        "negative_realizations": 96,
+        "r0_vs_mean8_sign_changes": 0
+      }
+    ],
+    "evaluation": [
+      {
+        "target": null,
+        "kind": 0,
+        "valid_source_states": 48,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": 0.0,
+        "between_state_sample_variance_of_mean8": 0.0,
+        "mean_within_state_paired_sample_variance": 0.0,
+        "mean_within_state_standard_error": 0.0,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 0,
+        "positive_realizations": 0,
+        "negative_realizations": 0,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": null,
+        "kind": 1,
+        "valid_source_states": 36,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.009525462040339031,
+        "between_state_sample_variance_of_mean8": 5.1175641308210906e-05,
+        "mean_within_state_paired_sample_variance": 0.00033925117197890653,
+        "mean_within_state_standard_error": 0.005154080148886757,
+        "sign_disagreement_states": 22,
+        "positive_mean8_states": 2,
+        "negative_mean8_states": 34,
+        "positive_realizations": 55,
+        "negative_realizations": 233,
+        "r0_vs_mean8_sign_changes": 2
+      },
+      {
+        "target": null,
+        "kind": 2,
+        "valid_source_states": 36,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.00883098592617494,
+        "between_state_sample_variance_of_mean8": 4.839243989095297e-05,
+        "mean_within_state_paired_sample_variance": 0.000708936961218094,
+        "mean_within_state_standard_error": 0.008536796353880818,
+        "sign_disagreement_states": 35,
+        "positive_mean8_states": 2,
+        "negative_mean8_states": 34,
+        "positive_realizations": 85,
+        "negative_realizations": 203,
+        "r0_vs_mean8_sign_changes": 9
+      },
+      {
+        "target": 0,
+        "kind": 0,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": 0.0,
+        "between_state_sample_variance_of_mean8": 0.0,
+        "mean_within_state_paired_sample_variance": 0.0,
+        "mean_within_state_standard_error": 0.0,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 0,
+        "positive_realizations": 0,
+        "negative_realizations": 0,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": 0,
+        "kind": 2,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.011119304664134688,
+        "between_state_sample_variance_of_mean8": 4.8307124734863636e-05,
+        "mean_within_state_paired_sample_variance": 0.0010310163170304948,
+        "mean_within_state_standard_error": 0.010907594228069098,
+        "sign_disagreement_states": 11,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 12,
+        "positive_realizations": 28,
+        "negative_realizations": 68,
+        "r0_vs_mean8_sign_changes": 5
+      },
+      {
+        "target": 1,
+        "kind": 0,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": 0.0,
+        "between_state_sample_variance_of_mean8": 0.0,
+        "mean_within_state_paired_sample_variance": 0.0,
+        "mean_within_state_standard_error": 0.0,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 0,
+        "positive_realizations": 0,
+        "negative_realizations": 0,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": 1,
+        "kind": 1,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.00918278861414971,
+        "between_state_sample_variance_of_mean8": 0.00012993008807478393,
+        "mean_within_state_paired_sample_variance": 0.0007613818968451891,
+        "mean_within_state_standard_error": 0.009374167577193242,
+        "sign_disagreement_states": 12,
+        "positive_mean8_states": 2,
+        "negative_mean8_states": 10,
+        "positive_realizations": 34,
+        "negative_realizations": 62,
+        "r0_vs_mean8_sign_changes": 2
+      },
+      {
+        "target": 1,
+        "kind": 2,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.005804559388100945,
+        "between_state_sample_variance_of_mean8": 7.578287947105123e-05,
+        "mean_within_state_paired_sample_variance": 0.0008595805562783447,
+        "mean_within_state_standard_error": 0.009536883168496725,
+        "sign_disagreement_states": 12,
+        "positive_mean8_states": 2,
+        "negative_mean8_states": 10,
+        "positive_realizations": 38,
+        "negative_realizations": 58,
+        "r0_vs_mean8_sign_changes": 2
+      },
+      {
+        "target": 2,
+        "kind": 0,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": 0.0,
+        "between_state_sample_variance_of_mean8": 0.0,
+        "mean_within_state_paired_sample_variance": 0.0,
+        "mean_within_state_standard_error": 0.0,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 0,
+        "positive_realizations": 0,
+        "negative_realizations": 0,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": 2,
+        "kind": 1,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.010428753990102754,
+        "between_state_sample_variance_of_mean8": 3.097043522599553e-05,
+        "mean_within_state_paired_sample_variance": 0.00025129291127467184,
+        "mean_within_state_standard_error": 0.005388110817981861,
+        "sign_disagreement_states": 10,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 12,
+        "positive_realizations": 21,
+        "negative_realizations": 75,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": 2,
+        "kind": 2,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.009569093726289188,
+        "between_state_sample_variance_of_mean8": 1.358725359826741e-05,
+        "mean_within_state_paired_sample_variance": 0.0002362140103454426,
+        "mean_within_state_standard_error": 0.005165911665076627,
+        "sign_disagreement_states": 12,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 12,
+        "positive_realizations": 19,
+        "negative_realizations": 77,
+        "r0_vs_mean8_sign_changes": 2
+      },
+      {
+        "target": 3,
+        "kind": 0,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": 0.0,
+        "between_state_sample_variance_of_mean8": 0.0,
+        "mean_within_state_paired_sample_variance": 0.0,
+        "mean_within_state_standard_error": 0.0,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 0,
+        "positive_realizations": 0,
+        "negative_realizations": 0,
+        "r0_vs_mean8_sign_changes": 0
+      },
+      {
+        "target": 3,
+        "kind": 1,
+        "valid_source_states": 12,
+        "realizations_per_state": 8,
+        "mean_paired_advantage": -0.008964843516764631,
+        "between_state_sample_variance_of_mean8": 5.699849862563219e-07,
+        "mean_within_state_paired_sample_variance": 5.078707816858657e-06,
+        "mean_within_state_standard_error": 0.0006999620514851687,
+        "sign_disagreement_states": 0,
+        "positive_mean8_states": 0,
+        "negative_mean8_states": 12,
+        "positive_realizations": 0,
+        "negative_realizations": 96,
+        "r0_vs_mean8_sign_changes": 0
+      }
+    ]
+  },
+  "findings": {
+    "sample_unit": "48 new captured states nested in 12 episodes and generation seeds307/401; eight draws are paired repeated outcomes per state, not 384 independent source states.",
+    "training_sources": [
+      42,
+      73
+    ],
+    "evaluation_sources": [
+      307,
+      401
+    ],
+    "exposed_prior_diagnostic_sources_excluded": [
+      101,
+      211
+    ],
+    "mean8_vs_single_h4": 0.004025040504529898,
+    "measurement_or_protocol_changes": false,
+    "audit_body_generation_runs": 0,
+    "audit_fit_runs": 0,
+    "experiment_extra_deterministic_training_replays": 1,
+    "distinct_artifact_durability_failures": 3,
+    "interruptions_disclosed": true
+  }
+}
