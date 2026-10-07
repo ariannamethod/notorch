@@ -13,6 +13,78 @@ Newest entries on top.
 
 ---
 
+## 2026-10-07 — Common-state action forks separate immediate and future consequences
+
+Clean source `0dea13331077d9c5da504c5c6608b4f804f345ed` runs SimpleLLM
+(450,688 parameters) and HeVLM (1,123,456), seeds 42 and 73, with 512 host
+updates each. Independent processes with and without diagnostic forks match
+all 2,048 corresponding host steps and every final body, moment, optimizer-control
+and policy byte. Sixteen common snapshots produce 48 action rollouts, 768 branch
+updates and 144 action/horizon measurements. The fixed protocol uses one
+hold/brake/push intervention followed by hold, with horizons 1, 4 and 16.
+
+PUSH wins immediate same-window loss at all 16 snapshots. At horizon 16, future
+probe winners are PUSH at nine, BRAKE at four and tied HOLD/BRAKE at three.
+In SimpleLLM seed 42 before update 128, BRAKE increases immediate loss against
+HOLD by 0.00144196 and reduces horizon-16 future loss by 0.00329280; PUSH
+reduces immediate loss by 0.00143242 and increases that future loss by
+0.00342154. The 163-parameter policy and its original learning objective remain
+unchanged. These measured alternative consequences establish the next learning
+question. Dampening-floor states retain exact HOLD/BRAKE ties in the receipts.
+
+The experiment's parameter-restore defect fails with exit 1, bringing the
+scenario round to twelve caught deliberate mutations. Its actual post-action
+NaN receives reward -1 exactly once, saves decisions/updates/pending = 1/1/0
+and exits 3; an insufficient held-out corpus is refused before evaluation.
+`experiments/chuck_loss_architect/scenarios/` retains all 48 comparisons,
+source/corpus/configuration hashes and consolidated CPU/SIMD/sanitizer evidence.
+Full traces, fork snapshots and saved lives are in the separately hashed archive.
+Actual CUDA remains SKIPPED locally; the executable hardware gate is ready.
+
+## 2026-10-07 — Chuck keeps state, credit and device transitions coherent
+
+PR #150's locale finding reproduces under a private `de_DE.UTF-8` fixture:
+the same valid JSON succeeds in C locale and fails with a decimal comma.
+Architect now parses numbers in an explicit C locale without changing the
+caller's process or thread locale. Concurrent conversions exercise both locales.
+
+The scenario audit also reproduces malformed local rings/counters and gradient
+buffers reaching unchecked reads, non-finite gradients entering updates, and a
+correctly checksummed pending prediction contradicting its own unchanged policy.
+Checked actions now validate local structure/history and gradient norms before
+mutation, reusing those norms during updates. Pending lives validate their cached
+features, hidden state and predictions; completed historical caches retain the
+state recorded before their feedback update.
+
+Three host/device boundary defects reproduce with distinct CPU/device buffers:
+legacy noise fallback reads stale parameters and moments; switching to CPU can
+read stale gradients/moments; `nt_seq_linear` CPU fallback can read stale inputs.
+Both Chuck policies and the linear fallback now bring their inputs to CPU and
+invalidate CPU-written moment mirrors. The CUDA observation uses batched gradient
+norm readback instead of transferring complete gradient tensors.
+
+A real post-action NaN previously stopped the training runner before credit and
+the step receipt. It now receives reward -1, writes valid JSON with explicit
+non-finite status, saves the resulting body/optimizer/policy and stops before
+another step. The saved policy records decisions/updates/pending = 1/1/0 in the
+controlled first-step failure. A short-corpus refusal also guards the new
+scenario runner's evaluation split.
+
+Proof: full CPU suite; canonical 6000-step byte parity remains
+`306275db6c3e8b72d5a1d767fb573c443d300a9a8959363f5e76c8fe37a82601`.
+New temporal gates cover 4672 transitions, 24 interruption points, independent
+saved lives, mode changes and action masks. Deliberate locale, credit-cache,
+saved-RNG, history, action and moment-coherency defects go red. The device gate
+passes 12,188 CPU checks and 7,830 HOST_EMULATION checks, including focused
+ASan/UBSan. Actual CUDA is SKIPPED (exit 77): this workspace has no toolkit/device.
+Its executable gate includes native linear/CE/backward/Chuck training and
+requires actual cuBLAS dispatch on the GPU host.
+
+`docs/chuck-scenarios.md` maps the gates. The new fixed two-body protocol snapshots
+the complete training state, compares one hold/brake/push intervention under a
+declared hold continuation, and requires exact host continuation after restoration.
+The previous measured policy objective and receipts remain intact.
+
 ## 2026-10-06 — Loss Architect acquires consequences in two training bodies
 
 Source `d5103e89797b47920f76c730cf5a24613791d04d` trains SimpleLLM

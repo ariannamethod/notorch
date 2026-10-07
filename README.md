@@ -495,6 +495,7 @@ comparison and the measured consequence that first changes the next choice.
 
 ```bash
 make check_chuck_architect BLAS_FLAGS= BLAS_LIBS=
+make check_chuck_scenarios BLAS_FLAGS= BLAS_LIBS=
 make test_chuck_architect_mutations
 make chuck_architect_train BLAS_FLAGS= BLAS_LIBS=
 ```
@@ -503,6 +504,16 @@ make chuck_architect_train BLAS_FLAGS= BLAS_LIBS=
 [two-body training recipe and receipts](experiments/chuck_loss_architect/README.md).
 WOLFE supplies the finite tool-calling lineage; Netta supplies the
 action/consequence/experience lineage. This architecture lives in notorch training.
+
+[Scenario gates](docs/chuck-scenarios.md) cover interrupted lives, locale-independent
+JSON, pending-credit consistency, invalid gradients and CPU/device transitions.
+The CUDA gate exercises native forward/backward and Chuck on an NVIDIA GPU;
+the separate host-emulation gate checks mirror ownership. Controlled action
+forks compare future consequences while preserving the host's exact continuation.
+The [two-body action comparison](experiments/chuck_loss_architect/scenarios/README.md)
+records 16 common snapshots: PUSH wins immediate loss at all 16, while another
+action wins or ties for best future-probe loss after 16 updates at seven snapshots.
+All 2,048 corresponding host steps and final saved states match after restoration.
 
 ---
 

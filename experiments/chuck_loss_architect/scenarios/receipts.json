@@ -1,0 +1,3086 @@
+{
+  "schema": 1,
+  "measured_date_utc": "2026-10-07",
+  "source_commit": "0dea13331077d9c5da504c5c6608b4f804f345ed",
+  "source_status": "",
+  "source_sha256": {
+    "notorch.c": "d0c4616f2dbf5f5ecff1cd9f224486af3818e7e3d1bd1a73f2fdef36feb7c4f9",
+    "notorch.h": "684e1521613300ffcdb9e1262e7e614ee5dd6deea5fa175986316c098719f365",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "chuck_architect.h": "138ab680a4a4d710fddc4e2eb96896968ba12c891472f926df2e218de42e9721",
+    "chuck_architect_impl.h": "efbaa0acd8127b49c9093562bea0aee70613287ee2d4b11150997fd61221a74c",
+    "examples/chuck_architect_train.c": "e07f49905cd4de84562352ad8d48b2a6c9a9f40b67bf26fd94426d95dd48f9e2",
+    "examples/chuck_architect_scenarios.h": "ee4129615868f2985d4807af3631b1300979ffb39094de521f564f37bd0b3a96",
+    "examples/chuck-loss-architect.json": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+    "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+    "experiments/chuck_loss_architect/scenarios/run.py": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+    "experiments/chuck_loss_architect/scenarios/protocol.json": "90c49115d93cff3e636a5093aa5f6f177630d30eade5639df1b35fba307fd27f"
+  },
+  "source_hashes_rechecked": true,
+  "protocol": "protocol.json",
+  "protocol_sha256": "90c49115d93cff3e636a5093aa5f6f177630d30eade5639df1b35fba307fd27f",
+  "protocol_name": "one-action-common-state-v1",
+  "datasets": {
+    "simple": {
+      "repository": "ariannamethod/notorch-simple-llm",
+      "commit": "80b3bd611ed8c937efdc481dc07895c8e13e345d",
+      "file": "dracula.txt",
+      "sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c",
+      "recipe": "train_dracula.py",
+      "parameters": 450688,
+      "tokenizer": "sorted Unicode codepoints; universal newlines; vocabulary 94",
+      "bytes": 852813,
+      "tokens": 843635,
+      "train_tokens": 759271,
+      "token_sha256": "a1876f953a5a306dea7cf9896ea4d634e52808ee7b61570387b590a5b2e0d7d8",
+      "vocab_sha256": "faad8eeec3efadd4b3f26bbeea45f18c4cacd52a990219c51681c5e7eaab2c82"
+    },
+    "hevlm": {
+      "repository": "ariannamethod/notorch-diffusion",
+      "commit": "1bc645071b3a0a3525fe89b8f45253f5faa28a1d",
+      "file": "hevlm.txt",
+      "sha256": "c00b8bcc31785798771aad5fb49f3b420b6a8eb3b7a20c28d0f09c967a52587e",
+      "recipe": "ariannamethod/train_hevlm.c",
+      "parameters": 1123456,
+      "tokenizer": "UTF-8 bytes; vocabulary 256",
+      "bytes": 69766,
+      "tokens": 69766,
+      "train_tokens": 62789,
+      "token_sha256": "4231823fb9cd54610541223c05222d186167c7633a8070a15d5888921573328b",
+      "vocab_sha256": "3e799c43339132e8709ebd0c566262d1893e3f30d4b94fa63014fff5229648a0"
+    }
+  },
+  "machine": {
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+    "python": "3.12.14",
+    "cpu_count": 9,
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+    "memory": {
+      "MemTotal": "10206508 kB",
+      "MemAvailable": "9446044 kB",
+      "SwapTotal": "0 kB",
+      "SwapFree": "0 kB"
+    },
+    "cpu.max": "800000 100000",
+    "memory.max": "8589934592"
+  },
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+  "compile_flags": "-O2 -std=gnu11 -DUSE_SIMD -march=native -pthread",
+  "binary_sha256": "50d1b0c635740ee2f650f3e1845ec48e5a60f33af1d174c7ff05cd30d57057e5",
+  "raw_results_sha256": "12f7e64a942d5f91acb30a352a6df64d62059dfb86715062a3658b1e3bac3a40",
+  "raw_manifest_sha256": "eb3dda1da5daab75331dc7e0ba241038eab3da28fcec31f07d59f68efb625352",
+  "configuration_sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+  "verification": {
+    "short_corpus_refusal": {
+      "tokens": 640,
+      "exit": 1,
+      "status": "PASS",
+      "log_sha256": "394be7c6f6f79ce3e1fce9f791e7374e392e6e65235d1aec5b425ddcf88db35c"
+    },
+    "restore_mutation": {
+      "defect": "parameter_restoration_suppressed",
+      "exit": 1,
+      "caught": true,
+      "mutant_sha256": "20e5717bb49c843e9afc1404393eab8f9352048fc64fdb4ebd9c5776aec305c8",
+      "log_sha256": "24d719d2c4e07da762402c9a4d01d5f6b7f831033cb434868bd68c77faee796b"
+    },
+    "nonfinite_consequence": {
+      "exit": 3,
+      "caught": true,
+      "policy_state": {
+        "decisions": 1,
+        "updates": 1,
+        "pending": 0,
+        "hash": "7828355ba3e8bbd0"
+      },
+      "mutant_sha256": "e82a3c2c7f2ac61ff2e4a2e537db3ecba5ec7929871f60db84e4162e0c68265d",
+      "receipts_sha256": "a5740b3f0f6b5aa5d96003bcaccb475efce9259175b1216ee39f7dd59dc5bbb4",
+      "policy_sha256": "d895985cf61de025bb7ff6b97e279b51424a243f44ff26d8572db4c2ffead4c1"
+    }
+  },
+  "counts": {
+    "cohorts": 4,
+    "host_steps_per_process": 512,
+    "host_steps_compared": 2048,
+    "independent_host_processes": 8,
+    "common_snapshots": 16,
+    "fork_rollouts": 48,
+    "branch_updates": 768,
+    "action_horizon_rows": 144,
+    "comparison_groups": 48,
+    "immediate_push_winners": 16,
+    "horizon16_future_differs_from_immediate": 7,
+    "horizon16_heldout_differs_from_immediate": 6
+  },
+  "runs": [
+    {
+      "body": "simple",
+      "seed": 42,
+      "parity": {
+        "status": "PASS",
+        "host_steps_compared": 512,
+        "final_state_sha256": {
+          ".final.bin": "8c681fd8b78b8d1a9c4affb6276139cc232c9ee5259d6d973eaf03e0e517e901",
+          ".moments.final.bin": "6db0be39122413420dda9da9f3de3de962addfc3f61c04dd273c87a39cf6411d",
+          ".optimizer.final.json": "41c3580afe6b82bf914e0c05c5691d6711439aa7845757df383811d72236c9c9",
+          ".policy.final.bin": "353585a9c8b6ee7565a6d568230750195b8dd16ab015b4b00746c18094f8ce05"
+        }
+      },
+      "comparison_groups": 12,
+      "control_summary": {
+        "type": "scenario_summary",
+        "initial_heldout": 4.80649185,
+        "final_heldout": 2.5398736,
+        "seconds": 12.9129107,
+        "max_rss_kib": 37972,
+        "policy_hash": "c0c00c38d4cd1ab0"
+      },
+      "diagnostic_summary": {
+        "type": "scenario_summary",
+        "initial_heldout": 4.80649185,
+        "final_heldout": 2.5398736,
+        "seconds": 17.3127141,
+        "max_rss_kib": 37972,
+        "policy_hash": "c0c00c38d4cd1ab0"
+      },
+      "control_receipts_sha256": "3811c99f2927929716181b2b5a2f32986e4bcb10d023a753cd753ba29f330716",
+      "diagnostic_receipts_sha256": "6b4728677459aa2618620a984a4d7f789ed7177c2284bcfbad00fab3eb3d54b6"
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "parity": {
+        "status": "PASS",
+        "host_steps_compared": 512,
+        "final_state_sha256": {
+          ".final.bin": "4bd409ee891f951073ef6e7cf127cbfb43c73b9ae4ba012880a2a0717773b206",
+          ".moments.final.bin": "73361bc3ab54ab54f2affe36aced7aab4529314bc5e470baf6c451afa5bd4758",
+          ".optimizer.final.json": "e21327c4d13569e9e06b1ef3760ffb1e614678771a4cd3441649c69978f3bd53",
+          ".policy.final.bin": "6f880a30944b4152313392e27e98a4748072ef3de06751895b78b900d286464e"
+        }
+      },
+      "comparison_groups": 12,
+      "control_summary": {
+        "type": "scenario_summary",
+        "initial_heldout": 5.20846462,
+        "final_heldout": 2.68184018,
+        "seconds": 12.2127024,
+        "max_rss_kib": 37972,
+        "policy_hash": "b328a539a3887ffe"
+      },
+      "diagnostic_summary": {
+        "type": "scenario_summary",
+        "initial_heldout": 5.20846462,
+        "final_heldout": 2.68184018,
+        "seconds": 16.2947658,
+        "max_rss_kib": 37972,
+        "policy_hash": "b328a539a3887ffe"
+      },
+      "control_receipts_sha256": "d98c5da445c697e6b3f70e08c91bf805df5b9c2012cb75d4907965c6bee5476f",
+      "diagnostic_receipts_sha256": "c0a04e496a2385b5b88c2fe7aba204c19029f82d0efb058bd1756fcb3582646a"
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "parity": {
+        "status": "PASS",
+        "host_steps_compared": 512,
+        "final_state_sha256": {
+          ".final.bin": "bdcb158ab534a6411cb1da823cd2ac488197075e1f83d9f7a2dd7b7c141e317a",
+          ".moments.final.bin": "c29aa37482f889165a45d173dd55be764f36eec8cd7a8307d2a4d85e622a6bfe",
+          ".optimizer.final.json": "c93c8a3e4d4e82695b99fc254d3aec10c52123015de77db7605cf002a4cf2370",
+          ".policy.final.bin": "6e70c77cf9dcc55f3c1c6e3da3f11ae985b1c7768451b12f1698378e77d4b346"
+        }
+      },
+      "comparison_groups": 12,
+      "control_summary": {
+        "type": "scenario_summary",
+        "initial_heldout": 5.74468184,
+        "final_heldout": 1.5714525,
+        "seconds": 28.8223221,
+        "max_rss_kib": 37972,
+        "policy_hash": "c5c6265baf2b7ef3"
+      },
+      "diagnostic_summary": {
+        "type": "scenario_summary",
+        "initial_heldout": 5.74468184,
+        "final_heldout": 1.5714525,
+        "seconds": 35.7162145,
+        "max_rss_kib": 52848,
+        "policy_hash": "c5c6265baf2b7ef3"
+      },
+      "control_receipts_sha256": "5543850084996d4d38b4c2c3ce38d1438f7c491a213c903216b7079bbcda6b31",
+      "diagnostic_receipts_sha256": "7858846c85c214f07373492ebaba0f1c91707a797cdebd570e1387de9e62afd5"
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "parity": {
+        "status": "PASS",
+        "host_steps_compared": 512,
+        "final_state_sha256": {
+          ".final.bin": "fe2b2cd2b4712b9d456d9868f52a040f318193772aa51f69a4aeacee829d0e42",
+          ".moments.final.bin": "e1ff8e1c65337f4e3c90c9863aef352ea424024969070ae3e3f784c49ebdc09b",
+          ".optimizer.final.json": "8d4d5de89853ee0001455538a3c0e827f014381eb95a755151d4779fe5275abe",
+          ".policy.final.bin": "de05cfbe5e51e140ee2c10e9dddfd8b16c3d8ee5aa99d15c3cb6e57d03f5f6ef"
+        }
+      },
+      "comparison_groups": 12,
+      "control_summary": {
+        "type": "scenario_summary",
+        "initial_heldout": 6.1112113,
+        "final_heldout": 1.58826482,
+        "seconds": 28.5937566,
+        "max_rss_kib": 37972,
+        "policy_hash": "ad5be2037eab8d2a"
+      },
+      "diagnostic_summary": {
+        "type": "scenario_summary",
+        "initial_heldout": 6.1112113,
+        "final_heldout": 1.58826482,
+        "seconds": 36.1520721,
+        "max_rss_kib": 52852,
+        "policy_hash": "ad5be2037eab8d2a"
+      },
+      "control_receipts_sha256": "c35e1f12756dd472d791519c3dcb73293663b8cf32989d6488fbca8905a1081c",
+      "diagnostic_receipts_sha256": "061c80dea1f80bd826927deda205d924e430ce1c769d915c376ed63096496010"
+    }
+  ],
+  "winner_counts": [
+    {
+      "body": "simple",
+      "horizon": 1,
+      "snapshots": 8,
+      "winner_counts": {
+        "immediate_after": {
+          "push": 8
+        },
+        "origin_after_horizon": {
+          "push": 8
+        },
+        "future_after": {
+          "push": 8
+        },
+        "heldout_after": {
+          "push": 7,
+          "brake": 1
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "horizon": 4,
+      "snapshots": 8,
+      "winner_counts": {
+        "immediate_after": {
+          "push": 8
+        },
+        "origin_after_horizon": {
+          "push": 8
+        },
+        "future_after": {
+          "push": 7,
+          "brake": 1
+        },
+        "heldout_after": {
+          "push": 7,
+          "brake": 1
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "horizon": 16,
+      "snapshots": 8,
+      "winner_counts": {
+        "immediate_after": {
+          "push": 8
+        },
+        "origin_after_horizon": {
+          "push": 7,
+          "hold": 1
+        },
+        "future_after": {
+          "push": 5,
+          "brake": 2,
+          "hold/brake": 1
+        },
+        "heldout_after": {
+          "push": 6,
+          "brake": 2
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "horizon": 1,
+      "snapshots": 8,
+      "winner_counts": {
+        "immediate_after": {
+          "push": 8
+        },
+        "origin_after_horizon": {
+          "push": 8
+        },
+        "future_after": {
+          "push": 5,
+          "brake": 1,
+          "hold/brake": 2
+        },
+        "heldout_after": {
+          "push": 5,
+          "brake": 2,
+          "hold/brake": 1
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "horizon": 4,
+      "snapshots": 8,
+      "winner_counts": {
+        "immediate_after": {
+          "push": 8
+        },
+        "origin_after_horizon": {
+          "push": 8
+        },
+        "future_after": {
+          "push": 6,
+          "brake": 1,
+          "hold/brake": 1
+        },
+        "heldout_after": {
+          "push": 4,
+          "brake": 3,
+          "hold/brake": 1
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "horizon": 16,
+      "snapshots": 8,
+      "winner_counts": {
+        "immediate_after": {
+          "push": 8
+        },
+        "origin_after_horizon": {
+          "push": 7,
+          "brake": 1
+        },
+        "future_after": {
+          "push": 4,
+          "brake": 2,
+          "hold/brake": 2
+        },
+        "heldout_after": {
+          "push": 4,
+          "brake": 2,
+          "hold/brake": 2
+        }
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 1,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "6e32e6eba49d00cb",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.90564895,
+          "origin_after_horizon": 3.90564895,
+          "future_after": 4.66534662,
+          "heldout_after": 4.5961175
+        },
+        "brake": {
+          "immediate_after": 3.92419076,
+          "origin_after_horizon": 3.92419076,
+          "future_after": 4.66942358,
+          "heldout_after": 4.60165215
+        },
+        "push": {
+          "immediate_after": 3.88750243,
+          "origin_after_horizon": 3.88750243,
+          "future_after": 4.66130638,
+          "heldout_after": 4.59063339
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.018541810000000325,
+          "origin_after_horizon": -0.018541810000000325,
+          "future_after": -0.004076959999999907,
+          "heldout_after": -0.00553464999999953
+        },
+        "push": {
+          "immediate_after": 0.018146519999999722,
+          "origin_after_horizon": 0.018146519999999722,
+          "future_after": 0.004040240000000139,
+          "heldout_after": 0.005484110000000264
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 1,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "6e32e6eba49d00cb",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.90564895,
+          "origin_after_horizon": 3.46571875,
+          "future_after": 4.25691795,
+          "heldout_after": 4.13134623
+        },
+        "brake": {
+          "immediate_after": 3.92419076,
+          "origin_after_horizon": 3.47500467,
+          "future_after": 4.26830101,
+          "heldout_after": 4.14336729
+        },
+        "push": {
+          "immediate_after": 3.88750243,
+          "origin_after_horizon": 3.45707703,
+          "future_after": 4.2457056,
+          "heldout_after": 4.11962843
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.018541810000000325,
+          "origin_after_horizon": -0.009285919999999948,
+          "future_after": -0.01138306,
+          "heldout_after": -0.012021059999999473
+        },
+        "push": {
+          "immediate_after": 0.018146519999999722,
+          "origin_after_horizon": 0.008641719999999964,
+          "future_after": 0.011212350000000093,
+          "heldout_after": 0.011717800000000445
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 1,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "6e32e6eba49d00cb",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.90564895,
+          "origin_after_horizon": 3.42075062,
+          "future_after": 3.48037958,
+          "heldout_after": 3.49579835
+        },
+        "brake": {
+          "immediate_after": 3.92419076,
+          "origin_after_horizon": 3.42896938,
+          "future_after": 3.49617457,
+          "heldout_after": 3.50922704
+        },
+        "push": {
+          "immediate_after": 3.88750243,
+          "origin_after_horizon": 3.41251349,
+          "future_after": 3.46477795,
+          "heldout_after": 3.48254728
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.018541810000000325,
+          "origin_after_horizon": -0.008218759999999659,
+          "future_after": -0.015794989999999842,
+          "heldout_after": -0.013428690000000021
+        },
+        "push": {
+          "immediate_after": 0.018146519999999722,
+          "origin_after_horizon": 0.00823713000000037,
+          "future_after": 0.015601629999999922,
+          "heldout_after": 0.01325106999999992
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 32,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "54c3da5c1460183e",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.02517819,
+          "origin_after_horizon": 3.02517819,
+          "future_after": 3.22640014,
+          "heldout_after": 3.21827364
+        },
+        "brake": {
+          "immediate_after": 3.02599835,
+          "origin_after_horizon": 3.02599835,
+          "future_after": 3.22655702,
+          "heldout_after": 3.21854496
+        },
+        "push": {
+          "immediate_after": 3.02436209,
+          "origin_after_horizon": 3.02436209,
+          "future_after": 3.22624683,
+          "heldout_after": 3.21800518
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0008201599999999587,
+          "origin_after_horizon": -0.0008201599999999587,
+          "future_after": -0.0001568800000000259,
+          "heldout_after": -0.0002713199999999638
+        },
+        "push": {
+          "immediate_after": 0.0008161000000002083,
+          "origin_after_horizon": 0.0008161000000002083,
+          "future_after": 0.0001533099999999621,
+          "heldout_after": 0.0002684600000000259
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 32,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "54c3da5c1460183e",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.02517819,
+          "origin_after_horizon": 2.95871925,
+          "future_after": 3.18388677,
+          "heldout_after": 3.19142485
+        },
+        "brake": {
+          "immediate_after": 3.02599835,
+          "origin_after_horizon": 2.9609549,
+          "future_after": 3.18500614,
+          "heldout_after": 3.19202876
+        },
+        "push": {
+          "immediate_after": 3.02436209,
+          "origin_after_horizon": 2.95650887,
+          "future_after": 3.1827755,
+          "heldout_after": 3.1908381
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0008201599999999587,
+          "origin_after_horizon": -0.0022356499999998114,
+          "future_after": -0.001119370000000064,
+          "heldout_after": -0.0006039099999997077
+        },
+        "push": {
+          "immediate_after": 0.0008161000000002083,
+          "origin_after_horizon": 0.0022103800000001783,
+          "future_after": 0.0011112699999999975,
+          "heldout_after": 0.0005867500000000803
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 32,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "54c3da5c1460183e",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.02517819,
+          "origin_after_horizon": 2.81461644,
+          "future_after": 3.06270123,
+          "heldout_after": 3.16086626
+        },
+        "brake": {
+          "immediate_after": 3.02599835,
+          "origin_after_horizon": 2.82080293,
+          "future_after": 3.06454444,
+          "heldout_after": 3.16427183
+        },
+        "push": {
+          "immediate_after": 3.02436209,
+          "origin_after_horizon": 2.80856991,
+          "future_after": 3.06082916,
+          "heldout_after": 3.15746379
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0008201599999999587,
+          "origin_after_horizon": -0.0061864900000001555,
+          "future_after": -0.001843210000000095,
+          "heldout_after": -0.003405569999999969
+        },
+        "push": {
+          "immediate_after": 0.0008161000000002083,
+          "origin_after_horizon": 0.006046529999999883,
+          "future_after": 0.0018720700000001145,
+          "heldout_after": 0.0034024700000001573
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 128,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "e6f78cd924d80727",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.35505104,
+          "origin_after_horizon": 2.35505104,
+          "future_after": 2.95569563,
+          "heldout_after": 2.90426326
+        },
+        "brake": {
+          "immediate_after": 2.356493,
+          "origin_after_horizon": 2.356493,
+          "future_after": 2.95590615,
+          "heldout_after": 2.90396547
+        },
+        "push": {
+          "immediate_after": 2.35361862,
+          "origin_after_horizon": 2.35361862,
+          "future_after": 2.95549393,
+          "heldout_after": 2.90456867
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0014419599999997423,
+          "origin_after_horizon": -0.0014419599999997423,
+          "future_after": -0.00021051999999999182,
+          "heldout_after": 0.00029778999999985345
+        },
+        "push": {
+          "immediate_after": 0.0014324199999999898,
+          "origin_after_horizon": 0.0014324199999999898,
+          "future_after": 0.00020170000000030441,
+          "heldout_after": -0.0003054100000001725
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 128,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "brake"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "e6f78cd924d80727",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.35505104,
+          "origin_after_horizon": 2.2660923,
+          "future_after": 2.9275682,
+          "heldout_after": 2.91554213
+        },
+        "brake": {
+          "immediate_after": 2.356493,
+          "origin_after_horizon": 2.26853204,
+          "future_after": 2.92720723,
+          "heldout_after": 2.91397762
+        },
+        "push": {
+          "immediate_after": 2.35361862,
+          "origin_after_horizon": 2.2637341,
+          "future_after": 2.92799807,
+          "heldout_after": 2.91714907
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0014419599999997423,
+          "origin_after_horizon": -0.0024397400000002456,
+          "future_after": 0.000360970000000016,
+          "heldout_after": 0.00156451000000013
+        },
+        "push": {
+          "immediate_after": 0.0014324199999999898,
+          "origin_after_horizon": 0.002358199999999755,
+          "future_after": -0.0004298700000000544,
+          "heldout_after": -0.0016069399999998346
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 128,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "hold"
+        ],
+        "future_after": [
+          "brake"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "e6f78cd924d80727",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.35505104,
+          "origin_after_horizon": 2.3654604,
+          "future_after": 2.87523842,
+          "heldout_after": 2.8570199
+        },
+        "brake": {
+          "immediate_after": 2.356493,
+          "origin_after_horizon": 2.36547184,
+          "future_after": 2.87194562,
+          "heldout_after": 2.854949
+        },
+        "push": {
+          "immediate_after": 2.35361862,
+          "origin_after_horizon": 2.3656404,
+          "future_after": 2.87865996,
+          "heldout_after": 2.85925555
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0014419599999997423,
+          "origin_after_horizon": -1.1440000000195738e-05,
+          "future_after": 0.0032928000000000957,
+          "heldout_after": 0.0020709000000000977
+        },
+        "push": {
+          "immediate_after": 0.0014324199999999898,
+          "origin_after_horizon": -0.00018000000000029104,
+          "future_after": -0.003421539999999723,
+          "heldout_after": -0.0022356499999998114
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 384,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "a7650a88f04bf786",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.22367549,
+          "origin_after_horizon": 2.22367549,
+          "future_after": 2.32936049,
+          "heldout_after": 2.59567571
+        },
+        "brake": {
+          "immediate_after": 2.22448945,
+          "origin_after_horizon": 2.22448945,
+          "future_after": 2.32940578,
+          "heldout_after": 2.59570837
+        },
+        "push": {
+          "immediate_after": 2.22286344,
+          "origin_after_horizon": 2.22286344,
+          "future_after": 2.32931662,
+          "heldout_after": 2.59564447
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0008139599999998914,
+          "origin_after_horizon": -0.0008139599999998914,
+          "future_after": -4.529000000008665e-05,
+          "heldout_after": -3.2660000000017675e-05
+        },
+        "push": {
+          "immediate_after": 0.0008120500000003972,
+          "origin_after_horizon": 0.0008120500000003972,
+          "future_after": 4.3869999999834874e-05,
+          "heldout_after": 3.124000000020999e-05
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 384,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "a7650a88f04bf786",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.22367549,
+          "origin_after_horizon": 2.15151358,
+          "future_after": 2.31641912,
+          "heldout_after": 2.5875783
+        },
+        "brake": {
+          "immediate_after": 2.22448945,
+          "origin_after_horizon": 2.15413737,
+          "future_after": 2.31660032,
+          "heldout_after": 2.58763289
+        },
+        "push": {
+          "immediate_after": 2.22286344,
+          "origin_after_horizon": 2.14891148,
+          "future_after": 2.31625295,
+          "heldout_after": 2.58753657
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0008139599999998914,
+          "origin_after_horizon": -0.0026237899999999037,
+          "future_after": -0.0001812000000001035,
+          "heldout_after": -5.45899999999655e-05
+        },
+        "push": {
+          "immediate_after": 0.0008120500000003972,
+          "origin_after_horizon": 0.0026020999999998295,
+          "future_after": 0.0001661699999999655,
+          "heldout_after": 4.1729999999962075e-05
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 42,
+      "checkpoint": 384,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "brake"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "a7650a88f04bf786",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.22367549,
+          "origin_after_horizon": 2.04883265,
+          "future_after": 2.27897191,
+          "heldout_after": 2.58036685
+        },
+        "brake": {
+          "immediate_after": 2.22448945,
+          "origin_after_horizon": 2.05229545,
+          "future_after": 2.27866793,
+          "heldout_after": 2.57929134
+        },
+        "push": {
+          "immediate_after": 2.22286344,
+          "origin_after_horizon": 2.04546762,
+          "future_after": 2.27934146,
+          "heldout_after": 2.58163023
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0008139599999998914,
+          "origin_after_horizon": -0.003462799999999877,
+          "future_after": 0.0003039799999999815,
+          "heldout_after": 0.0010755099999997242
+        },
+        "push": {
+          "immediate_after": 0.0008120500000003972,
+          "origin_after_horizon": 0.00336502999999988,
+          "future_after": -0.00036954999999982974,
+          "heldout_after": -0.0012633800000001472
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 1,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "164cb4872db221d9",
+      "losses": {
+        "hold": {
+          "immediate_after": 4.44211483,
+          "origin_after_horizon": 4.44211483,
+          "future_after": 4.96457386,
+          "heldout_after": 4.87799454
+        },
+        "brake": {
+          "immediate_after": 4.46375465,
+          "origin_after_horizon": 4.46375465,
+          "future_after": 4.97173882,
+          "heldout_after": 4.8871417
+        },
+        "push": {
+          "immediate_after": 4.42073107,
+          "origin_after_horizon": 4.42073107,
+          "future_after": 4.95744705,
+          "heldout_after": 4.86890745
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.021639819999999865,
+          "origin_after_horizon": -0.021639819999999865,
+          "future_after": -0.007164959999999887,
+          "heldout_after": -0.009147159999999488
+        },
+        "push": {
+          "immediate_after": 0.021383759999999974,
+          "origin_after_horizon": 0.021383759999999974,
+          "future_after": 0.007126809999999928,
+          "heldout_after": 0.009087090000000408
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 1,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "164cb4872db221d9",
+      "losses": {
+        "hold": {
+          "immediate_after": 4.44211483,
+          "origin_after_horizon": 3.65242052,
+          "future_after": 4.39146519,
+          "heldout_after": 4.18927193
+        },
+        "brake": {
+          "immediate_after": 4.46375465,
+          "origin_after_horizon": 3.67482424,
+          "future_after": 4.40793467,
+          "heldout_after": 4.20630074
+        },
+        "push": {
+          "immediate_after": 4.42073107,
+          "origin_after_horizon": 3.63120556,
+          "future_after": 4.37552452,
+          "heldout_after": 4.17299843
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.021639819999999865,
+          "origin_after_horizon": -0.022403719999999794,
+          "future_after": -0.01646948000000048,
+          "heldout_after": -0.01702880999999934
+        },
+        "push": {
+          "immediate_after": 0.021383759999999974,
+          "origin_after_horizon": 0.021214960000000005,
+          "future_after": 0.01594066999999999,
+          "heldout_after": 0.016273500000000496
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 1,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "164cb4872db221d9",
+      "losses": {
+        "hold": {
+          "immediate_after": 4.44211483,
+          "origin_after_horizon": 3.03779936,
+          "future_after": 3.65130806,
+          "heldout_after": 3.41736317
+        },
+        "brake": {
+          "immediate_after": 4.46375465,
+          "origin_after_horizon": 3.05352783,
+          "future_after": 3.66350079,
+          "heldout_after": 3.43050051
+        },
+        "push": {
+          "immediate_after": 4.42073107,
+          "origin_after_horizon": 3.02252674,
+          "future_after": 3.63907146,
+          "heldout_after": 3.40430474
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.021639819999999865,
+          "origin_after_horizon": -0.015728469999999994,
+          "future_after": -0.012192730000000207,
+          "heldout_after": -0.013137340000000108
+        },
+        "push": {
+          "immediate_after": 0.021383759999999974,
+          "origin_after_horizon": 0.015272620000000181,
+          "future_after": 0.012236600000000042,
+          "heldout_after": 0.013058429999999621
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 32,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "8f4028a3fbcc7e4d",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.1236856,
+          "origin_after_horizon": 3.1236856,
+          "future_after": 3.350137,
+          "heldout_after": 3.22204828
+        },
+        "brake": {
+          "immediate_after": 3.12435913,
+          "origin_after_horizon": 3.12435913,
+          "future_after": 3.35036278,
+          "heldout_after": 3.22229147
+        },
+        "push": {
+          "immediate_after": 3.12301254,
+          "origin_after_horizon": 3.12301254,
+          "future_after": 3.34991121,
+          "heldout_after": 3.22180676
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0006735300000002553,
+          "origin_after_horizon": -0.0006735300000002553,
+          "future_after": -0.00022578000000006426,
+          "heldout_after": -0.00024318999999994872
+        },
+        "push": {
+          "immediate_after": 0.0006730600000000031,
+          "origin_after_horizon": 0.0006730600000000031,
+          "future_after": 0.0002257900000000035,
+          "heldout_after": 0.00024151999999988405
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 32,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "8f4028a3fbcc7e4d",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.1236856,
+          "origin_after_horizon": 3.05862045,
+          "future_after": 3.33288956,
+          "heldout_after": 3.20567775
+        },
+        "brake": {
+          "immediate_after": 3.12435913,
+          "origin_after_horizon": 3.0609436,
+          "future_after": 3.33339477,
+          "heldout_after": 3.20610023
+        },
+        "push": {
+          "immediate_after": 3.12301254,
+          "origin_after_horizon": 3.0563159,
+          "future_after": 3.33239746,
+          "heldout_after": 3.20527148
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0006735300000002553,
+          "origin_after_horizon": -0.0023231500000000516,
+          "future_after": -0.0005052100000000337,
+          "heldout_after": -0.0004224800000001139
+        },
+        "push": {
+          "immediate_after": 0.0006730600000000031,
+          "origin_after_horizon": 0.0023045499999998498,
+          "future_after": 0.0004920999999997733,
+          "heldout_after": 0.0004062700000000419
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 32,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "8f4028a3fbcc7e4d",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.1236856,
+          "origin_after_horizon": 2.86413407,
+          "future_after": 3.24002099,
+          "heldout_after": 3.12957096
+        },
+        "brake": {
+          "immediate_after": 3.12435913,
+          "origin_after_horizon": 2.87077475,
+          "future_after": 3.24345684,
+          "heldout_after": 3.1324017
+        },
+        "push": {
+          "immediate_after": 3.12301254,
+          "origin_after_horizon": 2.8573432,
+          "future_after": 3.23633695,
+          "heldout_after": 3.12653804
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0006735300000002553,
+          "origin_after_horizon": -0.006640679999999843,
+          "future_after": -0.003435849999999796,
+          "heldout_after": -0.0028307399999998317
+        },
+        "push": {
+          "immediate_after": 0.0006730600000000031,
+          "origin_after_horizon": 0.006790870000000115,
+          "future_after": 0.0036840399999999995,
+          "heldout_after": 0.0030329200000003276
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 128,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "12f15fd8ed3cddd6",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.75220942,
+          "origin_after_horizon": 2.75220942,
+          "future_after": 2.72467709,
+          "heldout_after": 2.96747875
+        },
+        "brake": {
+          "immediate_after": 2.75220942,
+          "origin_after_horizon": 2.75220942,
+          "future_after": 2.72467709,
+          "heldout_after": 2.96747875
+        },
+        "push": {
+          "immediate_after": 2.7517345,
+          "origin_after_horizon": 2.7517345,
+          "future_after": 2.7246232,
+          "heldout_after": 2.9674747
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.00047491999999982326,
+          "origin_after_horizon": 0.00047491999999982326,
+          "future_after": 5.3890000000222926e-05,
+          "heldout_after": 4.050000000255238e-06
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 128,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "12f15fd8ed3cddd6",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.75220942,
+          "origin_after_horizon": 2.72430944,
+          "future_after": 2.71410275,
+          "heldout_after": 2.96378422
+        },
+        "brake": {
+          "immediate_after": 2.75220942,
+          "origin_after_horizon": 2.72430944,
+          "future_after": 2.71410275,
+          "heldout_after": 2.96378422
+        },
+        "push": {
+          "immediate_after": 2.7517345,
+          "origin_after_horizon": 2.72316861,
+          "future_after": 2.71384287,
+          "heldout_after": 2.9637785
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.00047491999999982326,
+          "origin_after_horizon": 0.0011408299999997595,
+          "future_after": 0.0002598799999997681,
+          "heldout_after": 5.719999999875824e-06
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 128,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "12f15fd8ed3cddd6",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.75220942,
+          "origin_after_horizon": 2.69697261,
+          "future_after": 2.64979768,
+          "heldout_after": 2.92796087
+        },
+        "brake": {
+          "immediate_after": 2.75220942,
+          "origin_after_horizon": 2.69697261,
+          "future_after": 2.64979768,
+          "heldout_after": 2.92796087
+        },
+        "push": {
+          "immediate_after": 2.7517345,
+          "origin_after_horizon": 2.69603229,
+          "future_after": 2.64832211,
+          "heldout_after": 2.92733932
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.00047491999999982326,
+          "origin_after_horizon": 0.0009403199999997724,
+          "future_after": 0.0014755699999997596,
+          "heldout_after": 0.0006215499999999707
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 384,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "ef2d23f7225d4a31",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.78385377,
+          "origin_after_horizon": 2.78385377,
+          "future_after": 2.74294305,
+          "heldout_after": 2.7412765
+        },
+        "brake": {
+          "immediate_after": 2.78385377,
+          "origin_after_horizon": 2.78385377,
+          "future_after": 2.74294305,
+          "heldout_after": 2.7412765
+        },
+        "push": {
+          "immediate_after": 2.78344059,
+          "origin_after_horizon": 2.78344059,
+          "future_after": 2.74289441,
+          "heldout_after": 2.7412107
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.00041317999999979094,
+          "origin_after_horizon": 0.00041317999999979094,
+          "future_after": 4.8640000000155226e-05,
+          "heldout_after": 6.580000000022679e-05
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 384,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "ef2d23f7225d4a31",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.78385377,
+          "origin_after_horizon": 2.74561,
+          "future_after": 2.74058437,
+          "heldout_after": 2.73656869
+        },
+        "brake": {
+          "immediate_after": 2.78385377,
+          "origin_after_horizon": 2.74561,
+          "future_after": 2.74058437,
+          "heldout_after": 2.73656869
+        },
+        "push": {
+          "immediate_after": 2.78344059,
+          "origin_after_horizon": 2.74416184,
+          "future_after": 2.74055886,
+          "heldout_after": 2.73646498
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.00041317999999979094,
+          "origin_after_horizon": 0.0014481600000002537,
+          "future_after": 2.550999999995085e-05,
+          "heldout_after": 0.00010370999999986807
+        }
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 384,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "hold",
+          "brake"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "ef2d23f7225d4a31",
+      "losses": {
+        "hold": {
+          "immediate_after": 2.78385377,
+          "origin_after_horizon": 2.67901134,
+          "future_after": 2.73544455,
+          "heldout_after": 2.71543121
+        },
+        "brake": {
+          "immediate_after": 2.78385377,
+          "origin_after_horizon": 2.67901134,
+          "future_after": 2.73544455,
+          "heldout_after": 2.71543121
+        },
+        "push": {
+          "immediate_after": 2.78344059,
+          "origin_after_horizon": 2.67616582,
+          "future_after": 2.7354641,
+          "heldout_after": 2.71513033
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.00041317999999979094,
+          "origin_after_horizon": 0.002845520000000157,
+          "future_after": -1.955000000020135e-05,
+          "heldout_after": 0.0003008800000001699
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 1,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "4164ba2a8afb3b5b",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.61667109,
+          "origin_after_horizon": 3.61667109,
+          "future_after": 4.32637405,
+          "heldout_after": 4.29973125
+        },
+        "brake": {
+          "immediate_after": 3.65868831,
+          "origin_after_horizon": 3.65868831,
+          "future_after": 4.35881329,
+          "heldout_after": 4.33076286
+        },
+        "push": {
+          "immediate_after": 3.57624364,
+          "origin_after_horizon": 3.57624364,
+          "future_after": 4.29483891,
+          "heldout_after": 4.26954746
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.042017219999999966,
+          "origin_after_horizon": -0.042017219999999966,
+          "future_after": -0.032439239999999536,
+          "heldout_after": -0.03103161000000032
+        },
+        "push": {
+          "immediate_after": 0.04042745000000014,
+          "origin_after_horizon": 0.04042745000000014,
+          "future_after": 0.031535139999999906,
+          "heldout_after": 0.03018378999999971
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 1,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "4164ba2a8afb3b5b",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.61667109,
+          "origin_after_horizon": 2.74383092,
+          "future_after": 3.10288334,
+          "heldout_after": 3.03280091
+        },
+        "brake": {
+          "immediate_after": 3.65868831,
+          "origin_after_horizon": 2.77167058,
+          "future_after": 3.12684822,
+          "heldout_after": 3.05670929
+        },
+        "push": {
+          "immediate_after": 3.57624364,
+          "origin_after_horizon": 2.71597242,
+          "future_after": 3.07944894,
+          "heldout_after": 3.0095861
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.042017219999999966,
+          "origin_after_horizon": -0.02783965999999971,
+          "future_after": -0.023964879999999855,
+          "heldout_after": -0.02390837999999995
+        },
+        "push": {
+          "immediate_after": 0.04042745000000014,
+          "origin_after_horizon": 0.02785850000000023,
+          "future_after": 0.02343440000000019,
+          "heldout_after": 0.023214810000000252
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 1,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "4164ba2a8afb3b5b",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.61667109,
+          "origin_after_horizon": 1.99868178,
+          "future_after": 2.21314669,
+          "heldout_after": 2.17918158
+        },
+        "brake": {
+          "immediate_after": 3.65868831,
+          "origin_after_horizon": 2.00848007,
+          "future_after": 2.22435164,
+          "heldout_after": 2.18999624
+        },
+        "push": {
+          "immediate_after": 3.57624364,
+          "origin_after_horizon": 1.98940659,
+          "future_after": 2.20211029,
+          "heldout_after": 2.16925263
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.042017219999999966,
+          "origin_after_horizon": -0.009798289999999987,
+          "future_after": -0.011204950000000213,
+          "heldout_after": -0.010814660000000309
+        },
+        "push": {
+          "immediate_after": 0.04042745000000014,
+          "origin_after_horizon": 0.0092751900000001,
+          "future_after": 0.011036400000000057,
+          "heldout_after": 0.009928949999999936
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 32,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "8fff0bdbb534bb67",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.84421515,
+          "origin_after_horizon": 1.84421515,
+          "future_after": 1.84938824,
+          "heldout_after": 1.83745599
+        },
+        "brake": {
+          "immediate_after": 1.84629643,
+          "origin_after_horizon": 1.84629643,
+          "future_after": 1.84990668,
+          "heldout_after": 1.83825433
+        },
+        "push": {
+          "immediate_after": 1.84213746,
+          "origin_after_horizon": 1.84213746,
+          "future_after": 1.84887743,
+          "heldout_after": 1.83666408
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.002081280000000074,
+          "origin_after_horizon": -0.002081280000000074,
+          "future_after": -0.0005184400000000089,
+          "heldout_after": -0.0007983400000000085
+        },
+        "push": {
+          "immediate_after": 0.00207768999999991,
+          "origin_after_horizon": 0.00207768999999991,
+          "future_after": 0.0005108099999999727,
+          "heldout_after": 0.0007919100000000068
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 32,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "brake"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "8fff0bdbb534bb67",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.84421515,
+          "origin_after_horizon": 1.72402573,
+          "future_after": 1.81408858,
+          "heldout_after": 1.7847234
+        },
+        "brake": {
+          "immediate_after": 1.84629643,
+          "origin_after_horizon": 1.72587955,
+          "future_after": 1.81306911,
+          "heldout_after": 1.78429306
+        },
+        "push": {
+          "immediate_after": 1.84213746,
+          "origin_after_horizon": 1.72235966,
+          "future_after": 1.8152256,
+          "heldout_after": 1.78528988
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.002081280000000074,
+          "origin_after_horizon": -0.001853820000000006,
+          "future_after": 0.0010194699999999113,
+          "heldout_after": 0.00043034000000008454
+        },
+        "push": {
+          "immediate_after": 0.00207768999999991,
+          "origin_after_horizon": 0.001666069999999964,
+          "future_after": -0.001137020000000044,
+          "heldout_after": -0.0005664800000000358
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 32,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "8fff0bdbb534bb67",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.84421515,
+          "origin_after_horizon": 1.64538193,
+          "future_after": 1.67467666,
+          "heldout_after": 1.72710967
+        },
+        "brake": {
+          "immediate_after": 1.84629643,
+          "origin_after_horizon": 1.64660168,
+          "future_after": 1.67607629,
+          "heldout_after": 1.72743928
+        },
+        "push": {
+          "immediate_after": 1.84213746,
+          "origin_after_horizon": 1.64396322,
+          "future_after": 1.67326796,
+          "heldout_after": 1.72671866
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.002081280000000074,
+          "origin_after_horizon": -0.001219749999999964,
+          "future_after": -0.001399629999999874,
+          "heldout_after": -0.0003296100000000912
+        },
+        "push": {
+          "immediate_after": 0.00207768999999991,
+          "origin_after_horizon": 0.0014187100000000452,
+          "future_after": 0.0014087000000000405,
+          "heldout_after": 0.00039100999999996944
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 128,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "d3ee67892b4f5952",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.558465,
+          "origin_after_horizon": 1.558465,
+          "future_after": 1.65341628,
+          "heldout_after": 1.62407351
+        },
+        "brake": {
+          "immediate_after": 1.55896401,
+          "origin_after_horizon": 1.55896401,
+          "future_after": 1.65377069,
+          "heldout_after": 1.62402391
+        },
+        "push": {
+          "immediate_after": 1.55797553,
+          "origin_after_horizon": 1.55797553,
+          "future_after": 1.65306997,
+          "heldout_after": 1.62413025
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0004990099999999664,
+          "origin_after_horizon": -0.0004990099999999664,
+          "future_after": -0.0003544099999999162,
+          "heldout_after": 4.960000000009401e-05
+        },
+        "push": {
+          "immediate_after": 0.0004894699999999919,
+          "origin_after_horizon": 0.0004894699999999919,
+          "future_after": 0.00034631000000007184,
+          "heldout_after": -5.673999999999957e-05
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 128,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "d3ee67892b4f5952",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.558465,
+          "origin_after_horizon": 1.5299443,
+          "future_after": 1.61921394,
+          "heldout_after": 1.61480558
+        },
+        "brake": {
+          "immediate_after": 1.55896401,
+          "origin_after_horizon": 1.530177,
+          "future_after": 1.61960781,
+          "heldout_after": 1.61443353
+        },
+        "push": {
+          "immediate_after": 1.55797553,
+          "origin_after_horizon": 1.52983677,
+          "future_after": 1.61888909,
+          "heldout_after": 1.61526036
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0004990099999999664,
+          "origin_after_horizon": -0.0002326999999999746,
+          "future_after": -0.00039386999999990735,
+          "heldout_after": 0.0003720500000001792
+        },
+        "push": {
+          "immediate_after": 0.0004894699999999919,
+          "origin_after_horizon": 0.00010752999999996682,
+          "future_after": 0.0003248500000001542,
+          "heldout_after": -0.00045477999999987695
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 128,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "brake"
+        ],
+        "future_after": [
+          "brake"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "d3ee67892b4f5952",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.558465,
+          "origin_after_horizon": 1.49797237,
+          "future_after": 1.6280514,
+          "heldout_after": 1.6165812
+        },
+        "brake": {
+          "immediate_after": 1.55896401,
+          "origin_after_horizon": 1.49728823,
+          "future_after": 1.62725365,
+          "heldout_after": 1.61386693
+        },
+        "push": {
+          "immediate_after": 1.55797553,
+          "origin_after_horizon": 1.49896348,
+          "future_after": 1.62883997,
+          "heldout_after": 1.61944914
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0004990099999999664,
+          "origin_after_horizon": 0.0006841399999999442,
+          "future_after": 0.0007977499999998194,
+          "heldout_after": 0.0027142700000000186
+        },
+        "push": {
+          "immediate_after": 0.0004894699999999919,
+          "origin_after_horizon": -0.0009911099999999617,
+          "future_after": -0.0007885700000000995,
+          "heldout_after": -0.0028679400000000133
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 384,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "brake"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "e7d59e6ea90652c4",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.4898901,
+          "origin_after_horizon": 1.4898901,
+          "future_after": 1.61214554,
+          "heldout_after": 1.57129753
+        },
+        "brake": {
+          "immediate_after": 1.49043298,
+          "origin_after_horizon": 1.49043298,
+          "future_after": 1.61203933,
+          "heldout_after": 1.57123327
+        },
+        "push": {
+          "immediate_after": 1.48934877,
+          "origin_after_horizon": 1.48934877,
+          "future_after": 1.61225259,
+          "heldout_after": 1.57136273
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0005428800000000233,
+          "origin_after_horizon": -0.0005428800000000233,
+          "future_after": 0.00010620999999999547,
+          "heldout_after": 6.426000000003818e-05
+        },
+        "push": {
+          "immediate_after": 0.0005413299999998955,
+          "origin_after_horizon": 0.0005413299999998955,
+          "future_after": -0.00010704999999999742,
+          "heldout_after": -6.519999999987647e-05
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 384,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "e7d59e6ea90652c4",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.4898901,
+          "origin_after_horizon": 1.44076526,
+          "future_after": 1.60414696,
+          "heldout_after": 1.57161796
+        },
+        "brake": {
+          "immediate_after": 1.49043298,
+          "origin_after_horizon": 1.44239271,
+          "future_after": 1.60425842,
+          "heldout_after": 1.57147884
+        },
+        "push": {
+          "immediate_after": 1.48934877,
+          "origin_after_horizon": 1.43916321,
+          "future_after": 1.60403752,
+          "heldout_after": 1.57176125
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0005428800000000233,
+          "origin_after_horizon": -0.0016274499999999748,
+          "future_after": -0.00011146000000006318,
+          "heldout_after": 0.0001391200000000481
+        },
+        "push": {
+          "immediate_after": 0.0005413299999998955,
+          "origin_after_horizon": 0.0016020500000000215,
+          "future_after": 0.00010943999999990517,
+          "heldout_after": -0.00014329000000001813
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 42,
+      "checkpoint": 384,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "brake"
+        ],
+        "heldout_after": [
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "e7d59e6ea90652c4",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.4898901,
+          "origin_after_horizon": 1.4367969,
+          "future_after": 1.58324635,
+          "heldout_after": 1.59764552
+        },
+        "brake": {
+          "immediate_after": 1.49043298,
+          "origin_after_horizon": 1.43718266,
+          "future_after": 1.58221543,
+          "heldout_after": 1.5969106
+        },
+        "push": {
+          "immediate_after": 1.48934877,
+          "origin_after_horizon": 1.43648291,
+          "future_after": 1.58448064,
+          "heldout_after": 1.59845614
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0005428800000000233,
+          "origin_after_horizon": -0.00038575999999990174,
+          "future_after": 0.0010309200000000462,
+          "heldout_after": 0.0007349199999999723
+        },
+        "push": {
+          "immediate_after": 0.0005413299999998955,
+          "origin_after_horizon": 0.0003139899999999862,
+          "future_after": -0.0012342899999999712,
+          "heldout_after": -0.0008106199999999841
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 1,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "245789686a9347b0",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.54469872,
+          "origin_after_horizon": 3.54469872,
+          "future_after": 4.72008038,
+          "heldout_after": 4.65792465
+        },
+        "brake": {
+          "immediate_after": 3.58802152,
+          "origin_after_horizon": 3.58802152,
+          "future_after": 4.75112391,
+          "heldout_after": 4.68982601
+        },
+        "push": {
+          "immediate_after": 3.50295591,
+          "origin_after_horizon": 3.50295591,
+          "future_after": 4.68971348,
+          "heldout_after": 4.62680435
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.043322799999999884,
+          "origin_after_horizon": -0.043322799999999884,
+          "future_after": -0.03104352999999982,
+          "heldout_after": -0.03190135999999999
+        },
+        "push": {
+          "immediate_after": 0.04174281000000013,
+          "origin_after_horizon": 0.04174281000000013,
+          "future_after": 0.030366899999999752,
+          "heldout_after": 0.031120300000000434
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 1,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "245789686a9347b0",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.54469872,
+          "origin_after_horizon": 2.64636588,
+          "future_after": 3.14277267,
+          "heldout_after": 3.18212867
+        },
+        "brake": {
+          "immediate_after": 3.58802152,
+          "origin_after_horizon": 2.67623186,
+          "future_after": 3.16469717,
+          "heldout_after": 3.20984054
+        },
+        "push": {
+          "immediate_after": 3.50295591,
+          "origin_after_horizon": 2.6159656,
+          "future_after": 3.1213479,
+          "heldout_after": 3.15447068
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.043322799999999884,
+          "origin_after_horizon": -0.029865980000000292,
+          "future_after": -0.021924500000000346,
+          "heldout_after": -0.027711870000000083
+        },
+        "push": {
+          "immediate_after": 0.04174281000000013,
+          "origin_after_horizon": 0.030400279999999835,
+          "future_after": 0.02142476999999987,
+          "heldout_after": 0.0276579899999998
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 1,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "245789686a9347b0",
+      "losses": {
+        "hold": {
+          "immediate_after": 3.54469872,
+          "origin_after_horizon": 1.85453463,
+          "future_after": 2.23078394,
+          "heldout_after": 2.21223021
+        },
+        "brake": {
+          "immediate_after": 3.58802152,
+          "origin_after_horizon": 1.86892939,
+          "future_after": 2.24432302,
+          "heldout_after": 2.22491193
+        },
+        "push": {
+          "immediate_after": 3.50295591,
+          "origin_after_horizon": 1.84235013,
+          "future_after": 2.21730804,
+          "heldout_after": 2.19967628
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.043322799999999884,
+          "origin_after_horizon": -0.01439475999999984,
+          "future_after": -0.013539080000000148,
+          "heldout_after": -0.01268172000000023
+        },
+        "push": {
+          "immediate_after": 0.04174281000000013,
+          "origin_after_horizon": 0.012184500000000043,
+          "future_after": 0.013475899999999985,
+          "heldout_after": 0.012553930000000157
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 32,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "2c7aad578e1fcaf9",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.92305362,
+          "origin_after_horizon": 1.92305362,
+          "future_after": 2.03449059,
+          "heldout_after": 2.02392173
+        },
+        "brake": {
+          "immediate_after": 1.92427731,
+          "origin_after_horizon": 1.92427731,
+          "future_after": 2.03476787,
+          "heldout_after": 2.02440977
+        },
+        "push": {
+          "immediate_after": 1.92183781,
+          "origin_after_horizon": 1.92183781,
+          "future_after": 2.03422046,
+          "heldout_after": 2.02344155
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0012236899999999995,
+          "origin_after_horizon": -0.0012236899999999995,
+          "future_after": -0.0002772800000001574,
+          "heldout_after": -0.0004880400000000229
+        },
+        "push": {
+          "immediate_after": 0.0012158099999999283,
+          "origin_after_horizon": 0.0012158099999999283,
+          "future_after": 0.0002701300000000906,
+          "heldout_after": 0.0004801800000002743
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 32,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "2c7aad578e1fcaf9",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.92305362,
+          "origin_after_horizon": 1.82016492,
+          "future_after": 1.99726117,
+          "heldout_after": 1.97398722
+        },
+        "brake": {
+          "immediate_after": 1.92427731,
+          "origin_after_horizon": 1.82350945,
+          "future_after": 1.99799228,
+          "heldout_after": 1.97520542
+        },
+        "push": {
+          "immediate_after": 1.92183781,
+          "origin_after_horizon": 1.81685662,
+          "future_after": 1.99654913,
+          "heldout_after": 1.9727937
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0012236899999999995,
+          "origin_after_horizon": -0.003344529999999901,
+          "future_after": -0.0007311100000000348,
+          "heldout_after": -0.0012182000000000581
+        },
+        "push": {
+          "immediate_after": 0.0012158099999999283,
+          "origin_after_horizon": 0.0033083000000000418,
+          "future_after": 0.0007120400000000249,
+          "heldout_after": 0.001193519999999948
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 32,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "2c7aad578e1fcaf9",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.92305362,
+          "origin_after_horizon": 1.79334211,
+          "future_after": 1.91646004,
+          "heldout_after": 1.84490836
+        },
+        "brake": {
+          "immediate_after": 1.92427731,
+          "origin_after_horizon": 1.79601383,
+          "future_after": 1.91857505,
+          "heldout_after": 1.84758604
+        },
+        "push": {
+          "immediate_after": 1.92183781,
+          "origin_after_horizon": 1.79079676,
+          "future_after": 1.9144032,
+          "heldout_after": 1.84230959
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": -0.0012236899999999995,
+          "origin_after_horizon": -0.002671719999999933,
+          "future_after": -0.0021150100000000283,
+          "heldout_after": -0.0026776799999999046
+        },
+        "push": {
+          "immediate_after": 0.0012158099999999283,
+          "origin_after_horizon": 0.0025453499999998908,
+          "future_after": 0.0020568400000000597,
+          "heldout_after": 0.0025987700000000835
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 128,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "hold",
+          "brake"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "e49f025729a289e9",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.68715465,
+          "origin_after_horizon": 1.68715465,
+          "future_after": 1.73112595,
+          "heldout_after": 1.65736771
+        },
+        "brake": {
+          "immediate_after": 1.68715465,
+          "origin_after_horizon": 1.68715465,
+          "future_after": 1.73112595,
+          "heldout_after": 1.65736771
+        },
+        "push": {
+          "immediate_after": 1.68639922,
+          "origin_after_horizon": 1.68639922,
+          "future_after": 1.73127663,
+          "heldout_after": 1.65721011
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.0007554300000001124,
+          "origin_after_horizon": 0.0007554300000001124,
+          "future_after": -0.00015067999999995862,
+          "heldout_after": 0.00015759999999986896
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 128,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "push"
+        ],
+        "heldout_after": [
+          "push"
+        ]
+      },
+      "common_initial_state_hash": "e49f025729a289e9",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.68715465,
+          "origin_after_horizon": 1.62324727,
+          "future_after": 1.71570265,
+          "heldout_after": 1.63824201
+        },
+        "brake": {
+          "immediate_after": 1.68715465,
+          "origin_after_horizon": 1.62324727,
+          "future_after": 1.71570265,
+          "heldout_after": 1.63824201
+        },
+        "push": {
+          "immediate_after": 1.68639922,
+          "origin_after_horizon": 1.62096393,
+          "future_after": 1.71552575,
+          "heldout_after": 1.6377753
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.0007554300000001124,
+          "origin_after_horizon": 0.002283339999999967,
+          "future_after": 0.00017690000000003536,
+          "heldout_after": 0.0004667099999999813
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 128,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "hold",
+          "brake"
+        ],
+        "heldout_after": [
+          "hold",
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "e49f025729a289e9",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.68715465,
+          "origin_after_horizon": 1.53284574,
+          "future_after": 1.70043528,
+          "heldout_after": 1.63022637
+        },
+        "brake": {
+          "immediate_after": 1.68715465,
+          "origin_after_horizon": 1.53284574,
+          "future_after": 1.70043528,
+          "heldout_after": 1.63022637
+        },
+        "push": {
+          "immediate_after": 1.68639922,
+          "origin_after_horizon": 1.53040636,
+          "future_after": 1.70201361,
+          "heldout_after": 1.63057399
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.0007554300000001124,
+          "origin_after_horizon": 0.002439379999999991,
+          "future_after": -0.0015783300000000722,
+          "heldout_after": -0.00034762000000010396
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 384,
+      "horizon": 1,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "hold",
+          "brake"
+        ],
+        "heldout_after": [
+          "hold",
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "bf184b48e1caeba4",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.64599657,
+          "origin_after_horizon": 1.64599657,
+          "future_after": 1.61395156,
+          "heldout_after": 1.59202385
+        },
+        "brake": {
+          "immediate_after": 1.64599657,
+          "origin_after_horizon": 1.64599657,
+          "future_after": 1.61395156,
+          "heldout_after": 1.59202385
+        },
+        "push": {
+          "immediate_after": 1.64560497,
+          "origin_after_horizon": 1.64560497,
+          "future_after": 1.61411035,
+          "heldout_after": 1.59209847
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.0003916000000001585,
+          "origin_after_horizon": 0.0003916000000001585,
+          "future_after": -0.00015878999999996424,
+          "heldout_after": -7.462000000013624e-05
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 384,
+      "horizon": 4,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "hold",
+          "brake"
+        ],
+        "heldout_after": [
+          "hold",
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "bf184b48e1caeba4",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.64599657,
+          "origin_after_horizon": 1.62387455,
+          "future_after": 1.61614537,
+          "heldout_after": 1.59170151
+        },
+        "brake": {
+          "immediate_after": 1.64599657,
+          "origin_after_horizon": 1.62387455,
+          "future_after": 1.61614537,
+          "heldout_after": 1.59170151
+        },
+        "push": {
+          "immediate_after": 1.64560497,
+          "origin_after_horizon": 1.62290454,
+          "future_after": 1.61639881,
+          "heldout_after": 1.59180295
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.0003916000000001585,
+          "origin_after_horizon": 0.0009700100000000766,
+          "future_after": -0.0002534400000000492,
+          "heldout_after": -0.00010143999999989717
+        }
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 384,
+      "horizon": 16,
+      "winners": {
+        "immediate_after": [
+          "push"
+        ],
+        "origin_after_horizon": [
+          "push"
+        ],
+        "future_after": [
+          "hold",
+          "brake"
+        ],
+        "heldout_after": [
+          "hold",
+          "brake"
+        ]
+      },
+      "common_initial_state_hash": "bf184b48e1caeba4",
+      "losses": {
+        "hold": {
+          "immediate_after": 1.64599657,
+          "origin_after_horizon": 1.58043838,
+          "future_after": 1.62740481,
+          "heldout_after": 1.58981001
+        },
+        "brake": {
+          "immediate_after": 1.64599657,
+          "origin_after_horizon": 1.58043838,
+          "future_after": 1.62740481,
+          "heldout_after": 1.58981001
+        },
+        "push": {
+          "immediate_after": 1.64560497,
+          "origin_after_horizon": 1.57873654,
+          "future_after": 1.62826169,
+          "heldout_after": 1.59006464
+        }
+      },
+      "advantage_vs_hold": {
+        "brake": {
+          "immediate_after": 0.0,
+          "origin_after_horizon": 0.0,
+          "future_after": 0.0,
+          "heldout_after": 0.0
+        },
+        "push": {
+          "immediate_after": 0.0003916000000001585,
+          "origin_after_horizon": 0.0017018399999999545,
+          "future_after": -0.0008568799999999488,
+          "heldout_after": -0.0002546299999999224
+        }
+      }
+    }
+  ],
+  "action_interpretation": "One intervention followed by HOLD on the same subsequent windows. No branch updates the host policy.",
+  "tie_rule": "Exact recorded F32 loss equality; all tied winners retained.",
+  "identical_hold_brake_snapshots_at_dampen_floor": [
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 128,
+      "dampen": 0.300000012,
+      "state_hash": "c941caeb3e91825b"
+    },
+    {
+      "body": "simple",
+      "seed": 73,
+      "checkpoint": 384,
+      "dampen": 0.300000012,
+      "state_hash": "a395a4fc8c1aa867"
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 128,
+      "dampen": 0.300000012,
+      "state_hash": "422832f8a3c7c173"
+    },
+    {
+      "body": "hevlm",
+      "seed": 73,
+      "checkpoint": 384,
+      "dampen": 0.300000012,
+      "state_hash": "eee1fddd190b96f5"
+    }
+  ],
+  "interpretation": "All 16 snapshots favored PUSH by immediate same-window loss. At horizon 16, future probes favored PUSH in nine snapshots, BRAKE in four and tied HOLD/BRAKE in three. The immediate target and future consequences therefore select different actions in seven of these fixed states. The policy capacity and training target were unchanged.",
+  "raw_archive": {
+    "filename": "chuck-architect-scenarios-0dea133-raw.tar.gz",
+    "bytes": 241952087,
+    "sha256": "787176b1de994bc7082cd2ac429bbd29217083e98ce9bce7f57b6038325faef9",
+    "manifest_sha256": "1e2eddd402836dc9ba17685a3879c90e28977743305d09f6560a9f4d51691a1e",
+    "files": 314,
+    "all_members_verified": true,
+    "source_commit": "0dea13331077d9c5da504c5c6608b4f804f345ed",
+    "verification_sha256": "e39caba8c50cb1ff417d2a33f5d9c603b8d8873e679ba0e5e2a6ed1b5b860742",
+    "layout": {
+      "training/": "Final traces, corpus/tokens/vocab, initial fork body/gradients/moments/controls/policies and final host lives.",
+      "verification.json": "Consolidated integration and independent audit receipt.",
+      "verification/": "Exact raw metadata/logs and mutation/probe sources referenced by verification.json.",
+      "manifest.json": "Per-member SHA-256 and size; all 314 members verified."
+    }
+  }
+}
