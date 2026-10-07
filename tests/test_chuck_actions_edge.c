@@ -37,6 +37,7 @@ typedef struct {
     nt_chuck_param_state local[3];
     float weight[3][2], moment[3][2], variance[3][2];
     int time[3];
+    int lengths[3][3];
     uint32_t rng;
 } snapshot;
 static snapshot capture(int count) {
@@ -48,9 +49,18 @@ static snapshot capture(int count) {
     for (int i = 0; i < count; i++) {
         s.local[i] = t->chuck_params[i];
         s.time[i] = t->adam[i].t;
+        s.lengths[i][0] = t->entries[indices[i]].grad ? t->entries[indices[i]].grad->len : -1;
+        s.lengths[i][1] = t->adam[i].m ? t->adam[i].m->len : -1;
+        s.lengths[i][2] = t->adam[i].v ? t->adam[i].v->len : -1;
         memcpy(s.weight[i], weights[i]->data, sizeof s.weight[i]);
-        memcpy(s.moment[i], t->adam[i].m->data, sizeof s.moment[i]);
-        memcpy(s.variance[i], t->adam[i].v->data, sizeof s.variance[i]);
+        if (t->adam[i].m) {
+            int n = t->adam[i].m->len < 2 ? t->adam[i].m->len : 2;
+            memcpy(s.moment[i], t->adam[i].m->data, (size_t)n * sizeof(float));
+        }
+        if (t->adam[i].v) {
+            int n = t->adam[i].v->len < 2 ? t->adam[i].v->len : 2;
+            memcpy(s.variance[i], t->adam[i].v->data, (size_t)n * sizeof(float));
+        }
     }
     return s;
 }
@@ -154,6 +164,76 @@ static int local_state_refusals(void) {
     close_body(); return 1;
 }
 
+static void replace_buffer(nt_tensor **buffer, int length) {
+    nt_tensor_free(*buffer);
+    *buffer = length < 0 ? NULL : nt_tensor_new((size_t)length);
+    if (*buffer)
+        for (int i = 0; i < length; i++) (*buffer)->data[i] = .1f;
+}
+
+static int full_parameter_shapes(void) {
+    // All seven shorter-buffer combinations, including equally short m/v/grad.
+    // Put the invalid shape in the last slot to require whole-step refusal.
+    for (int short_mask = 1; short_mask < 8; short_mask++) {
+        open_body(2);
+        nt_tape *t = nt_tape_get();
+        nt_tensor **buffers[] = {&t->entries[indices[1]].grad, &t->adam[1].m, &t->adam[1].v};
+        for (int j = 0; j < 3; j++)
+            if (short_mask & (1 << j)) replace_buffer(buffers[j], 1);
+        snapshot before = capture(2);
+        nt_chuck_observation o, sentinel;
+        memset(&o, 0x3a, sizeof o); sentinel = o;
+        CHECK(nt_tape_chuck_observe(1, &o) == NT_CHUCK_E_STATE &&
+              memcmp(&o, &sentinel, sizeof o) == 0,
+              "a short present buffer cannot produce a partial observation");
+        CHECK(action(NT_CHUCK_ACTION_HOLD, 0, 1) == NT_CHUCK_E_STATE && unchanged(&before, 2),
+              "all present buffers must cover the complete parameter before any slot updates");
+    }
+    // An absent buffer keeps the old no-update rule, but cannot conceal a
+    // malformed shape in another buffer that is present.
+    for (int missing = 0; missing < 3; missing++) {
+        for (int shorter = 0; shorter < 3; shorter++) {
+            if (missing == shorter) continue;
+            open_body(2);
+            nt_tape *t = nt_tape_get();
+            nt_tensor **buffers[] = {&t->entries[indices[1]].grad, &t->adam[1].m, &t->adam[1].v};
+            replace_buffer(buffers[missing], -1);
+            replace_buffer(buffers[shorter], 1);
+            snapshot before = capture(2);
+            CHECK(action(NT_CHUCK_ACTION_HOLD, 0, 1) == NT_CHUCK_E_STATE && unchanged(&before, 2),
+                  "missing buffer does not hide another present buffer's short shape");
+            nt_chuck_observation o;
+            CHECK(nt_tape_chuck_observe(1, &o) == NT_CHUCK_E_STATE,
+                  "observation validates present shapes independently of missing buffers");
+        }
+    }
+    for (int missing_mask = 1; missing_mask < 8; missing_mask++) {
+        open_body(2);
+        nt_tape *t = nt_tape_get();
+        nt_tensor **buffers[] = {&t->entries[indices[1]].grad, &t->adam[1].m, &t->adam[1].v};
+        for (int j = 0; j < 3; j++)
+            if (missing_mask & (1 << j)) replace_buffer(buffers[j], -1);
+        CHECK(action(NT_CHUCK_ACTION_HOLD, 0, 1) == NT_CHUCK_OK,
+              "valid present shapes preserve the missing-buffer skip");
+        CHECK(t->adam[0].t == 1 && t->adam[1].t == 0 &&
+              weights[0]->data[0] != 1 && weights[1]->data[0] == 2 && weights[1]->data[1] == -3,
+              "only the complete slot updates when another slot has an absent buffer");
+    }
+    open_body(1);
+    nt_tape *t = nt_tape_get();
+    nt_tensor **buffers[] = {&t->entries[0].grad, &t->adam[0].m, &t->adam[0].v};
+    for (int j = 0; j < 3; j++) {
+        replace_buffer(buffers[j], 3);
+        (*buffers[j])->data[2] = 7.0f + j;
+    }
+    CHECK(action(NT_CHUCK_ACTION_HOLD, 0, 1) == NT_CHUCK_OK &&
+          weights[0]->data[0] != 1 && weights[0]->data[1] != -2,
+          "larger buffers cover and update every parameter element");
+    CHECK(t->entries[0].grad->data[2] == 7 && t->adam[0].m->data[2] == 8 &&
+          t->adam[0].v->data[2] == 9, "padding beyond the parameter is untouched");
+    close_body(); return 1;
+}
+
 static int controls_and_noise(void) {
     open_body(1);
     nt_chuck_action_limits l;
@@ -224,7 +304,7 @@ int main(void) {
     struct { const char *name; int (*run)(void); } cases[] = {
         {"empty-and-frozen", empty_and_frozen}, {"gradient-refusals", gradient_refusals},
         {"local-state-refusals", local_state_refusals}, {"controls-and-noise", controls_and_noise},
-        {"boundary-counters", boundary_counters}
+        {"boundary-counters", boundary_counters}, {"full-parameter-shapes", full_parameter_shapes}
     };
     int passed = 0;
     for (unsigned i = 0; i < sizeof cases / sizeof *cases; i++) {
