@@ -23,6 +23,7 @@
 - [what's inside](#whats-inside)
 - [operations](#operations)
 - [owned sampling](#owned-sampling)
+- [numerical values](#numerical-values)
 - [optimizers](#optimizers)
 - [the chuck optimizer](#the-chuck-optimizer)
 - [Chuck: Loss Architect](#chuck-loss-architect)
@@ -457,6 +458,33 @@ if (nt_rng_categorical(&voice, weights, 3, 0.7f, &choice) == 0) {
     // choice addresses a positive-weight entry; voice now owns the next draw.
 }
 ```
+
+## numerical values
+
+Haiku's two small learners keep their parameters, activations, and gradients in
+AML arrays. Seven stateless CPU operations give that language canonical NoTorch
+arithmetic without sharing a mutable tape between voices:
+
+| C entry point | Operation |
+| --- | --- |
+| `nt_linear_values` | Row-major `W*x+b`, bias-first float accumulation |
+| `nt_linear_vjp_values` | Packed weight, bias, and input derivatives |
+| `nt_tanh_values` | Elementwise tanh |
+| `nt_tanh_vjp_values` | Reverse derivative from saved tanh outputs |
+| `nt_mse_grad_values` | Mean squared loss and prediction derivatives |
+| `nt_sgd_values` | Fresh parameter values after plain SGD |
+| `nt_rng_normal_values` | Standard normal draws from caller-owned PCG32 state |
+
+The caller supplies disjoint output storage and publishes it after success.
+These functions allocate nothing, retain no pointers, and leave the global tape
+untouched. Finite operands, dimensions, derivative domains, and results are
+checked. An arithmetic failure may leave scratch output partially written;
+discard it. Normal draws advance the stream only after the complete call
+succeeds, consuming exactly two words per value with no hidden spare cache.
+Model composition, clipping, and experience belong to the organism.
+
+See [numerical values](docs/NUMERICAL_VALUES.md) for packed layouts, arithmetic
+order, normal reference vectors, and the native verification gate.
 
 ## optimizers
 
@@ -1046,6 +1074,7 @@ ten test binaries (run output is the source of truth for counts):
 - **`tests/test_sigmoid_scale.c`** — 4 tests: `nt_sigmoid` forward/backward, `nt_scale_by_t` forward/backward (scalar × tensor with grad flowing to both)
 - **`tests/test_tanh_sgd.c`** — tanh gradients and shape, frozen/unused parameters, optimizer state preservation, external clipping, and 24-step 5→8→1 / 6→4→1 SGD trajectories against a double-precision reference. `make check_tanh_sgd BLAS_FLAGS= BLAS_LIBS=` runs with C and libm.
 - **`tests/test_sampling.c`** — owned PCG32 vectors, bounded rejection, stable weighted selection, invalid-input preservation, and isolation from existing streams. `make check_sampling BLAS_FLAGS= BLAS_LIBS=` runs with C and libm.
+- **`tests/test_numerical_values.c`** — stateless forward/reverse arithmetic, all 57 finite-difference gradients, independent training trajectories and normal vectors, thread ownership, and legacy-tape isolation. `make check_numerical_values BLAS_FLAGS= BLAS_LIBS=` runs the gate.
 - **`tests/test_gguf.c`** — GGUF parser smoke test (F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K dequant)
 - **`tests/test_qmatvec.c`** — packed quantized matvec (`nt_qmatvec`) vs the dequant→cblas oracle across all 7 GGUF dtypes (F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K), relative error ~1e-6
 

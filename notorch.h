@@ -1000,6 +1000,32 @@ int nt_categorical_index(const float* weights, int n, float temperature,
 int nt_rng_categorical(uint64_t* state, const float* weights, int n,
                        float temperature, int* out);
 
+// Stateless numerical values. Inputs are borrowed finite CPU float buffers;
+// outputs must be disjoint from all inputs and have the documented capacity.
+// No function allocates, retains pointers, or reads/modifies the global tape.
+// Return 0 on success, -1 for invalid arguments or nonfinite arithmetic.
+// Treat output as unpublished scratch: discard it on any failure (arithmetic
+// failure may leave a partial result). Inputs are never modified.
+// Every vector/matrix/output length is positive and <= NT_MAX_ELEMENTS.
+// W is row-major [rows, cols]; accumulate each row starting with its bias.
+int nt_linear_values(const float* w, const float* b, const float* x,
+                     int rows, int cols, float* out); // out[rows]
+// Vector-Jacobian product, packed as [dW(rows*cols), db(rows), dx(cols)].
+int nt_linear_vjp_values(const float* w, const float* x, const float* dy,
+                         int rows, int cols, float* out);
+int nt_tanh_values(const float* x, int n, float* out); // out[n]
+// y is the saved activation, within [-1,1]; out = dy * (1-y*y).
+int nt_tanh_vjp_values(const float* y, const float* dy, int n, float* out);
+// out[n+1] = [mean((pred-target)^2), 2*(pred-target)/n ...].
+int nt_mse_grad_values(const float* pred, const float* target, int n, float* out);
+// Functional SGD, out[n] = params - lr*grad; finite lr >= 0.
+int nt_sgd_values(const float* params, const float* grad, int n,
+                  float lr, float* out);
+// Owned standard normals: two PCG32 words per value, Box-Muller cosine branch,
+// no spare cache. State commits only after success; same scratch-output rule.
+// u1=(word1+1)/4294967297, u2=word2/4294967296 (computed in double).
+int nt_rng_normal_values(uint64_t* state, int n, float* out);
+
 #ifdef __cplusplus
 }
 #endif

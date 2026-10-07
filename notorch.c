@@ -387,6 +387,135 @@ void nt_tensor_print(const nt_tensor* t, const char* name) {
 // AUTOGRAD TAPE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Stateless CPU values. AML and other callers own parameters, activations,
+// gradients and output publication; these kernels never enter the tape.
+static int nt_values_finite(const float* data, size_t n) {
+    if (!data) return 0;
+    for (size_t i = 0; i < n; i++)
+        if (!isfinite(data[i])) return 0;
+    return 1;
+}
+
+static int nt_values_shape(int rows, int cols, size_t* weights) {
+    if (rows <= 0 || cols <= 0 || rows > NT_MAX_ELEMENTS ||
+        cols > NT_MAX_ELEMENTS) return 0;
+    if ((size_t)rows > (size_t)NT_MAX_ELEMENTS / (size_t)cols) return 0;
+    size_t n = (size_t)rows * (size_t)cols;
+    if (n > NT_MAX_ELEMENTS) return 0;
+    *weights = n;
+    return 1;
+}
+
+int nt_linear_values(const float* w, const float* b, const float* x,
+                     int rows, int cols, float* out) {
+    size_t n;
+    if (!out || !nt_values_shape(rows, cols, &n) ||
+        !nt_values_finite(w, n) || !nt_values_finite(b, (size_t)rows) ||
+        !nt_values_finite(x, (size_t)cols)) return -1;
+    for (int r = 0; r < rows; r++) {
+        float value = b[r];
+        for (int c = 0; c < cols; c++)
+            value += w[(size_t)r * cols + c] * x[c];
+        if (!isfinite(value)) return -1;
+        out[r] = value;
+    }
+    return 0;
+}
+
+int nt_linear_vjp_values(const float* w, const float* x, const float* dy,
+                         int rows, int cols, float* out) {
+    size_t n;
+    if (!out || !nt_values_shape(rows, cols, &n) ||
+        n + (size_t)rows + (size_t)cols > NT_MAX_ELEMENTS ||
+        !nt_values_finite(w, n) || !nt_values_finite(x, (size_t)cols) ||
+        !nt_values_finite(dy, (size_t)rows)) return -1;
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            float value = dy[r] * x[c];
+            if (!isfinite(value)) return -1;
+            out[(size_t)r * cols + c] = value;
+        }
+        out[n + (size_t)r] = dy[r];
+    }
+    for (int c = 0; c < cols; c++) {
+        float value = 0.0f;
+        for (int r = 0; r < rows; r++)
+            value += w[(size_t)r * cols + c] * dy[r];
+        if (!isfinite(value)) return -1;
+        out[n + (size_t)rows + c] = value;
+    }
+    return 0;
+}
+
+int nt_tanh_values(const float* x, int n, float* out) {
+    if (!out || n <= 0 || n > NT_MAX_ELEMENTS ||
+        !nt_values_finite(x, (size_t)n)) return -1;
+    for (int i = 0; i < n; i++) {
+        float value = tanhf(x[i]);
+        if (!isfinite(value)) return -1;
+        out[i] = value;
+    }
+    return 0;
+}
+
+int nt_tanh_vjp_values(const float* y, const float* dy, int n, float* out) {
+    if (!out || n <= 0 || n > NT_MAX_ELEMENTS ||
+        !nt_values_finite(y, (size_t)n) ||
+        !nt_values_finite(dy, (size_t)n)) return -1;
+    for (int i = 0; i < n; i++)
+        if (y[i] < -1.0f || y[i] > 1.0f) return -1;
+    for (int i = 0; i < n; i++) {
+        float value = dy[i] * (1.0f - y[i] * y[i]);
+        if (!isfinite(value)) return -1;
+        out[i] = value;
+    }
+    return 0;
+}
+
+int nt_mse_grad_values(const float* pred, const float* target, int n, float* out) {
+    if (!out || n <= 0 || n >= NT_MAX_ELEMENTS ||
+        !nt_values_finite(pred, (size_t)n) ||
+        !nt_values_finite(target, (size_t)n)) return -1;
+    float loss = 0.0f;
+    for (int i = 0; i < n; i++) {
+        float diff = pred[i] - target[i];
+        float grad = 2.0f * diff / (float)n;
+        loss += diff * diff;
+        if (!isfinite(loss) || !isfinite(grad)) return -1;
+        out[i + 1] = grad;
+    }
+    out[0] = loss / (float)n;
+    return isfinite(out[0]) ? 0 : -1;
+}
+
+int nt_sgd_values(const float* params, const float* grad, int n,
+                  float lr, float* out) {
+    if (!out || n <= 0 || n > NT_MAX_ELEMENTS || !isfinite(lr) || lr < 0.0f ||
+        !nt_values_finite(params, (size_t)n) ||
+        !nt_values_finite(grad, (size_t)n)) return -1;
+    for (int i = 0; i < n; i++) {
+        float value = params[i] - lr * grad[i];
+        if (!isfinite(value)) return -1;
+        out[i] = value;
+    }
+    return 0;
+}
+
+int nt_rng_normal_values(uint64_t* state, int n, float* out) {
+    if (!state || !out || n <= 0 || n > NT_MAX_ELEMENTS) return -1;
+    uint64_t next = *state;
+    for (int i = 0; i < n; i++) {
+        double u1 = ((double)nt_rng_u32(&next) + 1.0) / 4294967297.0;
+        double u2 = (double)nt_rng_u32(&next) / 4294967296.0;
+        float value = (float)(sqrt(-2.0 * log(u1)) *
+                             cos(6.283185307179586476925286766559 * u2));
+        if (!isfinite(value)) return -1;
+        out[i] = value;
+    }
+    *state = next;
+    return 0;
+}
+
 static nt_tape g_tape = {0};
 
 void nt_tape_start(void) {
