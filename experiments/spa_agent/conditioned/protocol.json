@@ -1,0 +1,234 @@
+{
+  "schema": 1,
+  "name": "SPA conditioned repeated consequence credit v1",
+  "frozen_before_experiment_fitting_and_new_generation": true,
+  "base_commit": "420fa54fe3b92cdb2f83e20d19fc887b09db3d8e",
+  "question": "Does statewise target conditioning improve acquired conditional sentence-action choices at fixed perception, capacity, order, reward and fitting budget?",
+  "causal_axis": "Target conditioning changes gradient amplitude and relative state weighting together.",
+  "parents": {
+    "protocol.json": {
+      "path": "experiments/spa_agent/replicates/protocol.json",
+      "sha256": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75"
+    },
+    "receipts.json": {
+      "path": "experiments/spa_agent/replicates/receipts.json",
+      "sha256": "de80eb47b78ce0a4474decb1a5317b26d3c27400756eef3829b2dc7d2d2296de"
+    },
+    "raw_traces.jsonl.gz": {
+      "path": "experiments/spa_agent/replicates/raw_traces.jsonl.gz",
+      "sha256": "dac359967bea506047813e25f88d7691010c0d8b47ba0b61fe35051f28300e12"
+    }
+  },
+  "diagnosis": {
+    "diagnosis.py": {
+      "path": "experiments/spa_agent/conditioned/diagnosis.py",
+      "sha256": "868eece807f8ae315b21f6a4b2a1577577bd42d1be3aa5726ac545c251db3c8e"
+    },
+    "diagnosis.json": {
+      "path": "experiments/spa_agent/conditioned/diagnosis.json",
+      "sha256": "76864d4cb9b48702f1c218edffd6941aea4e580efd827df5494b08f4f7636cb1"
+    }
+  },
+  "body": {
+    "repository": "ariannamethod/notorch-simple-llm",
+    "commit": "80b3bd611ed8c937efdc481dc07895c8e13e345d",
+    "recipe": "train_dracula.py",
+    "checkpoint": "weights/dracula.weights",
+    "checkpoint_sha256": "22ce6e5dfe4efb4a00477a9652784970dc53a69fea2825174398af749acda00d",
+    "corpus": "dracula.txt",
+    "corpus_sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c",
+    "parameters": 450688,
+    "architecture": "128-wide, two-layer, four-head RoPE/RMSNorm/SwiGLU transformer; hidden 384; 94 Unicode characters; context 64",
+    "numerical_engine": "upstream notorch.c linked with the independent C experiment runner",
+    "weights_frozen": true
+  },
+  "training": {
+    "seeds": [
+      42,
+      73
+    ],
+    "rows": 48,
+    "snapshots_per_seed": 24,
+    "epochs": 512,
+    "learning_rate": 0.03,
+    "scale_floor": 0.001,
+    "floor_reason": "Selected from exposed training outcomes only: cap amplification at approximately1000 and retain near-tie magnitude below the floor. The floor activates on one training state.",
+    "policy_seed": 1,
+    "exploration": 0,
+    "mode": "LEARNED",
+    "fits_per_arm": 24576,
+    "arms": [
+      "initial",
+      "raw_mean8",
+      "conditioned_mean8",
+      "shuffled_conditioned"
+    ],
+    "architecture": "unchanged29->8tanh->3,267parameters",
+    "replicates": 8,
+    "horizon": 4,
+    "order": "seed42 snapshots0..23 then seed73 snapshots0..23, same order every epoch",
+    "initial": "Fresh native seed1 life, zero online history. Each fitted arm begins independently from this exact life.",
+    "raw_control": "fit_repeated unchanged. Must reproduce parent mean8_h4 canonical life exactly before evaluation.",
+    "raw_control_life_sha256": "6fa4aeb4d40598a82728366f02efef20fa8ae8c2a145389864750ed27dab6cb9",
+    "parent_dataset": {
+      "stream": "training_dataset",
+      "seed": 0,
+      "bytes": 4742198,
+      "sha256": "1e5f789daef52fc1a8d1bf35fc69a6b522115fafbacb4853bb16d852280af73c"
+    },
+    "dataset_reuse": "Use retained parent samples byte-equivalently; only the outer protocol identity is relabelled. No training body generation.",
+    "shuffle": {
+      "group": "Identical(sentence_count,target index), preserving typed action coordinates and mask.",
+      "order": "Original global training row order within each group.",
+      "donor": "The next row in the group with cyclic wraparound: donor_index=(receiver_index+1)mod group_size.",
+      "transform": "Keep receiver features and feature-source identity; copy all8 fullH4 comparisons from the donor and bind each training-input source field to the receiver. Retain donor identities and every raw outcome record separately.",
+      "question": "Does correct association of a sentence state with its future outcomes improve selection beyond acquired action preferences?"
+    }
+  },
+  "conditioning": {
+    "reward_mean": "Compute each consequence reward using existing native float component arithmetic, double weighted sum, float cast and clipping to[-1,1]. Accumulate those clipped float rewards in double in replicate order and cast the mean to float for each action. Target is float(mean_reward[action]-mean_reward[KEEP]). Never average raw axes before reward clipping.",
+    "raw_delta": "Existing float32(mean_reward[action]-mean_reward[KEEP]) exactly",
+    "scale": "max(double(float32(scale_floor)),max_valid abs(double(raw_delta)))",
+    "target": "float32(double(raw_delta)/scale)",
+    "loss": "mean Huber delta1 across valid heads; same native simultaneous SGD and parameter bounds[-8,8]",
+    "receipt": "Raw native mean rewards, normalized targets, floor, actual double scale, pre/post scores and losses remain separate.",
+    "preserved": "Raw reward signs and within-state measured best-action ranking; all ordinary online state and canonical v1 encoding."
+  },
+  "evaluation": {
+    "seeds": [
+      509,
+      601
+    ],
+    "rows": 48,
+    "snapshots_per_seed": 24,
+    "generation": {
+      "minimum_generated_characters": 12,
+      "maximum_generated_characters": 64,
+      "stop_characters": ".!?",
+      "temperature": 0.8,
+      "initial_prompt_characters": 16,
+      "initial_prompt_selection": "SplitMix64 samples the sorted corpus sentence-start offsets (first character and the character after .!? followed by whitespace); choose 16 following codepoints.",
+      "base_chain": "Generate the complete four-sentence chain once per episode and seed; clone it into every arm before intervention. Store every generated token and termination flag.",
+      "rng": "Independent SplitMix64 generation stream per episode/slot. Reseeds use the same per-seed/episode/decision stream in every arm. Policy RNG is separate."
+    },
+    "state_source": "Unchanged spa_agent_demo learned-arm ordinary trajectory with diagnostics enabled. The policy under evaluation reads captured features; the reference host retains its existing online behavior.",
+    "readout": "Pure native score_experience on identical captured source29features, same masks and KEEP-first ties. Each of the two sealed fitting copies is scored; every readout/life byte must match.",
+    "seal_before_generation": "All8 canonical lives, both compressed fitting journals and training dataset/source/input/binary identities sealed before any509/601 body process.",
+    "primary": "Mean paired H4 raw native reward advantage over KEEP on48newstates,8continuations perstate. Compare associated conditioned with raw_mean8 and shuffled_conditioned.",
+    "secondary": [
+      "oracle regret",
+      "measured-best choice count at1e-7tolerance",
+      "action counts",
+      "acquired-vs-initial and raw-vs-conditioned action changes",
+      "beneficial/harmful changed choices",
+      "r0 and r1..7 advantages",
+      "per-seed and per-target values",
+      "all7raw axes and normalized generation cost",
+      "training fit and positive/negative alternative decisions"
+    ],
+    "fixed_policies": {
+      "keep": "KEEP",
+      "left": "RESEED_LEFT when available, otherwise KEEP",
+      "right": "RESEED_RIGHT when available, otherwise KEEP"
+    },
+    "sample_unit": "48source states nested in12episodes/two seeds;8draws are repeated outcomes, not384independent states.",
+    "exposure": "Seeds42/73 and earlier eval101/211/307/401 are exposed.509/601 absent from previous SPA protocols before this freeze.",
+    "known_geometry": "Target3 H4 continuation overwrites the initial intervention before reading it. Report cost-only outcomes separately."
+  },
+  "replication": {
+    "replicates": 8,
+    "replicate_order": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "source": "Restore the exact imported sentence chain, reseed counts, captured29features, source identities, and RNG witnesses for each source and initial action. No reconstruction claim for the unavailable original online agent struct.",
+    "r0_initial": "stream(seed,0x7370615f6163746e,episode,step)",
+    "r0_future": "stream(seed,0x7370615f66757472,episode*4+step,hop)",
+    "packed": "(episode*4+step)*8+replicate",
+    "r1_to_r7_initial": "stream(seed,0x7370615f72696e69,packed,0)",
+    "r1_to_r7_future": "stream(seed,0x7370615f72667574,packed,hop)",
+    "paired": "Precompute each (source,replicate,hop) start RNG outside the action loop. Every valid initial action shares that start. Each future hop has its own independently constructed start, regardless of earlier consumption.",
+    "continuation": {
+      "horizons": [
+        0,
+        1,
+        4
+      ],
+      "horizon_meaning": "Number of additional fixed host reseeds after the initial intervention; horizon 0 is its immediate consequence.",
+      "future_target": "(original_target + hop) modulo 4, hop starts at 1.",
+      "future_action": "RESEED_LEFT if future_target>0; otherwise RESEED_RIGHT. This is a frozen diagnostic host continuation and performs no agent learning.",
+      "future_host_rng": "stream(seed, 0x7370615f66757472, episode_index*4 + decision_index, hop), independently constructed at every hop and identical across initial alternatives.",
+      "generation": "The same parent 3-character-neighbor, min 12/max 64, temperature 0.8 recipe at every hop.",
+      "max_hop": 4,
+      "measurements_per_seed": 180
+    },
+    "measurements": "Retain complete H0,H1,H4 token chains, termination, RNG consumption, seven raw axes and cumulative cost. Fit H4 only.",
+    "native_aggregation": "Compute each consequence reward using existing native float component arithmetic, double weighted sum, float cast and clipping to[-1,1]. Accumulate those clipped float rewards in double in replicate order and cast the mean to float for each action. Target is float(mean_reward[action]-mean_reward[KEEP]). Never average raw axes before reward clipping.",
+    "count1": "Native fit_repeated with count1 delegates to fit_comparison exactly, including receipt and state bytes.",
+    "one_update": "Exactly one simultaneous native mean-Huber SGD update per state per epoch, regardless of replicate count."
+  },
+  "measurement": {
+    "axes": [
+      "local_connectedness",
+      "global_connectedness",
+      "coherence",
+      "novelty",
+      "repetition",
+      "collapse",
+      "continuity"
+    ],
+    "reward": "clamp(0.15*dlocal + 0.15*dglobal + 0.20*dcoherence + 0.20*dnovelty - 0.15*drepetition - 0.10*dcollapse + 0.05*dcontinuity - 0.05*cost,-1,1)",
+    "cost": "Cumulative generated characters / (64*(horizon+1)), exactly the parent host.",
+    "primary": "Across48 new source states, mean paired H4 advantage over KEEP averaged across r0..7. Compare conditioned_mean8 with raw_mean8, initial/KEEP and shuffled_conditioned.",
+    "secondary": [
+      "Separate r0 and r1..7 mean paired advantage",
+      "Measured-best choices and mean regret against per-state mean8 best valid action",
+      "Each raw axis and generation cost separately, including chosen-minus-KEEP differences",
+      "Action counts, per-seed and per-target tables",
+      "Within-state sample variance of paired action-minus-KEEP reward over8replicates; paired standard error sqrt(variance/8)",
+      "Between-state variance of each mean paired advantage; sign disagreements across replicates",
+      "Selected-action source and raw outcome identity joins for every arm",
+      "Training results reported separately from new-state results"
+    ],
+    "sample_unit": "48 source states, nested in two generation seeds. The384 state/replicate combinations are repeated outcomes, not384 independent states.",
+    "reward_precision": "Report native clipped rewards and targets as authoritative; any independent arithmetic check names its tolerance."
+  },
+  "execution": {
+    "fitting_copies": 2,
+    "new_body_cohorts": 1,
+    "new_generation_seeds": [
+      509,
+      601
+    ],
+    "source_host": "Unchanged spa_agent_demo OFF/ON diagnostics paired for each seed; full ordinary trace and5lives byte-identical.",
+    "repeated_host": "Unchanged spa_agent_replicates, one K8 trajectory set per new source state; complete r0 parent lines must agree.",
+    "numerical_build": [
+      "cc",
+      "-std=c11",
+      "-O2",
+      "-DUSE_SIMD",
+      "-march=native",
+      "-pthread"
+    ],
+    "immutable_source_snapshot": true,
+    "scope": "No search over rates/epochs/seeds/capacity/reward/floor after fitting or new outcomes. Retain result whether benefit, regression or unchanged choices.",
+    "raw_journal": "Every native fit receipt/source/donor/policy identity retained in a verified gzip stream. Seal compressed and decoded identities before publication.",
+    "archive": "Create-only gzip archive with all raw evaluation/source traces, both fitting journals, datasets, readouts, seals and recorded commands/identities. Exclude model weights and life checkpoints from repository."
+  },
+  "gates": [
+    "Legacy SPA sensory and existing comparison/repeated API remain exact; v1 life format unchanged.",
+    "Native conditioned gradients, floor/count/mask/source/alias refusals and policy-only publication pass; compiled scale/credit/aggregation defects fail.",
+    "Python ABI exposes15types/261coordinates and original59oracle records.",
+    "Two fitting copies reproduce all4 lives and fitting journals exactly. Rawmean8 reproduces its parent SHA.",
+    "All8lives seal before any newsource generation; later fits prohibited.",
+    "DiagnosticsOFF/ON parity, r0 line parity, full source/mask/RNG/raw measurement association and host restoration pass.",
+    "Same source/history/RNG with different acquired weights is tested by native pure readout, not inferred from language quality.",
+    "Independent audit reconstructs targets, native choices, outcome association and raw summary; source/binary/input/seal/archive hashes remain stable."
+  ]
+}

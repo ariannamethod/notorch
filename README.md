@@ -806,6 +806,13 @@ and makes one policy update. The host retains each raw outcome and its RNG
 provenance. The [paired-continuation experiment](experiments/spa_agent/replicates/README.md)
 compares one continuation with eight while holding the policy and fit budget fixed.
 
+`fit_conditioned` optionally scales those KEEP-relative targets by the largest
+absolute target in that state, with a host-specified positive floor. It retains
+the original mean rewards and the exact scale in a separate receipt. This
+changes learning amplitude and relative state weighting; usefulness is measured
+against the original reward. The [conditioning experiment](experiments/spa_agent/conditioned/README.md)
+holds perception, policy capacity, fitting budget and body fixed.
+
 Python uses the same native engine and canonical saved life:
 
 ```python
@@ -817,7 +824,7 @@ agent = SPA.Agent(SPA.Config.default(mode=SPA.Mode.LEARNED))
 
 Build `make shared`, put `python/` on `PYTHONPATH`, and run
 `python3 examples/spa_python.py`. [Python API and host loop](docs/spa-python.md)
-cover perception, action execution, comparison and repeated-consequence learning,
+cover perception, action execution, comparison and conditioned-consequence learning,
 and C/Python resume.
 `make test_spa_python` checks the loaded C ABI and byte-identical continuation.
 

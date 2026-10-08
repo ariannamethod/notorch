@@ -1,0 +1,108 @@
+{
+  "command": "python3 tests/test_spa_conditioned_audit.py --output experiments/spa_agent/conditioned/audit.json",
+  "frozen_before_experiment_fitting": true,
+  "gates": [
+    "mean before conditioning",
+    "tiny effects retain floor magnitude",
+    "zero effects finite",
+    "raw and conditioned native receipt layout",
+    "typed consequence bytes",
+    "canonical267-weight decode",
+    "independent saved-weight typed choice",
+    "raw source metadata equality",
+    "all five OFF/ON life pairs"
+  ],
+  "generation_runs": 0,
+  "named_red_hands": [
+    {
+      "caught": true,
+      "message": "receipt reward/credit targets",
+      "name": "reversed_credit"
+    },
+    {
+      "caught": true,
+      "message": "receipt conditioning scale",
+      "name": "forged_scale"
+    },
+    {
+      "caught": true,
+      "message": "receipt reward/credit targets",
+      "name": "bypassed_conditioning"
+    },
+    {
+      "caught": true,
+      "message": "receipt reward/credit targets",
+      "name": "normalization_before_mean"
+    },
+    {
+      "caught": true,
+      "message": "receipt reward/credit targets",
+      "name": "lost_raw_reward"
+    },
+    {
+      "caught": true,
+      "message": "receipt independent Huber loss: (0.0, 0.1733333216110917)",
+      "name": "forged_loss"
+    },
+    {
+      "caught": true,
+      "message": "receipt source identity",
+      "name": "wrong_source"
+    },
+    {
+      "caught": true,
+      "message": "receipt reward/credit targets",
+      "name": "wrong_donor_credit"
+    },
+    {
+      "caught": true,
+      "message": "typed greedy action",
+      "name": "wrong_typed_choice"
+    },
+    {
+      "caught": true,
+      "message": "independent saved-weight readout: (0.5, 0.25)",
+      "name": "wrong_policy_readout"
+    },
+    {
+      "caught": true,
+      "message": "canonical checksum",
+      "name": "altered_life_checksum"
+    },
+    {
+      "caught": true,
+      "message": "duplicate JSON key",
+      "name": "duplicate_json_field"
+    },
+    {
+      "caught": true,
+      "message": "nonfinite JSON",
+      "name": "nonfinite_json"
+    },
+    {
+      "caught": true,
+      "message": "raw measurement source field: agent_rng",
+      "name": "forged_raw_source_metadata"
+    },
+    {
+      "caught": true,
+      "message": "ordinary diagnostics requires all five saved lives",
+      "name": "empty_off_on_saved_lives"
+    }
+  ],
+  "native_fit_runs": 0,
+  "protocol_sha256": "e5bb801a78cf68403c45474858fb7aff96e5aa4337003b6c06dc72253257225a",
+  "schema": 1,
+  "scope": "Hand-built arithmetic and byte fixtures; no experiment fitting or body generation.",
+  "sources": {
+    "experiments/spa_agent/conditioned/audit.py": {
+      "bytes": 42791,
+      "sha256": "5eee0345a4309415be064ea0cf6b930cd87d1317e6016b8477eb3df0f0bb8af6"
+    },
+    "tests/test_spa_conditioned_audit.py": {
+      "bytes": 9123,
+      "sha256": "a87393ce8223eecf103f5c313a77ca5a4f6b9444867d5c33c91455c46b26883e"
+    }
+  },
+  "status": "PASS"
+}

@@ -52,7 +52,11 @@ class BindingTests(unittest.TestCase):
     @classmethod
     def run_command(cls, command):
         run = subprocess.run(command, text=True, capture_output=True, check=False)
-        normalize = lambda s: s.replace(str(ROOT), "<repo>").replace(str(cls.work), "<tmp>")
+        def normalize(value):
+            value = value.replace(str(ROOT), "<repo>").replace(str(cls.work), "<tmp>")
+            library = str(Path(cls.native.path).resolve())
+            return value.replace(library, "<library>").replace(
+                str(Path(library).parent), "<library-dir>")
         RECEIPT["commands"].append({"argv": [normalize(str(x)) for x in command],
                                     "returncode": run.returncode,
                                     "stdout_sha256": hashlib.sha256(run.stdout.encode()).hexdigest(),
@@ -336,6 +340,88 @@ class BindingTests(unittest.TestCase):
         after_state.policy = before_state.policy
         self.assertEqual(bytes(after_state), bytes(before_state))
         RECEIPT["repeated_reward_order"] = "clip each repeat in C, then average; mean=.3, mean-raw route=.8"
+
+    def test_conditioned_raw_rewards_floor_rate_zero_and_native_parity(self):
+        agent = self.learned(exploration=0)
+        captured = agent.capture(self.native.perceive(FIELD, 1))
+        comparison = SPA.Comparison.from_outcomes(
+            captured, {k: outcome(k) for k in SPA.ActionKind}, horizon=4)
+        comparisons = [comparison] * 8
+        initial = agent.state
+        raw = agent.fit_repeated(captured, comparisons, 0)
+        for floor in (.001, 1.0):
+            receipt = agent.fit_conditioned(captured, comparisons, 0, floor)
+            expected_floor = C.c_float(floor).value
+            expected_scale = max(expected_floor, *(abs(v) for v in raw.targets))
+            self.assertEqual(receipt.scale_floor, expected_floor)
+            self.assertEqual(receipt.scale, expected_scale)
+            self.assertEqual(bytes(receipt.comparison.rewards), bytes(raw.rewards))
+            expected = (C.c_float * SPA.ACTIONS)(*(v / expected_scale for v in raw.targets))
+            self.assertEqual(bytes(receipt.comparison.targets), bytes(expected))
+            self.assertEqual(receipt.comparison.loss_before, receipt.comparison.loss_after)
+            self.assertEqual(bytes(agent.state), bytes(initial))
+        native_state = initial.copy()
+        array = (SPA.Comparison * len(comparisons))(*comparisons)
+        for _ in range(16):
+            receipt = agent.fit_conditioned(captured, comparisons, .03, .001)
+            direct = SPA.ConditionedReceipt()
+            status = self.native.lib.nt_spa_agent_fit_conditioned(
+                C.byref(native_state), C.byref(captured), array, len(array),
+                .03, .001, C.byref(direct))
+            self.assertEqual(status, SPA.Status.OK)
+            self.assertEqual(bytes(receipt), bytes(direct))
+            self.assertEqual(bytes(agent.state), bytes(native_state))
+        current = agent.state
+        self.assertNotEqual(bytes(current.policy), bytes(initial.policy))
+        current.policy = initial.policy
+        self.assertEqual(bytes(current), bytes(initial))
+        path = self.work / "conditioned.life"
+        agent.save(path)
+        resumed = SPA.Agent.from_file(path, native=self.native)
+        self.assertEqual(len(path.read_bytes()), 2296)
+        self.assertEqual(bytes(agent.state), bytes(resumed.state))
+        receipt = agent.fit_conditioned(captured, comparisons, .03, .001)
+        restored = resumed.fit_conditioned(captured, comparisons, .03, .001)
+        self.assertEqual(bytes(receipt), bytes(restored))
+        self.assertEqual(bytes(agent.state), bytes(resumed.state))
+        RECEIPT["conditioned_native_parity"] = {
+            "updates": 16, "raw_rewards": "byte-identical to repeated receipt",
+            "scale": "max(float32 floor, absolute native float delta) in double",
+            "floors": [.001, 1.0], "rate_zero": "all life bytes unchanged",
+            "checkpoint_bytes": 2296, "resumed_update": "receipt and life byte-identical"}
+
+    def test_conditioned_refusals_leave_life_unchanged(self):
+        agent = self.learned(exploration=0)
+        captured = agent.capture(self.native.perceive(FIELD, 1))
+        comparison = SPA.Comparison.from_outcomes(
+            captured, {k: outcome(k) for k in SPA.ActionKind}, horizon=4)
+        initial = bytes(agent.state)
+        for floor in (0, -1):
+            with self.assertRaises(SPA.Error) as failure:
+                agent.fit_conditioned(captured, [comparison], .03, floor)
+            self.assertEqual(failure.exception.status, SPA.Status.COMPARISON)
+            self.assertEqual(bytes(agent.state), initial)
+        for floor in (float("nan"), float("inf"), 1e100):
+            with self.assertRaises(ValueError):
+                agent.fit_conditioned(captured, [comparison], .03, floor)
+            self.assertEqual(bytes(agent.state), initial)
+        for values in ([], [comparison] * 65, [None]):
+            with self.assertRaises((ValueError, TypeError)):
+                agent.fit_conditioned(captured, values, .03, .001)
+            self.assertEqual(bytes(agent.state), initial)
+        bad = comparison.copy()
+        bad.source_life_hash ^= 1
+        with self.assertRaises(SPA.Error) as failure:
+            agent.fit_conditioned(captured, [comparison, bad], .03, .001)
+        self.assertEqual(failure.exception.status, SPA.Status.COMPARISON)
+        self.assertEqual(bytes(agent.state), initial)
+        bad = comparison.copy()
+        bad.alternatives[0].consequence.before.novelty += .1
+        with self.assertRaises(SPA.Error) as failure:
+            agent.fit_conditioned(captured, [comparison, bad], .03, .001)
+        self.assertEqual(failure.exception.status, SPA.Status.CONSEQUENCE)
+        self.assertEqual(bytes(agent.state), initial)
+        RECEIPT["conditioned_refusals"] = "invalid floor, count, type, source and common-before preserve every life byte"
 
 
 if __name__ == "__main__":

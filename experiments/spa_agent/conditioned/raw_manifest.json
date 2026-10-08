@@ -1,0 +1,33 @@
+{
+  "archive": {
+    "bytes": 17542082,
+    "file": "raw_records.tar.gz",
+    "sha256": "595bf9f75e68f1b8fe562bc2bbb68c3908d71a4817205d2684714657a2f68dca"
+  },
+  "member_count": 81,
+  "parts": [
+    {
+      "bytes": 8011776,
+      "git_blob_sha": "fe8d484392fb0884178dabc87ac86046bd28a828",
+      "path": "raw_records.tar.gz.part-00",
+      "sha256": "d7cc5f87c173fddd37e6d5f2fc04c25be29e7155659fc7ff5e54a3b3bc6deba5"
+    },
+    {
+      "bytes": 8011776,
+      "git_blob_sha": "8bd14ca03d1c7b98c6c76c810ffaf9c301bd3c57",
+      "path": "raw_records.tar.gz.part-01",
+      "sha256": "51e922b8e683b80bd5e5c0d6dea0d5bd7635a1293cff6329ad44908d6612b014"
+    },
+    {
+      "bytes": 1518530,
+      "git_blob_sha": "54f7d18506bdd309063f01aec442f187c23fc004",
+      "path": "raw_records.tar.gz.part-02",
+      "sha256": "241e6b84508a715c6c7cbea0400ed1329b8ee855ee54be3c6122cf74deefee9a"
+    }
+  ],
+  "receipt": {
+    "bytes": 5215118,
+    "sha256": "398ba12f745f38e3365dc184fa49af01538d2e1b8ba6e70981eaf378330ee3d2"
+  },
+  "schema": 1
+}

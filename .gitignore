@@ -151,3 +151,11 @@ bench_cuda_decode
 !tests/test_spa_replicates.py
 !tests/test_spa_repeated_mutations.py
 /experiments/spa_agent/replicates/raw_traces.jsonl.gz
+
+# SPA conditioned consequence learning
+/test_spa_agent_conditioned
+!tests/test_spa_conditioned_mutations.py
+!tests/test_spa_conditioned_policy.py
+!tests/test_spa_conditioned_audit.py
+!tests/test_spa_conditioned_runner.py
+/experiments/spa_agent/conditioned/raw_records.tar.gz

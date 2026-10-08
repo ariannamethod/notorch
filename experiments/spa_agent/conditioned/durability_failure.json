@@ -1,0 +1,757 @@
+{
+  "artifact_identity_semantics": "The artifacts mapping records independently observed FAILURE-TIME bytes. It does not claim the truncated file ever passed an initial-close gate. Original fitting/barrier identities are authenticated separately.",
+  "artifacts": {
+    "all_eight_lives_sealed.json": {
+      "bytes": 7003,
+      "sha256": "70dbcf2ff8ae29e938bf46bd14befd88300a033fe72034f5ef8ba9bd73a65704"
+    },
+    "build-shared.command.json": {
+      "bytes": 786,
+      "sha256": "848d765462d648fac7989c6f4bf7a56f6e163ee8282b4bb4bf42a9bbeb3c9283"
+    },
+    "build-shared.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build-shared.stdout.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build-spa_agent_demo.command.json": {
+      "bytes": 796,
+      "sha256": "5ace6d6c6f1da1fb4e6be7a2bc8f5dc476695420ea614f86e02162c6078c3225"
+    },
+    "build-spa_agent_demo.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build-spa_agent_demo.stdout.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build-spa_agent_replicates.command.json": {
+      "bytes": 821,
+      "sha256": "49b8f949727dd3b2da35cd252dd41158836333888a94df2fbba4aaafc6fd1638"
+    },
+    "build-spa_agent_replicates.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build-spa_agent_replicates.stdout.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "fit-1.command.json": {
+      "bytes": 1063,
+      "sha256": "d7291b0e30fce8cb009e8117ab74341b2a40f586842a3e7a40afce310ba11b70"
+    },
+    "fit-1.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "fit-1.stdout.txt": {
+      "bytes": 171,
+      "sha256": "2d758a919734a06ce24732e7048312cd402bae4c1d37177b697e04ea8fed740c"
+    },
+    "fit-1/conditioned_mean8.life": {
+      "bytes": 2296,
+      "sha256": "b4276a5ffbd920c3ca2136fc5cf029f5b5b691db39f8a35266ff0d45b306b762"
+    },
+    "fit-1/fit.jsonl.gz": {
+      "bytes": 8031523,
+      "sha256": "803041017d0ca51967e7a074fb9aed691479b19293031d8dbbd90c79d0f9ad99"
+    },
+    "fit-1/initial.life": {
+      "bytes": 2296,
+      "sha256": "1bc29793c6cef28761f18f0e55645e8e5d59abaab60f6915c3a51eb25c1edf63"
+    },
+    "fit-1/raw_mean8.life": {
+      "bytes": 2296,
+      "sha256": "6fa4aeb4d40598a82728366f02efef20fa8ae8c2a145389864750ed27dab6cb9"
+    },
+    "fit-1/seal.json": {
+      "bytes": 2764,
+      "sha256": "7af4e28dd96982ec4b4539257327b2ae4cce605a115f18093f330f82f0f4579c"
+    },
+    "fit-1/shuffled_conditioned.life": {
+      "bytes": 2296,
+      "sha256": "7dc8ccc405d11043a90b817e97f68436849db5d4011674e8b4ab1db229f26c24"
+    },
+    "fit-2.command.json": {
+      "bytes": 1063,
+      "sha256": "efc74c7f5dbaaf93c7dae06808861f469cf0b0365d6df935209200945bf049a8"
+    },
+    "fit-2.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "fit-2.stdout.txt": {
+      "bytes": 171,
+      "sha256": "2d758a919734a06ce24732e7048312cd402bae4c1d37177b697e04ea8fed740c"
+    },
+    "fit-2/conditioned_mean8.life": {
+      "bytes": 2296,
+      "sha256": "b4276a5ffbd920c3ca2136fc5cf029f5b5b691db39f8a35266ff0d45b306b762"
+    },
+    "fit-2/fit.jsonl.gz": {
+      "bytes": 8031523,
+      "sha256": "803041017d0ca51967e7a074fb9aed691479b19293031d8dbbd90c79d0f9ad99"
+    },
+    "fit-2/initial.life": {
+      "bytes": 2296,
+      "sha256": "1bc29793c6cef28761f18f0e55645e8e5d59abaab60f6915c3a51eb25c1edf63"
+    },
+    "fit-2/raw_mean8.life": {
+      "bytes": 2296,
+      "sha256": "6fa4aeb4d40598a82728366f02efef20fa8ae8c2a145389864750ed27dab6cb9"
+    },
+    "fit-2/seal.json": {
+      "bytes": 2764,
+      "sha256": "7af4e28dd96982ec4b4539257327b2ae4cce605a115f18093f330f82f0f4579c"
+    },
+    "fit-2/shuffled_conditioned.life": {
+      "bytes": 2296,
+      "sha256": "7dc8ccc405d11043a90b817e97f68436849db5d4011674e8b4ab1db229f26c24"
+    },
+    "metadata.json": {
+      "bytes": 19948,
+      "sha256": "441e491caa2c0ff7c686d9233fc229ea247922dc9b4d9d27b9e18b78533ccc36"
+    },
+    "off-s509.command.json": {
+      "bytes": 984,
+      "sha256": "c4721bc9b07d070dc657bff20f8915e886ab58eeefd72be90d024e1b3cb1598f"
+    },
+    "off-s509.disabled.life.bin": {
+      "bytes": 2296,
+      "sha256": "6ffe9a94d9b44ef71a1cb2fbdd118d0c77e8cbf787157f7b7a521fde15230452"
+    },
+    "off-s509.frozen.life.bin": {
+      "bytes": 2296,
+      "sha256": "e10b53869f99dc718e0115903fed7c803ba5bfda976507e8439671ac13d52a03"
+    },
+    "off-s509.jsonl": {
+      "bytes": 218829,
+      "sha256": "f4f153191062dbc01a458cc9dafdb2b95304b93b93dc9ff4988036487116364f"
+    },
+    "off-s509.learned.life.bin": {
+      "bytes": 2296,
+      "sha256": "2583e3c3396cab2ff3fd28e22f2a4416e46adb0429230337d519660549706e0e"
+    },
+    "off-s509.legacy.life.bin": {
+      "bytes": 2296,
+      "sha256": "5cb48325102167da378689a4cc3486087c9b8d5d9d17c9465df65cc7d366962d"
+    },
+    "off-s509.random.life.bin": {
+      "bytes": 2296,
+      "sha256": "e46051800cb9e7fd120e0014d9e1beaa37bb348aad4cc33a3ef7b28706810214"
+    },
+    "off-s509.stderr.txt": {
+      "bytes": 208,
+      "sha256": "de8cbe9dec87206d610232d49fe6c76976bb000d3c253e3316e12cc1219d821a"
+    },
+    "off-s509.stdout.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "off-s601.command.json": {
+      "bytes": 984,
+      "sha256": "584af16362ebcffb53f1a259af61d72084049af04072e4e07dc82c1ecfd11f53"
+    },
+    "off-s601.disabled.life.bin": {
+      "bytes": 2296,
+      "sha256": "835bc05b56be3858fff2347f41a435e8dbee1eb844f08e67c105edc403f503bb"
+    },
+    "off-s601.frozen.life.bin": {
+      "bytes": 2296,
+      "sha256": "7fb455bc750e6c68f5129113baf951cd937928fce5eea0a56014f525e5ff8398"
+    },
+    "off-s601.jsonl": {
+      "bytes": 216380,
+      "sha256": "8b18abae84e9c741f81a975c6606881faaf09d41fd4a0d41737979b44fbca7a0"
+    },
+    "off-s601.learned.life.bin": {
+      "bytes": 2296,
+      "sha256": "be6f415d21ecf873edda99f1969bc2f8a29cca89ca162759e7b5dda986cde2e7"
+    },
+    "off-s601.legacy.life.bin": {
+      "bytes": 2296,
+      "sha256": "9a48a6e11600f9679de90a8432f478f7c66691cd33588bcc02cf091e0b8d9071"
+    },
+    "off-s601.random.life.bin": {
+      "bytes": 2296,
+      "sha256": "2e3bb830b8aeb837be1e53ee7f2052861b9a87174380129508a572b340e260bb"
+    },
+    "off-s601.stderr.txt": {
+      "bytes": 208,
+      "sha256": "63f11e95c9ea1f38110c83b9e110e5278c629d461d44da049ac29fb7cd0e4345"
+    },
+    "off-s601.stdout.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "on-s509.command.json": {
+      "bytes": 1027,
+      "sha256": "e240db31feec071f6bca554b46140a113dccb4ed580f3bdf7aa84b4abba0eed4"
+    },
+    "on-s509.disabled.life.bin": {
+      "bytes": 2296,
+      "sha256": "6ffe9a94d9b44ef71a1cb2fbdd118d0c77e8cbf787157f7b7a521fde15230452"
+    },
+    "on-s509.frozen.life.bin": {
+      "bytes": 2296,
+      "sha256": "e10b53869f99dc718e0115903fed7c803ba5bfda976507e8439671ac13d52a03"
+    },
+    "on-s509.jsonl": {
+      "bytes": 218829,
+      "sha256": "f4f153191062dbc01a458cc9dafdb2b95304b93b93dc9ff4988036487116364f"
+    },
+    "on-s509.learned.life.bin": {
+      "bytes": 2296,
+      "sha256": "2583e3c3396cab2ff3fd28e22f2a4416e46adb0429230337d519660549706e0e"
+    },
+    "on-s509.legacy.life.bin": {
+      "bytes": 2296,
+      "sha256": "5cb48325102167da378689a4cc3486087c9b8d5d9d17c9465df65cc7d366962d"
+    },
+    "on-s509.random.life.bin": {
+      "bytes": 2296,
+      "sha256": "e46051800cb9e7fd120e0014d9e1beaa37bb348aad4cc33a3ef7b28706810214"
+    },
+    "on-s509.stderr.txt": {
+      "bytes": 208,
+      "sha256": "de8cbe9dec87206d610232d49fe6c76976bb000d3c253e3316e12cc1219d821a"
+    },
+    "on-s509.stdout.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "on-s601.command.json": {
+      "bytes": 1028,
+      "sha256": "6e5745afa2ef4fc52946c064797860b537f9d90b28c0ad2cff0c65eec3878cbc"
+    },
+    "on-s601.disabled.life.bin": {
+      "bytes": 2296,
+      "sha256": "835bc05b56be3858fff2347f41a435e8dbee1eb844f08e67c105edc403f503bb"
+    },
+    "on-s601.frozen.life.bin": {
+      "bytes": 2296,
+      "sha256": "7fb455bc750e6c68f5129113baf951cd937928fce5eea0a56014f525e5ff8398"
+    },
+    "on-s601.jsonl": {
+      "bytes": 120594,
+      "sha256": "b8f32e01ecac0c40a223bd01cd47116152fb96b4441ada12c5ff5e361aa85413"
+    },
+    "on-s601.learned.life.bin": {
+      "bytes": 2296,
+      "sha256": "be6f415d21ecf873edda99f1969bc2f8a29cca89ca162759e7b5dda986cde2e7"
+    },
+    "on-s601.legacy.life.bin": {
+      "bytes": 2296,
+      "sha256": "9a48a6e11600f9679de90a8432f478f7c66691cd33588bcc02cf091e0b8d9071"
+    },
+    "on-s601.random.life.bin": {
+      "bytes": 2296,
+      "sha256": "2e3bb830b8aeb837be1e53ee7f2052861b9a87174380129508a572b340e260bb"
+    },
+    "on-s601.stderr.txt": {
+      "bytes": 208,
+      "sha256": "63f11e95c9ea1f38110c83b9e110e5278c629d461d44da049ac29fb7cd0e4345"
+    },
+    "on-s601.stdout.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "scenarios-s509.jsonl": {
+      "bytes": 408895,
+      "sha256": "db651f03ed88d2c80bec38e739df3082fcc4bc5a51143fff0c254b83fc8f4819"
+    },
+    "scenarios-s601.jsonl": {
+      "bytes": 409229,
+      "sha256": "05b42c382bd3856d3e26b01487d50b702271938c422d702ce2c13676a8372c31"
+    },
+    "stages.json": {
+      "bytes": 392,
+      "sha256": "e8d2d21f6ee10cfdfdfc2c76ac3a9737232e9bd74b86a3afcd6b285e39050ba7"
+    },
+    "training.json": {
+      "bytes": 4742198,
+      "sha256": "acecc15820ac63c5fba35220a6e3d379de5fd427f8642c091e5f4167e2603b34"
+    }
+  },
+  "assessment": "A single deterministic ON replay can establish the missing suffix without changing policy acquisition or the evaluated cohort. Acceptance is contingent on every equality above; a mismatch remains a failed recovery.",
+  "authorized_recovery_requirements": [
+    "Freeze this failure receipt and preserve the damaged ON bytes before changes.",
+    "Run exactly one diagnostics-ON seed601 replay into a new directory, using the already sealed binary, checkpoint, corpus tokens and vocabulary. Do not refit any policy or alter the frozen protocol/sources.",
+    "Require complete replay ON trace to equal the original complete OFF trace byte-for-byte; require its first120594bytes to equal the original damaged ON file.",
+    "Require all five replay host lives to equal both original ON and OFF lives; require the entire replay scenario stream to equal the original scenario bytes.",
+    "Validate complete replay ordinary and scenario records with the original frozen validators; require all input/source/binary/training/barrier/eight-policy/journal pins unchanged before and after.",
+    "Publish an explicit recovery record with the extra body execution command, original pins and all equality checks. Restore only the damaged trace via a checked atomic publication.",
+    "Resume only the unstarted repeated-generation/readout/finalization phases from the original sealed policies and retained source cohort. Count the additional ON execution explicitly; do not label the original run uninterrupted."
+  ],
+  "complete_off_gate": {
+    "bytes": 216380,
+    "complete": true,
+    "record_types": {
+      "base": 6,
+      "body": 1,
+      "decision": 120,
+      "summary": 1
+    },
+    "records": 128,
+    "seed": 601,
+    "sha256": "8b18abae84e9c741f81a975c6606881faaf09d41fd4a0d41737979b44fbca7a0",
+    "stat": {
+      "bytes": 216380,
+      "device": 27,
+      "inode": 1835409,
+      "mtime_ns": 1791418023534586917
+    }
+  },
+  "complete_scenario_gate_using_original_off_reference": {
+    "bytes": 409229,
+    "complete": true,
+    "diagnostic_forwards": 16419,
+    "forks": 60,
+    "measurements": 180,
+    "sha256": "05b42c382bd3856d3e26b01487d50b702271938c422d702ce2c13676a8372c31",
+    "snapshots": 24
+  },
+  "damaged_file": "on-s601.jsonl",
+  "damaged_identity": {
+    "bytes": 120594,
+    "sha256": "b8f32e01ecac0c40a223bd01cd47116152fb96b4441ada12c5ff5e361aa85413"
+  },
+  "damaged_reconstruction": "The first120594bytes of original off-s601.jsonl reproduce the damaged ON file byte-exactly. Preserve an explicit damaged copy before any restoration.",
+  "exact_prefix_of_original_off": true,
+  "failure_classification": "Observed output truncation after a successful ON process exit. Cause and timing of truncation are unknown.",
+  "frozen_gate_failure": {
+    "exception": "TraceError",
+    "message": "JSONL line 74: Unterminated string starting at: line 1 column 1676 (char 1675)"
+  },
+  "missing_bytes_vs_original_off": 95786,
+  "name": "Independent SPA conditioned-credit ordinary-trace truncation capture",
+  "observation_scope": "Read-only inspection of stopped original run; no policy fitting, body execution, replay, repair or new-seed scoring.",
+  "original_complete_off_identity": {
+    "bytes": 216380,
+    "sha256": "8b18abae84e9c741f81a975c6606881faaf09d41fd4a0d41737979b44fbca7a0"
+  },
+  "original_complete_on_identity_available": false,
+  "original_process_commands": {
+    "off-s601.command.json": {
+      "command": [
+        "<output>/spa_agent_demo",
+        "<output>/inputs/simple.weights",
+        "<output>/inputs/corpus.tokens.u32",
+        "<output>/inputs/vocabulary.u32",
+        "<output>/off-s601",
+        "601"
+      ],
+      "cwd": "<source_snapshot>",
+      "path_normalization": "Only execution-root/interpreter path spellings are replaced.",
+      "returncode": 0,
+      "stderr": {
+        "bytes": 208,
+        "file": "off-s601.stderr.txt",
+        "original_sha256": "63f11e95c9ea1f38110c83b9e110e5278c629d461d44da049ac29fb7cd0e4345",
+        "sha256": "63f11e95c9ea1f38110c83b9e110e5278c629d461d44da049ac29fb7cd0e4345",
+        "text": "seed=601 episode=1/6 forwards=313\nseed=601 episode=2/6 forwards=577\nseed=601 episode=3/6 forwards=1089\nseed=601 episode=4/6 forwards=1461\nseed=601 episode=5/6 forwards=1699\nseed=601 episode=6/6 forwards=2083\n"
+      },
+      "stdout": {
+        "bytes": 0,
+        "file": "off-s601.stdout.txt",
+        "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "text": ""
+      },
+      "wall_seconds": 6.190143806998094
+    },
+    "on-s601.command.json": {
+      "command": [
+        "<output>/spa_agent_demo",
+        "<output>/inputs/simple.weights",
+        "<output>/inputs/corpus.tokens.u32",
+        "<output>/inputs/vocabulary.u32",
+        "<output>/on-s601",
+        "601",
+        "--scenarios",
+        "<output>/scenarios-s601.jsonl"
+      ],
+      "cwd": "<source_snapshot>",
+      "path_normalization": "Only execution-root/interpreter path spellings are replaced.",
+      "returncode": 0,
+      "stderr": {
+        "bytes": 208,
+        "file": "on-s601.stderr.txt",
+        "original_sha256": "63f11e95c9ea1f38110c83b9e110e5278c629d461d44da049ac29fb7cd0e4345",
+        "sha256": "63f11e95c9ea1f38110c83b9e110e5278c629d461d44da049ac29fb7cd0e4345",
+        "text": "seed=601 episode=1/6 forwards=313\nseed=601 episode=2/6 forwards=577\nseed=601 episode=3/6 forwards=1089\nseed=601 episode=4/6 forwards=1461\nseed=601 episode=5/6 forwards=1699\nseed=601 episode=6/6 forwards=2083\n"
+      },
+      "stdout": {
+        "bytes": 0,
+        "file": "on-s601.stdout.txt",
+        "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "text": ""
+      },
+      "wall_seconds": 44.628254752999055
+    }
+  },
+  "parse_evidence": {
+    "off-s509.jsonl": {
+      "bytes": 218829,
+      "newlines": 128,
+      "parse_errors": [],
+      "record_types": {
+        "base": 6,
+        "body": 1,
+        "decision": 120,
+        "summary": 1
+      },
+      "records_parsed": 128,
+      "sha256": "f4f153191062dbc01a458cc9dafdb2b95304b93b93dc9ff4988036487116364f",
+      "terminal_newline": true
+    },
+    "off-s601.jsonl": {
+      "bytes": 216380,
+      "newlines": 128,
+      "parse_errors": [],
+      "record_types": {
+        "base": 6,
+        "body": 1,
+        "decision": 120,
+        "summary": 1
+      },
+      "records_parsed": 128,
+      "sha256": "8b18abae84e9c741f81a975c6606881faaf09d41fd4a0d41737979b44fbca7a0",
+      "terminal_newline": true
+    },
+    "on-s509.jsonl": {
+      "bytes": 218829,
+      "newlines": 128,
+      "parse_errors": [],
+      "record_types": {
+        "base": 6,
+        "body": 1,
+        "decision": 120,
+        "summary": 1
+      },
+      "records_parsed": 128,
+      "sha256": "f4f153191062dbc01a458cc9dafdb2b95304b93b93dc9ff4988036487116364f",
+      "terminal_newline": true
+    },
+    "on-s601.jsonl": {
+      "bytes": 120594,
+      "newlines": 73,
+      "parse_errors": [
+        {
+          "bytes": 1678,
+          "exception": "JSONDecodeError",
+          "line": 74,
+          "message": "Unterminated string starting at: line 1 column 1676 (char 1675)"
+        }
+      ],
+      "record_types": {
+        "base": 4,
+        "body": 1,
+        "decision": 68
+      },
+      "records_parsed": 73,
+      "sha256": "b8f32e01ecac0c40a223bd01cd47116152fb96b4441ada12c5ff5e361aa85413",
+      "terminal_newline": false
+    },
+    "scenarios-s509.jsonl": {
+      "bytes": 408895,
+      "newlines": 253,
+      "parse_errors": [],
+      "record_types": {
+        "measurement": 180,
+        "restoration": 24,
+        "selected_initial": 24,
+        "snapshot": 24,
+        "summary": 1
+      },
+      "records_parsed": 253,
+      "sha256": "db651f03ed88d2c80bec38e739df3082fcc4bc5a51143fff0c254b83fc8f4819",
+      "terminal_newline": true
+    },
+    "scenarios-s601.jsonl": {
+      "bytes": 409229,
+      "newlines": 253,
+      "parse_errors": [],
+      "record_types": {
+        "measurement": 180,
+        "restoration": 24,
+        "selected_initial": 24,
+        "snapshot": 24,
+        "summary": 1
+      },
+      "records_parsed": 253,
+      "sha256": "05b42c382bd3856d3e26b01487d50b702271938c422d702ce2c13676a8372c31",
+      "terminal_newline": true
+    }
+  },
+  "protocol_sha256": "e5bb801a78cf68403c45474858fb7aff96e5aa4337003b6c06dc72253257225a",
+  "saved_ordinary_lives_off_on_exact": {
+    "509": {
+      "off-s509.disabled.life.bin": {
+        "bytes": 2296,
+        "sha256": "6ffe9a94d9b44ef71a1cb2fbdd118d0c77e8cbf787157f7b7a521fde15230452"
+      },
+      "off-s509.frozen.life.bin": {
+        "bytes": 2296,
+        "sha256": "e10b53869f99dc718e0115903fed7c803ba5bfda976507e8439671ac13d52a03"
+      },
+      "off-s509.learned.life.bin": {
+        "bytes": 2296,
+        "sha256": "2583e3c3396cab2ff3fd28e22f2a4416e46adb0429230337d519660549706e0e"
+      },
+      "off-s509.legacy.life.bin": {
+        "bytes": 2296,
+        "sha256": "5cb48325102167da378689a4cc3486087c9b8d5d9d17c9465df65cc7d366962d"
+      },
+      "off-s509.random.life.bin": {
+        "bytes": 2296,
+        "sha256": "e46051800cb9e7fd120e0014d9e1beaa37bb348aad4cc33a3ef7b28706810214"
+      }
+    },
+    "601": {
+      "off-s601.disabled.life.bin": {
+        "bytes": 2296,
+        "sha256": "835bc05b56be3858fff2347f41a435e8dbee1eb844f08e67c105edc403f503bb"
+      },
+      "off-s601.frozen.life.bin": {
+        "bytes": 2296,
+        "sha256": "7fb455bc750e6c68f5129113baf951cd937928fce5eea0a56014f525e5ff8398"
+      },
+      "off-s601.learned.life.bin": {
+        "bytes": 2296,
+        "sha256": "be6f415d21ecf873edda99f1969bc2f8a29cca89ca162759e7b5dda986cde2e7"
+      },
+      "off-s601.legacy.life.bin": {
+        "bytes": 2296,
+        "sha256": "9a48a6e11600f9679de90a8432f478f7c66691cd33588bcc02cf091e0b8d9071"
+      },
+      "off-s601.random.life.bin": {
+        "bytes": 2296,
+        "sha256": "2e3bb830b8aeb837be1e53ee7f2052861b9a87174380129508a572b340e260bb"
+      }
+    }
+  },
+  "schema": 1,
+  "sealed_fitting_evidence": {
+    "additional_fits_performed": 0,
+    "barrier": {
+      "bytes": 7003,
+      "sha256": "70dbcf2ff8ae29e938bf46bd14befd88300a033fe72034f5ef8ba9bd73a65704"
+    },
+    "both_fitting_copies_byte_identical": true,
+    "canonical_policy_lives": 8,
+    "complete_journals": {
+      "fit-1": {
+        "bytes": 47644109,
+        "record_counts": {
+          "comparison": 144,
+          "fit": 73728,
+          "header": 1
+        },
+        "records": 73873,
+        "sha256": "f551bd423f99134592c0dccc2ff4b28a2cf95851aa74f2310e8e73d0e5a9eeb4"
+      },
+      "fit-2": {
+        "bytes": 47644109,
+        "record_counts": {
+          "comparison": 144,
+          "fit": 73728,
+          "header": 1
+        },
+        "records": 73873,
+        "sha256": "f551bd423f99134592c0dccc2ff4b28a2cf95851aa74f2310e8e73d0e5a9eeb4"
+      }
+    },
+    "files": {
+      "fit-1": {
+        "conditioned_mean8.life": {
+          "bytes": 2296,
+          "sha256": "b4276a5ffbd920c3ca2136fc5cf029f5b5b691db39f8a35266ff0d45b306b762"
+        },
+        "fit.jsonl.gz": {
+          "bytes": 8031523,
+          "sha256": "803041017d0ca51967e7a074fb9aed691479b19293031d8dbbd90c79d0f9ad99"
+        },
+        "initial.life": {
+          "bytes": 2296,
+          "sha256": "1bc29793c6cef28761f18f0e55645e8e5d59abaab60f6915c3a51eb25c1edf63"
+        },
+        "raw_mean8.life": {
+          "bytes": 2296,
+          "sha256": "6fa4aeb4d40598a82728366f02efef20fa8ae8c2a145389864750ed27dab6cb9"
+        },
+        "seal.json": {
+          "bytes": 2764,
+          "sha256": "7af4e28dd96982ec4b4539257327b2ae4cce605a115f18093f330f82f0f4579c"
+        },
+        "shuffled_conditioned.life": {
+          "bytes": 2296,
+          "sha256": "7dc8ccc405d11043a90b817e97f68436849db5d4011674e8b4ab1db229f26c24"
+        }
+      },
+      "fit-2": {
+        "conditioned_mean8.life": {
+          "bytes": 2296,
+          "sha256": "b4276a5ffbd920c3ca2136fc5cf029f5b5b691db39f8a35266ff0d45b306b762"
+        },
+        "fit.jsonl.gz": {
+          "bytes": 8031523,
+          "sha256": "803041017d0ca51967e7a074fb9aed691479b19293031d8dbbd90c79d0f9ad99"
+        },
+        "initial.life": {
+          "bytes": 2296,
+          "sha256": "1bc29793c6cef28761f18f0e55645e8e5d59abaab60f6915c3a51eb25c1edf63"
+        },
+        "raw_mean8.life": {
+          "bytes": 2296,
+          "sha256": "6fa4aeb4d40598a82728366f02efef20fa8ae8c2a145389864750ed27dab6cb9"
+        },
+        "seal.json": {
+          "bytes": 2764,
+          "sha256": "7af4e28dd96982ec4b4539257327b2ae4cce605a115f18093f330f82f0f4579c"
+        },
+        "shuffled_conditioned.life": {
+          "bytes": 2296,
+          "sha256": "7dc8ccc405d11043a90b817e97f68436849db5d4011674e8b4ab1db229f26c24"
+        }
+      }
+    },
+    "original_fits_per_copy": 73728
+  },
+  "source_verification": {
+    "binaries": {
+      "libnotorch.so": {
+        "bytes": 266912,
+        "sha256": "6cc372549c5b0b4c6e180ce188400cfacde934563ea9ae8ff45d49414ab7a51c"
+      },
+      "spa_agent_demo": {
+        "bytes": 258952,
+        "sha256": "78df4e70ae72f46e7ce3fbab8fa6fbaef8c5e9f851d317d91c5df0af2f2f4224"
+      },
+      "spa_agent_replicates": {
+        "bytes": 275960,
+        "sha256": "8e95ed67b2a73b7ee3e1707a2272255226d0b44546517fc31a208f9010bc0c87"
+      }
+    },
+    "inputs": {
+      "corpus.tokens.u32": {
+        "bytes": 3374540,
+        "sha256": "a1876f953a5a306dea7cf9896ea4d634e52808ee7b61570387b590a5b2e0d7d8"
+      },
+      "dracula.txt": {
+        "bytes": 852813,
+        "sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c"
+      },
+      "simple.weights": {
+        "bytes": 1802992,
+        "sha256": "22ce6e5dfe4efb4a00477a9652784970dc53a69fea2825174398af749acda00d"
+      },
+      "vocabulary.json": {
+        "bytes": 683,
+        "sha256": "faad8eeec3efadd4b3f26bbeea45f18c4cacd52a990219c51681c5e7eaab2c82"
+      },
+      "vocabulary.u32": {
+        "bytes": 376,
+        "sha256": "5bff414a2e4e596cd082cd2d1eba2fefa08405672b30f9c0e3c2a94906f450e0"
+      }
+    },
+    "metadata": {
+      "bytes": 19948,
+      "sha256": "441e491caa2c0ff7c686d9233fc229ea247922dc9b4d9d27b9e18b78533ccc36"
+    },
+    "original_barrier_pins_verified": true,
+    "source_files_sha256": {
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/spa_agent_demo.c": "23ec38602e902ffa50d2d3ac191848edb1e048ddf2f8357c7d35a3ee6fb11d31",
+      "examples/spa_agent_future.c": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661",
+      "examples/spa_agent_replicates.c": "b886d3c9851a366247128a3385c67868b14770d4f7df62fcdae06ea63b82bec6",
+      "examples/spa_agent_scenarios.h": "9f6fadfaceb1b10148742deb1d5887b0fd02eb9b24d271af90de48fa27aaae28",
+      "experiments/spa_agent/conditioned/audit.json": "b5b06ea8ecd06b98606501d970b3eae44978430855812bdc02f7350342580593",
+      "experiments/spa_agent/conditioned/audit.py": "5eee0345a4309415be064ea0cf6b930cd87d1317e6016b8477eb3df0f0bb8af6",
+      "experiments/spa_agent/conditioned/policy.py": "aaea182a0c006f658c1dcd7b7191421497a739c9c93c3607c8e9158bbd05293d",
+      "experiments/spa_agent/conditioned/protocol.json": "e5bb801a78cf68403c45474858fb7aff96e5aa4337003b6c06dc72253257225a",
+      "experiments/spa_agent/conditioned/run.py": "2aca5e434396f61509d392dd4167616851a88aff2fc718a44a212c4587170235",
+      "experiments/spa_agent/conditioned/runner_preflight.json": "9c91ed41d4bfebbaef3101e9416313592568542dc0c5cff4740a21b7217c3b50",
+      "experiments/spa_agent/future/protocol.json": "134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861",
+      "experiments/spa_agent/future/run.py": "6131057ffe1f25c42f4888af644012a91f21ad6adfb93b32f5be5ada223a7df1",
+      "experiments/spa_agent/protocol.json": "0a1272697270e93b8d0dbdeb2d8ce7706dbbbda77fcc146c2f29be7eddc1fae2",
+      "experiments/spa_agent/replicates/policy.py": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca",
+      "experiments/spa_agent/replicates/protocol.json": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75",
+      "experiments/spa_agent/replicates/run.py": "046b1bea1f0676b516afa1125a69d47c401b19e33ef838ad12c2d2be95cdd257",
+      "experiments/spa_agent/run.py": "4dc7152c421cd5d1812669f117673ca721a6800d3ee15020c6581d4cfeda85f7",
+      "experiments/spa_agent/scenarios/protocol.json": "25aeed3248bcde9920a4a4eed29fd5ef06e5373da670c26fbb87696d819edcf4",
+      "experiments/spa_agent/scenarios/raw_traces.jsonl.gz": "dcee2f733f8a7a4063a44f0654b574dad55ce6b57ea258ee81a7582d39370d22",
+      "experiments/spa_agent/scenarios/receipts.json": "fd13d4c256fb10ea1e31c7616da6fc8a9d94250063da683bcfcad475c11f05aa",
+      "experiments/spa_agent/scenarios/run.py": "3da78ceb56bc50a0bb341db029373c9941003ad0a8a60ed422d2db091ef29195",
+      "notorch.c": "12915832a2b6a84d27aae6e83a4cf08b601970a287c91d7dc9ab2fcabf15dfb7",
+      "notorch.h": "cad17f03c141ee4209cdbd6af6d435364e889f9d37a9f07592a04f5f89b8519d",
+      "notorch_cuda.h": "8fb573ec4182586d7bc83fc02164a74d804763540cc71060dbb139eb1d2daac4",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "notorch_simd_scalar.h": "c3fa8f3ec388f7398bfbcb5fba7f67055354873775398c306e2340d42d50dc86",
+      "python/SPA.py": "7b498dc6ea6f41cdfac118f9fd9bc94b7726c52c5c0c8c7c073891b3da339cc7",
+      "python/notorch.py": "1e8d3551fe45fc5b6e4321ff036dac46198dd19b1feda7d4638352cf8e1031d1",
+      "spa_agent.c": "9b747d02dc680717474b65bc202ac320dd4c91905eba423599dd8b7e9190c268",
+      "spa_agent.h": "501a4fe672e77e5fe29d5d9eedea49a06eefd2a7c94d61912ef00137b65e779e",
+      "spa_binding.c": "6ccb244cbe4714fa38a37da4a5acea1018e64a285a0f557693d8dc2792aa22a6",
+      "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55",
+      "tests/spa_replicates_fixture.c": "00ef2c829b3a03147a680b334e34935e66412407ec3de2cbe1e76f10ee754889",
+      "tests/test_spa_agent_conditioned.c": "061541e98e81704f516ea960dec97b6bd10fb3b588dcffec496129dd4ee73e71",
+      "tests/test_spa_agent_future.c": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+      "tests/test_spa_agent_repeated.c": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+      "tests/test_spa_conditioned_audit.py": "a87393ce8223eecf103f5c313a77ca5a4f6b9444867d5c33c91455c46b26883e",
+      "tests/test_spa_conditioned_policy.py": "cb5193f716bdd1f07a9db1189cde3d73522c179e2f9ea2658cab7395cab4c029",
+      "tests/test_spa_conditioned_runner.py": "0c5b598591884c1fbca5de24be9a9045a27207c6c34cce2f7e54ae0de42d8df3",
+      "tests/test_spa_future.py": "87fbed5560d6d89c3918fb32e7a9fa9c10e58056677c32d83cddc40bb069784e",
+      "tests/test_spa_replicates.py": "a2a3e06e8aa9b68382e789b514a1f53afd620d8b62154e10a5687f054b237d32",
+      "tests/test_spa_scenarios.py": "465e2d910f2be06fc97c8e92bdcb7a7c4021e9bae8e59bb659f1c3804e2eb6a2",
+      "tests/test_spa_trace_io.py": "f4cc9893b03d641653a5ca8e4efb7ca37e90fa0717d9b98db2f3980df18c288d"
+    },
+    "sources_match_repository_and_snapshot": true
+  },
+  "stages": [
+    {
+      "copies": 2,
+      "new_body_generation": 0,
+      "order": 1,
+      "phase": "fitting_started"
+    },
+    {
+      "barrier": {
+        "bytes": 7003,
+        "sha256": "70dbcf2ff8ae29e938bf46bd14befd88300a033fe72034f5ef8ba9bd73a65704"
+      },
+      "order": 2,
+      "phase": "all_eight_lives_sealed"
+    },
+    {
+      "barrier": {
+        "bytes": 7003,
+        "sha256": "70dbcf2ff8ae29e938bf46bd14befd88300a033fe72034f5ef8ba9bd73a65704"
+      },
+      "order": 3,
+      "phase": "new_source_generation_started",
+      "seeds": [
+        509,
+        601
+      ]
+    }
+  ],
+  "status": "FAILURE_CAPTURED_BEFORE_RECOVERY",
+  "unstarted_artifacts_absent": [
+    "evaluation.json",
+    "evaluation_sources.raw.jsonl.gz",
+    "evaluation-repeats-s509.jsonl",
+    "evaluation-repeats-s601.jsonl",
+    "training.readout-1.jsonl",
+    "evaluation.readout-1.jsonl",
+    "receipts.json",
+    "raw_records.tar.gz"
+  ]
+}

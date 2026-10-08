@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "command": [
+    "sh",
+    "tests/test_spa_legacy_parity.sh"
+  ],
+  "returncode": 0,
+  "checks_each_fixed_fixture": 45,
+  "steps": 1024,
+  "bytes": 114688,
+  "baseline": "420fa54fe3b92cdb2f83e20d19fc887b09db3d8e",
+  "trajectory_sha256": "02b775177e733cc0de2d35a7a4c739bd13b90c33a029a3659298fb4f64d28a30",
+  "stdout": "SPA_LEGACY_FIXED_OK checks=45\nSPA_LEGACY_FIXED_OK checks=45\nSPA_LEGACY_PARITY_OK steps=1024 bytes=114688 baseline=420fa54fe3b92cdb2f83e20d19fc887b09db3d8e sha256=02b775177e733cc0de2d35a7a4c739bd13b90c33a029a3659298fb4f64d28a30\n",
+  "source_sha256": {
+    "notorch.c": "12915832a2b6a84d27aae6e83a4cf08b601970a287c91d7dc9ab2fcabf15dfb7",
+    "notorch.h": "cad17f03c141ee4209cdbd6af6d435364e889f9d37a9f07592a04f5f89b8519d",
+    "spa_agent.c": "9b747d02dc680717474b65bc202ac320dd4c91905eba423599dd8b7e9190c268",
+    "spa_agent.h": "501a4fe672e77e5fe29d5d9eedea49a06eefd2a7c94d61912ef00137b65e779e",
+    "tests/test_spa_legacy_parity.sh": "e2275989ffa7253d1e967601ae207d4e1ff3069da9a32229c50af6223e40a193"
+  }
+}

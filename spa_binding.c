@@ -151,6 +151,10 @@ static const spa_abi_entry layout[] = {
     FIELD(nt_spa_comparison_receipt, scores_after),
     FIELD(nt_spa_comparison_receipt, loss_before),
     FIELD(nt_spa_comparison_receipt, loss_after),
+    STRUCT(nt_spa_conditioned_receipt),
+    FIELD(nt_spa_conditioned_receipt, comparison),
+    FIELD(nt_spa_conditioned_receipt, scale_floor),
+    FIELD(nt_spa_conditioned_receipt, scale),
 };
 
 uint32_t nt_spa_binding_version(void) { return 1u; }

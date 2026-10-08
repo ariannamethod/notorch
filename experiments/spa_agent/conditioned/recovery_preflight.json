@@ -1,0 +1,72 @@
+{
+  "blocking_findings": [],
+  "check_count": 21,
+  "checks": [
+    "original_runner_pin",
+    "all_failure_time_artifacts_unchanged",
+    "exact_acquisition_barrier_coverage",
+    "all_original_acquisition_files_match_barrier",
+    "deterministic_acquisition_copies_still_match",
+    "metadata_barrier_sources_binaries_inputs_agree",
+    "all_45_working_and_snapshot_source_pins_match",
+    "all_binary_pins_match",
+    "all_input_pins_match",
+    "retained_training_pin_matches",
+    "damaged_exact_registered_identity",
+    "damaged_is_strict_original_off_prefix",
+    "all_five_original_life_pairs_match_509",
+    "all_five_original_life_pairs_match_601",
+    "original_exit_zero_on601_command_preserved",
+    "registered_stage_boundary",
+    "repeated_generation_and_readout_not_started",
+    "recovery_not_previously_started",
+    "no_policy_fit_api_in_recovery",
+    "single_explicit_original_body_replay_site",
+    "only_one_explicit_trace_replacement"
+  ],
+  "failure_receipt": {
+    "bytes": 30410,
+    "path": "experiments/spa_agent/conditioned/durability_failure.json",
+    "sha256": "952de6022c91910d3fb1fb901bd39e64cecd69cb96a5250da07711de0ec6d826"
+  },
+  "failure_time_artifacts_authenticated": 69,
+  "measured_sources_authenticated": 45,
+  "model_generation_executed_by_preflight": 0,
+  "native_fits_executed_by_preflight": 0,
+  "operation": "Read-only recovery source and preserved-boundary review",
+  "original_barrier": {
+    "bytes": 7003,
+    "sha256": "70dbcf2ff8ae29e938bf46bd14befd88300a033fe72034f5ef8ba9bd73a65704"
+  },
+  "original_metadata": {
+    "bytes": 19948,
+    "sha256": "441e491caa2c0ff7c686d9233fc229ea247922dc9b4d9d27b9e18b78533ccc36"
+  },
+  "passed": true,
+  "recovery_source": {
+    "bytes": 14955,
+    "path": "experiments/spa_agent/conditioned/recover.py",
+    "sha256": "c62a3f68b178e9bd5a6892e50897fddb219834336dd380242b02cf43f10331a4"
+  },
+  "review_limits": "Static recovery-code review and read-only authentication of the failed boundary; replay execution and post-recovery outcome checks occur afterward.",
+  "reviewed_execution_contract": {
+    "additional_diagnostics_processes": 1,
+    "additional_native_fits": 0,
+    "frozen_source_required": true,
+    "original_complete_on_sha": "Unavailable; no earlier complete ON seal exists. Recovery uses the preserved prefix and full OFF/scenario/life witnesses.",
+    "remaining_original_work": [
+      "registered K8 evaluation at seeds509 and601",
+      "sealed pure readouts",
+      "unchanged summary calculation",
+      "full raw archive and final artifact receipt"
+    ],
+    "replay_acceptance": [
+      "original damaged bytes exact strict prefix",
+      "complete original OFF trace exact",
+      "complete original scenario trace exact",
+      "all five original ON and OFF life files exact"
+    ],
+    "replayed_seed": 601
+  },
+  "schema": 1
+}

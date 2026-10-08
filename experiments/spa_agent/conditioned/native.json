@@ -1,0 +1,309 @@
+{
+  "schema": 1,
+  "operation": "synthetic native conditioned-credit gates and compiled mutations",
+  "source_sha256": {
+    "spa_agent.c": "9b747d02dc680717474b65bc202ac320dd4c91905eba423599dd8b7e9190c268",
+    "spa_agent.h": "501a4fe672e77e5fe29d5d9eedea49a06eefd2a7c94d61912ef00137b65e779e",
+    "tests/test_spa_agent_conditioned.c": "061541e98e81704f516ea960dec97b6bd10fb3b588dcffec496129dd4ee73e71",
+    "tests/test_spa_agent_repeated.c": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a",
+    "tests/test_spa_agent_future.c": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682",
+    "notorch.c": "12915832a2b6a84d27aae6e83a4cf08b601970a287c91d7dc9ab2fcabf15dfb7",
+    "notorch.h": "cad17f03c141ee4209cdbd6af6d435364e889f9d37a9f07592a04f5f89b8519d",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+    "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c"
+  },
+  "script_sha256": "089f7259946a4ddc8be836f35f7ab9d63841b18c322a163903a93d791863f8e4",
+  "mutations": [
+    {
+      "name": "bypassed_conditioning",
+      "gate": "aggregate",
+      "source_anchor": "NT_SPA_CONDITIONED_TARGET",
+      "mutant_source_sha256": "111d31ac58e81104e0de4800f91211a2a7679c9fcc51fbcaf26191bc2c26e8d2",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c99",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-O2",
+          "-pthread",
+          "-I",
+          "<temporary>/bypassed_conditioning",
+          "-I",
+          "<source>",
+          "<temporary>/bypassed_conditioning/test.c",
+          "<temporary>/bypassed_conditioning/spa_agent.c",
+          "<temporary>/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/bypassed_conditioning/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/bypassed_conditioning/gate",
+          "aggregate"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "FAIL aggregate:242: normalize the completed mean, never separately normalized repetitions\n"
+      },
+      "caught": true
+    },
+    {
+      "name": "reversed_conditioned_credit",
+      "gate": "aggregate",
+      "source_anchor": "NT_SPA_CONDITIONED_TARGET",
+      "mutant_source_sha256": "94aed7712bbcfc0e7d8a3dd092d6d9180c132d6c486f652c45dca32149de1e1e",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c99",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-O2",
+          "-pthread",
+          "-I",
+          "<temporary>/reversed_conditioned_credit",
+          "-I",
+          "<source>",
+          "<temporary>/reversed_conditioned_credit/test.c",
+          "<temporary>/reversed_conditioned_credit/spa_agent.c",
+          "<temporary>/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/reversed_conditioned_credit/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/reversed_conditioned_credit/gate",
+          "aggregate"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "FAIL aggregate:242: normalize the completed mean, never separately normalized repetitions\n"
+      },
+      "caught": true
+    },
+    {
+      "name": "normalize_before_mean",
+      "gate": "aggregate",
+      "source_anchor": "NT_SPA_CONDITIONED_TARGET",
+      "mutant_source_sha256": "8d467cbdd2bd13d2dcb0a4a23fcc77b62f98d5d4456ab7e0ae4f10a926a9615b",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c99",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-O2",
+          "-pthread",
+          "-I",
+          "<temporary>/normalize_before_mean",
+          "-I",
+          "<source>",
+          "<temporary>/normalize_before_mean/test.c",
+          "<temporary>/normalize_before_mean/spa_agent.c",
+          "<temporary>/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/normalize_before_mean/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/normalize_before_mean/gate",
+          "aggregate"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "FAIL aggregate:242: normalize the completed mean, never separately normalized repetitions\n"
+      },
+      "caught": true
+    }
+  ],
+  "legacy_gates": [
+    {
+      "name": "repeated",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c99",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-O2",
+          "-pthread",
+          "-I",
+          "<temporary>/legacy-repeated",
+          "-I",
+          "<source>",
+          "<temporary>/legacy-repeated/test.c",
+          "<temporary>/legacy-repeated/spa_agent.c",
+          "<temporary>/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/legacy-repeated/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/legacy-repeated/gate"
+        ],
+        "returncode": 0,
+        "stdout": "PASS parity\nPASS validation\naggregate: native rewards [+1,0]/[-1,0] -> means +0.5/-0.5; one update\nPASS aggregate\ngradient: comparisons=1602 nonzero_parameters=267 maximum_absolute_error=2.78056312e-05\nPASS gradient\nPASS persistence\nPASS SPA repeated: 5 groups, 3457 checks\n",
+        "stderr": ""
+      },
+      "passed": true
+    },
+    {
+      "name": "future",
+      "build": {
+        "command": [
+          "cc",
+          "-std=c99",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-pedantic",
+          "-O2",
+          "-pthread",
+          "-I",
+          "<temporary>/legacy-future",
+          "-I",
+          "<source>",
+          "<temporary>/legacy-future/test.c",
+          "<temporary>/legacy-future/spa_agent.c",
+          "<temporary>/notorch.o",
+          "-lm",
+          "-o",
+          "<temporary>/legacy-future/gate"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "run": {
+        "command": [
+          "<temporary>/legacy-future/gate"
+        ],
+        "returncode": 0,
+        "stdout": "PASS capture\nPASS validation\ngradient: comparisons=1602 nonzero_parameters=267 maximum_absolute_error=2.80579572e-05\nPASS gradient\nPASS masks\ncredit: H0 RIGHT advantage=0.0086092921; H4 RIGHT advantage=-0.100602373; acquired RIGHT -> KEEP\nPASS credit\nPASS persistence\nPASS SPA future: 6 groups, 6277 checks\n",
+        "stderr": ""
+      },
+      "passed": true
+    }
+  ],
+  "build_notorch": {
+    "command": [
+      "cc",
+      "-std=gnu11",
+      "-O2",
+      "-pthread",
+      "-I",
+      "<source>",
+      "-c",
+      "<source>/notorch.c",
+      "-o",
+      "<temporary>/notorch.o"
+    ],
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "baseline": {
+    "build": {
+      "command": [
+        "cc",
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-pedantic",
+        "-O2",
+        "-pthread",
+        "-I",
+        "<temporary>/baseline",
+        "-I",
+        "<source>",
+        "<temporary>/baseline/test.c",
+        "<temporary>/baseline/spa_agent.c",
+        "<temporary>/notorch.o",
+        "-lm",
+        "-o",
+        "<temporary>/baseline/gate"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "run": {
+      "command": [
+        "<temporary>/baseline/gate"
+      ],
+      "returncode": 0,
+      "stdout": "PASS parity\nPASS validation\nPASS aggregate\nPASS floor\ngradient: comparisons=1602 nonzero_parameters=267 maximum_absolute_error=1.27156576e-06\nPASS gradient\nPASS persistence\nPASS SPA conditioned: 6 groups, 5928 checks\n",
+      "stderr": ""
+    }
+  },
+  "sanitizers": {
+    "build": {
+      "command": [
+        "cc",
+        "-std=gnu11",
+        "-O1",
+        "-g",
+        "-pthread",
+        "-I",
+        "<source>",
+        "-fno-omit-frame-pointer",
+        "-fsanitize=address,undefined",
+        "<source>/tests/test_spa_agent_conditioned.c",
+        "<source>/spa_agent.c",
+        "<source>/notorch.c",
+        "-lm",
+        "-o",
+        "<temporary>/sanitized-gate"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": "<source>/notorch.c: In function \u2018nt_tape_backward\u2019:\n<source>/notorch.c:1072:37: warning: argument 1 range [18446744071562067968, 18446744073709551615] exceeds maximum object size 9223372036854775807 [-Walloc-size-larger-than=]\n 1072 |                 float* gx = (float*)calloc(out_len, sizeof(float));\n      |                                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nIn file included from <source>/notorch.h:12,\n                 from <source>/notorch.c:12:\n/usr/include/stdlib.h:675:14: note: in a call to allocation function \u2018calloc\u2019 declared here\n  675 | extern void *calloc (size_t __nmemb, size_t __size)\n      |              ^~~~~~\n<source>/notorch.c:1123:37: warning: argument 1 range [18446744071562067968, 18446744073709551615] exceeds maximum object size 9223372036854775807 [-Walloc-size-larger-than=]\n 1123 |                 float* gx = (float*)calloc(n, sizeof(float));\n      |                                     ^~~~~~~~~~~~~~~~~~~~~~~~\n/usr/include/stdlib.h:675:14: note: in a call to allocation function \u2018calloc\u2019 declared here\n  675 | extern void *calloc (size_t __nmemb, size_t __size)\n      |              ^~~~~~\n"
+    },
+    "environment": {
+      "ASAN_OPTIONS": "detect_leaks=0",
+      "UBSAN_OPTIONS": "halt_on_error=1"
+    },
+    "run": {
+      "command": [
+        "<temporary>/sanitized-gate"
+      ],
+      "returncode": 0,
+      "stdout": "PASS parity\nPASS validation\nPASS aggregate\nPASS floor\ngradient: comparisons=1602 nonzero_parameters=267 maximum_absolute_error=1.27156576e-06\nPASS gradient\nPASS persistence\nPASS SPA conditioned: 6 groups, 5928 checks\n",
+      "stderr": ""
+    },
+    "passed": true
+  },
+  "working_sources_unchanged": true,
+  "passed": true
+}

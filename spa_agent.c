@@ -775,6 +775,60 @@ int nt_spa_agent_fit_comparison(nt_spa_agent *a,const nt_spa_experience *e,
     return NT_SPA_OK;
 }
 
+int nt_spa_agent_fit_conditioned(nt_spa_agent *a,const nt_spa_experience *e,
+    const nt_spa_comparison *comparisons,uint32_t count,float rate,float scale_floor,
+    nt_spa_conditioned_receipt *out) {
+    nt_spa_agent measured;
+    nt_spa_conditioned_receipt r;
+    nt_spa_policy conditioned;
+    float hidden[NT_SPA_AGENT_HIDDEN],post_hidden[NT_SPA_AGENT_HIDDEN];
+    float gradient[NT_SPA_AGENT_ACTIONS]={0};
+    size_t comparison_bytes;
+    unsigned i,valid_count=0;
+    int status;
+    if(!count || count>NT_SPA_COMPARISON_MAX_REPEATS ||
+        !isfinite(scale_floor) || scale_floor<=0) return NT_SPA_E_COMPARISON;
+    status=learned_idle(a);
+    if(status!=NT_SPA_OK) return status;
+    if(nt_spa_experience_validate(e)!=NT_SPA_OK) return NT_SPA_E_EXPERIENCE;
+    if(!comparisons || !in_range(rate,0,1)) return NT_SPA_E_COMPARISON;
+    comparison_bytes=(size_t)count*sizeof(*comparisons);
+    // Check original addresses and the entire larger receipt before copying.
+    if(overlaps_agent(a,e,sizeof(*e)) || overlaps_agent(a,comparisons,comparison_bytes) ||
+        overlaps_agent(a,out,sizeof(*out)) || buffer_overlap(e,sizeof(*e),comparisons,comparison_bytes) ||
+        buffer_overlap(e,sizeof(*e),out,sizeof(*out)) ||
+        buffer_overlap(comparisons,comparison_bytes,out,sizeof(*out))) return NT_SPA_E_COMPARISON;
+    measured=*a; memset(&r,0,sizeof(r));
+    status=nt_spa_agent_fit_repeated(&measured,e,comparisons,count,0,&r.comparison);
+    if(status!=NT_SPA_OK) return status;
+    r.comparison.learning_rate=rate; r.scale_floor=scale_floor;
+    r.scale=(double)scale_floor;
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) if(r.comparison.action_mask&(1u<<i)) {
+        r.scale=fmax(r.scale,fabs((double)r.comparison.targets[i]));
+        ++valid_count;
+    }
+    forward(&a->policy,e->features,hidden,r.comparison.scores_before);
+    // NT_SPA_CONDITIONED_AFTER_MEAN: scale the already-averaged raw deltas.
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) if(r.comparison.action_mask&(1u<<i)) {
+        // NT_SPA_CONDITIONED_TARGET: retain the KEEP-relative credit sign.
+        r.comparison.targets[i]=(float)((double)r.comparison.targets[i]/r.scale);
+        gradient[i]=bounded(r.comparison.targets[i]-r.comparison.scores_before[i],-1,1)/(float)valid_count;
+    }
+    r.comparison.loss_before=comparison_loss(r.comparison.scores_before,r.comparison.targets,r.comparison.action_mask);
+    conditioned=a->policy;
+    if(rate>0) train_policy(&conditioned,e->features,hidden,gradient,rate);
+    for(i=0;i<NT_SPA_AGENT_ACTIONS;++i) if(!(r.comparison.action_mask&(1u<<i))) {
+        memcpy(conditioned.w2[i],a->policy.w2[i],sizeof(conditioned.w2[i]));
+        conditioned.b2[i]=a->policy.b2[i];
+    }
+    if(!policy_valid(&conditioned)) return NT_SPA_E_STATE;
+    forward(&conditioned,e->features,post_hidden,r.comparison.scores_after);
+    r.comparison.loss_after=comparison_loss(r.comparison.scores_after,r.comparison.targets,r.comparison.action_mask);
+    a->policy=conditioned;
+    if(out) *out=r;
+    return NT_SPA_OK;
+}
+
 int nt_spa_agent_fit_repeated(nt_spa_agent *a,const nt_spa_experience *e,
     const nt_spa_comparison *comparisons,uint32_t count,float rate,
     nt_spa_comparison_receipt *out) {

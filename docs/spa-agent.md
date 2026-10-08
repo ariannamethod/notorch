@@ -154,6 +154,38 @@ v1 save format. The [paired-continuation protocol](../experiments/spa_agent/repl
 uses eight paired continuations per state with the original policy capacity
 and update budget.
 
+## Conditioning the learning targets
+
+`nt_spa_agent_fit_conditioned` accepts the same 1–64 paired comparisons, a
+learning rate, a finite positive `scale_floor`, and an
+`nt_spa_conditioned_receipt`. It first computes exactly the rewards and
+KEEP-relative float targets used by `fit_repeated`. For each captured state:
+
+```text
+delta[action] = float(mean_reward[action] - mean_reward[KEEP])
+scale = max(double(scale_floor), max_valid abs(double(delta[action])))
+target[action] = float(double(delta[action]) / scale)
+```
+
+The existing simultaneous mean-Huber update fits these conditioned targets.
+Only valid action heads participate; KEEP retains target zero. The receipt's
+`comparison` contains original mean rewards, conditioned targets, scores and
+losses, alongside the supplied float floor and the actual double scale.
+The host retains every raw consequence and its provenance. A rate of zero
+produces the receipt without changing policy bytes.
+
+Every valid head in a state uses the same positive scale. This changes gradient
+amplitude and relative weighting between states.
+The floor limits amplification of near ties; conditioning does not establish
+that a small, noisy advantage is reliable. Evaluate acquired actions using
+the original reward and separate raw measurements. One comparison still
+receives conditioning; `fit_repeated` remains the unconditioned API.
+
+Replay changes only policy weights and keeps the canonical v1 life format.
+Validation, pending-credit refusal and transaction boundaries match repeated
+learning. The [fixed conditioning protocol](../experiments/spa_agent/conditioned/protocol.json)
+specifies its floor, controls and new-state evaluation before fitting.
+
 ## Lineage and research sources
 
 The code lineage is **PostGPT → SPA → Q → Sentence Phonon Agent**.

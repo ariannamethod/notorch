@@ -1,0 +1,46 @@
+{
+  "actual_schema": "outcome_sha256 is a three-slot list indexed by action; unavailable actions carry null. This is emitted by the unchanged parent comparisons() helper.",
+  "classification": "Independent audit schema expectation defect",
+  "command": "python3 experiments/spa_agent/conditioned/audit.py --execution-dir <completed-run> --output experiments/spa_agent/conditioned/result_audit.json",
+  "data_changes": false,
+  "exit_code": 1,
+  "failure": "AssertionError: comparison raw outcome association",
+  "final_receipts": {
+    "bytes": 5215118,
+    "sha256": "398ba12f745f38e3365dc184fa49af01538d2e1b8ba6e70981eaf378330ee3d2"
+  },
+  "first_comparison": {
+    "actual_reference": {
+      "outcome_sha256": [
+        "4e6c6a1381d9d03d770fb817cb9be6ab69c0372f8390cde428309f8b8c4db756",
+        null,
+        "6742f399b7174d14370e4ee3caf0ddcd0d860df1e6723e1a8cfd09e5e457ca81"
+      ],
+      "replicate": 0
+    },
+    "arm": "raw_mean8",
+    "source_ordinal": 0
+  },
+  "fit_trace": {
+    "bytes": 8031523,
+    "sha256": "803041017d0ca51967e7a074fb9aed691479b19293031d8dbbd90c79d0f9ad99"
+  },
+  "fits_or_generation_launched_by_auditor": 0,
+  "frozen_audit": {
+    "bytes": 42791,
+    "sha256": "5eee0345a4309415be064ea0cf6b930cd87d1317e6016b8477eb3df0f0bb8af6"
+  },
+  "frozen_audit_edited": false,
+  "incorrect_checker_schema": "Expected a dictionary keyed by available action strings; native input bytes and source/donor equality had already passed.",
+  "location": "conditioned/audit.py journal(), expected construction immediately before comparison raw outcome association gate",
+  "next_step": "Report the retained failure before a separately recorded audit-schema adapter; preserve frozen audit.py unchanged.",
+  "protocol_changes": false,
+  "result_audit_written": false,
+  "schema": 1,
+  "source_reference": {
+    "path": "experiments/spa_agent/replicates/policy.py",
+    "relevant_lines": "ids = [None, None, None]; ids[kind] = outcome[\"raw_sha256\"]",
+    "sha256": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca"
+  },
+  "status": "FAIL"
+}

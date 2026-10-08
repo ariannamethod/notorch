@@ -13,6 +13,79 @@ Newest entries on top.
 
 ---
 
+## 2026-10-08 — SPA target conditioning changes retained choices, not transfer
+
+Main `420fa54` supplies the measured baseline. `nt_spa_agent_fit_conditioned`
+and `SPA.Agent.fit_conditioned` add optional per-state conditioning to repeated
+consequence replay. The same clipped native mean rewards produce KEEP-relative
+float targets; one positive scale, bounded below by the caller's floor,
+conditions the existing simultaneous Huber update. The receipt retains raw
+rewards, conditioned targets and the double scale. The policy remains 267
+parameters; temporal state, RNG, ordinary SPA and canonical v1 lives retain
+their existing contracts. Unconditioned APIs retain their exact arithmetic.
+
+The frozen experiment reuses the 48 training states from seeds 42/73, fits
+three arms for 24,576 updates each, and reproduces all four lives and complete
+73,728-update journals in two independent fitting copies. The raw mean8 life
+matches its parent checkpoint exactly. All eight lives seal before the new
+509/601 cohort: 48 states, eight continuations per action and 2,880 H0/H1/H4
+measurements. Perception, capacity, reward, rate, order and budget stay fixed.
+Conditioning changes gradient amplitude and relative state weighting together.
+
+On retained training states, acquired conditioned weights alone change three
+KEEP decisions to measured-best interventions: KEEP/LEFT/RIGHT = 45/1/2,
+mean original H4 advantage **+0.000328626**. On new states, the same policy
+chooses KEEP **48/48**, matching initial and raw mean8. Advantage is **zero**;
+seven measured beneficial alternatives remain missed. Shuffled conditioning
+chooses RIGHT four times, one beneficial and three harmful, with mean advantage
+**−0.000838234**. The registered hypothesis of improved new-state utility
+**fails**. Raw axes, cost, regret, all source/action joins and per-seed/target
+results remain in the receipts. No measurement or hyperparameter was adjusted
+after this result.
+
+An ordinary ON601 trace ended at 120,594 bytes inside JSONL line 74 although
+its process exited zero. The failure gate stopped before K8 generation. All
+eight trained lives, both journals, original scenarios and five host lives
+were intact. One separately recorded frozen ON601 replay reproduced the full
+216,380-byte OFF trace, the entire original scenario and all five host lives;
+the damaged bytes are its exact prefix. Only that trace was replaced after
+preserving the failure. No policy was refitted and no new seed was introduced.
+The original complete ON hash is unavailable; recovery does not invent it.
+An independent recovery audit authenticates the original pins and replay.
+
+The first result audit refused a reference-schema mismatch in its own checker:
+the helper records three-slot SHA lists, while the audit expected dictionaries.
+A separate, authenticated wrapper corrects that expectation in memory and
+retains the original failed checker/receipt. Swapped hashes and populated
+invalid slots still fail. Final independent audit verifies 147,456 fit receipts,
+384 decoded policy readouts, 40,992 raw axis values and 5,760 rewards. All
+114 artifacts and 81 archive members pass; the 17,542,082-byte raw archive
+reassembles exactly from three lossless Git parts.
+
+`make check_spa_conditioned BLAS_FLAGS= BLAS_LIBS=` passes **5,928 checks**,
+including 1,602 finite differences over all parameters. The compiled scale,
+credit-sign and pre-average-normalization defects are caught. ASan/UBSan pass
+with `detect_leaks=0`. Python passes **12 groups**, **261 ABI coordinates**
+across 15 types, and all 59 original C/Python oracle records. The synthetic
+helper checks 288 fits and exact receipt replays plus 192 pure readouts.
+The independent pre-fit audit catches 15 defects; runner IO preflight catches
+16. Full `make -j2 test BLAS_FLAGS= BLAS_LIBS=` passes all **41 CPU recipes**;
+the shared build and Python gate also pass. Ordinary sensory parity retains
+**1,024 steps / 114,688 identical bytes** against main.
+
+Final integration includes main `9f146ed`, preserving the incoming Chuck,
+SentencePiece and SHA256 work and both sides of the Makefile/log additions.
+After workspace maintenance removed the worktree, all 49 staged deliverables
+were recovered from Git; all 45 measured source identities remain unchanged.
+The native 5,928 checks, shared build and 12 Python groups pass again on the
+integrated tree. No numerical experiment was repeated. Exact commands and
+outputs are in `experiments/spa_agent/conditioned/finalization.json`; its
+44-recipe aggregate listing is an inventory, not another full-suite execution.
+
+See [the experiment and complete evidence](experiments/spa_agent/conditioned/README.md)
+for the unchanged reward, failure receipts, recovery, source identities and
+exact commands. The README describes the mechanism; host usage and Python
+examples include the explicit conditioning floor. Chuck sources are untouched.
 ## 2026-10-08 — the loaded words keep their identity
 
 Fresh main `0b0444a` supplies the baseline. `nt_spm_identity` gives each loaded
