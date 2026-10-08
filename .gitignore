@@ -94,6 +94,9 @@ bench_qmatmul
 /test_gemma3
 
 /test_smollm_tokenizer
+/test_sentencepiece
+/test_sentencepiece_faults
+!tests/test_sentencepiece_mutations.py
 test_q8_0_rows
 test_multi_decode
 bench_multi_decode
