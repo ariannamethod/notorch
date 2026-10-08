@@ -44,3 +44,16 @@ python3 experiments/chuck_loss_architect/trajectories/run.py \
 The fixed full run contains 26,624 body updates, 32,768 policy fits and 576
 readouts. Development smoke uses seed 42, two checkpoints, two fit epochs,
 17-step source hosts and 32-step deployments. Its receipts remain separate.
+
+## Closed artifacts retain their first identity
+
+The first development smoke stopped when a later read found three previously
+parsed traces truncated. The failed directory remains unchanged. Its cause is
+undetermined; no full acquisition or new evaluation had started.
+
+The runner now seals each closed file from its first bytes: those same bytes
+supply parsing, an immutable hash and an atomic compressed mirror. A later
+mismatch preserves the damaged file and failed-integrity receipt. Recovery is
+allowed once per file, only from mirror bytes matching the original hash.
+A missing or incorrect mirror stops the run. Every restoration is reported;
+body updates, fitting and measured outcomes are never rerun for recovery.

@@ -646,6 +646,14 @@ body/seed pairs. Policy continuation improves over the HOLD-taught student on
 both SimpleLLM seeds and one HeVLM seed. All 1,024 selected-branch transitions,
 4,096 paired host steps and four policy save/load continuations remain exact.
 
+The [student-trajectory experiment](experiments/chuck_loss_architect/trajectories/README.md)
+now gives the source life and continuation policy separate identities. Both
+refits begin from the sealed policy-taught student and learn through the same
+student continuation: one acquires parent-reached states, the other acquires
+student-reached states. Eight earlier checkpoints retain actual temporal history
+and exact source restoration. `make test_chuck_trajectories` checks this boundary,
+including a deliberately wrong continuation and action-to-outcome association.
+
 ---
 
 ## bit-level precision — BitNet b1.58

@@ -590,6 +590,11 @@ test: test_chuck_lived
 test_chuck_lived_mutations:
 	python3 tests/test_chuck_lived_mutations.py
 
+.PHONY: test_chuck_trajectories
+test_chuck_trajectories:
+	python3 tests/test_chuck_trajectories.py
+	python3 tests/test_chuck_trajectory_receipts.py
+
 # Save syscall injection stays in this private object; production libc is intact.
 tests/chuck_durability_notorch.o: notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 \

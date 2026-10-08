@@ -1,0 +1,89 @@
+{
+  "status": "PASS",
+  "source_status": "development-only dirty smoke before implementation commit",
+  "protocol_sha256": "86673afd0abc04b5f389aeb4400765287fbc9a0951963639d961fc70a9c6c121",
+  "raw_result": {
+    "bytes": 187198,
+    "sha256": "7f1def875d737e4477ef89c58239c2c43dabbfc9be5efdfb3099dd18a8b41bd0"
+  },
+  "counts": {
+    "acquisition_worlds": 8,
+    "evaluation_worlds": 4,
+    "branch_updates": 768,
+    "paired_host_processes": 12,
+    "host_updates": 204,
+    "primary_deployment_processes": 12,
+    "resume_processes": 2,
+    "deployment_updates": 448,
+    "fit_updates": 16,
+    "development_readouts": 48,
+    "evaluation_readouts": 24,
+    "readouts": 72,
+    "source_continuation_transitions": 102,
+    "executed_branches": 48,
+    "all_body_updates": 1420
+  },
+  "terminal": {
+    "status": "PASS",
+    "artifact_identities": 359,
+    "cohorts": 6,
+    "paired_source_steps": 102,
+    "fit_traces": 2,
+    "readout_traces": 18,
+    "rollouts": 14,
+    "source_deployment_pairs": 2,
+    "policy_continuations": 2
+  },
+  "durability_failures": [
+    {
+      "artifact": "rollouts/hevlm-s42-push.jsonl",
+      "original": {
+        "bytes": 28845,
+        "sha256": "084c6a214956e99c19f7cecf2c2e24f8adc73131f8fb532ae827226aaad8bd9f"
+      },
+      "observed": {
+        "bytes": 24576,
+        "sha256": "c0316f9a20e354a5f81a680d6fc12af95d2bb9964fb394ea4f6b3721002269bb"
+      },
+      "evidence": "integrity-failures/0001",
+      "status": "restored",
+      "restored": {
+        "bytes": 28845,
+        "sha256": "084c6a214956e99c19f7cecf2c2e24f8adc73131f8fb532ae827226aaad8bd9f"
+      }
+    },
+    {
+      "artifact": "rollouts/hevlm-s42-refit-self.jsonl",
+      "original": {
+        "bytes": 56765,
+        "sha256": "a79683f7c36b8c11b54e92e1b9fa958a71a868ef2dcead51daecd26889d02d5b"
+      },
+      "observed": {
+        "bytes": 45056,
+        "sha256": "354a113c4c6ed8c227617a7f97df7e0cbaf30aca8e5e86c9011c0318390e139a"
+      },
+      "evidence": "integrity-failures/0002",
+      "status": "restored",
+      "restored": {
+        "bytes": 56765,
+        "sha256": "a79683f7c36b8c11b54e92e1b9fa958a71a868ef2dcead51daecd26889d02d5b"
+      }
+    }
+  ],
+  "numerical_replays": 0,
+  "machine": {
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+    "python": "3.12.14",
+    "cpu_count": 9,
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+    "memory": {
+      "MemTotal": "10206508 kB",
+      "MemAvailable": "9106260 kB",
+      "SwapTotal": "0 kB",
+      "SwapFree": "0 kB"
+    },
+    "cpu.max": "800000 100000",
+    "memory.max": "8589934592"
+  },
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0"
+}

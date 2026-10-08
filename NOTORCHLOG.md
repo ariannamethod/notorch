@@ -13,6 +13,46 @@ Newest entries on top.
 
 ---
 
+## 2026-10-08 — Chuck separates the visited world from its continuation
+
+Add the experimental `--trajectory` C host: the source life creates training
+states; a separately named student's 163 weights supply their measured future
+actions. Grafting preserves every non-weight field and all captured features.
+Source and branch identities stay separate. Exact equal weights produce one
+table with an explicit alias. Eight early, nonoverlapping checkpoints retain
+all source-policy continuation checks. Core Chuck arithmetic and public APIs
+remain byte-identical to main `420fa54`.
+
+The native fixture passes 288 branch updates and 64 actual source transitions;
+168 old `--lived` events and eleven artifacts match a rebuilt prechange host
+exactly. A deliberately wrong continuation is refused. Three actual receipt
+mutations are caught. Nine Python gates cover action credit, joins, source
+prefixes, immutable anchors and byte-exact restoration. The intervention API
+passes 292 checks; all 47 CPU recipe commands pass after a forced rebuild.
+
+The first development smoke stops on three later-truncated traces that had
+already been parsed successfully. Preserve that failed attempt unchanged.
+The runner now binds parsing, first SHA-256 and an atomic gzip mirror to the
+same bytes, authenticates inputs before native consumption, and retains every
+fault. A file may be restored once, only from bytes matching its original
+anchor; missing/wrong mirrors or repeated damage stop the run. Recovery never
+repeats body updates, fitting or outcome computation. This durability amendment
+precedes all full acquisition and new evaluation; the numerical recipe remains
+fixed. The revised protocol SHA-256 is
+`86673afd0abc04b5f389aeb4400765287fbc9a0951963639d961fc70a9c6c121`.
+
+The second seed-42 smoke completes 1,420 body updates, sixteen fits and 72
+readouts on SimpleLLM/HeVLM, with 102 source transitions and both save/load
+continuations exact. It authenticates 359 original artifact identities. Two
+later-truncated deployment traces are restored byte-exactly from their sealed
+copies; damaged bytes and both restoration receipts remain. First-attempt
+fixture/schema failures and an incomplete initial CPU log also remain in the
+raw record. No full-run evaluation has started at this commit.
+
+Compact gates are under `experiments/chuck_loss_architect/trajectories/`.
+A read-only RunPod retry at 2026-10-07 23:48:26 UTC again returns HTTP403,
+Ray `a470cc0458ed8114-ORD`; no key is used and no pod is created.
+
 ## 2026-10-07 — preregister Chuck experience from student-reached worlds
 
 Merged lived-state credit on fresh main `420fa54` supplies the next question:

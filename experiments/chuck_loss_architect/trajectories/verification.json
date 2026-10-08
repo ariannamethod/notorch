@@ -1,0 +1,83 @@
+{
+  "status": "PASS",
+  "core_lived_api_checks": 292,
+  "native_host": {
+    "receipt": {
+      "bytes": 1565748,
+      "sha256": "247a6d4bc23f0b469a790c1d8527f3b0f26a07107f36b1f6498d7b9580fa79a0"
+    },
+    "branch_updates": 288,
+    "natural_transitions": 64,
+    "legacy_events_exact": 168,
+    "legacy_files_exact": 11,
+    "wrong_continuation_mutation_caught": true
+  },
+  "receipt_gates": {
+    "original_receipt": {
+      "bytes": 5023,
+      "sha256": "fd8a2518286a76522885df9e3767a0fb39e0ac46f7449934a8fa763440bb51a9"
+    },
+    "durability_receipt": {
+      "bytes": 1323,
+      "sha256": "f5a1cbae2092afedc39e70eb66e9bd9b24b5d0fa2a17cb00f02cb1df1bd84d2f"
+    },
+    "unit_tests": 9,
+    "actual_receipt_mutations_caught": 3
+  },
+  "cpu_suite": {
+    "receipt": {
+      "bytes": 1810,
+      "sha256": "3a5b79d7040edfb5e9a079ea5644d67126571604d911f399cf0a7827a3448cab"
+    },
+    "exit_code": 0,
+    "recipes": 47,
+    "command": [
+      "make",
+      "-B",
+      "-j2",
+      "test",
+      "BLAS_FLAGS=",
+      "BLAS_LIBS="
+    ]
+  },
+  "numerical_core_unchanged": {
+    "notorch.c": {
+      "bytes": 509797,
+      "sha256": "12915832a2b6a84d27aae6e83a4cf08b601970a287c91d7dc9ab2fcabf15dfb7"
+    },
+    "notorch.h": {
+      "bytes": 57369,
+      "sha256": "cad17f03c141ee4209cdbd6af6d435364e889f9d37a9f07592a04f5f89b8519d"
+    },
+    "chuck_architect.h": {
+      "bytes": 11318,
+      "sha256": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43"
+    },
+    "chuck_architect_impl.h": {
+      "bytes": 46911,
+      "sha256": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c"
+    }
+  },
+  "prior_attempts": [
+    {
+      "stage": "native fixture",
+      "status": "BLOCKED",
+      "reason": "prechange comparison binary had mode0644; scoped chmod then complete gate passed"
+    },
+    {
+      "stage": "receipt fixture",
+      "status": "FAIL",
+      "reason": "synthetic header lacked type; fixture corrected"
+    },
+    {
+      "stage": "first CPU suite",
+      "status": "INCOMPLETE",
+      "reason": "retained log ended during compilation; complete force-rebuild output captured on second execution"
+    },
+    {
+      "stage": "first seed42 smoke",
+      "status": "FAIL",
+      "reason": "three previously parsed traces later found truncated; no numerical replay or repair of that attempt"
+    }
+  ]
+}

@@ -8,11 +8,25 @@
   "previous_protocol_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
   "previous_numerical_archive_sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960",
   "input_lives": {
-    "parent": {"file": "parent.policy.bin", "bytes": 1016, "sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb"},
-    "student": {"file": "lived-policy.policy.bin", "bytes": 1016, "sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1"}
+    "parent": {
+      "file": "parent.policy.bin",
+      "bytes": 1016,
+      "sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb"
+    },
+    "student": {
+      "file": "lived-policy.policy.bin",
+      "bytes": 1016,
+      "sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1"
+    }
   },
-  "bodies": {"simple": 450688, "hevlm": 1123456},
-  "body_order": ["simple", "hevlm"],
+  "bodies": {
+    "simple": 450688,
+    "hevlm": 1123456
+  },
+  "body_order": [
+    "simple",
+    "hevlm"
+  ],
   "context": 64,
   "body_lr": 0.0003,
   "gradient_clip": 1.0,
@@ -20,14 +34,47 @@
   "dtype": "F32",
   "cpu_only": true,
   "host_steps": 256,
-  "checkpoints_before_updates": [1, 17, 33, 49, 65, 97, 129, 193],
+  "checkpoints_before_updates": [
+    1,
+    17,
+    33,
+    49,
+    65,
+    97,
+    129,
+    193
+  ],
   "checkpoint_reason": "Earlier receipts locate student braking before the old update-64 checkpoint. These eight checkpoints inspect that early trajectory and retain at least sixteen updates between forks, preserving every native continuation check.",
-  "acquisition": {"sources": ["parent", "student"], "seeds": [42, 73], "states_per_source": 32, "paired_probe_on_off_hosts": true},
-  "intervention_actions": ["hold", "brake", "push"],
+  "acquisition": {
+    "sources": [
+      "parent",
+      "student"
+    ],
+    "seeds": [
+      42,
+      73
+    ],
+    "states_per_source": 32,
+    "paired_probe_on_off_hosts": true
+  },
+  "intervention_actions": [
+    "hold",
+    "brake",
+    "push"
+  ],
   "shared_continuation": "student",
   "target_horizon_total_updates": 16,
-  "diagnostic_horizons_total_updates": [1, 4, 16],
-  "future_probe_window_indices_zero_based": [16, 17, 18, 19],
+  "diagnostic_horizons_total_updates": [
+    1,
+    4,
+    16
+  ],
+  "future_probe_window_indices_zero_based": [
+    16,
+    17,
+    18,
+    19
+  ],
   "fork": {
     "source": "Each source acts for 256 real body updates with fresh history and its sealed weights. Capture body, gradients, moments, Chuck controls, complete Architect history/cache/RNG, tape, training mode and window/noise RNG before each fork.",
     "source_continuation": "Force the first named action and complete its real frozen feedback; then let the source select fifteen actual actions. The branch beginning with the source selection must reproduce its next sixteen ordinary host transitions.",
@@ -39,8 +86,14 @@
   },
   "objective": "state-span-huber-v1: delta[a]=double(loss[HOLD])-loss[a]; scale=max(max_abs_finite_delta,1e-6*(abs(double(loss[HOLD]))+1)); target[a]=delta[a]/scale. Mean three-head Huber delta1, simultaneous native update from pre-fit weights.",
   "students": {
-    "refit-parent": {"source": "parent", "life_id": "trajectory-parent-h16-v1"},
-    "refit-self": {"source": "student", "life_id": "trajectory-self-h16-v1"}
+    "refit-parent": {
+      "source": "parent",
+      "life_id": "trajectory-parent-h16-v1"
+    },
+    "refit-self": {
+      "source": "student",
+      "life_id": "trajectory-self-h16-v1"
+    }
   },
   "fitting": {
     "initial_weights": "student",
@@ -56,22 +109,57 @@
   },
   "evaluation": {
     "source": "student",
-    "seeds": [1013, 1217],
+    "seeds": [
+      1013,
+      1217
+    ],
     "states": 32,
     "outcomes_after_all_lives_saved_and_hashed": true,
-    "readouts": ["student", "refit-parent", "refit-self", "hold", "brake", "push"],
+    "readouts": [
+      "student",
+      "refit-parent",
+      "refit-self",
+      "hold",
+      "brake",
+      "push"
+    ],
     "primary_consequence": "H16 future-four loss under shared frozen student continuation; retain raw loss, advantage, exact-tie optimality and regret.",
     "previous_evaluation_seeds_reused_as_fresh": false
   },
   "closed_loop": {
     "steps": 512,
-    "arms": ["canonical", "hold", "push", "student", "refit-parent", "refit-self"],
-    "heldout_evaluations_after_updates": [0, 128, 256, 384, 512],
+    "arms": [
+      "canonical",
+      "hold",
+      "push",
+      "student",
+      "refit-parent",
+      "refit-self"
+    ],
+    "heldout_evaluations_after_updates": [
+      0,
+      128,
+      256,
+      384,
+      512
+    ],
     "primary_comparison": "refit-self versus refit-parent isolates the acquired source worlds at matched continuation, initialization and fitting budget. Each refit versus student measures the consequence of its additional acquisition.",
     "feedback": "Actual same-window frozen feedback advances native temporal history at every policy action; sealed weights remain unchanged.",
     "source_deployment_parity": "The student's first 256 deployment transitions and evaluations must equal the independent 256-step source host. Full-state hashes are compared at matching steps; final 256-step files are not compared to 512-step files.",
-    "policy_continuation": {"arm": "refit-self", "save_load_after_step": 256, "repeats": 4},
-    "metrics": ["complete held-out loss curves", "first action divergence", "action counts and early sequences", "first dampening-floor entry", "loss/gradient/controls/history", "final state identities", "elapsed seconds and peak RSS"]
+    "policy_continuation": {
+      "arm": "refit-self",
+      "save_load_after_step": 256,
+      "repeats": 4
+    },
+    "metrics": [
+      "complete held-out loss curves",
+      "first action divergence",
+      "action counts and early sequences",
+      "first dampening-floor entry",
+      "loss/gradient/controls/history",
+      "final state identities",
+      "elapsed seconds and peak RSS"
+    ]
   },
   "fixed_counts": {
     "acquisition_worlds": 64,
@@ -96,6 +184,19 @@
   "no_capacity_or_hyperparameter_sweep": true,
   "rounds": 1,
   "integrity": "Bind clean source, protocol, input lives, corpus, binary, every source/branch, sample, fit, readout and deployment. Anchor closed files before subsequent phases; terminally authenticate them. Source control/diagnostic and saved-life continuation are exact gates. Mutation tests must reject wrong continuation weights and wrong action-to-outcome association.",
-  "smoke": {"seeds": [42], "host_steps": 17, "deployment_steps": 32, "epochs": 2},
-  "failure_recording": "Keep first attempts, refusals, failed gates and all measured regressions. Full-run outcomes never change this protocol or its recipes."
+  "smoke": {
+    "seeds": [
+      42
+    ],
+    "host_steps": 17,
+    "deployment_steps": 32,
+    "epochs": 2
+  },
+  "failure_recording": "Keep first attempts, refusals, failed gates and all measured regressions. Full-run outcomes never change this protocol or its recipes.",
+  "durability": {
+    "amendment": "Added after a development-only seed42 smoke exposed later truncation of three previously parsed traces, before any full acquisition or new evaluation. Numerical recipe and fixed counts are unchanged.",
+    "first_read": "The same first closed bytes supply parsing, immutable original SHA-256 and an independent atomic fsync gzip mirror. Persist original anchors incrementally; never replace an existing anchor with a later identity.",
+    "later_change": "Preserve damaged bytes and a failed-integrity receipt. Restore at most once per file, only from mirror bytes matching the original hash, and retain the restoration event. Missing or incorrect mirror, repeated damage, or failed restoration stops the run.",
+    "numerical_replay": "No body, fitting or outcome execution is repeated to replace an artifact. The failed first smoke stays unchanged and is archived separately."
+  }
 }
