@@ -711,6 +711,19 @@ spa_agent_replicates: examples/spa_agent_replicates.c examples/spa_agent_demo.c 
 
 test: test_spa_agent_repeated
 
+# SPA keeps raw consequences while conditioning per-state learning targets.
+.PHONY: check_spa_conditioned test_spa_conditioned_mutations
+test_spa_agent_conditioned: tests/test_spa_agent_conditioned.c spa_agent.c spa_agent.h notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_spa_agent_conditioned.c spa_agent.c notorch.c -lm $(BLAS_LIBS)
+
+check_spa_conditioned: test_spa_agent_conditioned
+	./test_spa_agent_conditioned
+
+test_spa_conditioned_mutations:
+	python3 tests/test_spa_conditioned_mutations.py
+
+test: test_spa_agent_conditioned
+
 # ── Test & Clean ──
 
 .PHONY: check_tanh_sgd
@@ -863,6 +876,7 @@ test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability
 	./test_spa_agent_durability
 	./test_spa_agent_future
 	./test_spa_agent_repeated
+	./test_spa_agent_conditioned
 	./test_chuck_architect
 	./test_chuck_actions_edge
 	sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state
@@ -952,6 +966,7 @@ bench: bench/bench_simd bench/bench_blas
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
 	rm -f test_sentencepiece test_sentencepiece_faults test_sha256 sentencepiece.o sha256.o
+	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
 	rm -f test_sampling
 	rm -f test_tanh_sgd

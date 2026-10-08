@@ -1,0 +1,61 @@
+{
+  "derived_checker": {
+    "bytes": 42851,
+    "sha256": "e55701df80e37acab0bb49229db30e141f0cfece0cadf006a5f3f04c9cb76a3e"
+  },
+  "exact_patch": {
+    "after": "                expected = [{\"replicate\": r, \"outcome_sha256\": [next((o[\"raw_sha256\"]\n                    for o in donor[\"repeats\"][r][\"outcomes\"][\"4\"] if o[\"action\"][\"kind\"] == kind), None)\n                    for kind in range(3)]} for r in range(8)]",
+    "after_sha256": "1654ac6511744b636579dc6865023a324edd3471cda2c1ea8328a67d2571338f",
+    "before": "                expected = [{\"replicate\": r, \"outcome_sha256\": {str(o[\"action\"][\"kind\"]): o[\"raw_sha256\"]\n                    for o in donor[\"repeats\"][r][\"outcomes\"][\"4\"]}} for r in range(8)]",
+    "before_sha256": "29ef6fe06bf8bb9eacf85867a92b6751b73a9b24206039891db51c8c6f83e194",
+    "matches": 1
+  },
+  "experiment_source_or_data_changes": false,
+  "generation_runs": 0,
+  "named_red_hands": [
+    {
+      "caught": true,
+      "message": "comparison raw outcome association",
+      "name": "swapped_action_hashes"
+    },
+    {
+      "caught": true,
+      "message": "comparison raw outcome association",
+      "name": "populated_invalid_action_slot"
+    }
+  ],
+  "native_fit_runs": 0,
+  "original_audit": {
+    "bytes": 42791,
+    "sha256": "5eee0345a4309415be064ea0cf6b930cd87d1317e6016b8477eb3df0f0bb8af6"
+  },
+  "original_failure_preserved": true,
+  "retained_failure": {
+    "bytes": 2072,
+    "sha256": "4e7c9e5a83ce50a42626692cd034e11d352a93690bb8121be5ec9f0b5b4ded13"
+  },
+  "schema": 1,
+  "scope": "Audit-schema correction only",
+  "status": "PASS",
+  "unchanged_checks": [
+    "source and donor identity",
+    "native consequence input bytes",
+    "all valid action coverage",
+    "every raw per-action outcome hash",
+    "reward/target/scale",
+    "policy hash chain and saved weights",
+    "raw outcome metrics and summary"
+  ],
+  "valid_fixture": {
+    "draws": 8,
+    "invalid_slot": 1,
+    "valid_kinds": [
+      0,
+      2
+    ]
+  },
+  "wrapper": {
+    "bytes": 6253,
+    "sha256": "222b3d239c38e49b4798ed032b14872fdbc3b4539d46e1fc8fe014c48a1369db"
+  }
+}

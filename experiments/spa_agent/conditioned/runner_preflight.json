@@ -1,0 +1,440 @@
+{
+  "archive": {
+    "bytes": 445,
+    "deterministic": true,
+    "members": [
+      "commands.json",
+      "empty.stderr.txt",
+      "evaluation-repeats-s509.jsonl",
+      "evaluation.readout-1.jsonl",
+      "evaluation.summary.json",
+      "fit-1/fit.jsonl.gz",
+      "fit-2/seal.json",
+      "metadata.json",
+      "training.json"
+    ],
+    "sha256": "700f88738a372892e95846fb2b2c14c4337d947640c24f2e3ced6e6c726e05c9"
+  },
+  "checks": [
+    "canonical_json_bytes",
+    "existing_record_preserved",
+    "failed_publish_retains_forensic_pending",
+    "explicit_stage_replacement",
+    "nonfinite_json_unpublished",
+    "readback_failure_unpublished",
+    "archive_1_exact_sorted_members",
+    "archive_1_exact_bytes",
+    "archive_1_portable_headers",
+    "archive_1_manifest_has_every_record",
+    "existing_archive_preserved",
+    "archive_2_exact_sorted_members",
+    "archive_2_exact_bytes",
+    "archive_2_portable_headers",
+    "archive_2_manifest_has_every_record",
+    "archive_bytes_deterministic",
+    "truncated_input_no_published_archive",
+    "archive_readback_failure_unpublished",
+    "archive_absolute_no_temporary",
+    "archive_parent_traversal_no_temporary",
+    "archive_nested_parent_traversal_no_temporary",
+    "archive_noncanonical_no_temporary",
+    "archive_backslash_no_temporary",
+    "archive_duplicate_no_temporary",
+    "reserved_ancestor_names_do_not_omit_artifacts",
+    "inventory_retains_life_identities_excludes_binary_archive_members",
+    "command_paths_portable",
+    "command_streams_closed_exact",
+    "command_original_stream_hashes_retained",
+    "failed_command_has_all_three_records",
+    "snapshot_command_1",
+    "snapshot_command_2",
+    "snapshot_command_3",
+    "snapshot_command_4",
+    "snapshot_command_5",
+    "snapshot_command_6",
+    "compiler_local_header_closure",
+    "snapshot_source_identities",
+    "runner_declares_preflight_sources",
+    "working_sources_unchanged"
+  ],
+  "commands": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "-B",
+        "<temporary>/snapshot/experiments/spa_agent/conditioned/run.py",
+        "--help"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "usage: run.py [-h] --output OUTPUT --inputs INPUTS\n\nFixed SPA target-conditioning experiment; all acquisition runs in native C.\n\noptions:\n  -h, --help       show this help message and exit\n  --output OUTPUT\n  --inputs INPUTS\n"
+    },
+    {
+      "argv": [
+        "cc",
+        "-std=c11",
+        "-DUSE_SIMD",
+        "-march=native",
+        "-pthread",
+        "-I.",
+        "-MM",
+        "examples/spa_agent_replicates.c"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "spa_agent_replicates.o: examples/spa_agent_replicates.c \\\n examples/spa_agent_demo.c notorch.h spa_agent.h \\\n examples/spa_agent_scenarios.h\n"
+    },
+    {
+      "argv": [
+        "cc",
+        "-std=c11",
+        "-DUSE_SIMD",
+        "-march=native",
+        "-pthread",
+        "-I.",
+        "-MM",
+        "examples/spa_agent_demo.c"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "spa_agent_demo.o: examples/spa_agent_demo.c notorch.h spa_agent.h \\\n examples/spa_agent_scenarios.h\n"
+    },
+    {
+      "argv": [
+        "cc",
+        "-std=c11",
+        "-DUSE_SIMD",
+        "-march=native",
+        "-pthread",
+        "-I.",
+        "-MM",
+        "spa_binding.c"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "spa_binding.o: spa_binding.c spa_binding.h spa_agent.h\n"
+    },
+    {
+      "argv": [
+        "cc",
+        "-std=c11",
+        "-DUSE_SIMD",
+        "-march=native",
+        "-pthread",
+        "-I.",
+        "-MM",
+        "spa_agent.c"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "spa_agent.o: spa_agent.c spa_agent.h notorch.h\n"
+    },
+    {
+      "argv": [
+        "cc",
+        "-std=c11",
+        "-DUSE_SIMD",
+        "-march=native",
+        "-pthread",
+        "-I.",
+        "-MM",
+        "notorch.c"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "notorch.o: notorch.c notorch.h notorch_simd.h chuck_architect_impl.h \\\n chuck_architect.h\n"
+    }
+  ],
+  "model_generations": 0,
+  "named_refusals": [
+    {
+      "exception": "FileExistsError",
+      "message": "[Errno 17] File exists: '<temporary>/record.json.pending' -> '<temporary>/record.json'",
+      "name": "existing_record_refused"
+    },
+    {
+      "exception": "ValueError",
+      "message": "Out of range float values are not JSON compliant: nan",
+      "name": "nonfinite_json_refused"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "write readback differs: write-mismatch",
+      "name": "write_readback_corruption_refused"
+    },
+    {
+      "exception": "FileExistsError",
+      "message": "[Errno 17] File exists: '<temporary>/archive-1/raw_records.tar.gz.pending' -> '<temporary>/archive-1/raw_records.tar.gz'",
+      "name": "existing_archive_refused"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "record changed before archive",
+      "name": "closed_identity_rejects_later_truncation"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "archive readback mismatch: record.json",
+      "name": "archive_readback_corruption_refused"
+    },
+    {
+      "exception": "KeyError",
+      "message": "'unclosed.txt'",
+      "name": "unregistered_archive_record_refused"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "archive member must be a portable relative path",
+      "name": "archive_absolute_refused"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "archive member must be a portable relative path",
+      "name": "archive_parent_traversal_refused"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "archive member must be a portable relative path",
+      "name": "archive_nested_parent_traversal_refused"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "archive member must be a portable relative path",
+      "name": "archive_noncanonical_refused"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "archive member must be a portable relative path",
+      "name": "archive_backslash_refused"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "duplicate archive member",
+      "name": "archive_duplicate_refused"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "closed artifact differs at final inventory: metadata.json",
+      "name": "inventory_rejects_closed_record_truncation"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "unregistered closed artifact: extra.txt",
+      "name": "inventory_refuses_omitted_output"
+    },
+    {
+      "exception": "AssertionError",
+      "message": "failed exited 7: ",
+      "name": "failed_command_receipt_recorded"
+    }
+  ],
+  "native_fits": 0,
+  "operation": "synthetic conditioned runner IO preflight",
+  "passed": true,
+  "runner_sha256": "2aca5e434396f61509d392dd4167616851a88aff2fc718a44a212c4587170235",
+  "schema": 1,
+  "snapshot": {
+    "compiler_dependencies": [
+      "chuck_architect.h",
+      "chuck_architect_impl.h",
+      "examples/spa_agent_demo.c",
+      "examples/spa_agent_replicates.c",
+      "examples/spa_agent_scenarios.h",
+      "notorch.c",
+      "notorch.h",
+      "notorch_simd.h",
+      "spa_agent.c",
+      "spa_agent.h",
+      "spa_binding.c",
+      "spa_binding.h"
+    ],
+    "declared_files": 45,
+    "files": 44,
+    "isolated_import": true,
+    "self_receipt": {
+      "identity": "Excluded only from its own hash table; the experiment runner pins the completed receipt.",
+      "path": "experiments/spa_agent/conditioned/runner_preflight.json"
+    }
+  },
+  "source_files": {
+    "chuck_architect.h": {
+      "bytes": 11318,
+      "sha256": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43"
+    },
+    "chuck_architect_impl.h": {
+      "bytes": 46911,
+      "sha256": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c"
+    },
+    "examples/spa_agent_demo.c": {
+      "bytes": 26345,
+      "sha256": "23ec38602e902ffa50d2d3ac191848edb1e048ddf2f8357c7d35a3ee6fb11d31"
+    },
+    "examples/spa_agent_future.c": {
+      "bytes": 30972,
+      "sha256": "5ee114cfbb25df5e5d74c80b4fdaba82d0080334dbc191b8b1a74df60d768661"
+    },
+    "examples/spa_agent_replicates.c": {
+      "bytes": 26488,
+      "sha256": "b886d3c9851a366247128a3385c67868b14770d4f7df62fcdae06ea63b82bec6"
+    },
+    "examples/spa_agent_scenarios.h": {
+      "bytes": 18762,
+      "sha256": "9f6fadfaceb1b10148742deb1d5887b0fd02eb9b24d271af90de48fa27aaae28"
+    },
+    "experiments/spa_agent/conditioned/audit.json": {
+      "bytes": 2965,
+      "sha256": "b5b06ea8ecd06b98606501d970b3eae44978430855812bdc02f7350342580593"
+    },
+    "experiments/spa_agent/conditioned/audit.py": {
+      "bytes": 42791,
+      "sha256": "5eee0345a4309415be064ea0cf6b930cd87d1317e6016b8477eb3df0f0bb8af6"
+    },
+    "experiments/spa_agent/conditioned/policy.py": {
+      "bytes": 17789,
+      "sha256": "aaea182a0c006f658c1dcd7b7191421497a739c9c93c3607c8e9158bbd05293d"
+    },
+    "experiments/spa_agent/conditioned/protocol.json": {
+      "bytes": 14168,
+      "sha256": "e5bb801a78cf68403c45474858fb7aff96e5aa4337003b6c06dc72253257225a"
+    },
+    "experiments/spa_agent/conditioned/run.py": {
+      "bytes": 22233,
+      "sha256": "2aca5e434396f61509d392dd4167616851a88aff2fc718a44a212c4587170235"
+    },
+    "experiments/spa_agent/future/protocol.json": {
+      "bytes": 13255,
+      "sha256": "134460b76ff7fecc9934eea8187d8aac4f6d0154921db5989de86cc482ee1861"
+    },
+    "experiments/spa_agent/future/run.py": {
+      "bytes": 44367,
+      "sha256": "6131057ffe1f25c42f4888af644012a91f21ad6adfb93b32f5be5ada223a7df1"
+    },
+    "experiments/spa_agent/protocol.json": {
+      "bytes": 6153,
+      "sha256": "0a1272697270e93b8d0dbdeb2d8ce7706dbbbda77fcc146c2f29be7eddc1fae2"
+    },
+    "experiments/spa_agent/replicates/policy.py": {
+      "bytes": 19319,
+      "sha256": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca"
+    },
+    "experiments/spa_agent/replicates/protocol.json": {
+      "bytes": 16304,
+      "sha256": "c53b00f02ebbc8d7bd1144839719741887f0a0e3ac411767a3fde7359a59db75"
+    },
+    "experiments/spa_agent/replicates/run.py": {
+      "bytes": 46543,
+      "sha256": "046b1bea1f0676b516afa1125a69d47c401b19e33ef838ad12c2d2be95cdd257"
+    },
+    "experiments/spa_agent/run.py": {
+      "bytes": 14664,
+      "sha256": "4dc7152c421cd5d1812669f117673ca721a6800d3ee15020c6581d4cfeda85f7"
+    },
+    "experiments/spa_agent/scenarios/protocol.json": {
+      "bytes": 8848,
+      "sha256": "25aeed3248bcde9920a4a4eed29fd5ef06e5373da670c26fbb87696d819edcf4"
+    },
+    "experiments/spa_agent/scenarios/raw_traces.jsonl.gz": {
+      "bytes": 116791,
+      "sha256": "dcee2f733f8a7a4063a44f0654b574dad55ce6b57ea258ee81a7582d39370d22"
+    },
+    "experiments/spa_agent/scenarios/receipts.json": {
+      "bytes": 652121,
+      "sha256": "fd13d4c256fb10ea1e31c7616da6fc8a9d94250063da683bcfcad475c11f05aa"
+    },
+    "experiments/spa_agent/scenarios/run.py": {
+      "bytes": 25925,
+      "sha256": "3da78ceb56bc50a0bb341db029373c9941003ad0a8a60ed422d2db091ef29195"
+    },
+    "notorch.c": {
+      "bytes": 509797,
+      "sha256": "12915832a2b6a84d27aae6e83a4cf08b601970a287c91d7dc9ab2fcabf15dfb7"
+    },
+    "notorch.h": {
+      "bytes": 57369,
+      "sha256": "cad17f03c141ee4209cdbd6af6d435364e889f9d37a9f07592a04f5f89b8519d"
+    },
+    "notorch_cuda.h": {
+      "bytes": 10286,
+      "sha256": "8fb573ec4182586d7bc83fc02164a74d804763540cc71060dbb139eb1d2daac4"
+    },
+    "notorch_simd.h": {
+      "bytes": 28218,
+      "sha256": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c"
+    },
+    "notorch_simd_scalar.h": {
+      "bytes": 2855,
+      "sha256": "c3fa8f3ec388f7398bfbcb5fba7f67055354873775398c306e2340d42d50dc86"
+    },
+    "python/SPA.py": {
+      "bytes": 24421,
+      "sha256": "7b498dc6ea6f41cdfac118f9fd9bc94b7726c52c5c0c8c7c073891b3da339cc7"
+    },
+    "python/notorch.py": {
+      "bytes": 10063,
+      "sha256": "1e8d3551fe45fc5b6e4321ff036dac46198dd19b1feda7d4638352cf8e1031d1"
+    },
+    "spa_agent.c": {
+      "bytes": 54267,
+      "sha256": "9b747d02dc680717474b65bc202ac320dd4c91905eba423599dd8b7e9190c268"
+    },
+    "spa_agent.h": {
+      "bytes": 14298,
+      "sha256": "501a4fe672e77e5fe29d5d9eedea49a06eefd2a7c94d61912ef00137b65e779e"
+    },
+    "spa_binding.c": {
+      "bytes": 6527,
+      "sha256": "6ccb244cbe4714fa38a37da4a5acea1018e64a285a0f557693d8dc2792aa22a6"
+    },
+    "spa_binding.h": {
+      "bytes": 586,
+      "sha256": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55"
+    },
+    "tests/spa_replicates_fixture.c": {
+      "bytes": 17112,
+      "sha256": "00ef2c829b3a03147a680b334e34935e66412407ec3de2cbe1e76f10ee754889"
+    },
+    "tests/test_spa_agent_conditioned.c": {
+      "bytes": 25085,
+      "sha256": "061541e98e81704f516ea960dec97b6bd10fb3b588dcffec496129dd4ee73e71"
+    },
+    "tests/test_spa_agent_future.c": {
+      "bytes": 28532,
+      "sha256": "3bcc168f720f914f366d8965eb75b09c046249e4048f0be7589f3cc3c1ecc682"
+    },
+    "tests/test_spa_agent_repeated.c": {
+      "bytes": 18021,
+      "sha256": "4b4a7a2f49d002da2f2c7516212c1a725df665138d1778ea4e1a27696e7a1b3a"
+    },
+    "tests/test_spa_conditioned_audit.py": {
+      "bytes": 9123,
+      "sha256": "a87393ce8223eecf103f5c313a77ca5a4f6b9444867d5c33c91455c46b26883e"
+    },
+    "tests/test_spa_conditioned_policy.py": {
+      "bytes": 10252,
+      "sha256": "cb5193f716bdd1f07a9db1189cde3d73522c179e2f9ea2658cab7395cab4c029"
+    },
+    "tests/test_spa_conditioned_runner.py": {
+      "bytes": 14752,
+      "sha256": "0c5b598591884c1fbca5de24be9a9045a27207c6c34cce2f7e54ae0de42d8df3"
+    },
+    "tests/test_spa_future.py": {
+      "bytes": 15401,
+      "sha256": "87fbed5560d6d89c3918fb32e7a9fa9c10e58056677c32d83cddc40bb069784e"
+    },
+    "tests/test_spa_replicates.py": {
+      "bytes": 12163,
+      "sha256": "a2a3e06e8aa9b68382e789b514a1f53afd620d8b62154e10a5687f054b237d32"
+    },
+    "tests/test_spa_scenarios.py": {
+      "bytes": 18311,
+      "sha256": "465e2d910f2be06fc97c8e92bdcb7a7c4021e9bae8e59bb659f1c3804e2eb6a2"
+    },
+    "tests/test_spa_trace_io.py": {
+      "bytes": 14189,
+      "sha256": "f4cc9893b03d641653a5ca8e4efb7ca37e90fa0717d9b98db2f3980df18c288d"
+    }
+  },
+  "test_count": 40,
+  "test_sha256": "0c5b598591884c1fbca5de24be9a9045a27207c6c34cce2f7e54ae0de42d8df3"
+}

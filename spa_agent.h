@@ -177,6 +177,15 @@ typedef struct {
     double loss_before, loss_after; // Mean Huber loss over valid actions, delta1.
 } nt_spa_comparison_receipt;
 
+// Conditioned replay retains the measured mean rewards beside its explicit
+// training scale. The nested targets/losses use the conditioned objective.
+// This transient receipt adds no field to the saved Agent life.
+typedef struct {
+    nt_spa_comparison_receipt comparison;
+    float scale_floor;
+    double scale;
+} nt_spa_conditioned_receipt;
+
 // Defaults: LEGACY; seed1; learning_rate=.03; imitation_rate=.05;
 // exploration=.1; memory_decay=.8; reward weights .15,.15,.2,.2,.15,.1,.05;
 // cost_weight=.05. Every refused mutating call leaves state/output unchanged.
@@ -264,6 +273,19 @@ int nt_spa_agent_fit_comparison(nt_spa_agent *agent,
 int nt_spa_agent_fit_repeated(nt_spa_agent *agent,
     const nt_spa_experience *experience, const nt_spa_comparison *comparisons,
     uint32_t count, float learning_rate, nt_spa_comparison_receipt *receipt);
+// Condition the same repeated mean-reward objective by its action-effect span.
+// Raw delta[a] is the existing float subtraction mean[a]-mean[KEEP]. Scale is
+// max((double)scale_floor, max_valid abs((double)delta[a])); normalized targets
+// are (float)((double)delta[a]/scale). The floor must be finite and positive.
+// Clipping and averaging precede scaling, including count1. One simultaneous
+// mean-Huber update changes policy only; rate0 preserves every Agent byte.
+// The nested receipt retains raw mean rewards and normalized targets. The
+// caller's protocol identifies this objective; v1 weights do not encode it.
+// All repeated-input and full receipt overlap/refusal contracts apply.
+int nt_spa_agent_fit_conditioned(nt_spa_agent *agent,
+    const nt_spa_experience *experience, const nt_spa_comparison *comparisons,
+    uint32_t count, float learning_rate, float scale_floor,
+    nt_spa_conditioned_receipt *receipt);
 
 // Versioned canonical little-endian IEEE binary32 with checksum, exact length,
 // strict structural/range/cache checks, transactional load and atomic save

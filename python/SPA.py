@@ -221,6 +221,11 @@ class ComparisonReceipt(_Value):
                 ("loss_before", C.c_double), ("loss_after", C.c_double)]
 
 
+class ConditionedReceipt(_Value):
+    _fields_ = [("comparison", ComparisonReceipt), ("scale_floor", C.c_float),
+                ("scale", C.c_double)]
+
+
 _STRUCTS = {
     "nt_spa_action": Action, "nt_spa_metrics": Metrics,
     "nt_spa_consequence": Consequence, "nt_spa_agent_config": Config,
@@ -229,6 +234,7 @@ _STRUCTS = {
     "nt_spa_agent": AgentState, "nt_spa_experience": Experience,
     "nt_spa_alternative": Alternative, "nt_spa_comparison": Comparison,
     "nt_spa_readout": Readout, "nt_spa_comparison_receipt": ComparisonReceipt,
+    "nt_spa_conditioned_receipt": ConditionedReceipt,
 }
 
 
@@ -350,6 +356,9 @@ class Native:
             "fit_repeated": ([C.POINTER(AgentState), C.POINTER(Experience),
                               C.POINTER(Comparison), C.c_uint32, C.c_float,
                               C.POINTER(ComparisonReceipt)], C.c_int),
+            "fit_conditioned": ([C.POINTER(AgentState), C.POINTER(Experience),
+                                 C.POINTER(Comparison), C.c_uint32, C.c_float,
+                                 C.c_float, C.POINTER(ConditionedReceipt)], C.c_int),
             "save": ([C.POINTER(AgentState), C.c_char_p], C.c_int),
             "load": ([C.POINTER(AgentState), C.c_char_p], C.c_int),
             "hash": ([C.POINTER(AgentState)], C.c_uint64),
@@ -536,6 +545,26 @@ class Agent:
                    _float(learning_rate, "learning_rate"), C.byref(out))
         return out
 
+    def fit_conditioned(self, experience, comparisons, learning_rate, scale_floor):
+        """Fit KEEP-relative repeated credit divided by its action-effect span.
+
+        Native C averages clipped rewards, subtracts KEEP, and divides each
+        target by max(scale_floor, largest absolute valid target). The nested
+        comparison receipt retains raw mean rewards and normalized targets;
+        the enclosing receipt records the actual double-precision scale.
+        """
+        _require(experience, Experience)
+        comparisons = list(comparisons)
+        _integer(len(comparisons), "repeat count", 1, MAX_REPEATS)
+        for comparison in comparisons:
+            _require(comparison, Comparison)
+        array = (Comparison * len(comparisons))(*comparisons)
+        out = ConditionedReceipt()
+        self._call("fit_conditioned", C.byref(experience), array, len(array),
+                   _float(learning_rate, "learning_rate"),
+                   _float(scale_floor, "scale_floor"), C.byref(out))
+        return out
+
     def validate(self):
         self._call("validate")
 
@@ -555,4 +584,5 @@ class Agent:
 __all__ = ["Native", "Agent", "Config", "Mode", "ActionKind", "Action", "Metrics",
            "Consequence", "Observation", "Policy", "Decision", "Receipt", "AgentState",
            "Experience", "Alternative", "Comparison", "Readout", "ComparisonReceipt",
+           "ConditionedReceipt",
            "Status", "Error", "ABIError", "NO_SOURCE", "MAX_REPEATS", "default_native"]

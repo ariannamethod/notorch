@@ -1,0 +1,22 @@
+{
+  "archive": {
+    "bytes": 17542082,
+    "sha256": "595bf9f75e68f1b8fe562bc2bbb68c3908d71a4817205d2684714657a2f68dca"
+  },
+  "command": "python3 experiments/spa_agent/conditioned/publish.py --execution-dir <completed-run>",
+  "members": 81,
+  "numerical_recomputation": "none; exact byte publication only",
+  "parts": 3,
+  "raw_receipt_unchanged": true,
+  "reassembly": {
+    "command": "python3 experiments/spa_agent/conditioned/traces.py --output <new-archive>",
+    "returncode": 0,
+    "stdout": "{\"bytes\": 17542082, \"parts\": 3, \"sha256\": \"595bf9f75e68f1b8fe562bc2bbb68c3908d71a4817205d2684714657a2f68dca\"}\n"
+  },
+  "schema": 1,
+  "source": {
+    "bytes": 4442,
+    "sha256": "5e19910e973b91d8077e2d147e89f190d88fae9380a5e8f7aeb5aecea4fe38ec"
+  },
+  "status": "PASS"
+}

@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "phase": "independent preflight review before any experimental fits or new generation",
+  "status": "CORRECTED_STALE_PARENT_ARM_NAMES",
+  "before_sha256": "23a5abbec277bc89a1cd351d4105dceca53fdbe6f1a4fd30fbdf1d2b7e6e3bc7",
+  "after_sha256": "e5bb801a78cf68403c45474858fb7aff96e5aa4337003b6c06dc72253257225a",
+  "field": "measurement.primary",
+  "before": "Across48 new source states, mean paired H4 advantage over KEEP averaged across r0..7. Compare mean8_h4 with single_h4, initial/KEEP and shuffled_mean8.",
+  "after": "Across48 new source states, mean paired H4 advantage over KEEP averaged across r0..7. Compare conditioned_mean8 with raw_mean8, initial/KEEP and shuffled_conditioned.",
+  "changed_measurement_arithmetic": false,
+  "reconstruction": "Replace measurement.primary with the before string and serialize indent=2, ensure_ascii=False plus terminal newline to reproduce original SHA."
+}
