@@ -44,6 +44,65 @@ unchanged failed outputs. All three gates pass ASan/UBSan with
 `ASAN_OPTIONS=detect_leaks=0`. Reference regeneration is byte-identical.
 Scalar static/shared builds pass, the exported shared-library identity/hash
 match `hashlib`, and the rebuilt core gate passes **51/51** tests.
+## 2026-10-08 — Chuck acquires student worlds; full trajectories remain mixed
+
+Clean source `ac5d651d41efa68e79b729a4e3b05058e0161d47` completes the fixed
+student-trajectory protocol once: 64 acquisition worlds, 32 new worlds,
+26,624 body updates, 32,768 policy fits and 576 readouts. SimpleLLM has 450,688
+parameters; HeVLM has 1,123,456. Both 163-parameter refits start from the same
+sealed student, receive equal fitting budgets and use the same student
+continuation. Only the source of acquired worlds differs. Both lives are
+sealed before seeds 1013/1217. F32 / context 64 / two SIMD threads / LR .0003 /
+clip 1 run on AMD EPYC 9V74, Linux x86_64, GCC 13.3, with an eight-CPU quota
+and 8 GiB memory limit. Corpora and every source file are pinned in the receipt.
+
+On the new common SimpleLLM states, initial student / parent-source refit /
+student-source refit choose an optimal H16 action at 13/7/10 of sixteen states;
+mean regrets are .000327423/.000294730/.000216872. On HeVLM they score 5/12/12,
+with mean regrets .001149826/.000038907/.000038907. Both refits lower mean
+regret. The two HeVLM refits make identical choices on all sixteen common states.
+
+The complete 512-step deployments answer a different question. Parent-source
+refitting improves the initial student on all four body/seed pairs. Student-source
+refitting improves both HeVLM runs, by .00447917/.00635028 final held-out loss,
+and regresses both SimpleLLM runs, by .02150846/.00226426. Against the matched
+parent-source refit it wins only HeVLM/1013. Canonical Chuck finishes below all
+three learned lives in every pair. Preserve all six arms, five-point curves,
+paired differences and early/complete action histories.
+
+Both refits first replace BRAKE with PUSH at SimpleLLM updates 37/29 and HeVLM
+updates 3/3. All eight first changes have identical input features, observations,
+pre-action Chuck state and loss. The student-source refit later reaches the
+SimpleLLM dampening floor earlier (194/198 versus the initial student's 260/236),
+while delaying HeVLM's floor (163/162 versus 55/56). Acquired choices change
+the subsequent world; the earlier action-count window alone misses the later
+SimpleLLM regression. This is one acquisition round, with no refitting on the
+new deployment outcomes.
+
+All 1,536 source-branch transitions, 3,072 paired probe-off/on host steps,
+four source/deployment prefixes and four saved-life continuations match exactly.
+Terminal verification authenticates 1,081 original identities. The full run has
+zero integrity failures and zero restorations. Independent interpretation passes
+135,630 checks on 322 selected originals, rejoining actual H16 consequences to
+all 32,768 fits and reconstructing the complete comparisons. Raw results SHA-256:
+`99b7f72453ecc36e420e1aa7a13048c1889d7ec6fa717b12b889e09682751416`.
+
+Integrate main `0b0444a` and preserve all eighteen measured source hashes and
+eleven incoming non-shared files. The first combined static/shared build fails:
+five archive consumers use `-lnotorch`, which selects a coexisting `.so`, and
+`test_residual` cannot load it. Name the declared archives explicitly and rebuild
+on Makefile changes. All 49 default CPU recipe commands then pass; static/shared
+libraries build, and all five consumers lack a dynamic `libnotorch.so` dependency.
+The benchmark is built, not timed. Keep the failed build receipt.
+
+Both smoke attempts and original damage receipts are retained separately. The
+first full-run packaging attempt exhausts disk space through redundant archive
+copies; record that packaging failure and repeat packaging in scratch outside
+the synchronized checkout. No numerical work is repeated. Compact results,
+four tables, the independent audit and integration proof are under
+`experiments/chuck_loss_architect/trajectories/`; the complete raw record retains
+originals and their immutable mirrors. GPU remains unmeasured after the recorded
+RunPod HTTP403; no paid pod is created.
 
 ## 2026-10-08 — Haiku keeps the shape of its words
 
@@ -76,6 +135,66 @@ same trailing run. The exact counterexample remains in the native gate. Review
 also made the supported minimum of one NORMAL piece explicit. A first gate run
 caught an overlong C hexadecimal escape in the malformed-UTF-8 test expectation;
 splitting the adjacent literal restored the intended reference bytes.
+
+## 2026-10-08 — Chuck separates the visited world from its continuation
+
+Add the experimental `--trajectory` C host: the source life creates training
+states; a separately named student's 163 weights supply their measured future
+actions. Grafting preserves every non-weight field and all captured features.
+Source and branch identities stay separate. Exact equal weights produce one
+table with an explicit alias. Eight early, nonoverlapping checkpoints retain
+all source-policy continuation checks. Core Chuck arithmetic and public APIs
+remain byte-identical to main `420fa54`.
+
+The native fixture passes 288 branch updates and 64 actual source transitions;
+168 old `--lived` events and eleven artifacts match a rebuilt prechange host
+exactly. A deliberately wrong continuation is refused. Three actual receipt
+mutations are caught. Nine Python gates cover action credit, joins, source
+prefixes, immutable anchors and byte-exact restoration. The intervention API
+passes 292 checks; all 47 CPU recipe commands pass after a forced rebuild.
+
+The first development smoke stops on three later-truncated traces that had
+already been parsed successfully. Preserve that failed attempt unchanged.
+The runner now binds parsing, first SHA-256 and an atomic gzip mirror to the
+same bytes, authenticates inputs before native consumption, and retains every
+fault. A file may be restored once, only from bytes matching its original
+anchor; missing/wrong mirrors or repeated damage stop the run. Recovery never
+repeats body updates, fitting or outcome computation. This durability amendment
+precedes all full acquisition and new evaluation; the numerical recipe remains
+fixed. The revised protocol SHA-256 is
+`86673afd0abc04b5f389aeb4400765287fbc9a0951963639d961fc70a9c6c121`.
+
+The second seed-42 smoke completes 1,420 body updates, sixteen fits and 72
+readouts on SimpleLLM/HeVLM, with 102 source transitions and both save/load
+continuations exact. It authenticates 359 original artifact identities. Two
+later-truncated deployment traces are restored byte-exactly from their sealed
+copies; damaged bytes and both restoration receipts remain. First-attempt
+fixture/schema failures and an incomplete initial CPU log also remain in the
+raw record. No full-run evaluation has started at this commit.
+
+Compact gates are under `experiments/chuck_loss_architect/trajectories/`.
+A read-only RunPod retry at 2026-10-07 23:48:26 UTC again returns HTTP403,
+Ray `a470cc0458ed8114-ORD`; no key is used and no pod is created.
+
+## 2026-10-07 — preregister Chuck experience from student-reached worlds
+
+Merged lived-state credit on fresh main `420fa54` supplies the next question:
+the policy-taught student brakes earlier and regresses on all four complete
+body/seed deployments. Fix one acquisition round with two copies of that sealed
+student, equal 32-state / 16,384-fit budgets, and the same student continuation.
+Only their experience source differs: parent-reached or student-reached worlds.
+
+Early nonoverlapping checkpoints 1/17/33/49/65/97/129/193 retain all sixteen-step
+source-continuation checks. Preserve both bodies, development seeds 42/73,
+the 163-parameter policy and conditioned objective. Seal refits before new
+1013/1217 outcomes; retain common-state readouts, six full deployment arms and
+four save/load repeats. The fixed plan has 26,624 body updates, 32,768 fits and
+576 readouts. No acquisition or new evaluation has run at this commit.
+
+The prior complete archive is restored byte-exactly from its three saved parts;
+its numerical archive and raw result match their published SHA-256 identities.
+See `experiments/chuck_loss_architect/trajectories/protocol.json` for the frozen
+source, continuation, objective, failure and identity contracts.
 
 ## 2026-10-07 — each learner carries its own weights
 

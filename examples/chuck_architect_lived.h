@@ -26,6 +26,16 @@ static int lived_checkpoint(int step) {
            step == 256 || step == 320 || step == 384 || step == 448;
 }
 
+static int trajectory_checkpoint(int step) {
+    return step == 1 || step == 17 || step == 33 || step == 49 ||
+           step == 65 || step == 97 || step == 129 || step == 193;
+}
+
+static void trajectory_continuations(FILE *trace, int alias) {
+    fprintf(trace, ",\"executed_continuations\":[\"policy\"%s],\"continuation_aliases\":%s",
+            alias ? "" : ",\"student\"", alias ? "{\"student\":\"policy\"}" : "{}");
+}
+
 static float lived_probe(body *m, const uint32_t *data, const size_t *offsets, int n) {
     double total = 0;
     for (int i = 0; i < n; ++i) {
@@ -111,11 +121,14 @@ static void lived_save_source(body *m, const nt_chuck_architect *a, uint64_t win
  * expected receives the source-selected policy continuation's 16 actual states. */
 static int lived_diagnose(body *m, const uint32_t *data, size_t count, size_t split,
         nt_chuck_architect *architect, uint64_t *windows, size_t offset, float before, float gradient_norm, float lr,
-        int step, const char *prefix, FILE *trace, lived_transition expected[SCENARIO_HORIZON]) {
+        int step, const char *prefix, FILE *trace, lived_transition expected[SCENARIO_HORIZON],
+        const nt_chuck_architect *continuation) {
     static const char *names[] = {"hold", "brake", "push"};
-    static const char *continuations[] = {"hold", "policy"};
+    const char *continuations[] = {continuation ? "policy" : "hold", continuation ? "student" : "policy"};
     scenario_snapshot *saved = scenario_capture(m, architect, *windows);
     uint64_t saved_hash = scenario_state_hash(m, architect, *windows);
+    int alias = continuation && rollout_weights_equal(architect, continuation);
+    int continuation_count = alias ? 1 : 2;
     nt_chuck_observation observation;
     nt_chuck_action source_action;
     float features[NT_CHUCK_ARCHITECT_FEATURES];
@@ -133,6 +146,17 @@ static int lived_diagnose(body *m, const uint32_t *data, size_t count, size_t sp
     }
     if (scenario_state_hash(m, architect, *windows) != saved_hash) die("lived source observation changed state");
     lived_save_source(m, architect, *windows, step, prefix);
+    uint64_t student_policy_hash = 0, student_state_hash = 0;
+    if (continuation) {
+        nt_chuck_architect student = *architect;
+        rollout_weights(&student, continuation);
+        student_policy_hash = nt_chuck_architect_hash(&student);
+        student_state_hash = scenario_state_hash(m, &student, *windows);
+        char suffix[64], path[4096];
+        snprintf(suffix, sizeof(suffix), ".fork-%d.student.policy.bin", step);
+        path_for(path, sizeof(path), prefix, suffix);
+        if (nt_chuck_architect_save(&student, path)) die("trajectory student source life save failed");
+    }
     float future_before = lived_probe(m, data, offsets + SCENARIO_HORIZON, SCENARIO_PROBES);
     float heldout_before = lived_heldout(m, data, split, count);
     int ok = isfinite(future_before) && isfinite(heldout_before);
@@ -153,13 +177,38 @@ static int lived_diagnose(body *m, const uint32_t *data, size_t count, size_t sp
             observation.noise, observation.grad_norm, observation.grad_trend, observation.frozen_fraction,
             observation.step, observation.stag, observation.macro_stag, observation.history_len);
     for (int i = 0; i < NT_CHUCK_ARCHITECT_FEATURES; ++i) fprintf(trace, "%s%.9g", i ? "," : "", features[i]);
-    fputs("]}\n", trace);
+    fputc(']', trace);
+    if (continuation) {
+        fprintf(trace, ",\"student_policy_hash\":\"%016" PRIx64 "\",\"student_state_hash\":\"%016" PRIx64 "\"",
+                student_policy_hash, student_state_hash);
+        trajectory_continuations(trace, alias);
+    }
+    fputs("}\n", trace);
     if (!ok) fprintf(trace, "{\"type\":\"branch_failure\",\"checkpoint\":%d,\"reason\":\"nonfinite_source_probe\",\"stopped\":true}\n", step);
-    for (int ci = 0; ci < 2 && ok; ++ci) for (int ai = 0; ai < 3 && ok; ++ai) {
+    for (int ci = 0; ci < continuation_count && ok; ++ci) for (int ai = 0; ai < 3 && ok; ++ai) {
         scenario_restore(saved, m, architect, windows);
         if (scenario_state_hash(m, architect, *windows) != saved_hash) die("lived branch source identity differs");
+        const nt_chuck_architect *weights = &saved->architect;
+        if (continuation && ci == 1) {
+            rollout_weights(architect, continuation); // NT_TRAJECTORY_STUDENT_WEIGHTS
+            weights = continuation;
+        }
+        uint64_t branch_initial_hash = saved_hash, initial_policy_hash = nt_chuck_architect_hash(architect);
+        if (continuation) {
+            nt_chuck_architect non_weights;
+            memcpy(&non_weights, architect, sizeof(non_weights));
+            rollout_weights(&non_weights, &saved->architect);
+            if (!rollout_weights_equal(architect, weights)) die("trajectory branch weights differ from named continuation");
+            if (memcmp(&non_weights, &saved->architect, sizeof(non_weights))) die("trajectory weight graft changed acquired state");
+            float captured[NT_CHUCK_ARCHITECT_FEATURES];
+            if (nt_chuck_architect_capture(architect, &observation, captured) || memcmp(captured, features, sizeof(features)))
+                die("trajectory weight graft changed source features");
+            branch_initial_hash = scenario_state_hash(m, architect, *windows);
+            if (ci == 1 && (initial_policy_hash != student_policy_hash || branch_initial_hash != student_state_hash))
+                die("trajectory branch differs from saved student source");
+        }
         float immediate_after = 0;
-        uint64_t branch_hash = saved_hash;
+        uint64_t branch_hash = branch_initial_hash;
         for (int h = 1; h <= SCENARIO_HORIZON; ++h) {
             float loss = before, norm = gradient_norm;
             if (h > 1) {
@@ -183,6 +232,7 @@ static int lived_diagnose(body *m, const uint32_t *data, size_t count, size_t sp
             nt_chuck_architect_receipt receipt;
             uint64_t policy_pre = nt_chuck_architect_hash(architect), pending_hash = 0;
             int forced = h == 1 || ci == 0; // NT_LIVED_CONTINUATION: parent acts after the first policy-branch intervention.
+            if (continuation) forced = h == 1;
             lived_window window = {m, data, offsets[h - 1]};
             if (forced) {
                 nt_chuck_action action = {h == 1 ? (nt_chuck_action_kind)(ai + NT_CHUCK_ACTION_HOLD) : NT_CHUCK_ACTION_HOLD, 0};
@@ -198,10 +248,12 @@ static int lived_diagnose(body *m, const uint32_t *data, size_t count, size_t sp
             nt_chuck_state post = nt_tape_get()->chuck;
             uint64_t policy_post = nt_chuck_architect_hash(architect);
             branch_hash = scenario_state_hash(m, architect, *windows); // Before separate probe evaluation changes the tape.
-            if (!rollout_weights_equal(architect, &saved->architect) || architect->pending ||
+            if (!rollout_weights_equal(architect, weights) || architect->pending ||
                 architect->decisions != saved->architect.decisions + (uint64_t)h ||
                 architect->updates != saved->architect.updates + (uint64_t)h || receipt.learned)
                 die("lived frozen history chronology failed");
+            if (continuation && h == 1 && memcmp(decision.features, features, sizeof(features)))
+                die("trajectory branch first features differ from source");
             if (h == 1) immediate_after = after;
             char after_json[64]; json_number(after_json, sizeof(after_json), after, 9);
             fprintf(trace, "{\"type\":\"branch_step\",\"checkpoint\":%d,\"continuation\":\"%s\",\"intervention\":\"%s\","
@@ -213,8 +265,11 @@ static int lived_diagnose(body *m, const uint32_t *data, size_t count, size_t sp
             write_chuck(trace, &pre); fputs(",\"post_chuck\":", trace); write_chuck(trace, &post);
             fputs(",\"architect\":", trace);
             lived_write_architect(trace, &decision, &receipt, policy_pre, pending_hash, policy_post, forced);
+            if (continuation)
+                fprintf(trace, ",\"initial_policy_hash\":\"%016" PRIx64 "\",\"branch_initial_hash\":\"%016" PRIx64 "\"",
+                        initial_policy_hash, branch_initial_hash);
             fputs("}\n", trace);
-            if (ci == 1 && (nt_chuck_action_kind)(ai + NT_CHUCK_ACTION_HOLD) == source_action.kind && expected)
+            if (ci == (continuation ? 0 : 1) && (nt_chuck_action_kind)(ai + NT_CHUCK_ACTION_HOLD) == source_action.kind && expected)
                 expected[h - 1] = (lived_transition){step + h - 1, decision.action.kind, loss, after,
                                                    *windows, policy_pre, policy_post, branch_hash};
             if (!isfinite(after)) {
@@ -238,11 +293,15 @@ static int lived_diagnose(body *m, const uint32_t *data, size_t count, size_t sp
                         "\"immediate_before\":%.9g,\"immediate_after\":%.9g,\"immediate_improvement\":%.9g,"
                         "\"origin_after_horizon\":%s,\"future_before\":%.9g,\"future_after\":%s,\"future_improvement\":%s,"
                         "\"heldout_before\":%.9g,\"heldout_after\":%s,\"heldout_improvement\":%s,"
-                        "\"dampen\":%.9g,\"lr_scale\":%.9g,\"noise\":%.9g}\n",
+                        "\"dampen\":%.9g,\"lr_scale\":%.9g,\"noise\":%.9g",
                         step, continuations[ci], names[ai], h, saved_hash, branch_hash, ok ? "true" : "false", before, // NT_LIVED_COMPARISON_ACTION
                         immediate_after, before - immediate_after, origin_json, future_before, future_after_json, future_delta,
                         heldout_before, heldout_after_json, heldout_delta, nt_tape_get()->chuck.dampen,
                         nt_tape_get()->chuck.lr_scale, nt_tape_get()->chuck.noise);
+                if (continuation)
+                    fprintf(trace, ",\"initial_policy_hash\":\"%016" PRIx64 "\",\"branch_initial_hash\":\"%016" PRIx64 "\"",
+                            initial_policy_hash, branch_initial_hash);
+                fputs("}\n", trace);
                 if (!ok) {
                     lived_branch_failure(trace, step, continuations[ci], names[ai], h,
                                          "nonfinite_branch_probe", loss, norm, 1);
@@ -260,8 +319,12 @@ static int lived_diagnose(body *m, const uint32_t *data, size_t count, size_t sp
 }
 
 static int lived_main(int argc, char **argv) {
-    if (argc != 11) {
-        fprintf(stderr, "usage: %s --lived BODY TOKENS PREFIX STEPS SEED LR CONFIG PARENT_LIFE PROBES(0|1)\n", argv[0]);
+    int trajectory = !strcmp(argv[1], "--trajectory");
+    if (argc != (trajectory ? 12 : 11)) {
+        if (trajectory)
+            fprintf(stderr, "usage: %s --trajectory BODY TOKENS PREFIX STEPS SEED LR CONFIG SOURCE_LIFE PROBES(0|1) CONTINUATION_LIFE\n", argv[0]);
+        else
+            fprintf(stderr, "usage: %s --lived BODY TOKENS PREFIX STEPS SEED LR CONFIG PARENT_LIFE PROBES(0|1)\n", argv[0]);
         return 2;
     }
     if (nt_get_gpu_mode()) die("lived protocol requires CPU mode");
@@ -274,10 +337,13 @@ static int lived_main(int argc, char **argv) {
     nt_chuck_architect_config config; read_config(&config, argv[8]);
     if (config.mode != NT_CHUCK_ARCHITECT_LEARNED) die("lived requires learned configuration");
     config.seed = seed; config.exploration = 0;
-    nt_chuck_architect architect, source;
+    nt_chuck_architect architect, source, continuation;
     if (nt_chuck_architect_init(&architect, &config) || nt_chuck_architect_load(&source, argv[9]) ||
         source.config.mode != NT_CHUCK_ARCHITECT_LEARNED || source.pending) die("lived parent initialization failed");
     uint64_t source_hash = nt_chuck_architect_hash(&source);
+    if (trajectory && (nt_chuck_architect_load(&continuation, argv[11]) ||
+        continuation.config.mode != NT_CHUCK_ARCHITECT_LEARNED || continuation.pending))
+        die("trajectory continuation initialization failed");
     rollout_weights(&architect, &source);
     const nt_chuck_architect initial = architect;
     nt_seed(seed);
@@ -297,8 +363,14 @@ static int lived_main(int argc, char **argv) {
             "\"parameters\":%ld,\"lr\":%.9g,\"resume_step\":0,\"sealed_policy_hash\":\"%016" PRIx64 "\","
             "\"initial_policy_hash\":\"%016" PRIx64 "\",\"frozen_weights\":true,\"score_objective\":\"H16 within-state-span advantage\","
             "\"feedback_target\":\"same-window relative improvement for temporal history\",\"feedback_regression\":false,"
-            "\"diagnostics\":\"lived\",\"probes\":%s}\n", m.name, seed, steps, m.elements, lr, source_hash,
-            nt_chuck_architect_hash(&architect), probes ? "true" : "false");
+            "\"diagnostics\":\"%s\",\"probes\":%s", m.name, seed, steps, m.elements, lr, source_hash,
+            nt_chuck_architect_hash(&architect), trajectory ? "trajectory" : "lived", probes ? "true" : "false");
+    if (trajectory) {
+        fprintf(trace, ",\"source_saved_policy_hash\":\"%016" PRIx64 "\",\"continuation_saved_policy_hash\":\"%016" PRIx64 "\"",
+                source_hash, nt_chuck_architect_hash(&continuation));
+        trajectory_continuations(trace, rollout_weights_equal(&source, &continuation));
+    }
+    fputs("}\n", trace);
     float initial_eval = evaluate(&m, data, split, count);
     fprintf(trace, "{\"type\":\"evaluation\",\"step\":0,\"heldout_loss\":%.9g}\n", initial_eval);
     double start = seconds();
@@ -310,9 +382,9 @@ static int lived_main(int argc, char **argv) {
         float before = read_loss(loss_idx); nt_tape_backward(loss_idx);
         float norm = nt_tape_clip_grads(1.0f);
         if (!isfinite(norm)) die("lived host nonfinite gradient");
-        if (probes && lived_checkpoint(step)) {
+        if (probes && (trajectory ? trajectory_checkpoint(step) : lived_checkpoint(step))) {
             if (!lived_diagnose(&m, data, count, split, &architect, &windows, offset, before, norm, lr,
-                                step, prefix, trace, expected)) {
+                                step, prefix, trace, expected, trajectory ? &continuation : NULL)) {
                 fprintf(trace, "{\"type\":\"failure\",\"step\":%d,\"reason\":\"nonfinite_diagnostic_branch\",\"stopped\":true}\n", step);
                 failed = 1; break;
             }

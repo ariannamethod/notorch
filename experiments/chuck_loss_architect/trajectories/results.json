@@ -1,0 +1,3247 @@
+{
+  "schema": 1,
+  "name": "matched-student-trajectory-experience",
+  "status": "PASS",
+  "numerical_attempts": 1,
+  "raw_results": {
+    "file": "results.json",
+    "bytes": 778689,
+    "sha256": "99b7f72453ecc36e420e1aa7a13048c1889d7ec6fa717b12b889e09682751416"
+  },
+  "manifest": {
+    "source_commit": "ac5d651d41efa68e79b729a4e3b05058e0161d47",
+    "source_status": "",
+    "source_sha256": {
+      "notorch.c": "12915832a2b6a84d27aae6e83a4cf08b601970a287c91d7dc9ab2fcabf15dfb7",
+      "notorch.h": "cad17f03c141ee4209cdbd6af6d435364e889f9d37a9f07592a04f5f89b8519d",
+      "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "examples/chuck_architect_train.c": "d71772e44a705729a871f8f568be810e2fe231152b125e4ca0dc8cbd4a9438b1",
+      "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "examples/chuck_architect_rollout.h": "d56e44f403d9d371c7b376ca6791428d1d5f54f76828fb0d504f8e90aae62de7",
+      "examples/chuck_architect_lived.h": "e9719b667d3268cee8e01030e8f69f9056c14c0dc66b741b334dd16305c7d074",
+      "examples/chuck_architect_future.c": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+      "examples/chuck-loss-architect.json": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+      "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+      "experiments/chuck_loss_architect/scenarios/run.py": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+      "experiments/chuck_loss_architect/future/run.py": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+      "experiments/chuck_loss_architect/conditional/run.py": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+      "experiments/chuck_loss_architect/lived/run.py": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+      "experiments/chuck_loss_architect/trajectories/run.py": "de58f9455a74d56648ba62360d89e55bbd583a63fb2a23d154cfcdb1e76db26c",
+      "experiments/chuck_loss_architect/trajectories/protocol.json": "86673afd0abc04b5f389aeb4400765287fbc9a0951963639d961fc70a9c6c121"
+    },
+    "protocol": {
+      "schema": 1,
+      "name": "student-state-acquisition-v1",
+      "status": "preregistered-before-acquisition-and-new-evaluation",
+      "question": "What does experience from student-reached states change compared with equal additional fitting on parent-reached states, when both use the same student continuation?",
+      "source_base": "420fa54fe3b92cdb2f83e20d19fc887b09db3d8e",
+      "previous_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354",
+      "previous_protocol_sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5",
+      "previous_numerical_archive_sha256": "7773c68e24245227467d526228b2149193b65768da449fa5571c6b8da69e9960",
+      "input_lives": {
+        "parent": {
+          "file": "parent.policy.bin",
+          "bytes": 1016,
+          "sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb"
+        },
+        "student": {
+          "file": "lived-policy.policy.bin",
+          "bytes": 1016,
+          "sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1"
+        }
+      },
+      "bodies": {
+        "simple": 450688,
+        "hevlm": 1123456
+      },
+      "body_order": [
+        "simple",
+        "hevlm"
+      ],
+      "context": 64,
+      "body_lr": 0.0003,
+      "gradient_clip": 1.0,
+      "threads": 2,
+      "dtype": "F32",
+      "cpu_only": true,
+      "host_steps": 256,
+      "checkpoints_before_updates": [
+        1,
+        17,
+        33,
+        49,
+        65,
+        97,
+        129,
+        193
+      ],
+      "checkpoint_reason": "Earlier receipts locate student braking before the old update-64 checkpoint. These eight checkpoints inspect that early trajectory and retain at least sixteen updates between forks, preserving every native continuation check.",
+      "acquisition": {
+        "sources": [
+          "parent",
+          "student"
+        ],
+        "seeds": [
+          42,
+          73
+        ],
+        "states_per_source": 32,
+        "paired_probe_on_off_hosts": true
+      },
+      "intervention_actions": [
+        "hold",
+        "brake",
+        "push"
+      ],
+      "shared_continuation": "student",
+      "target_horizon_total_updates": 16,
+      "diagnostic_horizons_total_updates": [
+        1,
+        4,
+        16
+      ],
+      "future_probe_window_indices_zero_based": [
+        16,
+        17,
+        18,
+        19
+      ],
+      "fork": {
+        "source": "Each source acts for 256 real body updates with fresh history and its sealed weights. Capture body, gradients, moments, Chuck controls, complete Architect history/cache/RNG, tape, training mode and window/noise RNG before each fork.",
+        "source_continuation": "Force the first named action and complete its real frozen feedback; then let the source select fifteen actual actions. The branch beginning with the source selection must reproduce its next sixteen ordinary host transitions.",
+        "student_continuation": "From the same source snapshot graft only the sealed student's 163 weights, keeping captured history/config/RNG/counters. Force the first named action, complete real feedback, then let the student select fifteen actual actions from each branch's evolving state.",
+        "identities": "Record original source hash and grafted branch-start hash separately. Captured features stay identical through the graft. Branch weights remain identical to their named continuation; restoring returns the complete original host state.",
+        "equal_weights": "When source and continuation weights are identical, execute the source table once and explicitly alias student to policy. The alias requires exact weight equality and the same source history; it creates no extra measured branch.",
+        "measurements": "Record origin-window, fixed future-four-window and held-out losses at H1/H4/H16 separately. Only H16 future-four loss under the shared student continuation supplies fitting targets.",
+        "failure": "Retain any actual nonfinite loss, gradient or callback failure, restore the source host, stop, and fit no incomplete world. No failed state is discarded or replaced by a synthetic finite outcome."
+      },
+      "objective": "state-span-huber-v1: delta[a]=double(loss[HOLD])-loss[a]; scale=max(max_abs_finite_delta,1e-6*(abs(double(loss[HOLD]))+1)); target[a]=delta[a]/scale. Mean three-head Huber delta1, simultaneous native update from pre-fit weights.",
+      "students": {
+        "refit-parent": {
+          "source": "parent",
+          "life_id": "trajectory-parent-h16-v1"
+        },
+        "refit-self": {
+          "source": "student",
+          "life_id": "trajectory-self-h16-v1"
+        }
+      },
+      "fitting": {
+        "initial_weights": "student",
+        "parameters": 163,
+        "learning_rate": 0.03,
+        "epochs": 512,
+        "samples_per_student": 32,
+        "fits_per_student": 16384,
+        "order": "simple then hevlm, ascending seed then checkpoint, identical each epoch",
+        "weights_only": true,
+        "independent_initialization": true,
+        "separate_adaptation_stage": false
+      },
+      "evaluation": {
+        "source": "student",
+        "seeds": [
+          1013,
+          1217
+        ],
+        "states": 32,
+        "outcomes_after_all_lives_saved_and_hashed": true,
+        "readouts": [
+          "student",
+          "refit-parent",
+          "refit-self",
+          "hold",
+          "brake",
+          "push"
+        ],
+        "primary_consequence": "H16 future-four loss under shared frozen student continuation; retain raw loss, advantage, exact-tie optimality and regret.",
+        "previous_evaluation_seeds_reused_as_fresh": false
+      },
+      "closed_loop": {
+        "steps": 512,
+        "arms": [
+          "canonical",
+          "hold",
+          "push",
+          "student",
+          "refit-parent",
+          "refit-self"
+        ],
+        "heldout_evaluations_after_updates": [
+          0,
+          128,
+          256,
+          384,
+          512
+        ],
+        "primary_comparison": "refit-self versus refit-parent isolates the acquired source worlds at matched continuation, initialization and fitting budget. Each refit versus student measures the consequence of its additional acquisition.",
+        "feedback": "Actual same-window frozen feedback advances native temporal history at every policy action; sealed weights remain unchanged.",
+        "source_deployment_parity": "The student's first 256 deployment transitions and evaluations must equal the independent 256-step source host. Full-state hashes are compared at matching steps; final 256-step files are not compared to 512-step files.",
+        "policy_continuation": {
+          "arm": "refit-self",
+          "save_load_after_step": 256,
+          "repeats": 4
+        },
+        "metrics": [
+          "complete held-out loss curves",
+          "first action divergence",
+          "action counts and early sequences",
+          "first dampening-floor entry",
+          "loss/gradient/controls/history",
+          "final state identities",
+          "elapsed seconds and peak RSS"
+        ]
+      },
+      "fixed_counts": {
+        "acquisition_worlds": 64,
+        "evaluation_worlds": 32,
+        "executed_branches": 384,
+        "branch_updates": 6144,
+        "paired_host_processes": 24,
+        "host_updates": 6144,
+        "primary_deployment_processes": 24,
+        "resume_processes": 4,
+        "deployment_updates": 14336,
+        "all_body_updates": 26624,
+        "fit_updates": 32768,
+        "development_readouts": 384,
+        "evaluation_readouts": 192,
+        "readouts": 576,
+        "source_continuation_transitions": 1536
+      },
+      "tie_rule": "Exact recorded F32 equality; retain every tied minimum.",
+      "heldout_loss_used_for_fitting": false,
+      "new_evaluation_targets_used_for_fitting_or_tuning": false,
+      "no_capacity_or_hyperparameter_sweep": true,
+      "rounds": 1,
+      "integrity": "Bind clean source, protocol, input lives, corpus, binary, every source/branch, sample, fit, readout and deployment. Anchor closed files before subsequent phases; terminally authenticate them. Source control/diagnostic and saved-life continuation are exact gates. Mutation tests must reject wrong continuation weights and wrong action-to-outcome association.",
+      "smoke": {
+        "seeds": [
+          42
+        ],
+        "host_steps": 17,
+        "deployment_steps": 32,
+        "epochs": 2
+      },
+      "failure_recording": "Keep first attempts, refusals, failed gates and all measured regressions. Full-run outcomes never change this protocol or its recipes.",
+      "durability": {
+        "amendment": "Added after a development-only seed42 smoke exposed later truncation of three previously parsed traces, before any full acquisition or new evaluation. Numerical recipe and fixed counts are unchanged.",
+        "first_read": "The same first closed bytes supply parsing, immutable original SHA-256 and an independent atomic fsync gzip mirror. Persist original anchors incrementally; never replace an existing anchor with a later identity.",
+        "later_change": "Preserve damaged bytes and a failed-integrity receipt. Restore at most once per file, only from mirror bytes matching the original hash, and retain the restoration event. Missing or incorrect mirror, repeated damage, or failed restoration stops the run.",
+        "numerical_replay": "No body, fitting or outcome execution is repeated to replace an artifact. The failed first smoke stays unchanged and is archived separately."
+      }
+    },
+    "protocol_sha256": "86673afd0abc04b5f389aeb4400765287fbc9a0951963639d961fc70a9c6c121",
+    "datasets": {
+      "simple": {
+        "repository": "ariannamethod/notorch-simple-llm",
+        "commit": "80b3bd611ed8c937efdc481dc07895c8e13e345d",
+        "file": "dracula.txt",
+        "sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c",
+        "recipe": "train_dracula.py",
+        "parameters": 450688,
+        "tokenizer": "sorted Unicode codepoints; universal newlines; vocabulary 94",
+        "bytes": 852813,
+        "tokens": 843635,
+        "train_tokens": 759271,
+        "token_sha256": "a1876f953a5a306dea7cf9896ea4d634e52808ee7b61570387b590a5b2e0d7d8",
+        "vocab_sha256": "faad8eeec3efadd4b3f26bbeea45f18c4cacd52a990219c51681c5e7eaab2c82"
+      },
+      "hevlm": {
+        "repository": "ariannamethod/notorch-diffusion",
+        "commit": "1bc645071b3a0a3525fe89b8f45253f5faa28a1d",
+        "file": "hevlm.txt",
+        "sha256": "c00b8bcc31785798771aad5fb49f3b420b6a8eb3b7a20c28d0f09c967a52587e",
+        "recipe": "ariannamethod/train_hevlm.c",
+        "parameters": 1123456,
+        "tokenizer": "UTF-8 bytes; vocabulary 256",
+        "bytes": 69766,
+        "tokens": 69766,
+        "train_tokens": 62789,
+        "token_sha256": "4231823fb9cd54610541223c05222d186167c7633a8070a15d5888921573328b",
+        "vocab_sha256": "3e799c43339132e8709ebd0c566262d1893e3f30d4b94fa63014fff5229648a0"
+      }
+    },
+    "machine": {
+      "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+      "python": "3.12.14",
+      "cpu_count": 9,
+      "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+      "memory": {
+        "MemTotal": "10206508 kB",
+        "MemAvailable": "9308168 kB",
+        "SwapTotal": "0 kB",
+        "SwapFree": "0 kB"
+      },
+      "cpu.max": "800000 100000",
+      "memory.max": "8589934592"
+    },
+    "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+    "compile_flags": "-O2 -std=gnu11 -DUSE_SIMD -march=native -pthread",
+    "binaries_sha256": {
+      "host": "ed5b32e90cab06477d4af141ddb8b9db5676bdf794d2b7e803a8cb0495b3d9f6",
+      "future": "2c9204928e00406205bd9d84e2a356f00f91e8dece7ca6f815b844411f145183"
+    },
+    "smoke": false,
+    "executed_seeds": {
+      "development": [
+        42,
+        73
+      ],
+      "evaluation": [
+        1013,
+        1217
+      ]
+    },
+    "executed_host_steps": 256,
+    "executed_deployment_steps": 512,
+    "executed_epochs": 512,
+    "previous_selected_inputs": {
+      "results.json": {
+        "bytes": 837350,
+        "sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354"
+      },
+      "protocol.json": {
+        "bytes": 11800,
+        "sha256": "790f4ff88fd089331f2139dbe5e78d83e838d91d0c2214625e606903bea932b5"
+      },
+      "simple.corpus": {
+        "bytes": 852813,
+        "sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c"
+      },
+      "simple.tokens.u32": {
+        "bytes": 3374540,
+        "sha256": "a1876f953a5a306dea7cf9896ea4d634e52808ee7b61570387b590a5b2e0d7d8"
+      },
+      "simple.vocab.json": {
+        "bytes": 683,
+        "sha256": "faad8eeec3efadd4b3f26bbeea45f18c4cacd52a990219c51681c5e7eaab2c82"
+      },
+      "hevlm.corpus": {
+        "bytes": 69766,
+        "sha256": "c00b8bcc31785798771aad5fb49f3b420b6a8eb3b7a20c28d0f09c967a52587e"
+      },
+      "hevlm.tokens.u32": {
+        "bytes": 279064,
+        "sha256": "4231823fb9cd54610541223c05222d186167c7633a8070a15d5888921573328b"
+      },
+      "hevlm.vocab.json": {
+        "bytes": 1685,
+        "sha256": "3e799c43339132e8709ebd0c566262d1893e3f30d4b94fa63014fff5229648a0"
+      },
+      "parent.policy.bin": {
+        "bytes": 1016,
+        "sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb"
+      },
+      "lived-policy.policy.bin": {
+        "bytes": 1016,
+        "sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1"
+      },
+      "architect-config.json": {
+        "bytes": 313,
+        "sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5"
+      }
+    },
+    "previous_results_sha256": "a684c8c9863b9c08973880d6efdfd1ea3c6197a1cd894fcf4deaf4b9c04e0354"
+  },
+  "counts": {
+    "acquisition_worlds": 64,
+    "evaluation_worlds": 32,
+    "branch_updates": 6144,
+    "paired_host_processes": 24,
+    "host_updates": 6144,
+    "primary_deployment_processes": 24,
+    "resume_processes": 4,
+    "deployment_updates": 14336,
+    "fit_updates": 32768,
+    "development_readouts": 384,
+    "evaluation_readouts": 192,
+    "readouts": 576,
+    "source_continuation_transitions": 1536,
+    "executed_branches": 384,
+    "all_body_updates": 26624
+  },
+  "sealed_lives": {
+    "protocol_sha256": "86673afd0abc04b5f389aeb4400765287fbc9a0951963639d961fc70a9c6c121",
+    "lives": {
+      "parent": {
+        "file": "parent.policy.bin",
+        "bytes": 1016,
+        "sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb"
+      },
+      "student": {
+        "file": "student.policy.bin",
+        "bytes": 1016,
+        "sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1"
+      },
+      "refit-parent": {
+        "file": "refit-parent.policy.bin",
+        "bytes": 1016,
+        "sha256": "03d1bb5072166d44384cf301a0fd7e7630d988a6a33ed19626bee82f892d6640"
+      },
+      "refit-self": {
+        "file": "refit-self.policy.bin",
+        "bytes": 1016,
+        "sha256": "742c7919856a068ccc5b03cda6c14046b022f81f079413cdf9d7d414a45a62fd"
+      }
+    },
+    "fit_receipts": {
+      "refit-parent": {
+        "source": "parent",
+        "initial_student_sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1",
+        "validation": {
+          "fit_steps": 16384,
+          "epochs": 512,
+          "samples": 32,
+          "initial_hash": "59f07a230970a1a0",
+          "final_hash": "97b2cef63a2dac0c"
+        },
+        "sample_table_sha256": "8162dde84c44be006d7066de112d929cb338182c84f33604b7a4de6074b278ab",
+        "fit_trace_sha256": "c384c95fb47a4ee4005a4455b2e25bd244c64c3a5c9ff89565557e3aed8e239c"
+      },
+      "refit-self": {
+        "source": "student",
+        "initial_student_sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1",
+        "validation": {
+          "fit_steps": 16384,
+          "epochs": 512,
+          "samples": 32,
+          "initial_hash": "bacb38a283abbb8e",
+          "final_hash": "6805faf0f6404648"
+        },
+        "sample_table_sha256": "0c0e6220f98d86f605f68ecc4f898e714feef83888cc094aa1677faeae442689",
+        "fit_trace_sha256": "f2f2ce282c297938f913caffda703b9943bf6bdcd66333e92d12645e0c383354"
+      }
+    },
+    "evaluation_generation_started": false
+  },
+  "sample_tables": {
+    "development-parent.samples.bin": {
+      "bytes": 7520,
+      "sha256": "8162dde84c44be006d7066de112d929cb338182c84f33604b7a4de6074b278ab"
+    },
+    "development-student.samples.bin": {
+      "bytes": 7552,
+      "sha256": "0c0e6220f98d86f605f68ecc4f898e714feef83888cc094aa1677faeae442689"
+    },
+    "evaluation-student.samples.bin": {
+      "bytes": 7584,
+      "sha256": "5ce29c87ee3cbd77222773abbda6ca1178ca27b55aed5809c70b91eac0a45f16"
+    }
+  },
+  "fit_receipts": {
+    "refit-parent": {
+      "source": "parent",
+      "initial_student_sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1",
+      "validation": {
+        "fit_steps": 16384,
+        "epochs": 512,
+        "samples": 32,
+        "initial_hash": "59f07a230970a1a0",
+        "final_hash": "97b2cef63a2dac0c"
+      },
+      "sample_table_sha256": "8162dde84c44be006d7066de112d929cb338182c84f33604b7a4de6074b278ab",
+      "fit_trace_sha256": "c384c95fb47a4ee4005a4455b2e25bd244c64c3a5c9ff89565557e3aed8e239c"
+    },
+    "refit-self": {
+      "source": "student",
+      "initial_student_sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1",
+      "validation": {
+        "fit_steps": 16384,
+        "epochs": 512,
+        "samples": 32,
+        "initial_hash": "bacb38a283abbb8e",
+        "final_hash": "6805faf0f6404648"
+      },
+      "sample_table_sha256": "0c0e6220f98d86f605f68ecc4f898e714feef83888cc094aa1677faeae442689",
+      "fit_trace_sha256": "f2f2ce282c297938f913caffda703b9943bf6bdcd66333e92d12645e0c383354"
+    }
+  },
+  "common_state_summary": [
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "hevlm",
+      "label": "brake",
+      "states": 16,
+      "actions": {
+        "brake": 16
+      },
+      "optimal": 11,
+      "mean_regret": 0.002989038825035095,
+      "mean_advantage_vs_hold": -0.0005797520279884338,
+      "choice_changes_vs_student": 2
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "hevlm",
+      "label": "hold",
+      "states": 16,
+      "actions": {
+        "hold": 16
+      },
+      "optimal": 0,
+      "mean_regret": 0.0024092867970466614,
+      "mean_advantage_vs_hold": 0.0,
+      "choice_changes_vs_student": 16
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "hevlm",
+      "label": "push",
+      "states": 16,
+      "actions": {
+        "push": 16
+      },
+      "optimal": 5,
+      "mean_regret": 0.001965545117855072,
+      "mean_advantage_vs_hold": 0.00044374167919158936,
+      "choice_changes_vs_student": 14
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "hevlm",
+      "label": "refit-parent",
+      "states": 16,
+      "actions": {
+        "push": 6,
+        "brake": 10
+      },
+      "optimal": 13,
+      "mean_regret": 0.0009849220514297485,
+      "mean_advantage_vs_hold": 0.0014243647456169128,
+      "choice_changes_vs_student": 4
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "hevlm",
+      "label": "refit-self",
+      "states": 16,
+      "actions": {
+        "push": 10,
+        "hold": 2,
+        "brake": 4
+      },
+      "optimal": 7,
+      "mean_regret": 0.001620650291442871,
+      "mean_advantage_vs_hold": 0.0007886365056037903,
+      "choice_changes_vs_student": 10
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "hevlm",
+      "label": "student",
+      "states": 16,
+      "actions": {
+        "push": 2,
+        "brake": 14
+      },
+      "optimal": 11,
+      "mean_regret": 0.0018872767686843872,
+      "mean_advantage_vs_hold": 0.0005220100283622742,
+      "choice_changes_vs_student": 0
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "simple",
+      "label": "brake",
+      "states": 16,
+      "actions": {
+        "brake": 16
+      },
+      "optimal": 5,
+      "mean_regret": 0.0034899264574050903,
+      "mean_advantage_vs_hold": -0.001535162329673767,
+      "choice_changes_vs_student": 11
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "simple",
+      "label": "hold",
+      "states": 16,
+      "actions": {
+        "hold": 16
+      },
+      "optimal": 4,
+      "mean_regret": 0.0019547641277313232,
+      "mean_advantage_vs_hold": 0.0,
+      "choice_changes_vs_student": 15
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "simple",
+      "label": "push",
+      "states": 16,
+      "actions": {
+        "push": 16
+      },
+      "optimal": 11,
+      "mean_regret": 0.0005558282136917114,
+      "mean_advantage_vs_hold": 0.0013989359140396118,
+      "choice_changes_vs_student": 6
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "simple",
+      "label": "refit-parent",
+      "states": 16,
+      "actions": {
+        "push": 11,
+        "brake": 4,
+        "hold": 1
+      },
+      "optimal": 12,
+      "mean_regret": 9.614229202270508e-05,
+      "mean_advantage_vs_hold": 0.0018586218357086182,
+      "choice_changes_vs_student": 7
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "simple",
+      "label": "refit-self",
+      "states": 16,
+      "actions": {
+        "push": 10,
+        "hold": 4,
+        "brake": 2
+      },
+      "optimal": 9,
+      "mean_regret": 0.0002967417240142822,
+      "mean_advantage_vs_hold": 0.001658022403717041,
+      "choice_changes_vs_student": 7
+    },
+    {
+      "split": "development",
+      "source": "parent",
+      "body": "simple",
+      "label": "student",
+      "states": 16,
+      "actions": {
+        "push": 10,
+        "brake": 5,
+        "hold": 1
+      },
+      "optimal": 8,
+      "mean_regret": 0.00018143653869628906,
+      "mean_advantage_vs_hold": 0.0017733275890350342,
+      "choice_changes_vs_student": 0
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "hevlm",
+      "label": "brake",
+      "states": 16,
+      "actions": {
+        "brake": 16
+      },
+      "optimal": 4,
+      "mean_regret": 0.003007352352142334,
+      "mean_advantage_vs_hold": -0.0015108659863471985,
+      "choice_changes_vs_student": 3
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "hevlm",
+      "label": "hold",
+      "states": 16,
+      "actions": {
+        "hold": 16
+      },
+      "optimal": 3,
+      "mean_regret": 0.0014964863657951355,
+      "mean_advantage_vs_hold": 0.0,
+      "choice_changes_vs_student": 15
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "hevlm",
+      "label": "push",
+      "states": 16,
+      "actions": {
+        "push": 16
+      },
+      "optimal": 12,
+      "mean_regret": 0.0006172358989715576,
+      "mean_advantage_vs_hold": 0.0008792504668235779,
+      "choice_changes_vs_student": 14
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "hevlm",
+      "label": "refit-parent",
+      "states": 16,
+      "actions": {
+        "push": 14,
+        "brake": 2
+      },
+      "optimal": 14,
+      "mean_regret": 0.0006139278411865234,
+      "mean_advantage_vs_hold": 0.0008825585246086121,
+      "choice_changes_vs_student": 12
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "hevlm",
+      "label": "refit-self",
+      "states": 16,
+      "actions": {
+        "push": 14,
+        "brake": 2
+      },
+      "optimal": 14,
+      "mean_regret": 0.0006139278411865234,
+      "mean_advantage_vs_hold": 0.0008825585246086121,
+      "choice_changes_vs_student": 12
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "hevlm",
+      "label": "student",
+      "states": 16,
+      "actions": {
+        "push": 2,
+        "brake": 13,
+        "hold": 1
+      },
+      "optimal": 4,
+      "mean_regret": 0.001905590295791626,
+      "mean_advantage_vs_hold": -0.0004091039299964905,
+      "choice_changes_vs_student": 0
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "simple",
+      "label": "brake",
+      "states": 16,
+      "actions": {
+        "brake": 16
+      },
+      "optimal": 5,
+      "mean_regret": 0.003583073616027832,
+      "mean_advantage_vs_hold": -0.0018149465322494507,
+      "choice_changes_vs_student": 11
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "simple",
+      "label": "hold",
+      "states": 16,
+      "actions": {
+        "hold": 16
+      },
+      "optimal": 4,
+      "mean_regret": 0.0017681270837783813,
+      "mean_advantage_vs_hold": 0.0,
+      "choice_changes_vs_student": 14
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "simple",
+      "label": "push",
+      "states": 16,
+      "actions": {
+        "push": 16
+      },
+      "optimal": 11,
+      "mean_regret": 9.463727474212646e-05,
+      "mean_advantage_vs_hold": 0.0016734898090362549,
+      "choice_changes_vs_student": 7
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "simple",
+      "label": "refit-parent",
+      "states": 16,
+      "actions": {
+        "push": 14,
+        "brake": 2
+      },
+      "optimal": 13,
+      "mean_regret": 4.912912845611572e-05,
+      "mean_advantage_vs_hold": 0.0017189979553222656,
+      "choice_changes_vs_student": 7
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "simple",
+      "label": "refit-self",
+      "states": 16,
+      "actions": {
+        "push": 10,
+        "hold": 3,
+        "brake": 3
+      },
+      "optimal": 10,
+      "mean_regret": 0.00015750527381896973,
+      "mean_advantage_vs_hold": 0.0016106218099594116,
+      "choice_changes_vs_student": 5
+    },
+    {
+      "split": "development",
+      "source": "student",
+      "body": "simple",
+      "label": "student",
+      "states": 16,
+      "actions": {
+        "push": 9,
+        "brake": 5,
+        "hold": 2
+      },
+      "optimal": 7,
+      "mean_regret": 0.00024944543838500977,
+      "mean_advantage_vs_hold": 0.0015186816453933716,
+      "choice_changes_vs_student": 0
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "hevlm",
+      "label": "brake",
+      "states": 16,
+      "actions": {
+        "brake": 16
+      },
+      "optimal": 3,
+      "mean_regret": 0.0038487091660499573,
+      "mean_advantage_vs_hold": -0.0019684210419654846,
+      "choice_changes_vs_student": 2
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "hevlm",
+      "label": "hold",
+      "states": 16,
+      "actions": {
+        "hold": 16
+      },
+      "optimal": 4,
+      "mean_regret": 0.0018802881240844727,
+      "mean_advantage_vs_hold": 0.0,
+      "choice_changes_vs_student": 16
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "hevlm",
+      "label": "push",
+      "states": 16,
+      "actions": {
+        "push": 16
+      },
+      "optimal": 12,
+      "mean_regret": 4.0784478187561035e-05,
+      "mean_advantage_vs_hold": 0.0018395036458969116,
+      "choice_changes_vs_student": 14
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "hevlm",
+      "label": "refit-parent",
+      "states": 16,
+      "actions": {
+        "push": 14,
+        "brake": 2
+      },
+      "optimal": 12,
+      "mean_regret": 3.890693187713623e-05,
+      "mean_advantage_vs_hold": 0.0018413811922073364,
+      "choice_changes_vs_student": 12
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "hevlm",
+      "label": "refit-self",
+      "states": 16,
+      "actions": {
+        "push": 14,
+        "brake": 2
+      },
+      "optimal": 12,
+      "mean_regret": 3.890693187713623e-05,
+      "mean_advantage_vs_hold": 0.0018413811922073364,
+      "choice_changes_vs_student": 12
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "hevlm",
+      "label": "student",
+      "states": 16,
+      "actions": {
+        "push": 2,
+        "brake": 14
+      },
+      "optimal": 5,
+      "mean_regret": 0.0011498257517814636,
+      "mean_advantage_vs_hold": 0.000730462372303009,
+      "choice_changes_vs_student": 0
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "simple",
+      "label": "brake",
+      "states": 16,
+      "actions": {
+        "brake": 16
+      },
+      "optimal": 5,
+      "mean_regret": 0.0036816447973251343,
+      "mean_advantage_vs_hold": -0.001672789454460144,
+      "choice_changes_vs_student": 11
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "simple",
+      "label": "hold",
+      "states": 16,
+      "actions": {
+        "hold": 16
+      },
+      "optimal": 4,
+      "mean_regret": 0.0020088553428649902,
+      "mean_advantage_vs_hold": 0.0,
+      "choice_changes_vs_student": 16
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "simple",
+      "label": "push",
+      "states": 16,
+      "actions": {
+        "push": 16
+      },
+      "optimal": 10,
+      "mean_regret": 0.0003799349069595337,
+      "mean_advantage_vs_hold": 0.0016289204359054565,
+      "choice_changes_vs_student": 5
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "simple",
+      "label": "refit-parent",
+      "states": 16,
+      "actions": {
+        "push": 10,
+        "hold": 3,
+        "brake": 3
+      },
+      "optimal": 7,
+      "mean_regret": 0.0002947300672531128,
+      "mean_advantage_vs_hold": 0.0017141252756118774,
+      "choice_changes_vs_student": 9
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "simple",
+      "label": "refit-self",
+      "states": 16,
+      "actions": {
+        "push": 10,
+        "hold": 2,
+        "brake": 4
+      },
+      "optimal": 10,
+      "mean_regret": 0.0002168715000152588,
+      "mean_advantage_vs_hold": 0.0017919838428497314,
+      "choice_changes_vs_student": 4
+    },
+    {
+      "split": "evaluation",
+      "source": "student",
+      "body": "simple",
+      "label": "student",
+      "states": 16,
+      "actions": {
+        "push": 11,
+        "brake": 5
+      },
+      "optimal": 13,
+      "mean_regret": 0.00032742321491241455,
+      "mean_advantage_vs_hold": 0.0016814321279525757,
+      "choice_changes_vs_student": 0
+    }
+  ],
+  "paired_final": [
+    {
+      "body": "simple",
+      "seed": 1013,
+      "student": 2.58611774,
+      "refit_parent": 2.58488512,
+      "refit_self": 2.6076262,
+      "self_minus_parent": 0.022741079999999858,
+      "self_minus_student": 0.02150845999999973,
+      "parent_minus_student": -0.0012326200000001286
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "student": 2.58628678,
+      "refit_parent": 2.57601786,
+      "refit_self": 2.58855104,
+      "self_minus_parent": 0.012533180000000144,
+      "self_minus_student": 0.002264260000000018,
+      "parent_minus_student": -0.010268920000000126
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "student": 1.58259857,
+      "refit_parent": 1.57894039,
+      "refit_self": 1.5781194,
+      "self_minus_parent": -0.0008209900000000214,
+      "self_minus_student": -0.004479169999999977,
+      "parent_minus_student": -0.0036581799999999554
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "student": 1.58714998,
+      "refit_parent": 1.57969737,
+      "refit_self": 1.5807997,
+      "self_minus_parent": 0.0011023299999999292,
+      "self_minus_student": -0.00635027999999993,
+      "parent_minus_student": -0.00745260999999986
+    }
+  ],
+  "deployment_action_history": [
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "canonical",
+      "final_heldout": 2.50756502,
+      "first_divergence_vs_student": 1,
+      "first_action": 0,
+      "student_action": 3,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 128,
+      "early128_hold": 0,
+      "early128_brake": 0,
+      "early128_push": 0,
+      "all512_legacy": 512,
+      "all512_hold": 0,
+      "all512_brake": 0,
+      "all512_push": 0
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "hold",
+      "final_heldout": 2.57181811,
+      "first_divergence_vs_student": 1,
+      "first_action": 1,
+      "student_action": 3,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 0,
+      "early128_hold": 128,
+      "early128_brake": 0,
+      "early128_push": 0,
+      "all512_legacy": 0,
+      "all512_hold": 512,
+      "all512_brake": 0,
+      "all512_push": 0
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "push",
+      "final_heldout": 2.49165535,
+      "first_divergence_vs_student": 37,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 0,
+      "early128_hold": 0,
+      "early128_brake": 0,
+      "early128_push": 128,
+      "all512_legacy": 0,
+      "all512_hold": 0,
+      "all512_brake": 0,
+      "all512_push": 512
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "student",
+      "final_heldout": 2.58611774,
+      "first_divergence_vs_student": null,
+      "first_action": null,
+      "student_action": null,
+      "first_before_loss_equal": null,
+      "first_pre_chuck_equal": null,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": 260,
+      "early128_legacy": 0,
+      "early128_hold": 0,
+      "early128_brake": 33,
+      "early128_push": 95,
+      "all512_legacy": 0,
+      "all512_hold": 110,
+      "all512_brake": 288,
+      "all512_push": 114
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "refit-parent",
+      "final_heldout": 2.58488512,
+      "first_divergence_vs_student": 37,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": true,
+      "first_observation_equal": true,
+      "first_dampening_floor": 288,
+      "early128_legacy": 0,
+      "early128_hold": 34,
+      "early128_brake": 23,
+      "early128_push": 71,
+      "all512_legacy": 0,
+      "all512_hold": 35,
+      "all512_brake": 351,
+      "all512_push": 126
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "refit-self",
+      "final_heldout": 2.6076262,
+      "first_divergence_vs_student": 37,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": true,
+      "first_observation_equal": true,
+      "first_dampening_floor": 194,
+      "early128_legacy": 0,
+      "early128_hold": 49,
+      "early128_brake": 9,
+      "early128_push": 70,
+      "all512_legacy": 0,
+      "all512_hold": 61,
+      "all512_brake": 381,
+      "all512_push": 70
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "canonical",
+      "final_heldout": 2.52432513,
+      "first_divergence_vs_student": 1,
+      "first_action": 0,
+      "student_action": 3,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 128,
+      "early128_hold": 0,
+      "early128_brake": 0,
+      "early128_push": 0,
+      "all512_legacy": 512,
+      "all512_hold": 0,
+      "all512_brake": 0,
+      "all512_push": 0
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "hold",
+      "final_heldout": 2.57725716,
+      "first_divergence_vs_student": 1,
+      "first_action": 1,
+      "student_action": 3,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 0,
+      "early128_hold": 128,
+      "early128_brake": 0,
+      "early128_push": 0,
+      "all512_legacy": 0,
+      "all512_hold": 512,
+      "all512_brake": 0,
+      "all512_push": 0
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "push",
+      "final_heldout": 2.52897191,
+      "first_divergence_vs_student": 29,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 0,
+      "early128_hold": 0,
+      "early128_brake": 0,
+      "early128_push": 128,
+      "all512_legacy": 0,
+      "all512_hold": 0,
+      "all512_brake": 0,
+      "all512_push": 512
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "student",
+      "final_heldout": 2.58628678,
+      "first_divergence_vs_student": null,
+      "first_action": null,
+      "student_action": null,
+      "first_before_loss_equal": null,
+      "first_pre_chuck_equal": null,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": 236,
+      "early128_legacy": 0,
+      "early128_hold": 0,
+      "early128_brake": 39,
+      "early128_push": 89,
+      "all512_legacy": 0,
+      "all512_hold": 122,
+      "all512_brake": 296,
+      "all512_push": 94
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "refit-parent",
+      "final_heldout": 2.57601786,
+      "first_divergence_vs_student": 29,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": true,
+      "first_observation_equal": true,
+      "first_dampening_floor": 283,
+      "early128_legacy": 0,
+      "early128_hold": 35,
+      "early128_brake": 18,
+      "early128_push": 75,
+      "all512_legacy": 0,
+      "all512_hold": 43,
+      "all512_brake": 343,
+      "all512_push": 126
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "refit-self",
+      "final_heldout": 2.58855104,
+      "first_divergence_vs_student": 29,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": true,
+      "first_observation_equal": true,
+      "first_dampening_floor": 198,
+      "early128_legacy": 0,
+      "early128_hold": 48,
+      "early128_brake": 4,
+      "early128_push": 76,
+      "all512_legacy": 0,
+      "all512_hold": 59,
+      "all512_brake": 377,
+      "all512_push": 76
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "canonical",
+      "final_heldout": 1.57190084,
+      "first_divergence_vs_student": 1,
+      "first_action": 0,
+      "student_action": 3,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 128,
+      "early128_hold": 0,
+      "early128_brake": 0,
+      "early128_push": 0,
+      "all512_legacy": 512,
+      "all512_hold": 0,
+      "all512_brake": 0,
+      "all512_push": 0
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "hold",
+      "final_heldout": 1.57658267,
+      "first_divergence_vs_student": 1,
+      "first_action": 1,
+      "student_action": 3,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 0,
+      "early128_hold": 128,
+      "early128_brake": 0,
+      "early128_push": 0,
+      "all512_legacy": 0,
+      "all512_hold": 512,
+      "all512_brake": 0,
+      "all512_push": 0
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "push",
+      "final_heldout": 1.57234776,
+      "first_divergence_vs_student": 3,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 0,
+      "early128_hold": 0,
+      "early128_brake": 0,
+      "early128_push": 128,
+      "all512_legacy": 0,
+      "all512_hold": 0,
+      "all512_brake": 0,
+      "all512_push": 512
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "student",
+      "final_heldout": 1.58259857,
+      "first_divergence_vs_student": null,
+      "first_action": null,
+      "student_action": null,
+      "first_before_loss_equal": null,
+      "first_pre_chuck_equal": null,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": 55,
+      "early128_legacy": 0,
+      "early128_hold": 1,
+      "early128_brake": 120,
+      "early128_push": 7,
+      "all512_legacy": 0,
+      "all512_hold": 36,
+      "all512_brake": 469,
+      "all512_push": 7
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "refit-parent",
+      "final_heldout": 1.57894039,
+      "first_divergence_vs_student": 3,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": true,
+      "first_observation_equal": true,
+      "first_dampening_floor": 127,
+      "early128_legacy": 0,
+      "early128_hold": 7,
+      "early128_brake": 75,
+      "early128_push": 46,
+      "all512_legacy": 0,
+      "all512_hold": 7,
+      "all512_brake": 459,
+      "all512_push": 46
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "refit-self",
+      "final_heldout": 1.5781194,
+      "first_divergence_vs_student": 3,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": true,
+      "first_observation_equal": true,
+      "first_dampening_floor": 163,
+      "early128_legacy": 0,
+      "early128_hold": 37,
+      "early128_brake": 28,
+      "early128_push": 63,
+      "all512_legacy": 0,
+      "all512_hold": 37,
+      "all512_brake": 412,
+      "all512_push": 63
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "canonical",
+      "final_heldout": 1.56940532,
+      "first_divergence_vs_student": 1,
+      "first_action": 0,
+      "student_action": 3,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 128,
+      "early128_hold": 0,
+      "early128_brake": 0,
+      "early128_push": 0,
+      "all512_legacy": 512,
+      "all512_hold": 0,
+      "all512_brake": 0,
+      "all512_push": 0
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "hold",
+      "final_heldout": 1.555632,
+      "first_divergence_vs_student": 1,
+      "first_action": 1,
+      "student_action": 3,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 0,
+      "early128_hold": 128,
+      "early128_brake": 0,
+      "early128_push": 0,
+      "all512_legacy": 0,
+      "all512_hold": 512,
+      "all512_brake": 0,
+      "all512_push": 0
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "push",
+      "final_heldout": 1.58516204,
+      "first_divergence_vs_student": 3,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": null,
+      "early128_legacy": 0,
+      "early128_hold": 0,
+      "early128_brake": 0,
+      "early128_push": 128,
+      "all512_legacy": 0,
+      "all512_hold": 0,
+      "all512_brake": 0,
+      "all512_push": 512
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "student",
+      "final_heldout": 1.58714998,
+      "first_divergence_vs_student": null,
+      "first_action": null,
+      "student_action": null,
+      "first_before_loss_equal": null,
+      "first_pre_chuck_equal": null,
+      "first_features_equal": null,
+      "first_observation_equal": null,
+      "first_dampening_floor": 56,
+      "early128_legacy": 0,
+      "early128_hold": 7,
+      "early128_brake": 115,
+      "early128_push": 6,
+      "all512_legacy": 0,
+      "all512_hold": 37,
+      "all512_brake": 469,
+      "all512_push": 6
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "refit-parent",
+      "final_heldout": 1.57969737,
+      "first_divergence_vs_student": 3,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": true,
+      "first_observation_equal": true,
+      "first_dampening_floor": 144,
+      "early128_legacy": 0,
+      "early128_hold": 5,
+      "early128_brake": 70,
+      "early128_push": 53,
+      "all512_legacy": 0,
+      "all512_hold": 5,
+      "all512_brake": 454,
+      "all512_push": 53
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "refit-self",
+      "final_heldout": 1.5807997,
+      "first_divergence_vs_student": 3,
+      "first_action": 3,
+      "student_action": 2,
+      "first_before_loss_equal": true,
+      "first_pre_chuck_equal": true,
+      "first_features_equal": true,
+      "first_observation_equal": true,
+      "first_dampening_floor": 162,
+      "early128_legacy": 0,
+      "early128_hold": 33,
+      "early128_brake": 29,
+      "early128_push": 66,
+      "all512_legacy": 0,
+      "all512_hold": 33,
+      "all512_brake": 413,
+      "all512_push": 66
+    }
+  ],
+  "rollouts": [
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "canonical",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1013-canonical",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 512,
+          "hold": 0,
+          "brake": 0,
+          "push": 0
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.22194147
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.79839325
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.63281965
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.5974462
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.50756502
+          }
+        ],
+        "seconds": 12.7468201,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "hold",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1013-hold",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 512,
+          "brake": 0,
+          "push": 0
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.22194147
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.82219625
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.67080474
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.62028694
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.57181811
+          }
+        ],
+        "seconds": 12.8992562,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "push",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1013-push",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 0,
+          "push": 512
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.22194147
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.79429483
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.64292359
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.609653
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.49165535
+          }
+        ],
+        "seconds": 13.4390971,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "student",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1013-student",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 110,
+          "brake": 288,
+          "push": 114
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.22194147
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.79566097
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.62836099
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.60589099
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.58611774
+          }
+        ],
+        "seconds": 12.4906699,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "refit-parent",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1013-refit-parent",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 35,
+          "brake": 351,
+          "push": 126
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.22194147
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.78423929
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.63072419
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.60263968
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.58488512
+          }
+        ],
+        "seconds": 12.727443,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "refit-self",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1013-refit-self",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 61,
+          "brake": 381,
+          "push": 70
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.22194147
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.786304
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.65845466
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.63038206
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.6076262
+          }
+        ],
+        "seconds": 12.7598397,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1013,
+      "arm": "refit-self",
+      "resume_step": 256,
+      "prefix": "rollouts/simple-s1013-refit-self-resume",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 61,
+          "brake": 381,
+          "push": 70
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.22194147
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.786304
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.65845466
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.63038206
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.6076262
+          }
+        ],
+        "seconds": 13.0275941,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "canonical",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1217-canonical",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 512,
+          "hold": 0,
+          "brake": 0,
+          "push": 0
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.17649221
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.74428034
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.66218042
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.5696969
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.52432513
+          }
+        ],
+        "seconds": 12.3156961,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "hold",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1217-hold",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 512,
+          "brake": 0,
+          "push": 0
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.17649221
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.77759409
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.70307827
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.63180304
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.57725716
+          }
+        ],
+        "seconds": 12.0889539,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "push",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1217-push",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 0,
+          "push": 512
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.17649221
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.73760986
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.65393019
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.57525992
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.52897191
+          }
+        ],
+        "seconds": 12.2195915,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "student",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1217-student",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 122,
+          "brake": 296,
+          "push": 94
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.17649221
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.73462582
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.63168836
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.61446214
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.58628678
+          }
+        ],
+        "seconds": 12.5576463,
+        "max_rss_kib": 148028,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "refit-parent",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1217-refit-parent",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 43,
+          "brake": 343,
+          "push": 126
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.17649221
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.73264384
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.61663008
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.60349751
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.57601786
+          }
+        ],
+        "seconds": 13.2777581,
+        "max_rss_kib": 149596,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "refit-self",
+      "resume_step": 0,
+      "prefix": "rollouts/simple-s1217-refit-self",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 59,
+          "brake": 377,
+          "push": 76
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.17649221
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.7372787
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.63673687
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.61655927
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.58855104
+          }
+        ],
+        "seconds": 14.2225409,
+        "max_rss_kib": 154200,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "arm": "refit-self",
+      "resume_step": 256,
+      "prefix": "rollouts/simple-s1217-refit-self-resume",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 59,
+          "brake": 377,
+          "push": 76
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.17649221
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 2.7372787
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 2.63673687
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 2.61655927
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 2.58855104
+          }
+        ],
+        "seconds": 12.6761461,
+        "max_rss_kib": 158708,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "canonical",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1013-canonical",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 512,
+          "hold": 0,
+          "brake": 0,
+          "push": 0
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 6.02113008
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.72270048
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.61914659
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.58730459
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.57190084
+          }
+        ],
+        "seconds": 26.7119841,
+        "max_rss_kib": 159448,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "hold",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1013-hold",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 512,
+          "brake": 0,
+          "push": 0
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 6.02113008
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.68548083
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.60489464
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.57228148
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.57658267
+          }
+        ],
+        "seconds": 26.769063,
+        "max_rss_kib": 168536,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "push",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1013-push",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 0,
+          "push": 512
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 6.02113008
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.70751226
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.61382508
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.58303642
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.57234776
+          }
+        ],
+        "seconds": 26.6311773,
+        "max_rss_kib": 168536,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "student",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1013-student",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 36,
+          "brake": 469,
+          "push": 7
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 6.02113008
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.68548107
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.6194756
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.58046651
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.58259857
+          }
+        ],
+        "seconds": 27.3641497,
+        "max_rss_kib": 168536,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "refit-parent",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1013-refit-parent",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 7,
+          "brake": 459,
+          "push": 46
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 6.02113008
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.62796128
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.59231532
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.57725382
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.57894039
+          }
+        ],
+        "seconds": 28.0197845,
+        "max_rss_kib": 168536,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "refit-self",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1013-refit-self",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 37,
+          "brake": 412,
+          "push": 63
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 6.02113008
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.6644063
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.59321725
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.5775305
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.5781194
+          }
+        ],
+        "seconds": 28.0834837,
+        "max_rss_kib": 168536,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "arm": "refit-self",
+      "resume_step": 256,
+      "prefix": "rollouts/hevlm-s1013-refit-self-resume",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 37,
+          "brake": 412,
+          "push": 63
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 6.02113008
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.6644063
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.59321725
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.5775305
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.5781194
+          }
+        ],
+        "seconds": 28.3137389,
+        "max_rss_kib": 168536,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "canonical",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1217-canonical",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 512,
+          "hold": 0,
+          "brake": 0,
+          "push": 0
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.87576675
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.62600875
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.59946012
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.60627258
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.56940532
+          }
+        ],
+        "seconds": 28.2290759,
+        "max_rss_kib": 180672,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "hold",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1217-hold",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 512,
+          "brake": 0,
+          "push": 0
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.87576675
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.61851871
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.5850904
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.59114671
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.555632
+          }
+        ],
+        "seconds": 28.2845813,
+        "max_rss_kib": 182868,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "push",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1217-push",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 0,
+          "brake": 0,
+          "push": 512
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.87576675
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.64264178
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.59668934
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.60392988
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.58516204
+          }
+        ],
+        "seconds": 27.3052866,
+        "max_rss_kib": 182868,
+        "frozen_weights_unchanged": false,
+        "history_updates": 0
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "student",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1217-student",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 37,
+          "brake": 469,
+          "push": 6
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.87576675
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.66117644
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.59913051
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.60881019
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.58714998
+          }
+        ],
+        "seconds": 29.7571542,
+        "max_rss_kib": 182868,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "refit-parent",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1217-refit-parent",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 5,
+          "brake": 454,
+          "push": 53
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.87576675
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.60340524
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.56811452
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.5886215
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.57969737
+          }
+        ],
+        "seconds": 28.4320214,
+        "max_rss_kib": 182868,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "refit-self",
+      "resume_step": 0,
+      "prefix": "rollouts/hevlm-s1217-refit-self",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 33,
+          "brake": 413,
+          "push": 66
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.87576675
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.60807836
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.56762481
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.58301866
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.5807997
+          }
+        ],
+        "seconds": 27.2678777,
+        "max_rss_kib": 182868,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "arm": "refit-self",
+      "resume_step": 256,
+      "prefix": "rollouts/hevlm-s1217-refit-self-resume",
+      "summary": {
+        "steps": 512,
+        "action_counts": {
+          "legacy": 0,
+          "hold": 33,
+          "brake": 413,
+          "push": 66
+        },
+        "heldout": [
+          {
+            "type": "evaluation",
+            "step": 0,
+            "heldout_loss": 5.87576675
+          },
+          {
+            "type": "evaluation",
+            "step": 128,
+            "heldout_loss": 1.60807836
+          },
+          {
+            "type": "evaluation",
+            "step": 256,
+            "heldout_loss": 1.56762481
+          },
+          {
+            "type": "evaluation",
+            "step": 384,
+            "heldout_loss": 1.58301866
+          },
+          {
+            "type": "evaluation",
+            "step": 512,
+            "heldout_loss": 1.5807997
+          }
+        ],
+        "seconds": 28.447384,
+        "max_rss_kib": 184904,
+        "frozen_weights_unchanged": true,
+        "history_updates": 512
+      }
+    }
+  ],
+  "policy_continuation": [
+    {
+      "body": "simple",
+      "seed": 1013,
+      "resume_step": 256,
+      "prefix": "rollouts/simple-s1013-refit-self",
+      "resumed_prefix": "rollouts/simple-s1013-refit-self-resume",
+      "validation": {
+        "status": "PASS",
+        "steps_compared": 512,
+        "final_artifacts": {
+          ".final.bin": {
+            "bytes": 1802992,
+            "sha256": "46b00be643eeebd6a8979add7c25799e53018ec5c879e8bbfde4ed15d5c4edfc"
+          },
+          ".moments.final.bin": {
+            "bytes": 3605848,
+            "sha256": "1aa971bd4a8071d08ceeef79ca420370f1d0841a102a323d0887ad624a74afbb"
+          },
+          ".optimizer.final.json": {
+            "bytes": 6590,
+            "sha256": "6007809f4219fae3bae75a41c1ed4e5d49d401ebcc15d936bf5cb628ce03a8cd"
+          },
+          ".policy.final.bin": {
+            "bytes": 1016,
+            "sha256": "bb906d5b0ba30bdc349d6d79cc0677a27a51582f177bc5335189eec1a61c1afa"
+          }
+        },
+        "scope": "complete Architect saved/reloaded in process; real body continues under its next selections"
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "resume_step": 256,
+      "prefix": "rollouts/simple-s1217-refit-self",
+      "resumed_prefix": "rollouts/simple-s1217-refit-self-resume",
+      "validation": {
+        "status": "PASS",
+        "steps_compared": 512,
+        "final_artifacts": {
+          ".final.bin": {
+            "bytes": 1802992,
+            "sha256": "6739d6959fe8e71701318bb653fd71082e138097e9eed129a0178d3db9ed70a8"
+          },
+          ".moments.final.bin": {
+            "bytes": 3605848,
+            "sha256": "34376df478482e276d6e3278281afd85e98996a593efaf50d8704921618064bd"
+          },
+          ".optimizer.final.json": {
+            "bytes": 6582,
+            "sha256": "f34c6339499dcc8d3306bbcc591c6548fed9b78dd92b27beb1f811777c9f438a"
+          },
+          ".policy.final.bin": {
+            "bytes": 1016,
+            "sha256": "274e01f930ed5e931f2ee0a9f9453b3ea228841db5068620895a166ced317fd7"
+          }
+        },
+        "scope": "complete Architect saved/reloaded in process; real body continues under its next selections"
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "resume_step": 256,
+      "prefix": "rollouts/hevlm-s1013-refit-self",
+      "resumed_prefix": "rollouts/hevlm-s1013-refit-self-resume",
+      "validation": {
+        "status": "PASS",
+        "steps_compared": 512,
+        "final_artifacts": {
+          ".final.bin": {
+            "bytes": 4494276,
+            "sha256": "22fe5bb4ce78b5a3bdd7b986bdf2c47f8ef2bd16a6aedc452488afb71b938507"
+          },
+          ".moments.final.bin": {
+            "bytes": 8988296,
+            "sha256": "2826ce3fb4c9eec9d64dced58ba58b68f3bf7a7c704ed0d4f1dc08ecfb52c6e0"
+          },
+          ".optimizer.final.json": {
+            "bytes": 12474,
+            "sha256": "6687a4a7eab58d97f7a76e0a91f6fd853697aa973c192cc03705adf7be18066e"
+          },
+          ".policy.final.bin": {
+            "bytes": 1016,
+            "sha256": "d4f546200281e592b5d5f6fcb23ec0d39bae89107220488e4b96c39c1f74ab4d"
+          }
+        },
+        "scope": "complete Architect saved/reloaded in process; real body continues under its next selections"
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "resume_step": 256,
+      "prefix": "rollouts/hevlm-s1217-refit-self",
+      "resumed_prefix": "rollouts/hevlm-s1217-refit-self-resume",
+      "validation": {
+        "status": "PASS",
+        "steps_compared": 512,
+        "final_artifacts": {
+          ".final.bin": {
+            "bytes": 4494276,
+            "sha256": "c4b730c945492a8e655d45a9c23768a38e28e38b5df03e5b99a5c72667a0038e"
+          },
+          ".moments.final.bin": {
+            "bytes": 8988296,
+            "sha256": "2a6f0f2d0eae1ee2e5f265a34f7ffd9f798d00a67d5c6d6095fde5e9967b126b"
+          },
+          ".optimizer.final.json": {
+            "bytes": 12469,
+            "sha256": "c9a6f47dea2f27fd1381b08b0760e1749cc9a374436ea707a31cfc35c8809f57"
+          },
+          ".policy.final.bin": {
+            "bytes": 1016,
+            "sha256": "cd1bde8094dc75a6e1582c1b0510bf9ca7595cce6548ea042d7ad7a5a3f81f68"
+          }
+        },
+        "scope": "complete Architect saved/reloaded in process; real body continues under its next selections"
+      }
+    }
+  ],
+  "source_deployment_parity": [
+    {
+      "body": "simple",
+      "seed": 1013,
+      "source_prefix": "cohorts/evaluation-student-simple-s1013-control",
+      "deployment_prefix": "rollouts/simple-s1013-student",
+      "validation": {
+        "status": "PASS",
+        "transitions": 256,
+        "evaluations": 3,
+        "final_matching_state_hash": "ce67bca7ac01bda0"
+      }
+    },
+    {
+      "body": "simple",
+      "seed": 1217,
+      "source_prefix": "cohorts/evaluation-student-simple-s1217-control",
+      "deployment_prefix": "rollouts/simple-s1217-student",
+      "validation": {
+        "status": "PASS",
+        "transitions": 256,
+        "evaluations": 3,
+        "final_matching_state_hash": "1b11a3779b584bb7"
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1013,
+      "source_prefix": "cohorts/evaluation-student-hevlm-s1013-control",
+      "deployment_prefix": "rollouts/hevlm-s1013-student",
+      "validation": {
+        "status": "PASS",
+        "transitions": 256,
+        "evaluations": 3,
+        "final_matching_state_hash": "90ecdc8f7a66985e"
+      }
+    },
+    {
+      "body": "hevlm",
+      "seed": 1217,
+      "source_prefix": "cohorts/evaluation-student-hevlm-s1217-control",
+      "deployment_prefix": "rollouts/hevlm-s1217-student",
+      "validation": {
+        "status": "PASS",
+        "transitions": 256,
+        "evaluations": 3,
+        "final_matching_state_hash": "871bdd42482a2ad9"
+      }
+    }
+  ],
+  "terminal_verification": {
+    "status": "PASS",
+    "artifact_identities": 1081,
+    "cohorts": 12,
+    "paired_source_steps": 3072,
+    "fit_traces": 2,
+    "readout_traces": 18,
+    "rollouts": 28,
+    "source_deployment_pairs": 4,
+    "policy_continuations": 4
+  },
+  "durability": {
+    "index": ".sealed/anchors.json",
+    "max_restore_attempts_per_file": 1,
+    "integrity_failures": []
+  },
+  "source_hashes_rechecked": true,
+  "sealed_lives_unchanged": true,
+  "independent_audit": {
+    "status": "PASS",
+    "checks": 135630,
+    "original_identities_authenticated": 322,
+    "script": {
+      "file": "audit.py",
+      "bytes": 21430,
+      "sha256": "548c79ddf1aa80df292f83f5aff06dca5fb47fbb8dcfa0dbeefdc1f565aef2d8"
+    },
+    "receipt": {
+      "bytes": 81407,
+      "sha256": "ab4a3afb40e5c88fc0f2e0a83267571eba1480f8a789b30e4e9363e621149742"
+    },
+    "seal_chronology": [
+      {
+        "phase": "acquisition_started",
+        "time_ns": 1791418265651469171,
+        "student_sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1"
+      },
+      {
+        "phase": "lives_sealed",
+        "time_ns": 1791418753544291089,
+        "sealed_lives_sha256": "f4c03740454f11414b476ccd24ed527bce10a6cbe40078457a3e6cd3ca9a2b4a"
+      },
+      {
+        "phase": "evaluation_generation_started",
+        "time_ns": 1791418753698661933,
+        "sealed_lives_sha256": "f4c03740454f11414b476ccd24ed527bce10a6cbe40078457a3e6cd3ca9a2b4a"
+      },
+      {
+        "phase": "closed_loop_started",
+        "time_ns": 1791418932502300535
+      },
+      {
+        "phase": "evaluation_complete",
+        "time_ns": 1791419519930260498,
+        "acquisition_worlds": 64,
+        "evaluation_worlds": 32,
+        "branch_updates": 6144,
+        "paired_host_processes": 24,
+        "host_updates": 6144,
+        "primary_deployment_processes": 24,
+        "resume_processes": 4,
+        "deployment_updates": 14336,
+        "fit_updates": 32768,
+        "development_readouts": 384,
+        "evaluation_readouts": 192,
+        "readouts": 576,
+        "source_continuation_transitions": 1536,
+        "executed_branches": 384,
+        "all_body_updates": 26624
+      }
+    ],
+    "findings": {
+      "bytes": 4682,
+      "sha256": "976d6c15f5e0d67042e1d482bb243b193a2dda85dba182fbaedc158be4c72f87"
+    }
+  },
+  "tables": {
+    "common_state.csv": {
+      "bytes": 3288,
+      "sha256": "4427012ec7d3d96ea931a786f0d6cfbe71ea7b8216ad6f2fa2946a87de031c8c"
+    },
+    "heldout_curves.csv": {
+      "bytes": 4308,
+      "sha256": "dae110ba4a7a048d58b410bf23e9245e18a2b776abe6b43d5987e9105404a5db"
+    },
+    "deployment.csv": {
+      "bytes": 2100,
+      "sha256": "6b58745233ee968671a1189f95bc3b48166bf1fdb164710db1fbdc85ba195038"
+    },
+    "paired_final.csv": {
+      "bytes": 540,
+      "sha256": "aab477eff50a6734488d85b073359a191b1bd8613fbcd9e0360dd00ab16c323b"
+    }
+  },
+  "empirical_scope": {
+    "cpu_only": true,
+    "gpu_measured": false,
+    "seeds": [
+      1013,
+      1217
+    ],
+    "refit_parent_beats_initial_student_final_cases": 4,
+    "refit_self_beats_initial_student_final_cases": 2,
+    "refit_self_beats_refit_parent_final_cases": 1,
+    "body_seed_pairs": 4,
+    "learned_arms_beat_canonical_final_cases": 0,
+    "learned_arm_body_seed_comparisons": 12,
+    "interpretation": "Parent-source refitting improves the initial student in all four complete deployments. Self-source refitting improves both HeVLM seeds and regresses both SimpleLLM seeds. Self wins one of four matched comparisons against parent-source refitting. Lower common-state mean regret does not imply lower final held-out loss."
+  },
+  "raw_archive": {
+    "archive": "chuck-trajectories-ac5d651-full.tar.gz",
+    "bytes": 3292477369,
+    "sha256": "187be0ac0f45557285a28b3a4e3708e03730dbfa3d6ad7c7408c798149e36474",
+    "members": 2192,
+    "results_sha256": "99b7f72453ecc36e420e1aa7a13048c1889d7ec6fa717b12b889e09682751416",
+    "index_sha256": "5621a0e3992d5d8994c4b8987fd78143b8e87baa91cacdf876e844dbdb6d458f",
+    "original_identities": 1083,
+    "all_originals_and_mirrors_verified": true,
+    "parts": [
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part01",
+        "bytes": 400000000,
+        "sha256": "e627b331e4beb1c0953815b2421de6d726859013bbcb3d081bb7b1e6e1ddaf3c"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part02",
+        "bytes": 400000000,
+        "sha256": "76aef0a82f118be15e577c8af99968e7ca7ef8aada50f55d53a9cc8081e6c7c9"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part03",
+        "bytes": 400000000,
+        "sha256": "9618ec20d8dae7ed2450f3dec87eff62365eb3486b5b6983ed46d8387421e4d5"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part04",
+        "bytes": 400000000,
+        "sha256": "334a3ec317270e85815b378ed0b8511656586871e36a0f830efeaedc389901a0"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part05",
+        "bytes": 400000000,
+        "sha256": "e2eb44f0c3e2b478f0d7ab17d8e1a796a5c8922b1e975ee9a94b0af5569f69fe"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part06",
+        "bytes": 400000000,
+        "sha256": "87317c4b3020641dedea9703f0dc494531470da1bfaa6f95a4d84c124f7e8de9"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part07",
+        "bytes": 400000000,
+        "sha256": "5b245f043d97533605e00ec35b47e10b8b3e16e233d824f8c9562229c461bf5e"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part08",
+        "bytes": 400000000,
+        "sha256": "b0cc0328019949964a396f155ec761f52a1f542908828fb969862689d45bb092"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part09",
+        "bytes": 92477369,
+        "sha256": "0ef1a2a80e1f023c62f2579a29a424c4ca70dde953cf6d9752869205409ab7ff"
+      }
+    ],
+    "reconstruction": "Concatenate parts in listed order, verify whole SHA-256, then extract the gzip tar. index.json authenticates each member; raw/.sealed/anchors.json retains first identities and mirrors."
+  },
+  "validation_archive": {
+    "archive": "chuck-trajectories-ac5d651-validation-sealed.tar",
+    "bytes": 1198704640,
+    "sha256": "443ae54ec80735f0c9e58892ea6187c558fdd82283ffe6fd4299094b3d220fcf",
+    "members": 26,
+    "parts": [
+      {
+        "file": "chuck-trajectories-ac5d651-validation-sealed.tar.part01",
+        "bytes": 400000000,
+        "sha256": "944d168a866e652a7bd132d98a7787ae31c155a29db6d9827f68d42ae30fd995"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-validation-sealed.tar.part02",
+        "bytes": 400000000,
+        "sha256": "57cd1352edc997366a5fd4a645141b1a0a607eca3ff41fc990430b20cc2feb37"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-validation-sealed.tar.part03",
+        "bytes": 398704640,
+        "sha256": "1dae650d95b72664f4fbffbd1dad26a1852ab879346eb98541d60db3122e857d"
+      }
+    ]
+  }
+}

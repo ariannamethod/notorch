@@ -1,0 +1,83 @@
+{
+  "full_run_and_independent_audit": {
+    "archive": "chuck-trajectories-ac5d651-full.tar.gz",
+    "bytes": 3292477369,
+    "sha256": "187be0ac0f45557285a28b3a4e3708e03730dbfa3d6ad7c7408c798149e36474",
+    "members": 2192,
+    "results_sha256": "99b7f72453ecc36e420e1aa7a13048c1889d7ec6fa717b12b889e09682751416",
+    "index_sha256": "5621a0e3992d5d8994c4b8987fd78143b8e87baa91cacdf876e844dbdb6d458f",
+    "original_identities": 1083,
+    "all_originals_and_mirrors_verified": true,
+    "parts": [
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part01",
+        "bytes": 400000000,
+        "sha256": "e627b331e4beb1c0953815b2421de6d726859013bbcb3d081bb7b1e6e1ddaf3c"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part02",
+        "bytes": 400000000,
+        "sha256": "76aef0a82f118be15e577c8af99968e7ca7ef8aada50f55d53a9cc8081e6c7c9"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part03",
+        "bytes": 400000000,
+        "sha256": "9618ec20d8dae7ed2450f3dec87eff62365eb3486b5b6983ed46d8387421e4d5"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part04",
+        "bytes": 400000000,
+        "sha256": "334a3ec317270e85815b378ed0b8511656586871e36a0f830efeaedc389901a0"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part05",
+        "bytes": 400000000,
+        "sha256": "e2eb44f0c3e2b478f0d7ab17d8e1a796a5c8922b1e975ee9a94b0af5569f69fe"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part06",
+        "bytes": 400000000,
+        "sha256": "87317c4b3020641dedea9703f0dc494531470da1bfaa6f95a4d84c124f7e8de9"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part07",
+        "bytes": 400000000,
+        "sha256": "5b245f043d97533605e00ec35b47e10b8b3e16e233d824f8c9562229c461bf5e"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part08",
+        "bytes": 400000000,
+        "sha256": "b0cc0328019949964a396f155ec761f52a1f542908828fb969862689d45bb092"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-full.tar.gz.part09",
+        "bytes": 92477369,
+        "sha256": "0ef1a2a80e1f023c62f2579a29a424c4ca70dde953cf6d9752869205409ab7ff"
+      }
+    ],
+    "reconstruction": "Concatenate parts in listed order, verify whole SHA-256, then extract the gzip tar. index.json authenticates each member; raw/.sealed/anchors.json retains first identities and mirrors."
+  },
+  "validation_and_both_smokes": {
+    "archive": "chuck-trajectories-ac5d651-validation-sealed.tar",
+    "bytes": 1198704640,
+    "sha256": "443ae54ec80735f0c9e58892ea6187c558fdd82283ffe6fd4299094b3d220fcf",
+    "members": 26,
+    "parts": [
+      {
+        "file": "chuck-trajectories-ac5d651-validation-sealed.tar.part01",
+        "bytes": 400000000,
+        "sha256": "944d168a866e652a7bd132d98a7787ae31c155a29db6d9827f68d42ae30fd995"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-validation-sealed.tar.part02",
+        "bytes": 400000000,
+        "sha256": "57cd1352edc997366a5fd4a645141b1a0a607eca3ff41fc990430b20cc2feb37"
+      },
+      {
+        "file": "chuck-trajectories-ac5d651-validation-sealed.tar.part03",
+        "bytes": 398704640,
+        "sha256": "1dae650d95b72664f4fbffbd1dad26a1852ab879346eb98541d60db3122e857d"
+      }
+    ]
+  }
+}

@@ -291,6 +291,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "--scenarios")) return scenario_main(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "--rollout")) return rollout_main(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "--lived")) return lived_main(argc, argv);
+    if (argc > 1 && !strcmp(argv[1], "--trajectory")) return lived_main(argc, argv);
     if (argc != 8 && argc != 9) {
         fprintf(stderr, "usage: %s simple|hevlm adam|chuck|legacy|learned TOKENS OUT_PREFIX STEPS SEED LR [ARCHITECT_JSON]\n", argv[0]);
         return 2;
