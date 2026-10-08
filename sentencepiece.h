@@ -44,6 +44,11 @@ nt_spm_model *nt_spm_load_memory(const void *data, size_t size,
 void nt_spm_free(nt_spm_model *model);
 int nt_spm_n_vocab(const nt_spm_model *model);
 
+/* Lowercase SHA-256 hex of the exact owned ModelProto bytes parsed at load.
+ * Borrowed 64-character string, immutable until model destruction; NULL for
+ * a NULL model. File replacement after load cannot alter this identity. */
+const char *nt_spm_identity(const nt_spm_model *model);
+
 /* Input is borrowed for this call only. Embedded NUL is rejected. Malformed
  * UTF-8 bytes become U+FFFD, as in SentencePiece normalization. Input and
  * normalized output each have a 1 MiB cap. No BOS/EOS tokens are inserted.

@@ -501,6 +501,11 @@ Parallel voices can share a model while each call owns its scratch and result.
 Failed operations publish nothing. The archive and shared library include this
 implementation; no protobuf or SentencePiece runtime package is needed.
 
+`nt_spm_identity` returns the SHA-256 of the exact owned model bytes. Its
+immutable identity survives replacement of the original file, so a resumed
+organism can compare the tokenizer it actually loaded. The native
+[SHA-256 primitive](docs/SHA256.md) is also available through `sha256.h`.
+
 The [API, supported model profile, and reproduction commands](docs/SENTENCEPIECE.md)
 pin the original model and SentencePiece 0.2.2 oracle. `make check_sentencepiece`
 runs embedded normalization/Viterbi references, malformed inputs, allocation
@@ -1118,6 +1123,7 @@ ten test binaries (run output is the source of truth for counts):
 - **`tests/test_sampling.c`** — owned PCG32 vectors, bounded rejection, stable weighted selection, invalid-input preservation, and isolation from existing streams. `make check_sampling BLAS_FLAGS= BLAS_LIBS=` runs with C and libm.
 - **`tests/test_numerical_values.c`** — stateless forward/reverse arithmetic, all 57 finite-difference gradients, independent training trajectories and normal vectors, thread ownership, and legacy-tape isolation. `make check_numerical_values BLAS_FLAGS= BLAS_LIBS=` runs the gate.
 - **`tests/test_sentencepiece.c` / `test_sentencepiece_faults.c`** — native Unigram and compiled normalization against SentencePiece 0.2.2, exact output limits, malformed models, immutable concurrent readers, allocation failure and complete result publication. `make check_sentencepiece SPM_MODEL=path/to/haiku_sp.model` includes the original Haiku corpus.
+- **`tests/test_sha256.c`** — NIST/RFC SHA-256 vectors, 264 independent binary fixtures, padding boundaries, overlap, and unchanged failed output. `make check_sha256` runs the allocation-free primitive's gate.
 - **`tests/test_gguf.c`** — GGUF parser smoke test (F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K dequant)
 - **`tests/test_qmatvec.c`** — packed quantized matvec (`nt_qmatvec`) vs the dequant→cblas oracle across all 7 GGUF dtypes (F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K), relative error ~1e-6
 

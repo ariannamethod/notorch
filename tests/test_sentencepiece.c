@@ -20,6 +20,7 @@ static void compare(const nt_spm_model *m, const sp_reference *ref) {
     int rc = nt_spm_encode(m, ref->text, strlen(ref->text), &r, error, sizeof(error));
     if (rc) fprintf(stderr, "case %s: %s\n", ref->name, error);
     CHECK(rc == 0);
+    CHECK(nt_spm_identity(m) != NULL && strcmp(nt_spm_identity(m), ref->identity) == 0);
     CHECK(r.normalized_bytes == strlen(ref->normalized));
     CHECK(strcmp(r.normalized, ref->normalized) == 0);
     CHECK(r.count == ref->count);
@@ -72,6 +73,33 @@ static nt_spm_model *tiny_with_flags(void) {
     memcpy(bytes, sp_model_0, sizeof(sp_model_0));
     memcpy(bytes + sizeof(sp_model_0), flags, sizeof(flags));
     return nt_spm_load_memory(bytes, sizeof(bytes), NULL, 0);
+}
+
+static void complete_long_path(void) {
+    nt_spm_model *m = nt_spm_load_memory(sp_review_model, sizeof(sp_review_model), NULL, 0);
+    CHECK(m != NULL);
+    char *text = malloc(sp_review_input_bytes + 1);
+    CHECK(text != NULL);
+    memset(text, 'a', sp_review_input_bytes); text[sp_review_input_bytes] = 0;
+    nt_spm_result r = {0};
+    CHECK(nt_spm_encode(m, text, sp_review_input_bytes, &r, NULL, 0) == 0);
+    CHECK(r.normalized_bytes == sp_review_input_bytes && strcmp(r.normalized, text) == 0);
+    CHECK(r.count == sp_review_token_count);
+    size_t index = 0, offset = 0;
+    for (size_t run = 0; run < COUNT(sp_review_runs); run++) {
+        size_t length = strlen(sp_review_runs[run].piece);
+        for (size_t i = 0; i < sp_review_runs[run].count; i++, index++) {
+            CHECK(index < r.count);
+            CHECK(r.pieces[index].id == sp_review_runs[run].id);
+            CHECK(r.pieces[index].offset == offset);
+            CHECK(r.pieces[index].length == length);
+            CHECK(memcmp(r.normalized + offset, sp_review_runs[run].piece, length) == 0);
+            offset += length;
+        }
+    }
+    CHECK(index == r.count && offset == r.normalized_bytes);
+    nt_spm_result_free(&r); nt_spm_free(m); free(text);
+    puts("PASS complete 58,507-byte / 29,254-token SentencePiece 0.2.2 path");
 }
 
 static void boundaries(void) {
@@ -222,17 +250,29 @@ static void concurrent_and_file(void) {
     CHECK(write(fd, sp_model_0, sizeof(sp_model_0)) == sizeof(sp_model_0));
     CHECK(close(fd) == 0);
     m = nt_spm_load(path, NULL, 0); CHECK(m != NULL);
+    const char *identity = nt_spm_identity(m);
+    CHECK(identity != NULL && strlen(identity) == 64);
+    char saved_identity[65]; memcpy(saved_identity, identity, sizeof(saved_identity));
+    FILE *replacement = fopen(path, "wb"); CHECK(replacement != NULL);
+    CHECK(fwrite(sp_review_model, 1, sizeof(sp_review_model), replacement) == sizeof(sp_review_model));
+    CHECK(fclose(replacement) == 0);
+    nt_spm_model *other = nt_spm_load(path, NULL, 0); CHECK(other != NULL);
+    CHECK(strcmp(nt_spm_identity(other), saved_identity) != 0);
+    CHECK(nt_spm_identity(m) == identity && strcmp(identity, saved_identity) == 0);
+    nt_spm_free(other);
     CHECK(unlink(path) == 0);
+    CHECK(strcmp(nt_spm_identity(m), saved_identity) == 0);
+    CHECK(nt_spm_identity(NULL) == NULL);
     nt_spm_result r = {0};
     CHECK(nt_spm_encode(m, "aaa", 3, &r, NULL, 0) == 0);
     CHECK(r.count == 2 && r.pieces[0].id == 3 && r.pieces[1].id == 4);
     nt_spm_result_free(&r); nt_spm_free(m);
-    puts("PASS eight concurrent readers / 8,000 calls and ownership after file removal");
+    puts("PASS eight concurrent readers / 8,000 calls and identity after file replacement/removal");
 }
 
 int main(int argc, char **argv) {
     reference_cases(argc > 1 && argv[1][0] ? argv[1] : NULL);
-    boundaries(); malformed_models(); concurrent_and_file();
+    complete_long_path(); boundaries(); malformed_models(); concurrent_and_file();
     printf("SentencePiece native: %u checks passed\n", checks);
     return 0;
 }
