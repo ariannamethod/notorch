@@ -329,30 +329,31 @@ test_harness: notorch llama
 test_consumer_link:
 	./harness/test_consumer_link.sh $(MODEL)
 
-test_residual: tests/test_residual.c libnotorch_harness.a libnotorch.a
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+# Bind these consumers to their declared archives when shared builds coexist.
+test_residual: tests/test_residual.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
-test_multi_decode: tests/test_multi_decode.c tests/decode_fixtures.h libnotorch_harness.a libnotorch.a
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+test_multi_decode: tests/test_multi_decode.c tests/decode_fixtures.h libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
-bench_multi_decode: tests/bench_multi_decode.c libnotorch_harness.a libnotorch.a
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+bench_multi_decode: tests/bench_multi_decode.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
 check_residual: test_residual
 	./test_residual
 
 examples/bpe.o: examples/unicode_numbers.h
 
-test_smollm_tokenizer: tests/test_smollm_tokenizer.c libnotorch_harness.a libnotorch.a
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+test_smollm_tokenizer: tests/test_smollm_tokenizer.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
 check_smollm_tokenizer: test_smollm_tokenizer
 	./test_smollm_tokenizer
 
 .PHONY: check_smollm_tokenizer
 
-test_gemma3: tests/test_gemma3.c libnotorch_harness.a libnotorch.a
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+test_gemma3: tests/test_gemma3.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
 check_gemma3: test_gemma3
 	./test_gemma3
@@ -593,6 +594,11 @@ test: test_chuck_lived
 
 test_chuck_lived_mutations:
 	python3 tests/test_chuck_lived_mutations.py
+
+.PHONY: test_chuck_trajectories
+test_chuck_trajectories:
+	python3 tests/test_chuck_trajectories.py
+	python3 tests/test_chuck_trajectory_receipts.py
 
 # Save syscall injection stays in this private object; production libc is intact.
 tests/chuck_durability_notorch.o: notorch.c notorch.h $(CHUCK_HEADERS)

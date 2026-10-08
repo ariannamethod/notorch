@@ -40,7 +40,8 @@ static int rollout_main(int argc, char **argv) {
                  !strcmp(arm, "push") ? NT_CHUCK_ACTION_PUSH : -1;
     int learned = !strcmp(arm, "oldfuture-simple") || !strcmp(arm, "conditional-simple") ||
                   !strcmp(arm, "conditional-adapted") || !strcmp(arm, "parent") ||
-                  !strcmp(arm, "lived-hold") || !strcmp(arm, "lived-policy");
+                  !strcmp(arm, "lived-hold") || !strcmp(arm, "lived-policy") ||
+                  !strcmp(arm, "student") || !strcmp(arm, "refit-parent") || !strcmp(arm, "refit-self");
     if (!canonical && forced < 0 && !learned) die("unknown rollout arm");
     if (!learned && strcmp(argv[10], "-")) die("fixed rollout arm must use LIFE=-");
     int steps = (int)parse_integer(argv[5], 1, 1000000);
