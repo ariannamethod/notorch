@@ -1,0 +1,33 @@
+{
+  "body_generation_runs": 0,
+  "byte_identical_reproduction": true,
+  "commands": [
+    {
+      "command": [
+        "python3",
+        "tests/test_spa_transfer_diagnosis.py"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "{\"deliberate_corruptions_caught\": [\"missing_readout\", \"duplicate_readout\", \"source_witness\", \"missing_source_witness\", \"mask\", \"score_byte_mismatch\", \"coherent_scores_wrong_action\", \"credit_sign\", \"reward_advantage_join\", \"paired_error\", \"arm_specific_consequence\", \"receipt_identity\"], \"positive_invalid_head_excluded\": true, \"readouts_validated\": 384, \"status\": \"PASS\"}\n"
+    },
+    {
+      "command": [
+        "python3",
+        "experiments/spa_agent/transfer/analyze.py",
+        "--output",
+        "experiments/spa_agent/transfer/diagnosis.json"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "{\"evaluation\": {\"all\": {\"alternatives\": 72, \"negative_score_margins\": 72, \"positive_score_margins\": 0, \"raw_mean_advantage\": {\"count\": 72, \"max\": 0.016404264722950757, \"mean\": -0.008848711380096574, \"median\": -0.008342860688571818, \"min\": -0.032604813437501434}, \"score_margin\": {\"count\": 72, \"max\": -0.17734979093074799, \"mean\": -0.8480694569233391, \"median\": -0.8631058931350708, \"min\": -1.9342761039733887}, \"selected\": 0, \"zero_score_margins\": 0}, \"nonpositive_mean\": {\"alternatives\": 65, \"negative_score_margins\": 65, \"positive_score_margins\": 0, \"raw_mean_advantage\": {\"count\": 65, \"max\": -0.00041449841955909505, \"mean\": -0.010401576482427817, \"median\": -0.009179687011055648, \"min\": -0.032604813437501434}, \"score_margin\": {\"count\": 65, \"max\": -0.3116384446620941, \"mean\": -0.8749577508522914, \"median\": -0.87239670753479, \"min\": -1.9342761039733887}, \"selected\": 0, \"zero_score_margins\": 0}, \"positive_mean\": {\"alternatives\": 7, \"negative_score_margins\": 7, \"positive_score_margins\": 0, \"raw_mean_advantage\": {\"count\": 7, \"max\": 0.016404264722950757, \"mean\": 0.00557075028440782, \"median\": 0.003857515854178928, \"min\": 0.00025432941038161516}, \"score_margin\": {\"count\": 7, \"max\": -0.17734979093074799, \"mean\": -0.598392441868782, \"median\": -0.6127208471298218, \"min\": -0.8974154591560364}, \"selected\": 0, \"zero_score_margins\": 0}, \"target_3_cost_only\": {\"alternatives\": 12, \"negative_score_margins\": 12, \"positive_score_margins\": 0, \"raw_mean_advantage\": {\"count\": 12, \"max\": -0.008027344010770321, \"mean\": -0.00910807293500208, \"median\": -0.009257812202122295, \"min\": -0.010000000460422598}, \"score_margin\": {\"count\": 12, \"max\": -1.0259448289871216, \"mean\": -1.1142920056978862, \"median\": -1.116436243057251, \"min\": -1.181984543800354}, \"selected\": 0, \"zero_score_margins\": 0}}, \"training\": {\"all\": {\"alternatives\": 72, \"negative_score_margins\": 69, \"positive_score_margins\": 3, \"raw_mean_advantage\": {\"count\": 72, \"max\": 0.0146551623911364, \"mean\": -0.009164305105912263, \"median\": -0.009121093738940544, \"min\": -0.03812476363964379}, \"score_margin\": {\"count\": 72, \"max\": 0.9042432308197021, \"mean\": -0.6520202201273706, \"median\": -0.740327388048172, \"min\": -1.2210854291915894}, \"selected\": 3, \"zero_score_margins\": 0}, \"nonpositive_mean\": {\"alternatives\": 58, \"negative_score_margins\": 58, \"positive_score_margins\": 0, \"raw_mean_advantage\": {\"count\": 58, \"max\": -0.0002727929677348584, \"mean\": -0.01274983150034947, \"median\": -0.010411884766654111, \"min\": -0.03812476363964379}, \"score_margin\": {\"count\": 58, \"max\": -0.2561728358268738, \"mean\": -0.7777935785466227, \"median\": -0.8191312849521637, \"min\": -1.2210854291915894}, \"selected\": 0, \"zero_score_margins\": 0}, \"positive_mean\": {\"alternatives\": 14, \"negative_score_margins\": 11, \"positive_score_margins\": 3, \"raw_mean_advantage\": {\"count\": 14, \"max\": 0.0146551623911364, \"mean\": 0.005690018528184737, \"median\": 0.003874504880513996, \"min\": 0.00019981525838375092}, \"score_margin\": {\"count\": 14, \"max\": 0.9042432308197021, \"mean\": -0.13095916381904057, \"median\": -0.2803665101528168, \"min\": -0.6757373809814453}, \"selected\": 3, \"zero_score_margins\": 0}, \"target_3_cost_only\": {\"alternatives\": 12, \"negative_score_margins\": 12, \"positive_score_margins\": 0, \"raw_mean_advantage\": {\"count\": 12, \"max\": -0.007636718568392098, \"mean\": -0.00879394536362573, \"median\": -0.008916016326111276, \"min\": -0.009999999776482582}, \"score_margin\": {\"count\": 12, \"max\": -0.8230113983154297, \"mean\": -1.0194415301084518, \"median\": -1.0022397339344025, \"min\": -1.1642749309539795}, \"selected\": 0, \"zero_score_margins\": 0}}}\n"
+    }
+  ],
+  "policy_fits": 0,
+  "sha256": {
+    "experiments/spa_agent/transfer/analyze.py": "710002d7d642bfd045972186920437190bd3d1e7a5d891312ff850563338a7db",
+    "experiments/spa_agent/transfer/diagnosis.json": "c4b43c37bba2abb6607739441170b538b320a7675a96a2338144c5c8e656c747",
+    "tests/test_spa_transfer_diagnosis.py": "7653885fb0e5a3a78d49573fa433ecbc63d859f128ce67bdd83a110c1b751016"
+  },
+  "status": "PASS"
+}
