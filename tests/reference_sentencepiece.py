@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Regenerate the C oracle using SentencePiece 0.2.2, never NoTorch code.
+
+The original Haiku .model is supplied explicitly and authenticated by SHA-256.
+Only fixture generation needs Python/SentencePiece. The native gate uses C.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import struct
+
+import sentencepiece as spm
+
+HAIKU_SHA = "b8fb56e049977498be0f59586534e67b43b23fd1d7a2efd06cc6c62d9213b942"
+
+
+def varint(n):
+    out = bytearray()
+    while n > 127:
+        out.append((n & 127) | 128)
+        n >>= 7
+    out.append(n)
+    return bytes(out)
+
+
+def scalar(field, value):
+    return varint(field << 3) + varint(value)
+
+
+def message(field, value):
+    if isinstance(value, str):
+        value = value.encode()
+    return varint(field << 3 | 2) + varint(len(value)) + value
+
+
+def model(pieces, flags=(False, False, False), charsmap=b"", suffix=False):
+    vocab = [("<unk>", 0, 2), ("<s>", 0, 3), ("</s>", 0, 3)] + pieces
+    result = bytearray()
+    for text, score, kind in vocab:
+        piece = message(1, text) + bytes([21]) + struct.pack("<f", score) + scalar(3, kind)
+        result += message(1, piece)
+    trainer = scalar(3, 1) + scalar(4, len(vocab)) + scalar(24, suffix)
+    norm = message(1, "fixture" if charsmap else "identity")
+    if charsmap:
+        norm += message(2, charsmap)
+    for field, flag in zip((3, 4, 5), flags):
+        norm += scalar(field, flag)
+    result += message(2, trainer) + message(3, norm)
+    return bytes(result)
+
+
+def charsmap(rules):
+    """Construct a small portable Darts trie, then let SentencePiece read it.
+
+    Each logical node gets one disjoint 256-unit child block. This deliberately
+    simple fixture representation is independent of NoTorch's parser/traversal.
+    """
+    nodes = [{"children": {}, "replacement": None, "pos": 0, "label": 0}]
+    pool = bytearray(b"\0")
+    for source, replacement in rules:
+        node = 0
+        for byte in source.encode():
+            if byte not in nodes[node]["children"]:
+                child = len(nodes)
+                nodes[node]["children"][byte] = child
+                nodes.append({"children": {}, "replacement": None,
+                              "pos": (node + 1) * 256 + byte, "label": byte})
+            node = nodes[node]["children"][byte]
+        nodes[node]["replacement"] = len(pool)
+        pool += replacement.encode() + b"\0"
+    units = [0] * ((len(nodes) + 1) * 256)
+    for i, node in enumerate(nodes):
+        base = (i + 1) * 256
+        unit = ((node["pos"] ^ base) << 10) | node["label"]
+        if node["replacement"] is not None:
+            unit |= 256
+            units[base] = 0x80000000 | node["replacement"]
+        units[node["pos"]] = unit
+    trie = struct.pack("<" + "I" * len(units), *units)
+    return struct.pack("<I", len(trie)) + trie + pool
+
+
+def cstring(value):
+    if isinstance(value, str):
+        value = value.encode()
+    return '"' + "".join(f"\\{b:03o}" for b in value) + '"'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--haiku-model", type=Path, required=True)
+    parser.add_argument("--output", type=Path, default=Path(__file__).with_name("sentencepiece_reference.h"))
+    args = parser.parse_args()
+    if spm.__version__ != "0.2.2":
+        raise SystemExit("reference requires sentencepiece==0.2.2")
+    original = args.haiku_model.read_bytes()
+    if hashlib.sha256(original).hexdigest() != HAIKU_SHA:
+        raise SystemExit("Haiku model SHA-256 differs from pinned Python source")
+    source = json.loads(Path(__file__).with_name("sentencepiece_cases.json").read_text())
+    cases = []
+    for name, text in source["haiku"]:
+        cases.append(("haiku: " + name, None, original, text.lower()))
+    for name, pieces, text in source["unigram"]:
+        data = model(pieces)
+        cases.append(("unigram: " + name, data, data, text))
+    mapping = charsmap([("X", "xy"), ("A", " a "), ("Z", ""),
+                        ("Ａ", "a"), ("é", "é"), ("Σ", "σ"),
+                        ("ς", "σ"), ("SS", "ß"), ("XY", "b")])
+    pieces = [(x, -1, 1) for x in ("a", "b", "x", "y", "▁", "▁a", "é", "σ")]
+    pieces += [("XZZ", -100, 4), ("<tag>", 0, 4), ("<tag><more>", 0, 4), ("ab", 100, 5)]
+    for flags in ((a, b, c) for a in (False, True) for b in (False, True) for c in (False, True)):
+        for suffix in (False, True):
+            data = model(pieces, flags, mapping, suffix)
+            for text in (" X XY Z A Ａ é Σ ς SS ", "XZZ<tag><more>abZ", "▁▁A▁", "Z", "  ", "\t\n"):
+                cases.append(("flags=" + str(flags) + " suffix=" + str(suffix), data, data, text))
+    # Long paths cross the source's floating-point score recentering boundary.
+    data = model([("a", -31, 1), ("aa", -62, 1)])
+    cases.append(("long score frontier", data, data, "a" * 8001))
+    lines = ["/* Generated by tests/reference_sentencepiece.py with SentencePiece 0.2.2.",
+             " * Haiku ModelProto SHA-256: " + HAIKU_SHA + " */",
+             "#ifndef NT_SPM_REFERENCE_H", "#define NT_SPM_REFERENCE_H",
+             "typedef struct { const char *name; const unsigned char *model; size_t model_bytes;",
+             "    const char *text, *normalized; const char *const *pieces;",
+             "    const int *ids; size_t count; } sp_reference;", ""]
+    models = {}
+    records = []
+    for i, (name, embedded, oracle, text) in enumerate(cases):
+        processor = spm.SentencePieceProcessor(model_proto=oracle)
+        normalized = processor.normalize(text)
+        pieces = processor.encode_as_pieces(text)
+        ids = processor.encode_as_ids(text)
+        if embedded is None:
+            model_name, model_size = "NULL", 0
+        else:
+            if embedded not in models:
+                key = "sp_model_" + str(len(models))
+                models[embedded] = key
+                lines.append(f"static const unsigned char {key}[{len(embedded)}] = {{")
+                # Compiled tries have sparse child blocks; designated entries
+                # retain exact bytes without spelling thousands of zeroes.
+                entries = [f"[{j}]=0x{byte:02x}" for j, byte in enumerate(embedded) if byte]
+                for j in range(0, len(entries), 8):
+                    lines.append("    " + ",".join(entries[j:j + 8]) + ",")
+                lines.append("};")
+            model_name, model_size = models[embedded], len(embedded)
+        # Large references use adjacent literals so no C logical line is huge.
+        for label, value in (("text", text), ("normalized", normalized)):
+            raw = value.encode()
+            lines.append(f"static const char sp_{label}_{i}[] =")
+            lines += ["    " + cstring(raw[j:j + 80]) for j in range(0, len(raw), 80)] or ['    ""']
+            lines[-1] += ";"
+        lines.append(f"static const char *const sp_pieces_{i}[] = {{")
+        lines += ["    " + cstring(piece) + "," for piece in pieces] or ["    NULL,"]
+        lines.append("};")
+        lines.append(f"static const int sp_ids_{i}[] = {{")
+        for j in range(0, len(ids), 24):
+            lines.append("    " + ",".join(map(str, ids[j:j + 24])) + ",")
+        if not ids:
+            lines.append("    0,")
+        lines.append("};")
+        records.append("    {" + cstring(name) + f",{model_name},{model_size},sp_text_{i},sp_normalized_{i},sp_pieces_{i},sp_ids_{i},{len(ids)}" + "},")
+    lines += ["static const sp_reference sp_references[] = {", *records, "};", "#endif", ""]
+    args.output.write_text("\n".join(lines))
+    print(f"wrote {len(cases)} reference cases / {len(models)} embedded models")
+
+
+if __name__ == "__main__":
+    main()

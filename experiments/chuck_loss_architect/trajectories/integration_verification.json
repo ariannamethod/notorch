@@ -1,0 +1,191 @@
+{
+  "status": "PASS",
+  "numerical_source_commit": "ac5d651d41efa68e79b729a4e3b05058e0161d47",
+  "integrated_main": "0b0444a10e907447c3ee90a6c15dbca811e50d16",
+  "measured_files_preserved": {
+    "notorch.c": {
+      "sha256": "12915832a2b6a84d27aae6e83a4cf08b601970a287c91d7dc9ab2fcabf15dfb7",
+      "preserved": true
+    },
+    "notorch.h": {
+      "sha256": "cad17f03c141ee4209cdbd6af6d435364e889f9d37a9f07592a04f5f89b8519d",
+      "preserved": true
+    },
+    "notorch_simd.h": {
+      "sha256": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+      "preserved": true
+    },
+    "chuck_architect.h": {
+      "sha256": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+      "preserved": true
+    },
+    "chuck_architect_impl.h": {
+      "sha256": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+      "preserved": true
+    },
+    "examples/chuck_architect_train.c": {
+      "sha256": "d71772e44a705729a871f8f568be810e2fe231152b125e4ca0dc8cbd4a9438b1",
+      "preserved": true
+    },
+    "examples/chuck_architect_scenarios.h": {
+      "sha256": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+      "preserved": true
+    },
+    "examples/chuck_architect_rollout.h": {
+      "sha256": "d56e44f403d9d371c7b376ca6791428d1d5f54f76828fb0d504f8e90aae62de7",
+      "preserved": true
+    },
+    "examples/chuck_architect_lived.h": {
+      "sha256": "e9719b667d3268cee8e01030e8f69f9056c14c0dc66b741b334dd16305c7d074",
+      "preserved": true
+    },
+    "examples/chuck_architect_future.c": {
+      "sha256": "984bcba1cd8c86a05e929476d93536a1e445ac8281017429170c6f4a311a94d4",
+      "preserved": true
+    },
+    "examples/chuck-loss-architect.json": {
+      "sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+      "preserved": true
+    },
+    "experiments/chuck_loss_architect/run.py": {
+      "sha256": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+      "preserved": true
+    },
+    "experiments/chuck_loss_architect/scenarios/run.py": {
+      "sha256": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+      "preserved": true
+    },
+    "experiments/chuck_loss_architect/future/run.py": {
+      "sha256": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+      "preserved": true
+    },
+    "experiments/chuck_loss_architect/conditional/run.py": {
+      "sha256": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+      "preserved": true
+    },
+    "experiments/chuck_loss_architect/lived/run.py": {
+      "sha256": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+      "preserved": true
+    },
+    "experiments/chuck_loss_architect/trajectories/run.py": {
+      "sha256": "de58f9455a74d56648ba62360d89e55bbd583a63fb2a23d154cfcdb1e76db26c",
+      "preserved": true
+    },
+    "experiments/chuck_loss_architect/trajectories/protocol.json": {
+      "sha256": "86673afd0abc04b5f389aeb4400765287fbc9a0951963639d961fc70a9c6c121",
+      "preserved": true
+    }
+  },
+  "incoming_nonshared_files_preserved": 11,
+  "conflicts_resolved": [
+    "NOTORCHLOG.md: retain both dated entries in chronological order"
+  ],
+  "command": [
+    "make",
+    "-j2",
+    "test",
+    "lib",
+    "shared",
+    "bench_multi_decode",
+    "BLAS_FLAGS=",
+    "BLAS_LIBS="
+  ],
+  "exit_code": 0,
+  "all_test_recipe_commands": [
+    "./notorch_test",
+    "./test_tanh_sgd",
+    "./test_sampling",
+    "./test_numerical_values",
+    "./test_sentencepiece",
+    "./test_sentencepiece_faults",
+    "./test_bitnet_ops",
+    "./test_spa_agent",
+    "./test_spa_agent_state",
+    "./test_spa_agent_durability",
+    "./test_spa_agent_future",
+    "./test_spa_agent_repeated",
+    "./test_chuck_architect",
+    "./test_chuck_actions_edge",
+    "sh tests/run_chuck_architect_state.sh ./test_chuck_architect_state",
+    "./test_chuck_architect_scenarios",
+    "./test_vision",
+    "./test_chuck_architect_future",
+    "./test_chuck_architect_conditioned",
+    "./test_chuck_architect_durability",
+    "./test_chuck_lived",
+    "./test_conv1d",
+    "./test_logmel",
+    "NT_LOGMEL_THREADS=1 ./test_logmel",
+    "./test_qpool",
+    "NT_QMV_CHUNKS=1 ./test_qpool",
+    "NT_QMV_CHUNKS=64 ./test_qpool",
+    "NT_QMV_SPIN=0 ./test_qpool",
+    "./test_qmatmul",
+    "./test_quantize",
+    "./test_gguf_write",
+    "./test_gguf_write rss19",
+    "./test_gguf_write rss91",
+    "./test_gguf_keys",
+    "./test_qmatvec_leak",
+    "./test_affinity",
+    "NT_QMV_BIG_ONLY=0 ./test_affinity off",
+    "./test_affinity narrowed",
+    "NT_QMV_PIN=0 ./test_affinity nopin",
+    "./test_plan_race",
+    "./test_wt_expert",
+    "./test_residual",
+    "./test_multi_decode",
+    "./test_gemma3",
+    "./test_smollm_tokenizer",
+    "./test_qgather",
+    "NT_QMV_CHUNKS=1 ./test_qgather",
+    "./test_f16_matvec",
+    "./test_q8_0_rows"
+  ],
+  "test_recipe_count": 49,
+  "log": {
+    "bytes": 66469,
+    "sha256": "562706a0e5dbc92b3fd3904f1dc6f7097a75772a66bba2394e3a22c74cbb61bd"
+  },
+  "static_link_consumers": {
+    "test_residual": [
+      "0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]",
+      "0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]"
+    ],
+    "test_multi_decode": [
+      "0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]",
+      "0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]"
+    ],
+    "bench_multi_decode": [
+      "0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]",
+      "0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]"
+    ],
+    "test_smollm_tokenizer": [
+      "0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]"
+    ],
+    "test_gemma3": [
+      "0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]",
+      "0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]"
+    ]
+  },
+  "shared_library_exists": true,
+  "first_attempt": {
+    "status": "FAIL",
+    "command": [
+      "make",
+      "-j2",
+      "test",
+      "lib",
+      "shared",
+      "BLAS_FLAGS=",
+      "BLAS_LIBS="
+    ],
+    "exit_code": 2,
+    "log": {
+      "bytes": 56886,
+      "sha256": "9040012bfa1b4f8a3f1bb056657bd2152db958db2e1fff202ee3a56e5cddb3e9"
+    },
+    "reason": "Shared build coexisted with archive consumers; -lnotorch selected libnotorch.so, and test_residual failed dynamic loading. Five CPU consumers now name their declared archives directly."
+  },
+  "scope": "Merged static/shared libraries, five archive-linked consumers (benchmark built only), and complete default CPU test recipe; numerical experiment was not repeated."
+}

@@ -169,20 +169,23 @@ spa_agent.o: spa_agent.c spa_agent.h notorch.h
 spa_binding.o: spa_binding.c spa_binding.h spa_agent.h notorch.h
 	$(CC) $(CFLAGS) -c spa_binding.c -o $@
 
-libnotorch.a: notorch.c notorch.h gguf.c gguf.h spa_agent.o spa_binding.o Makefile $(CHUCK_HEADERS)
+sentencepiece.o: sentencepiece.c sentencepiece.h
+	$(CC) $(CFLAGS) -c sentencepiece.c -o $@
+
+libnotorch.a: notorch.c notorch.h gguf.c gguf.h spa_agent.o spa_binding.o sentencepiece.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf.o
 	rm -f libnotorch.a
-	$(AR) rcs libnotorch.a notorch.o gguf.o spa_agent.o spa_binding.o
+	$(AR) rcs libnotorch.a notorch.o gguf.o spa_agent.o spa_binding.o sentencepiece.o
 	@echo "Built: libnotorch.a (CPU + BLAS)"
 
 # GPU-enabled library — only when USE_CUDA=1. SFT trainer links this +
 # -lcudart -lcublas. Compiled with -DUSE_CUDA so #ifdef blocks activate.
-libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h spa_agent.o spa_binding.o Makefile $(CHUCK_HEADERS)
+libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h spa_agent.o spa_binding.o sentencepiece.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -DUSE_CUDA -I/usr/local/cuda/include -c notorch.c -o notorch_gpu.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf_gpu.o
 	nvcc -O2 -DUSE_CUDA -c notorch_cuda.cu -o notorch_cuda.o
-	$(AR) rcs libnotorch_gpu.a notorch_gpu.o gguf_gpu.o notorch_cuda.o spa_agent.o spa_binding.o
+	$(AR) rcs libnotorch_gpu.a notorch_gpu.o gguf_gpu.o notorch_cuda.o spa_agent.o spa_binding.o sentencepiece.o
 	@echo "Built: libnotorch_gpu.a (CPU + BLAS + CUDA)"
 
 # ── Python binding gate ──
@@ -208,8 +211,8 @@ endif
 
 shared: libnotorch.$(SOEXT)
 
-libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h spa_agent.c spa_agent.h spa_binding.c spa_binding.h Makefile $(CHUCK_HEADERS)
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c spa_agent.c spa_binding.c -lm $(BLAS_LIBS)
+libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h spa_agent.c spa_agent.h spa_binding.c spa_binding.h sentencepiece.c sentencepiece.h Makefile $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c spa_agent.c spa_binding.c sentencepiece.c -lm $(BLAS_LIBS)
 	@echo "Built: libnotorch.$(SOEXT) ($(BLAS_NAME)) — load it with any FFI"
 
 # ── The harness as a linkable surface ──────────────────────────────────────
@@ -256,6 +259,7 @@ install: lib lib_harness
 	install -m 0644 libnotorch.a $(PREFIX)/lib/libnotorch.a
 	install -m 0644 libnotorch_harness.a $(PREFIX)/lib/libnotorch_harness.a
 	install -m 0644 notorch.h    $(PREFIX)/include/ariannamethod/notorch.h
+	install -m 0644 sentencepiece.h $(PREFIX)/include/ariannamethod/sentencepiece.h
 	install -m 0644 spa_agent.h  $(PREFIX)/include/ariannamethod/spa_agent.h
 	install -m 0644 spa_binding.h $(PREFIX)/include/ariannamethod/spa_binding.h
 	install -m 0644 chuck_architect.h $(PREFIX)/include/ariannamethod/chuck_architect.h
@@ -325,30 +329,31 @@ test_harness: notorch llama
 test_consumer_link:
 	./harness/test_consumer_link.sh $(MODEL)
 
-test_residual: tests/test_residual.c libnotorch_harness.a libnotorch.a
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+# Bind these consumers to their declared archives when shared builds coexist.
+test_residual: tests/test_residual.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
-test_multi_decode: tests/test_multi_decode.c tests/decode_fixtures.h libnotorch_harness.a libnotorch.a
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+test_multi_decode: tests/test_multi_decode.c tests/decode_fixtures.h libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
-bench_multi_decode: tests/bench_multi_decode.c libnotorch_harness.a libnotorch.a
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+bench_multi_decode: tests/bench_multi_decode.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
 check_residual: test_residual
 	./test_residual
 
 examples/bpe.o: examples/unicode_numbers.h
 
-test_smollm_tokenizer: tests/test_smollm_tokenizer.c libnotorch_harness.a libnotorch.a
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+test_smollm_tokenizer: tests/test_smollm_tokenizer.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
 check_smollm_tokenizer: test_smollm_tokenizer
 	./test_smollm_tokenizer
 
 .PHONY: check_smollm_tokenizer
 
-test_gemma3: tests/test_gemma3.c libnotorch_harness.a libnotorch.a
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< -L. -lnotorch_harness -lnotorch -lm $(BLAS_LIBS)
+test_gemma3: tests/test_gemma3.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
 check_gemma3: test_gemma3
 	./test_gemma3
@@ -731,6 +736,19 @@ check_numerical_values: test_numerical_values
 
 test: test_numerical_values
 
+.PHONY: check_sentencepiece
+test_sentencepiece: tests/test_sentencepiece.c tests/sentencepiece_reference.h sentencepiece.c sentencepiece.h
+	$(CC) $(CFLAGS) -I. -o $@ tests/test_sentencepiece.c sentencepiece.c -lm -lpthread
+
+test_sentencepiece_faults: tests/test_sentencepiece_faults.c tests/sentencepiece_reference.h sentencepiece.c sentencepiece.h
+	$(CC) $(CFLAGS) -I. -o $@ tests/test_sentencepiece_faults.c -lm
+
+check_sentencepiece: test_sentencepiece test_sentencepiece_faults
+	./test_sentencepiece "$(SPM_MODEL)"
+	./test_sentencepiece_faults
+
+test: test_sentencepiece test_sentencepiece_faults
+
 test_qpool: tests/test_qpool.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qpool tests/test_qpool.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qpool (threading determinism, $(BLAS_NAME))"
@@ -825,6 +843,8 @@ test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability
 	./test_tanh_sgd
 	./test_sampling
 	./test_numerical_values
+	./test_sentencepiece
+	./test_sentencepiece_faults
 	./test_bitnet_ops
 	./test_spa_agent
 	./test_spa_agent_state
@@ -919,6 +939,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
+	rm -f test_sentencepiece test_sentencepiece_faults sentencepiece.o
 	rm -f test_numerical_values
 	rm -f test_sampling
 	rm -f test_tanh_sgd

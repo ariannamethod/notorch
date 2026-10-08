@@ -57,3 +57,131 @@ mismatch preserves the damaged file and failed-integrity receipt. Recovery is
 allowed once per file, only from mirror bytes matching the original hash.
 A missing or incorrect mirror stops the run. Every restoration is reported;
 body updates, fitting and measured outcomes are never rerun for recovery.
+
+## Measured round: source `ac5d651`
+
+The full run completes once from clean commit
+`ac5d651d41efa68e79b729a4e3b05058e0161d47` under protocol
+`86673afd0abc04b5f389aeb4400765287fbc9a0951963639d961fc70a9c6c121`.
+Both new lives start from the same initial student. Here, `refit-self` means
+experience reached by that initial student, before refitting; this round does
+not feed the newly refitted lives' deployment results back into training.
+Both fitted lives are sealed before any seed-1013/1217 world is generated.
+
+The C hosts use F32, two SIMD threads, context 64, LR .0003 and clipping at 1
+on AMD EPYC 9V74 / Linux x86_64 / GCC 13.3.0. The process sees nine CPUs with
+an eight-CPU quota and an 8 GiB memory limit. The pinned Dracula and Hebrew
+corpora, original repository commits, token hashes and 450,688 / 1,123,456
+parameter bodies are recorded in [results.json](results.json). These are CPU
+measurements. No GPU execution is claimed.
+
+### Actions at the same visited states
+
+Each row covers sixteen new worlds on the initial student's trajectory. The
+three first actions share that student's continuation for the remaining fifteen
+updates. H16 future-four-window loss determines regret; exact ties count as
+optimal. These are measured intervention outcomes, separate from full deployment.
+
+| Body | Readout | Optimal / 16 | Mean H16 regret |
+|---|---|---:|---:|
+| SimpleLLM | Initial student | 13 | 0.000327423 |
+| SimpleLLM | Refit parent | 7 | 0.000294730 |
+| SimpleLLM | Refit self | 10 | 0.000216872 |
+| SimpleLLM | PUSH | 10 | 0.000379935 |
+| HeVLM | Initial student | 5 | 0.001149826 |
+| HeVLM | Refit parent | 12 | 0.000038907 |
+| HeVLM | Refit self | 12 | 0.000038907 |
+| HeVLM | PUSH | 12 | 0.000040784 |
+
+Both refits lower mean regret on both bodies. SimpleLLM's optimal-choice count
+falls even as mean regret improves. On HeVLM, both refits choose the same actions
+in all sixteen common worlds. All six readouts, including HOLD and BRAKE,
+and the development comparisons remain in [common_state.csv](common_state.csv).
+
+### Complete 512-step deployments
+
+Final held-out loss, lower is better. Each row uses the same body initialization,
+data windows and seed across all six arms. This repeats actions through the
+states each life actually reaches; it is not a sum of common-state regrets.
+
+| Body / seed | Canonical | HOLD | PUSH | Initial student | Refit parent | Refit self |
+|---|---:|---:|---:|---:|---:|---:|
+| SimpleLLM / 1013 | 2.50756502 | 2.57181811 | 2.49165535 | 2.58611774 | 2.58488512 | 2.60762620 |
+| SimpleLLM / 1217 | 2.52432513 | 2.57725716 | 2.52897191 | 2.58628678 | 2.57601786 | 2.58855104 |
+| HeVLM / 1013 | 1.57190084 | 1.57658267 | 1.57234776 | 1.58259857 | 1.57894039 | 1.57811940 |
+| HeVLM / 1217 | 1.56940532 | 1.55563200 | 1.58516204 | 1.58714998 | 1.57969737 | 1.58079970 |
+
+Parent-source refitting improves the initial student in all four pairs.
+Student-source refitting improves both HeVLM seeds and regresses both SimpleLLM
+seeds. Against the equal-budget parent-source refit, the student-source refit
+wins only HeVLM/1013. Canonical Chuck finishes below every learned life in these
+four pairs. Constant PUSH wins SimpleLLM/1013; constant HOLD wins HeVLM/1217.
+The [paired differences](paired_final.csv) and
+[five-point held-out curves](heldout_curves.csv) retain the exact measurements.
+
+### Where acquired actions separate the worlds
+
+Both refits first select PUSH where the initial student selects BRAKE at
+SimpleLLM updates 37/29 and HeVLM updates 3/3 (seeds 1013/1217). All eight first
+changes have identical features, observation, pre-action Chuck state and loss.
+Different acquired weights therefore change the selected action before the
+body trajectories separate.
+
+| Body / seed | Initial student's first .3 dampening | Refit parent | Refit self |
+|---|---:|---:|---:|
+| SimpleLLM / 1013 | 260 | 288 | 194 |
+| SimpleLLM / 1217 | 236 | 283 | 198 |
+| HeVLM / 1013 | 55 | 127 | 163 |
+| HeVLM / 1217 | 56 | 144 | 162 |
+
+The student-source refit takes fewer BRAKE actions in the first 128 SimpleLLM
+updates, yet subsequently reaches the dampening floor earlier and finishes
+with more BRAKE actions over the whole run. Its HeVLM trajectory delays the
+floor and improves over the initial student. Early action counts alone would
+miss that difference. [deployment.csv](deployment.csv) records both early and
+complete action counts, first divergence and first floor entry.
+
+This round changes the source of acquired experience while holding the initial
+weights, continuation, capacity and fit budget fixed. Its result is mixed:
+experience from the student's reached worlds does not consistently improve
+its next full trajectory. The next question is how repeated acquisition and
+the duration of accumulated action effects change that result. The current
+outcomes have not been used to adjust or repeat this fixed round.
+
+### Receipts and gates
+
+The run executes 64 acquisition worlds, 32 new evaluation worlds, 384 branches,
+26,624 body updates, 32,768 policy fits and 576 readouts. All 1,536 selected-source
+transitions, 3,072 probe-off/on host comparisons, four 256-step source/deployment
+prefixes and four complete saved-life continuations are exact. Terminal
+verification authenticates 1,081 artifact identities. The final seal additionally
+includes the terminal receipt and results. No integrity failure or restoration
+occurs in the full run; the failed first smoke and the second smoke's two
+restorations remain separate.
+
+The independent [audit.py](audit.py) passes 135,630 checks on 322 selected original
+artifacts, reconstructing target association, fit chronology, source/grafted
+history, action credit, readout ties and complete deployment comparisons:
+
+```sh
+python3 experiments/chuck_loss_architect/trajectories/audit.py \
+  --run /path/to/new-trajectories --out /path/to/new-audit \
+  --source-commit ac5d651d41efa68e79b729a4e3b05058e0161d47 \
+  --results-sha256 99b7f72453ecc36e420e1aa7a13048c1889d7ec6fa717b12b889e09682751416
+```
+
+Integration retains all eighteen measured source-file hashes and all eleven
+non-shared files from main `0b0444a`. The first combined static/shared build
+exposes archive consumers accidentally selecting `libnotorch.so`. Five CPU
+consumers now link their declared archives explicitly. All 49 default CPU recipe
+commands then pass with the shared library present; the five rebuilt consumers
+have no dynamic `libnotorch.so` dependency. The original failure and corrected
+build receipts remain in [integration_verification.json](integration_verification.json).
+
+[archives.json](archives.json) records lossless part identities and reconstruction
+instructions for the 3,292,477,369-byte full record (2,192 members) and the
+1,198,704,640-byte validation/smoke record. The full archive verifies all 1,083
+final original identities and every corresponding compressed mirror. Its SHA-256
+is `187be0ac0f45557285a28b3a4e3708e03730dbfa3d6ad7c7408c798149e36474`.
+The first packaging attempt stopped on disk exhaustion; its failure receipt
+is retained. Packaging did not repeat or change numerical work.

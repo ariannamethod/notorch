@@ -1,0 +1,319 @@
+{
+  "haiku": [
+    [
+      "empty",
+      ""
+    ],
+    [
+      "whitespace",
+      "   "
+    ],
+    [
+      "newlines",
+      "\t\n\r\u000b\f"
+    ],
+    [
+      "ordinary",
+      "what is resonance in the cloud"
+    ],
+    [
+      "sentences",
+      "Tell me about harmony and dissonance."
+    ],
+    [
+      "seedhaiku",
+      "words dance in the cloud\nresonance finds its own path\nconstraint births form"
+    ],
+    [
+      "case",
+      "Hello WORLD"
+    ],
+    [
+      "punct",
+      "hello, world!"
+    ],
+    [
+      "unknownpunct",
+      "!!!...???"
+    ],
+    [
+      "apostrophes",
+      "don't l'amour ain’t can’t"
+    ],
+    [
+      "underscore",
+      "foo_bar __ _ A_2 x²_Ⅳ"
+    ],
+    [
+      "nums",
+      "42 1.0 ① ² ½ Ⅳ ௰"
+    ],
+    [
+      "special",
+      "<HAIKU><LINE>hello<unk><pad><s></s>"
+    ],
+    [
+      "spaces",
+      "\t  a\n\n b c d​e﻿f  "
+    ],
+    [
+      "markers",
+      "▁the▁cloud▁"
+    ],
+    [
+      "russian",
+      "Привет мир, это облако."
+    ],
+    [
+      "hebrew",
+      "שלום עוֹלָם"
+    ],
+    [
+      "arabic",
+      "مَرْحَبًا بالعالم"
+    ],
+    [
+      "japanese",
+      "日本語　こんにちは"
+    ],
+    [
+      "emoji",
+      "x💫🌌😀z"
+    ],
+    [
+      "unknown_runs",
+      "абв😀!!!xабв😀!!!"
+    ],
+    [
+      "greek",
+      "ΟΣ ος οσ Σ ΣΑ ΑΣ ΑΣ́"
+    ],
+    [
+      "turkish",
+      "İ I i i̇ ı"
+    ],
+    [
+      "german",
+      "Straße ẞ SS"
+    ],
+    [
+      "compat",
+      "ＦＵＬＬ ① ² ½ K ﬁ ﬃ ㍍"
+    ],
+    [
+      "accents",
+      "CAFÉ café Å Å é é"
+    ],
+    [
+      "combining",
+      "́̈ áb a‌b"
+    ],
+    [
+      "control",
+      "a\u0001b\u001cbb"
+    ],
+    [
+      "replacement",
+      "a�b"
+    ],
+    [
+      "zwj",
+      "👩‍💻 a‍b"
+    ],
+    [
+      "kana",
+      "ｶﾞ ｶ゙ ガ ガ"
+    ],
+    [
+      "hangul",
+      "가 가"
+    ],
+    [
+      "casefold_order",
+      "İßſKςϐϑϕϖϰϱϵ"
+    ],
+    [
+      "nonascii_latin",
+      "æ œ þ ð ø ł ƕ ə"
+    ],
+    [
+      "stripped_marker",
+      "a▁▁b"
+    ],
+    [
+      "spacesunicode",
+      "ab c d e f g　h"
+    ]
+  ],
+  "unigram": [
+    [
+      "equal aa",
+      [
+        [
+          "a",
+          0,
+          1
+        ],
+        [
+          "aa",
+          0,
+          1
+        ]
+      ],
+      "aa"
+    ],
+    [
+      "equal repeated",
+      [
+        [
+          "a",
+          0,
+          1
+        ],
+        [
+          "aa",
+          0,
+          1
+        ]
+      ],
+      "aaa"
+    ],
+    [
+      "equal repeated reverseids",
+      [
+        [
+          "aa",
+          0,
+          1
+        ],
+        [
+          "a",
+          0,
+          1
+        ]
+      ],
+      "aaa"
+    ],
+    [
+      "equal totalscore",
+      [
+        [
+          "a",
+          -1,
+          1
+        ],
+        [
+          "aa",
+          -2,
+          1
+        ]
+      ],
+      "aaa"
+    ],
+    [
+      "lastpiece longest",
+      [
+        [
+          "a",
+          0,
+          1
+        ],
+        [
+          "ab",
+          0,
+          1
+        ],
+        [
+          "bc",
+          0,
+          1
+        ],
+        [
+          "c",
+          0,
+          1
+        ]
+      ],
+      "abc"
+    ],
+    [
+      "firstpiece longest",
+      [
+        [
+          "a",
+          0,
+          1
+        ],
+        [
+          "ab",
+          0,
+          1
+        ],
+        [
+          "cd",
+          0,
+          1
+        ],
+        [
+          "bcd",
+          0,
+          1
+        ]
+      ],
+      "abcd"
+    ],
+    [
+      "subnormal margin",
+      [
+        [
+          "a",
+          -1,
+          1
+        ],
+        [
+          "aa",
+          -1.9999998807907104,
+          1
+        ]
+      ],
+      "aaa"
+    ],
+    [
+      "userdefined forced",
+      [
+        [
+          "a",
+          0,
+          1
+        ],
+        [
+          "ab",
+          100,
+          1
+        ],
+        [
+          "b",
+          -100,
+          4
+        ]
+      ],
+      "ab"
+    ],
+    [
+      "unknown surface",
+      [
+        [
+          "a",
+          0,
+          1
+        ],
+        [
+          "b",
+          0,
+          1
+        ]
+      ],
+      "⚡👀abéà_"
+    ]
+  ]
+}

@@ -24,6 +24,7 @@
 - [operations](#operations)
 - [owned sampling](#owned-sampling)
 - [numerical values](#numerical-values)
+- [SentencePiece Unigram](#sentencepiece-unigram)
 - [optimizers](#optimizers)
 - [the chuck optimizer](#the-chuck-optimizer)
 - [Chuck: Loss Architect](#chuck-loss-architect)
@@ -486,6 +487,27 @@ Model composition, clipping, and experience belong to the organism.
 See [numerical values](docs/NUMERICAL_VALUES.md) for packed layouts, arithmetic
 order, normal reference vectors, and the native verification gate.
 
+## SentencePiece Unigram
+
+Haiku's original tokenizer now lives in NoTorch. `sentencepiece.h` loads the
+650-piece `.model` directly, including its embedded `nfkc_cf` normalization
+map. The native C path keeps exact Unigram scores and ties, user-defined
+symbols, and the full surface of consecutive unknown characters. That last
+part carries a Russian word or an emoji cluster through the English vocabulary.
+
+`nt_spm_load` / `nt_spm_load_memory` create immutable owned models;
+`nt_spm_encode` returns owned normalized text and `{id, offset, length}` spans.
+Parallel voices can share a model while each call owns its scratch and result.
+Failed operations publish nothing. The archive and shared library include this
+implementation; no protobuf or SentencePiece runtime package is needed.
+
+The [API, supported model profile, and reproduction commands](docs/SENTENCEPIECE.md)
+pin the original model and SentencePiece 0.2.2 oracle. `make check_sentencepiece`
+runs embedded normalization/Viterbi references, malformed inputs, allocation
+faults, and concurrent readers. `SPM_MODEL=path/to/haiku_sp.model` adds the
+original Haiku corpus. Haiku's lowercase, `▁` removal, trigrams, and experience
+remain in AML.
+
 ## optimizers
 
 ### plain SGD
@@ -653,6 +675,18 @@ student continuation: one acquires parent-reached states, the other acquires
 student-reached states. Eight earlier checkpoints retain actual temporal history
 and exact source restoration. `make test_chuck_trajectories` checks this boundary,
 including a deliberately wrong continuation and action-to-outcome association.
+
+The fixed two-body run completes 26,624 body updates, 32,768 policy fits and
+576 readouts. On new seeds 1013/1217, parent-source refitting improves the
+initial student's final held-out loss in all four 512-step deployments.
+Student-source refitting improves both HeVLM runs and regresses both SimpleLLM
+runs; it beats the matched parent-source refit in one of four cases. Both refits
+reduce common-state mean H16 regret on both bodies, while canonical Chuck keeps
+lower final loss than all three learned lives in these four pairs. Acquired
+experience changes the first choice at identical observations and then the
+world reached by later choices. The complete curves, action histories and
+regressions remain in the linked experiment; 1,536 source transitions and all
+four save/load continuations are exact.
 
 ---
 
@@ -1083,6 +1117,7 @@ ten test binaries (run output is the source of truth for counts):
 - **`tests/test_tanh_sgd.c`** — tanh gradients and shape, frozen/unused parameters, optimizer state preservation, external clipping, and 24-step 5→8→1 / 6→4→1 SGD trajectories against a double-precision reference. `make check_tanh_sgd BLAS_FLAGS= BLAS_LIBS=` runs with C and libm.
 - **`tests/test_sampling.c`** — owned PCG32 vectors, bounded rejection, stable weighted selection, invalid-input preservation, and isolation from existing streams. `make check_sampling BLAS_FLAGS= BLAS_LIBS=` runs with C and libm.
 - **`tests/test_numerical_values.c`** — stateless forward/reverse arithmetic, all 57 finite-difference gradients, independent training trajectories and normal vectors, thread ownership, and legacy-tape isolation. `make check_numerical_values BLAS_FLAGS= BLAS_LIBS=` runs the gate.
+- **`tests/test_sentencepiece.c` / `test_sentencepiece_faults.c`** — native Unigram and compiled normalization against SentencePiece 0.2.2, exact output limits, malformed models, immutable concurrent readers, allocation failure and complete result publication. `make check_sentencepiece SPM_MODEL=path/to/haiku_sp.model` includes the original Haiku corpus.
 - **`tests/test_gguf.c`** — GGUF parser smoke test (F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K dequant)
 - **`tests/test_qmatvec.c`** — packed quantized matvec (`nt_qmatvec`) vs the dequant→cblas oracle across all 7 GGUF dtypes (F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K), relative error ~1e-6
 
