@@ -13,6 +13,38 @@ Newest entries on top.
 
 ---
 
+## 2026-10-08 — Haiku keeps the shape of its words
+
+Fresh main `420fa54` supplies the baseline. `sentencepiece.c/.h` add canonical
+deterministic Unigram inference to the static/shared NoTorch libraries. The
+original Haiku ModelProto supplies 650 pieces and its complete embedded
+`nfkc_cf` map. Bounded protobuf/Darts parsing, immutable owned models, per-call
+scratch, float32 Viterbi ties, user-defined symbols, and fused unknown surface
+spans preserve the Python tokenizer's inputs to Haiku's trigram cloud. The AML
+bridge retains the model and keeps lowercase/marker stripping in the organism.
+
+`make check_sentencepiece SPM_MODEL=../harmonix/haiku/models/haiku_sp.model`
+passes **21,689 checks** on Linux x86_64 / GCC 13.3: **106** embedded oracle
+cases, **36** original-model cases, all sixteen whitespace/suffix settings,
+long-score recentering, **8,000** concurrent calls, missing files, malformed
+UTF-8, and **2,048** deterministic corruptions. The separate allocation gate
+passes **462 checks** across all five loader and three encoder allocation sites.
+Both gates pass ASan/UBSan with `detect_leaks=0`, matching the host's existing
+LeakSanitizer process-inspection limitation. Four isolated mutations fail:
+changed tie order, skipped normalization, split unknown runs, and failed-result
+publication. Static/shared builds and the existing **51/51** scalar core tests
+pass. The original model and oracle version are pinned in
+[native SentencePiece](docs/SENTENCEPIECE.md).
+
+Independent review found a real cap defect: a one-MiB input with a trailing
+literal `▁` fits after normalization, but a dummy prefix briefly makes it larger.
+The first implementation capped that temporary size. Normalization now measures
+the retained final bytes before allocating, and the writing pass discards the
+same trailing run. The exact counterexample remains in the native gate. Review
+also made the supported minimum of one NORMAL piece explicit. A first gate run
+caught an overlong C hexadecimal escape in the malformed-UTF-8 test expectation;
+splitting the adjacent literal restored the intended reference bytes.
+
 ## 2026-10-07 — each learner carries its own weights
 
 Fresh main `beccbdb` supplies the baseline. Seven allocation-free CPU value
