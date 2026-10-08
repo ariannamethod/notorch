@@ -13,6 +13,38 @@ Newest entries on top.
 
 ---
 
+## 2026-10-08 — the loaded words keep their identity
+
+Fresh main `0b0444a` supplies the baseline. `nt_spm_identity` gives each loaded
+tokenizer an immutable lowercase SHA-256 identity of the exact owned ModelProto
+bytes consumed by its parser. Hashing uses that buffer before publication;
+replacing or removing the file cannot change the loaded identity. The new
+allocation-free `nt_sha256` primitive lives in the static/shared libraries and
+has a checked public header. No runtime dependency is added.
+
+PR #163's recentering review was reproduced against the pinned SentencePiece
+0.2.2 wheel and release source. For its two-piece model and 58,507 `a` bytes,
+NoTorch and the oracle agree on every one of 29,254 IDs: the singleton is at
+zero-based index **27,790**. Removing recentering in an isolated mutation moves
+it to **17,493**, the review's proposed answer. Release 0.2.2 contains the same
+recentering; 0.2.1's source lacks it. The declared 0.2.2 arithmetic remains intact.
+A compact three-run oracle now checks the complete path, spans, and surfaces.
+Model scores, source pins, and complete-vector hash are recorded in
+[native SentencePiece](docs/SENTENCEPIECE.md).
+
+`make check_sentencepiece SPM_MODEL=../harmonix/haiku/models/haiku_sp.model`
+passes **168,116 checks** on Linux x86_64 / GCC 13.3, including 142 regular
+source-oracle cases, the complete long path, identity after borrowed-buffer
+overwrite and file replacement/removal, and the existing ownership/concurrency
+gates. The separate allocation gate passes **462 checks**. Six isolated
+mutations fail, including removing recentering and omitting one model byte from
+the identity. `make check_sha256` passes **545 checks**: NIST/RFC vectors,
+264 independent `hashlib` cases, padding/unaligned/overlap boundaries, and
+unchanged failed outputs. All three gates pass ASan/UBSan with
+`ASAN_OPTIONS=detect_leaks=0`. Reference regeneration is byte-identical.
+Scalar static/shared builds pass, the exported shared-library identity/hash
+match `hashlib`, and the rebuilt core gate passes **51/51** tests.
+
 ## 2026-10-08 — Haiku keeps the shape of its words
 
 Fresh main `420fa54` supplies the baseline. `sentencepiece.c/.h` add canonical

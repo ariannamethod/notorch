@@ -7,6 +7,7 @@
  * See THIRD_PARTY_NOTICES.md and LICENSES/ for the full notices.
  */
 #include "sentencepiece.h"
+#include "sha256.h"
 
 #include <float.h>
 #include <limits.h>
@@ -37,6 +38,7 @@ typedef struct { int child, next, id; unsigned char byte; } sp_node;
 struct nt_spm_model {
     unsigned char *data;
     size_t data_bytes;
+    char identity[65];
     sp_token *tokens;
     int n_tokens, unk_id;
     float min_score;
@@ -335,6 +337,14 @@ static nt_spm_model *sp_load_owned(unsigned char *data, size_t bytes,
         int type = m->tokens[i].type;
         if ((type == 1 || type == 4 || type == 5) && sp_insert(m, i)) goto fail;
     }
+    unsigned char digest[32];
+    if (nt_sha256(m->data, m->data_bytes, digest)) goto fail;
+    static const char hex[] = "0123456789abcdef";
+    for (unsigned i = 0; i < 32; i++) {
+        m->identity[i * 2] = hex[digest[i] >> 4];
+        m->identity[i * 2 + 1] = hex[digest[i] & 15];
+    }
+    m->identity[64] = 0;
     sp_error(error, error_cap, "");
     return m;
 fail:
@@ -377,6 +387,7 @@ fail:
 }
 
 int nt_spm_n_vocab(const nt_spm_model *model) { return model ? model->n_tokens : 0; }
+const char *nt_spm_identity(const nt_spm_model *model) { return model ? model->identity : NULL; }
 
 /* USER_DEFINED strings bypass the compiled normalizer, longest match first. */
 static sp_view sp_prefix(const nt_spm_model *m, sp_view input, size_t *consumed) {

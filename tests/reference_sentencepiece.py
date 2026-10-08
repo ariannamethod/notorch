@@ -6,6 +6,7 @@ Only fixture generation needs Python/SentencePiece. The native gate uses C.
 """
 import argparse
 import hashlib
+import itertools
 import json
 from pathlib import Path
 import struct
@@ -122,7 +123,7 @@ def main():
              "#ifndef NT_SPM_REFERENCE_H", "#define NT_SPM_REFERENCE_H",
              "typedef struct { const char *name; const unsigned char *model; size_t model_bytes;",
              "    const char *text, *normalized; const char *const *pieces;",
-             "    const int *ids; size_t count; } sp_reference;", ""]
+             "    const int *ids; size_t count; const char *identity; } sp_reference;", ""]
     models = {}
     records = []
     for i, (name, embedded, oracle, text) in enumerate(cases):
@@ -159,10 +160,30 @@ def main():
         if not ids:
             lines.append("    0,")
         lines.append("};")
-        records.append("    {" + cstring(name) + f",{model_name},{model_size},sp_text_{i},sp_normalized_{i},sp_pieces_{i},sp_ids_{i},{len(ids)}" + "},")
-    lines += ["static const sp_reference sp_references[] = {", *records, "};", "#endif", ""]
+        identity = hashlib.sha256(oracle).hexdigest()
+        records.append("    {" + cstring(name) + f",{model_name},{model_size},sp_text_{i},sp_normalized_{i},sp_pieces_{i},sp_ids_{i},{len(ids)},\"{identity}\"" + "},")
+    lines += ["static const sp_reference sp_references[] = {", *records, "};"]
+    # Store this review counterexample as source-produced runs; expand every
+    # expected ID/span in the C gate without committing a 58,507-byte string.
+    long_model = model([("a", -18.9612484, 1), ("aa", -14.9858074, 1)])
+    processor = spm.SentencePieceProcessor(model_proto=long_model)
+    repeated = "a" * 58507
+    assert processor.normalize(repeated) == repeated
+    long_pieces = processor.encode_as_pieces(repeated)
+    long_ids = processor.encode_as_ids(repeated)
+    lines += ["/* Full-path long-input oracle; ID sequence SHA-256 (little-endian u32):",
+              " * " + hashlib.sha256(b"".join(struct.pack("<I", i) for i in long_ids)).hexdigest() + " */",
+              f"static const unsigned char sp_review_model[{len(long_model)}] = {{"]
+    entries = [f"0x{byte:02x}" for byte in long_model]
+    lines += ["    " + ",".join(entries[j:j + 16]) + "," for j in range(0, len(entries), 16)]
+    lines += ["};", f"static const size_t sp_review_input_bytes = {len(repeated)};",
+              f"static const size_t sp_review_token_count = {len(long_ids)};",
+              "static const struct { int id; const char *piece; size_t count; } sp_review_runs[] = {"]
+    for (token, piece), group in itertools.groupby(zip(long_ids, long_pieces)):
+        lines.append(f"    {{{token},{cstring(piece)},{sum(1 for _ in group)}}},")
+    lines += ["};", "#endif", ""]
     args.output.write_text("\n".join(lines))
-    print(f"wrote {len(cases)} reference cases / {len(models)} embedded models")
+    print(f"wrote {len(cases)} reference cases / {len(models)} embedded models + complete long review path")
 
 
 if __name__ == "__main__":
