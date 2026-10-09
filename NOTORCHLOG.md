@@ -13,6 +13,31 @@ Newest entries on top.
 
 ---
 
+## 2026-10-09 — SPA transfer diagnosis isolates a history-shift question
+
+The read-only follow-up to conditioned SPA authenticates the original receipt
+and raw archive, checks both copies of 384 native readouts and joins every
+source/mask/action. All 72 available evaluation interventions score below KEEP:
+maximum margin −0.177349791, minimum −1.934276104. Eleven of 14 positive-mean
+training alternatives also remain below KEEP. The native selection path
+matches the recorded scores; the new-state KEEP choices have no zero-margin tie.
+
+All three acquired training interventions share previous-LEFT feature26=1.
+That history occurs 5/48 times in training and 0/48 in evaluation; any LEFT
+history occurs 25/48 versus 0/48. Four of the seven missed positive evaluation
+states remain within every training coordinate range. This identifies a
+specific history-input association for the next fixed-policy intervention.
+The report retains paired-draw variability, per-action residuals and target3's
+cost-only outcomes; the original experiment and numerical rules are unchanged.
+
+`python3 tests/test_spa_transfer_diagnosis.py` passes the 384-readout joins,
+twelve deliberate corruption gates and the positive-but-unavailable LEFT fixture.
+`python3 experiments/spa_agent/transfer/analyze.py --output experiments/spa_agent/transfer/diagnosis.json`
+reproduces the report byte for byte. Zero new policy fits or body-generation
+runs. Evidence and the next causal question: `experiments/spa_agent/transfer/`.
+
+---
+
 ## 2026-10-08 — SPA target conditioning changes retained choices, not transfer
 
 Main `420fa54` supplies the measured baseline. `nt_spa_agent_fit_conditioned`
