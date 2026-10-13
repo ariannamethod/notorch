@@ -82,7 +82,7 @@ make harness
 `harness/` is deliberately small — GGUF in, text out — and a model family is one file
 behind one interface (`harness/arch.h`). what runs today: **llama**, **mistral3**,
 **qwen2**, **qwen3**, **gemma3**, **gemma4**, **olmoe**, **qwen3moe**, **mamba**, and the Method's
-own **resonance** and **janus**. an architecture no family claims is refused by name
+own **resonance**, **janus** and **penelope**. an architecture no family claims is refused by name
 rather than quietly pushed through the llama forward — a file the harness has never
 seen is a file it has never been tested on.
 
@@ -91,6 +91,28 @@ that last sentence used to be aspirational. on 2026-09-25 `arch_gemma4.c` and
 never had a file put through them. both worked on first contact, which is luck and not
 evidence, so the list below says which families have actually been run and which are
 still only code.
+
+### Penelope and NanoJanus, in their own geometry
+
+`tools/pen7_to_gguf.c` converts both native PEN7 bodies to a self-describing
+`penelope` GGUF. Default F32 conversion preserves every parameter bit;
+explicit `--q8_0` stores matrices in Q8_0 while positions, norms and blend gates
+remain F32. Each of the two recorded Q8 files is 21,308,576 bytes. Their shared
+2048-token byte/ranked-pass tokenizer travels inside the file.
+
+The family expands Q8 matrices once through canonical `gguf_dequant` into owned
+immutable F32 for execution and future parameter mixing. Auxiliary F32 tensors
+borrow the file mapping. Full F32 parameter memory remains about 74.84 MiB per
+body, with mapped storage and sequence buffers additional. The ordinary packed
+paths of other families keep their existing contract.
+
+The native-source gate checks both bodies at 1/9/33/256 tokens, full and chunked:
+32,768 Q8-expanded logits match the native C oracle using the same expanded
+values exactly on the scalar reference build. Compared with the original F32
+models, all eight next-token argmaxes and both fixed 16-token greedy paths match;
+maximum observed logit differences are .224016 and .197905. Quantization and
+implementation parity are measured separately. Format, source pins, decoder
+repairs, conversion gates and reproduction: [PEN7 GGUF](docs/PEN7_GGUF.md).
 
 ### measured against llama.cpp, not against itself
 
@@ -486,6 +508,24 @@ Model composition, clipping, and experience belong to the organism.
 
 See [numerical values](docs/NUMERICAL_VALUES.md) for packed layouts, arithmetic
 order, normal reference vectors, and the native verification gate.
+
+### Owned parliament values
+
+`nt_parliament_elect_values`, `nt_parliament_inject_values` and `nt_oja_values`
+provide the bounded CPU numerical seam for DoE-derived organs. Election
+returns normalized gates and next consensus; injection computes the low-rank
+mixture; Oja returns detached A/B candidates and an explicit next rank cursor.
+Inputs, per-expert cursors and noise belong to the caller. The operations make
+no allocation, retain no pointers and enter no tape or optimizer. Failed calls
+preserve every output byte, including late arithmetic failures and aliases.
+
+Haiku keeps expert lifecycle, immune verdicts, provenance and publication in
+AML. These numerical operations remain separate from plain PEN7 inference;
+the two lexical weight bodies stay frozen. `make check_parliament_values`
+checks independent equations, all-rank coverage with private cursors, eight
+parallel owners, tape isolation and deliberate red controls. CPU values are
+the verified path here; existing Metal parliament kernels remain separately
+exposed.
 
 ## SentencePiece Unigram
 

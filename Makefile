@@ -232,7 +232,7 @@ libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h spa_agent.c spa_agent.h s
 # means something to a caller that runs models. Link both, harness first.
 HARNESS_LIB_OBJ = harness/archs.o harness/runtime.o harness/arch_llama.o \
                   harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_olmoe.o harness/arch_mamba.o \
-                  harness/arch_resonance.o harness/arch_janus.o examples/bpe.o
+                  harness/arch_resonance.o harness/arch_janus.o harness/arch_penelope.o examples/bpe.o
 
 lib_harness: libnotorch_harness.a
 
@@ -309,7 +309,7 @@ llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorc
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
-HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c examples/bpe.c gguf.c notorch.c
+HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c harness/arch_penelope.c examples/bpe.c gguf.c notorch.c
 HARNESS_HDR = harness/arch.h harness/arch_models.h harness/archs.h harness/runtime.h harness/logo.h examples/bpe.h gguf.h notorch.h
 
 # `harness` is phony because a directory of that name sits right there, and
@@ -361,6 +361,25 @@ test_gemma3: tests/test_gemma3.c libnotorch_harness.a libnotorch.a Makefile
 
 check_gemma3: test_gemma3
 	./test_gemma3
+
+
+test_penelope: tests/test_penelope.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
+
+check_penelope: test_penelope
+	./test_penelope
+
+.PHONY: check_penelope
+
+test_parliament_values: tests/test_parliament_values.c notorch.c notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_parliament_values.c notorch.c -lm $(BLAS_LIBS)
+
+check_parliament_values: test_parliament_values
+	./test_parliament_values
+
+.PHONY: check_parliament_values
+
+test: test_penelope test_parliament_values
 
 .PHONY: check_residual check_gemma3
 
@@ -792,6 +811,15 @@ gguf_quantize: tools/gguf_quantize.c gguf.c notorch.c gguf.h notorch.h $(CHUCK_H
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o gguf_quantize tools/gguf_quantize.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: gguf_quantize (f32/f16 GGUF -> packed GGUF, $(BLAS_NAME))"
 
+pen7_to_gguf: tools/pen7_to_gguf.c tools/pen7_bpe.h gguf.c sha256.c notorch.c gguf.h sha256.h notorch.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -ffp-contract=off $(BLAS_FLAGS) -o $@ tools/pen7_to_gguf.c gguf.c sha256.c notorch.c -lm $(BLAS_LIBS)
+
+check_pen7_converter: pen7_to_gguf
+	python3 tests/test_pen7_convert.py ./pen7_to_gguf
+	python3 tests/test_pen7_convert.py ./pen7_to_gguf --q8_0
+
+.PHONY: check_pen7_converter
+
 test_qmatmul: tests/test_qmatmul.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o test_qmatmul tests/test_qmatmul.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: test_qmatmul (batched packed matmul vs per-token, $(BLAS_NAME))"
@@ -863,6 +891,8 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h $(CHUCK_HEADERS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
 test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_chuck_architect_conditioned test_chuck_architect_durability test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
+	./test_penelope
+	./test_parliament_values
 	./notorch_test
 	./test_tanh_sgd
 	./test_sampling
@@ -969,7 +999,7 @@ clean:
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
 	rm -f test_sampling
-	rm -f test_tanh_sgd
+	rm -f pen7_to_gguf test_penelope test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o

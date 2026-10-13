@@ -13,6 +13,44 @@ Newest entries on top.
 
 ---
 
+## 2026-10-14 — PEN7 Q8 bodies and owned parliament arithmetic
+
+Penelope and NanoJanus now enter the harness through their own `penelope`
+family. The converter preserves the PEN7 tokenizer, learned positions,
+split-half RoPE, resonance branch and scalar attention/resonance gates. Its
+default is a lossless F32 GGUF; `--q8_0` uses NoTorch's native row quantizer for
+66 matrices and retains 26 auxiliary tensors in F32. Each measured Q8 body is
+21,308,576 bytes. The family expands quantized tensors into immutable owned F32
+storage on load. This saves storage and transfer bytes; it does not claim the
+RAM footprint of packed execution. Model files stay outside this repository.
+
+The independent converter audit recovers every original F32 parameter and all
+609,280 Q8 blocks per source body, preserves existing destination files, and
+rejects malformed/nonfinite inputs. Five deliberate format defects make the
+gate fail. The native forward oracle checks full and chunked contexts of
+1, 9, 33 and 256 tokens. On the two Q8 bodies expanded to the same F32 values,
+all 32,768 compared logits agree exactly. Against original F32 weights, eight
+last-token argmax checks and both 16-token greedy continuations agree; maximum
+absolute logit errors are 0.224016 and 0.197905. These are measured fixtures,
+not a claim that quantization preserves every continuation. Source pins,
+hashes, tensor layout and reproduction commands are in
+[PEN7_GGUF.md](docs/PEN7_GGUF.md).
+
+Three caller-owned value operations support Haiku's private glyph parliament:
+election, weighted low-rank injection and bounded Oja updates. They carry no
+hidden RNG, owner, cursor or autodiff state, validate outputs before publishing,
+and leave the frozen model untouched. The 221-check gate includes malformed
+shapes, aliasing, late overflow, eight concurrent owners and deliberate wrong
+injection/Oja controls. Lifecycle and immune policy remain in AML.
+
+Verified on Linux x86-64 with GCC 13.3.0: converter F32/Q8 audits, native
+reference forwards, narrow family and parliament gates, and the full scalar
+`make test BLAS_FLAGS= BLAS_LIBS= X86_SIMD=0 ARM_SIMD=0` suite. Sanitizer gates
+use ASan/UBSan with leak scanning disabled because this runner denies the
+required `/proc` access. No Apple Metal execution or throughput claim is made.
+
+---
+
 ## 2026-10-09 — SPA transfer diagnosis isolates a history-shift question
 
 The read-only follow-up to conditioned SPA authenticates the original receipt

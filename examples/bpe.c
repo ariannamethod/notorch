@@ -109,6 +109,11 @@ struct bpe_tokenizer {
     int n_added;
     int add_bos, bos_id, bos_declared;
     int add_space_prefix;
+    /* PEN7 writes byte surfaces in the reversible GPT-2 alphabet, but applies
+     * its own whole-input, ASCII-lowercase, ordered merge-pass algorithm. */
+    int penelope;
+    int32_t *pen_pairs;
+    int pen_max_bytes;
 };
 
 /* U+2581 LOWER ONE EIGHTH BLOCK — SentencePiece's space. */
@@ -270,7 +275,42 @@ bpe_tokenizer *bpe_load(const char *path) {
     if (gguf_read_uint_kv(path, "tokenizer.ggml.add_space_prefix", &prefix) != 0)
         prefix = 1;
     t->add_space_prefix = prefix != 0;
+    if (!strcmp(model_name, "penelope")) {
+        char algorithm[64] = {0}; uint64_t lower = 0, limit = 0, vocab = 0, eos = 1;
+        int np = 0;
+        t->pen_pairs = gguf_read_i32_array(path, "tokenizer.penelope.merge_pairs", &np);
+        if (nt < 256 || nt > 65536 || np != 2*(nt-256) || !t->pen_pairs || nm != nt-256 ||
+            !t->bos_declared || t->add_bos || t->n_added ||
+            gguf_read_uint_kv(path, "penelope.vocab_size", &vocab) || vocab != (uint64_t)nt ||
+            gguf_read_uint_kv(path, "tokenizer.ggml.add_eos_token", &eos) || eos != 0 ||
+            gguf_read_str_kv(path, "tokenizer.penelope.algorithm", algorithm, sizeof(algorithm)) ||
+            strcmp(algorithm, "byte-rank-pass-v1") ||
+            gguf_read_uint_kv(path, "tokenizer.penelope.lowercase_ascii", &lower) || lower != 1 ||
+            gguf_read_uint_kv(path, "tokenizer.penelope.max_input_bytes", &limit) || limit != 8191)
+            goto pen_invalid;
+        /* Validate the redundant surface table against every exact merge ID.
+         * Strings here have no embedded NUL: byte zero is its alphabet codepoint. */
+        for (int i = 0; i < nt; i++) {
+            if (!toks[i]) goto pen_invalid;
+            if (i < 256) {
+                char encoded[5] = {0}; utf8_enc(t->byte_cp[i], encoded);
+                if (strcmp(toks[i], encoded)) goto pen_invalid;
+            } else {
+                int left = t->pen_pairs[2*(i-256)], right = t->pen_pairs[2*(i-256)+1];
+                if (left < 0 || right < 0 || left >= i || right >= i) goto pen_invalid;
+                size_t a = strlen(toks[left]), b = strlen(toks[right]);
+                if (strlen(toks[i]) != a+b || memcmp(toks[i], toks[left], a) ||
+                    memcmp(toks[i]+a, toks[right], b)) goto pen_invalid;
+            }
+        }
+        t->penelope = 1; t->pen_max_bytes = (int)limit;
+        t->spm = t->spm_bpe = t->add_space_prefix = 0;
+    }
     return t;
+pen_invalid:
+    fprintf(stderr, "bpe: invalid Penelope tokenizer contract\n");
+    bpe_free(t);
+    return NULL;
 }
 
 int bpe_add_bos(const bpe_tokenizer *t)      { return t ? t->add_bos : 0; }
@@ -284,6 +324,7 @@ void bpe_free(bpe_tokenizer *t) {
     smap_free(&t->vocab); smap_free(&t->merges);
     free(t->scores);
     free(t->added_id);
+    free(t->pen_pairs);
     free(t);
 }
 
@@ -558,6 +599,25 @@ static int scheme_encode_span(const bpe_tokenizer *t, const char *text, int len,
 
 int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
     if (!t || !text || !out || cap <= 0) return 0;
+    if (t->penelope) {
+        int seq[8191], len = 0;
+        while (text[len] && len < t->pen_max_bytes) {
+            unsigned char c = (unsigned char)text[len];
+            seq[len++] = c >= 'A' && c <= 'Z' ? c-'A'+'a' : c;
+        }
+        for (int m = 0; m < t->n_tokens-256; m++) {
+            int left = t->pen_pairs[2*m], right = t->pen_pairs[2*m+1], used = 0;
+            for (int i = 0; i < len; i++) {
+                if (i+1 < len && seq[i] == left && seq[i+1] == right) {
+                    seq[used++] = 256+m; i++;
+                } else seq[used++] = seq[i];
+            }
+            len = used;
+        }
+        if (len > cap) len = cap;
+        memcpy(out, seq, (size_t)len*sizeof(int));
+        return len;
+    }
     if (!t) return 0;               /* the span path reads t->byte_cp on its first line */
     /* Byte-level vocabularies usually say add_bos_token = false and this is a no-op; the
      * ones that ask for it get it here, once, before any span is merged. */
@@ -689,7 +749,7 @@ static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int 
 }
 
 int bpe_decode_token(const bpe_tokenizer *t, int id, char *buf, int cap) {
-    if (!t || id < 0 || id >= t->n_tokens || !t->tokens[id]) return 0;
+    if (!t || !buf || cap <= 0 || id < 0 || id >= t->n_tokens || !t->tokens[id]) return 0;
     const char *s = t->tokens[id];
     if (t->spm || t->spm_bpe) {
         /* A byte token carries one byte. Everything else is text in which

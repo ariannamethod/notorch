@@ -8,6 +8,7 @@ const nt_arch *const nt_archs[] = {
     &nt_arch_mamba,
     &nt_arch_resonance,
     &nt_arch_janus,
+    &nt_arch_penelope,
     &nt_arch_llama,
     NULL,
 };

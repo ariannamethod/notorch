@@ -12,6 +12,10 @@
  * wrong one is quiet: byte-level encode over a SentencePiece vocabulary finds
  * no token for a space and used to drop it, and the model read a sentence with
  * the spaces missing.
+ *
+ * Penelope: explicit tokenizer.ggml.model="penelope", raw-byte IDs 0..255,
+ * ASCII lowercase and ordered merge passes over the complete input. Its
+ * GPT-2 alphabet is a lossless on-disk spelling only, not a pre-tokenizer.
  */
 #ifndef BPE_H
 #define BPE_H
