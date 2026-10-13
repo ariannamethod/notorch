@@ -1026,6 +1026,45 @@ int nt_sgd_values(const float* params, const float* grad, int n,
 // u1=(word1+1)/4294967297, u2=word2/4294967296 (computed in double).
 int nt_rng_normal_values(uint64_t* state, int n, float* out);
 
+// Borrowed-buffer parliament arithmetic. Lifecycle, rewards, clocks and RNG
+// belong to the caller. No allocation, retained pointers, tape or optimizer use.
+// Return 0 on success, -1 on invalid input/nonfinite arithmetic. Unlike the
+// scratch-output values APIs above, failure preserves EVERY output byte.
+// Output capacity is given below; overlap with any input is rejected.
+#define NT_PARLIAMENT_MAX_EXPERTS 16
+#define NT_PARLIAMENT_MAX_RANK 16
+// E is in [1,16], min_experts in [1,E], old consensus finite in [0,1].
+// Inputs have E finite entries; alive entries are exactly 0 or 1.
+// vote = vote_dot + resonance (resonance is already scaled by the caller).
+// c' = .9*c + .1*min(1,sqrt(var(vote)+1e-8)/(abs(mean(vote))+1)).
+// k = clamp(floor(n_alive*(1-c')), min_experts, n_alive). Top-k ties choose
+// the lower slot. Selected votes receive softmax; dead/unelected gates are 0.
+// out[E+2] = [gates[E], c', k]. Fewer than min_experts alive returns zero
+// gates, unchanged consensus and k=0. nt_linear_values supplies vote dots.
+int nt_parliament_elect_values(const float* vote_dot, const float* resonance,
+                               const float* alive, int experts, int min_experts,
+                               float consensus, float* out);
+// A[E,D,R], B[E,R,D], gates[E], x[D]; E in [1,16], R in [1,16].
+// Each matrix length <= NT_MAX_ELEMENTS. Gates are finite and nonnegative.
+// out[D] = x + alpha*sum_e(gate[e]*A_e@(B_e@x)), alpha finite.
+// x must be finite. A/B are read and checked only for nonzero gates when
+// alpha != 0: disabled experts and alpha=0 are true numerical no-ops.
+int nt_parliament_inject_values(const float* a, const float* b,
+                                const float* gates, const float* x,
+                                int experts, int dim, int rank,
+                                float alpha, float* out);
+// One square DoE/Oja expert: A[D,R], B[R,D], x[D], dy[D]. R in [1,16],
+// cursor in [0,R), window in [1,R], lr finite >=0, signal finite. Caller
+// supplies window standard-normal samples and owns EACH expert's cursor.
+// u_j = dot(B[(cursor+j)%R],dy) + .01*noise[j], eta=lr*clamp(signal,-2,2).
+// A_ir += eta*u*(x_i-u*A_ir); B_ri += eta*u*(dy_i-u*B_ri).
+// Other rank components stay identical. out[2*D*R+1] = [A',B',next_cursor],
+// length <= NT_MAX_ELEMENTS. |signal|<1e-8 copies inputs/cursor unchanged.
+// This is the explicit Oja equation, separate from nt_hebbian_step's rule.
+int nt_oja_values(const float* a, const float* b, const float* x,
+                   const float* dy, const float* noise, int dim, int rank,
+                   int cursor, int window, float lr, float signal, float* out);
+
 #ifdef __cplusplus
 }
 #endif

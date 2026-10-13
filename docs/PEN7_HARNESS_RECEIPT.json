@@ -1,0 +1,272 @@
+{
+  "machine": "Linux x86_64 / AMD EPYC 9V74 / GCC 13.3.0",
+  "flags": "-O2 -std=gnu11 -ffp-contract=off -pthread; no BLAS/SIMD",
+  "architecture": "penelope",
+  "contexts": [
+    1,
+    9,
+    33,
+    256
+  ],
+  "schedules": [
+    "full",
+    "first7_then31"
+  ],
+  "original_f32_exact_logits": 32768,
+  "q8_dequantized_native_exact_logits": 32768,
+  "native_c_decoder_truncated_surfaces": 49,
+  "bodies": [
+    {
+      "name": "Penelope",
+      "q8_sha256": "50f159a2c34952bd9e6349880b4b20f8bbc0ac4b1f1dc2c1f6e4768732548b66",
+      "q8_bytes": 21308576,
+      "original_vs_q8": [
+        {
+          "context": 1,
+          "max_abs": 0.0581969321,
+          "rms": 0.0130480299,
+          "cosine": 0.999998441239,
+          "original_argmax": 116,
+          "q8_argmax": 116
+        },
+        {
+          "context": 9,
+          "max_abs": 0.0700464249,
+          "rms": 0.0287657632,
+          "cosine": 0.999999283067,
+          "original_argmax": 573,
+          "q8_argmax": 573
+        },
+        {
+          "context": 33,
+          "max_abs": 0.119892895,
+          "rms": 0.0419310682,
+          "cosine": 0.999994963106,
+          "original_argmax": 100,
+          "q8_argmax": 100
+        },
+        {
+          "context": 256,
+          "max_abs": 0.22401619,
+          "rms": 0.137709983,
+          "cosine": 0.999983905384,
+          "original_argmax": 269,
+          "q8_argmax": 269
+        }
+      ],
+      "greedy_trace": [
+        {
+          "step": 0,
+          "original_id": 573,
+          "q8_id": 573
+        },
+        {
+          "step": 1,
+          "original_id": 353,
+          "q8_id": 353
+        },
+        {
+          "step": 2,
+          "original_id": 103,
+          "q8_id": 103
+        },
+        {
+          "step": 3,
+          "original_id": 1585,
+          "q8_id": 1585
+        },
+        {
+          "step": 4,
+          "original_id": 1255,
+          "q8_id": 1255
+        },
+        {
+          "step": 5,
+          "original_id": 100,
+          "q8_id": 100
+        },
+        {
+          "step": 6,
+          "original_id": 583,
+          "q8_id": 583
+        },
+        {
+          "step": 7,
+          "original_id": 261,
+          "q8_id": 261
+        },
+        {
+          "step": 8,
+          "original_id": 111,
+          "q8_id": 111
+        },
+        {
+          "step": 9,
+          "original_id": 102,
+          "q8_id": 102
+        },
+        {
+          "step": 10,
+          "original_id": 104,
+          "q8_id": 104
+        },
+        {
+          "step": 11,
+          "original_id": 299,
+          "q8_id": 299
+        },
+        {
+          "step": 12,
+          "original_id": 115,
+          "q8_id": 115
+        },
+        {
+          "step": 13,
+          "original_id": 395,
+          "q8_id": 395
+        },
+        {
+          "step": 14,
+          "original_id": 299,
+          "q8_id": 299
+        },
+        {
+          "step": 15,
+          "original_id": 456,
+          "q8_id": 456
+        }
+      ]
+    },
+    {
+      "name": "NanoJanus",
+      "q8_sha256": "16909b8590bd7fbbf15ab11b2dbf3743d612da8c617aca2dda03d640fef13e29",
+      "q8_bytes": 21308576,
+      "original_vs_q8": [
+        {
+          "context": 1,
+          "max_abs": 0.0678541064,
+          "rms": 0.013538241,
+          "cosine": 0.999998463382,
+          "original_argmax": 111,
+          "q8_argmax": 111
+        },
+        {
+          "context": 9,
+          "max_abs": 0.0755685568,
+          "rms": 0.0153820628,
+          "cosine": 0.999999200523,
+          "original_argmax": 573,
+          "q8_argmax": 573
+        },
+        {
+          "context": 33,
+          "max_abs": 0.15545702,
+          "rms": 0.063420719,
+          "cosine": 0.999993176853,
+          "original_argmax": 100,
+          "q8_argmax": 100
+        },
+        {
+          "context": 256,
+          "max_abs": 0.197905064,
+          "rms": 0.0377910984,
+          "cosine": 0.999987862077,
+          "original_argmax": 116,
+          "q8_argmax": 116
+        }
+      ],
+      "greedy_trace": [
+        {
+          "step": 0,
+          "original_id": 573,
+          "q8_id": 573
+        },
+        {
+          "step": 1,
+          "original_id": 353,
+          "q8_id": 353
+        },
+        {
+          "step": 2,
+          "original_id": 108,
+          "q8_id": 108
+        },
+        {
+          "step": 3,
+          "original_id": 283,
+          "q8_id": 283
+        },
+        {
+          "step": 4,
+          "original_id": 489,
+          "q8_id": 489
+        },
+        {
+          "step": 5,
+          "original_id": 101,
+          "q8_id": 101
+        },
+        {
+          "step": 6,
+          "original_id": 103,
+          "q8_id": 103
+        },
+        {
+          "step": 7,
+          "original_id": 369,
+          "q8_id": 369
+        },
+        {
+          "step": 8,
+          "original_id": 108,
+          "q8_id": 108
+        },
+        {
+          "step": 9,
+          "original_id": 115,
+          "q8_id": 115
+        },
+        {
+          "step": 10,
+          "original_id": 367,
+          "q8_id": 367
+        },
+        {
+          "step": 11,
+          "original_id": 111,
+          "q8_id": 111
+        },
+        {
+          "step": 12,
+          "original_id": 290,
+          "q8_id": 290
+        },
+        {
+          "step": 13,
+          "original_id": 100,
+          "q8_id": 100
+        },
+        {
+          "step": 14,
+          "original_id": 371,
+          "q8_id": 371
+        },
+        {
+          "step": 15,
+          "original_id": 265,
+          "q8_id": 265
+        }
+      ]
+    }
+  ],
+  "gates": {
+    "fixture_checks": 107,
+    "q8_checks_per_body": 12320,
+    "q8_ownership_asan_ubsan_checks": 12340,
+    "gemma3": 42,
+    "smollm_tokenizer": 92,
+    "residual": 19,
+    "wrong_rope_caught": true,
+    "leaksanitizer": "host /proc task inspection blocked; ASAN_OPTIONS=detect_leaks=0; independent allocation ownership wrappers passed"
+  }
+}

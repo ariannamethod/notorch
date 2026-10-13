@@ -516,6 +516,206 @@ int nt_rng_normal_values(uint64_t* state, int n, float* out) {
     return 0;
 }
 
+// The bounded parliament has no hidden owner. Stack-sized election/rank
+// scratch and a read-only arithmetic preflight make publication atomic.
+static int nt_values_disjoint(const float* out, size_t on,
+                              const float* in, size_t n) {
+    if (!out || !in) return 0;
+    uintptr_t op = (uintptr_t)out, ip = (uintptr_t)in;
+    size_t ob = on * sizeof(float), ib = n * sizeof(float);
+    if (op > UINTPTR_MAX - ob || ip > UINTPTR_MAX - ib) return 0;
+    return op + ob <= ip || ip + ib <= op;
+}
+
+int nt_parliament_elect_values(const float* vote_dot, const float* resonance,
+                               const float* alive, int experts, int min_experts,
+                               float consensus, float* out) {
+    if (experts < 1 || experts > NT_PARLIAMENT_MAX_EXPERTS ||
+        min_experts < 1 || min_experts > experts || !isfinite(consensus) ||
+        consensus < 0.0f || consensus > 1.0f ||
+        !nt_values_disjoint(out, (size_t)experts + 2, vote_dot, experts) ||
+        !nt_values_disjoint(out, (size_t)experts + 2, resonance, experts) ||
+        !nt_values_disjoint(out, (size_t)experts + 2, alive, experts) ||
+        !nt_values_finite(vote_dot, experts) ||
+        !nt_values_finite(resonance, experts)) return -1;
+    float votes[NT_PARLIAMENT_MAX_EXPERTS] = {0};
+    float result[NT_PARLIAMENT_MAX_EXPERTS + 2] = {0};
+    int count = 0;
+    for (int e = 0; e < experts; e++) {
+        if (alive[e] != 0.0f && alive[e] != 1.0f) return -1;
+        if (alive[e] != 0.0f) {
+            votes[e] = vote_dot[e] + resonance[e];
+            if (!isfinite(votes[e])) return -1;
+            count++;
+        }
+    }
+    result[experts] = consensus;
+    if (count >= min_experts) {
+        float mean = 0.0f;
+        for (int e = 0; e < experts; e++)
+            if (alive[e] != 0.0f) mean += votes[e];
+        mean /= (float)count;
+        if (!isfinite(mean)) return -1;
+        float var = 0.0f;
+        for (int e = 0; e < experts; e++) if (alive[e] != 0.0f) {
+            float diff = votes[e] - mean;
+            var += diff * diff;
+        }
+        var /= (float)count;
+        if (!isfinite(var)) return -1;
+        float cnew = sqrtf(var + 1e-8f) / (fabsf(mean) + 1.0f);
+        if (!isfinite(cnew)) return -1;
+        if (cnew > 1.0f) cnew = 1.0f;
+        float next = 0.9f * consensus + 0.1f * cnew;
+        int k = (int)((float)count * (1.0f - next));
+        if (k < min_experts) k = min_experts;
+        if (k > count) k = count;
+        int used[NT_PARLIAMENT_MAX_EXPERTS] = {0};
+        int selected[NT_PARLIAMENT_MAX_EXPERTS];
+        float weights[NT_PARLIAMENT_MAX_EXPERTS];
+        for (int ki = 0; ki < k; ki++) {
+            int best = -1;
+            for (int e = 0; e < experts; e++)
+                if (alive[e] != 0.0f && !used[e] &&
+                    (best < 0 || votes[e] > votes[best])) best = e;
+            selected[ki] = best;
+            weights[ki] = votes[best];
+            used[best] = 1;
+        }
+        float max_vote = weights[0], sum = 0.0f;
+        for (int ki = 0; ki < k; ki++) {
+            weights[ki] = expf(weights[ki] - max_vote);
+            sum += weights[ki];
+        }
+        if (!isfinite(sum) || sum <= 0.0f) return -1;
+        for (int ki = 0; ki < k; ki++) result[selected[ki]] = weights[ki] / sum;
+        result[experts] = next;
+        result[experts + 1] = (float)k;
+    }
+    memcpy(out, result, ((size_t)experts + 2) * sizeof(float));
+    return 0;
+}
+
+static float nt_parliament_inject_row(const float* a, const float* gates,
+                                     const float* tmp, const float* x,
+                                     int experts, int dim, int rank,
+                                     int i, float alpha) {
+    float value = 0.0f;
+    for (int e = 0; e < experts; e++) {
+        if (gates[e] == 0.0f) continue;
+        float sum = 0.0f;
+        for (int r = 0; r < rank; r++)
+            sum += a[((size_t)e * dim + i) * rank + r] * tmp[e * rank + r];
+        value += gates[e] * sum;
+    }
+    return x[i] + alpha * value;
+}
+
+int nt_parliament_inject_values(const float* a, const float* b,
+                                const float* gates, const float* x,
+                                int experts, int dim, int rank,
+                                float alpha, float* out) {
+    size_t n;
+    if (experts < 1 || experts > NT_PARLIAMENT_MAX_EXPERTS ||
+        rank < 1 || rank > NT_PARLIAMENT_MAX_RANK ||
+        !nt_values_shape(dim, rank, &n) ||
+        n > (size_t)NT_MAX_ELEMENTS / (size_t)experts || !isfinite(alpha)) return -1;
+    size_t total = (size_t)experts * n;
+    if (!nt_values_disjoint(out, dim, a, total) ||
+        !nt_values_disjoint(out, dim, b, total) ||
+        !nt_values_disjoint(out, dim, gates, experts) ||
+        !nt_values_disjoint(out, dim, x, dim) ||
+        !nt_values_finite(gates, experts) || !nt_values_finite(x, dim)) return -1;
+    int active = 0;
+    for (int e = 0; e < experts; e++) {
+        if (gates[e] < 0.0f) return -1;
+        active += gates[e] != 0.0f;
+    }
+    if (alpha == 0.0f || active == 0) {
+        memcpy(out, x, (size_t)dim * sizeof(float));
+        return 0;
+    }
+    float tmp[NT_PARLIAMENT_MAX_EXPERTS * NT_PARLIAMENT_MAX_RANK] = {0};
+    for (int e = 0; e < experts; e++) {
+        if (gates[e] == 0.0f) continue;
+        if (!nt_values_finite(a + (size_t)e * n, n) ||
+            !nt_values_finite(b + (size_t)e * n, n)) return -1;
+        for (int r = 0; r < rank; r++) {
+            float value = 0.0f;
+            for (int j = 0; j < dim; j++)
+                value += b[((size_t)e * rank + r) * dim + j] * x[j];
+            if (!isfinite(value)) return -1;
+            tmp[e * rank + r] = value;
+        }
+    }
+    // Validate every final row before publishing any row. Repeating A@tmp
+    // avoids a D-sized heap allocation and preserves out on arithmetic failure.
+    for (int i = 0; i < dim; i++)
+        if (!isfinite(nt_parliament_inject_row(a, gates, tmp, x,
+                                             experts, dim, rank, i, alpha))) return -1;
+    for (int i = 0; i < dim; i++)
+        out[i] = nt_parliament_inject_row(a, gates, tmp, x, experts, dim, rank, i, alpha);
+    return 0;
+}
+
+int nt_oja_values(const float* a, const float* b, const float* x,
+                   const float* dy, const float* noise, int dim, int rank,
+                   int cursor, int window, float lr, float signal, float* out) {
+    size_t n;
+    if (rank < 1 || rank > NT_PARLIAMENT_MAX_RANK ||
+        !nt_values_shape(dim, rank, &n) || n > ((size_t)NT_MAX_ELEMENTS - 1) / 2 ||
+        cursor < 0 || cursor >= rank || window < 1 || window > rank ||
+        !isfinite(lr) || lr < 0.0f || !isfinite(signal)) return -1;
+    size_t total = 2 * n + 1;
+    if (!nt_values_disjoint(out, total, a, n) ||
+        !nt_values_disjoint(out, total, b, n) ||
+        !nt_values_disjoint(out, total, x, dim) ||
+        !nt_values_disjoint(out, total, dy, dim) ||
+        !nt_values_disjoint(out, total, noise, window) ||
+        !nt_values_finite(a, n) || !nt_values_finite(b, n) ||
+        !nt_values_finite(x, dim) || !nt_values_finite(dy, dim) ||
+        !nt_values_finite(noise, window)) return -1;
+    if (fabsf(signal) < 1e-8f) {
+        memcpy(out, a, n * sizeof(float));
+        memcpy(out + n, b, n * sizeof(float));
+        out[2 * n] = (float)cursor;
+        return 0;
+    }
+    if (signal > 2.0f) signal = 2.0f;
+    if (signal < -2.0f) signal = -2.0f;
+    float eta = lr * signal;
+    if (!isfinite(eta)) return -1;
+    float u[NT_PARLIAMENT_MAX_RANK];
+    for (int j = 0; j < window; j++) {
+        int r = (cursor + j) % rank;
+        float value = 0.0f;
+        for (int i = 0; i < dim; i++) value += b[(size_t)r * dim + i] * dy[i];
+        u[j] = value + noise[j] * 0.01f;
+        if (!isfinite(u[j])) return -1;
+    }
+    // First visit only checks the candidate; the second publishes the exact
+    // same Oja expressions into detached buffers. Inputs stay untouched.
+    for (int pass = 0; pass < 2; pass++) {
+        if (pass) {
+            memcpy(out, a, n * sizeof(float));
+            memcpy(out + n, b, n * sizeof(float));
+        }
+        for (int j = 0; j < window; j++) {
+            int r = (cursor + j) % rank;
+            float ur = u[j];
+            for (int i = 0; i < dim; i++) {
+                size_t ai = (size_t)i * rank + r, bi = (size_t)r * dim + i;
+                float av = a[ai] + eta * ur * (x[i] - ur * a[ai]);
+                float bv = b[bi] + eta * ur * (dy[i] - ur * b[bi]);
+                if (!pass && (!isfinite(av) || !isfinite(bv))) return -1;
+                if (pass) { out[ai] = av; out[n + bi] = bv; }
+            }
+        }
+    }
+    out[2 * n] = (float)((cursor + window) % rank);
+    return 0;
+}
+
 static nt_tape g_tape = {0};
 
 void nt_tape_start(void) {
