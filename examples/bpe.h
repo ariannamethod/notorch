@@ -40,6 +40,12 @@ int bpe_encode_raw(const bpe_tokenizer *t, const char *text, int *out_ids, int c
  * Returns bytes appended. */
 int bpe_decode_token(const bpe_tokenizer *t, int id, char *buf, int cap);
 
+/* Capacity including the trailing NUL sufficient for a complete decoded token,
+ * or 0 for an invalid id / an unrepresentable capacity. This is an upper bound:
+ * byte alphabets and SentencePiece space markers shrink when decoded. Use the
+ * decode return value, not strlen, when writing tokens containing byte zero. */
+int bpe_decode_token_capacity(const bpe_tokenizer *t, int id);
+
 /* Whether a sequence opens with a beginning-of-text token, which one, and whether the
  * file said so at all. A file that does not declare it gets nothing prepended — see the
  * note in bpe.c for why that differs from the reference on purpose. */

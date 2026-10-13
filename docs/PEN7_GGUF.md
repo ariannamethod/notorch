@@ -130,7 +130,9 @@ all eight layers, each layer in the following exact order:
 
 `penelope.*` metadata states dimension 448, eight layers, seven heads of width
 64, FFN width 896, context 256, RMSNorm epsilon `1e-5`, RoPE base 10000 and
-split-half layout. Learned absolute position embeddings are added at input;
+split-half layout. `penelope.attention.head_count_kv` is required and must
+equal `penelope.attention.head_count`: this family has no grouped-query variant.
+Learned absolute position embeddings are added at input;
 RoPE is also applied to each layer's Q/K. `resonance.weight` is the dense
 `Wr @ h` projection of normalized input. Two softmaxed scalar parameters blend
 it with attention. SwiGLU retains PEN7's SiLU cutoff: `x <= -20` yields zero.
@@ -178,6 +180,8 @@ expansions: 49 tokens contain at least 63 raw bytes, with maximum 394 bytes at
 ID 1750. Model IDs, embeddings and merge ranks are preserved; complete decode
 surfaces repair that fixed-buffer loss. The harness parity gate measures native
 encoder IDs and numerical forwards separately from these decoded surfaces.
+The CLI sizes its decode buffer from each stored token spelling and writes the
+returned byte count, preserving complete long surfaces and embedded byte zero.
 
 ## Executed conversion gates
 
@@ -330,3 +334,29 @@ Normal gates exit zero. `--red-hand` requires its deliberately defective child
 to exit one and then reports `PENELOPE_RED_HAND_CAUGHT`. `--ownership` uses GNU
 linker allocation wrappers; the ordinary native reference gate is independent
 of those platform-specific wrappers.
+
+## Review follow-up: complete CLI output and declared KV heads
+
+The PR168 follow-up checks the actual CLI `emit` function, including its stdout
+write. A 900-byte UTF-8 fixture, embedded byte zero, decoded space markers and
+the character fallback retain their exact bytes. With either recorded PEN7
+GGUF, all ten token surfaces longer than 255 bytes are emitted completely,
+including the 394-byte token at ID 1750: **57 checks**. The ordinary fixture-only
+gate has **25 checks** and runs without external model files.
+
+The family gate now has **121 checks**. Missing or mismatched KV-head metadata
+must fail loading without changing the caller's dimensions. The shared SmolLM
+tokenizer gate remains green with **92 checks**. Two temporary source mutations
+restore the 256-byte output limit and remove KV-head validation; both gates
+reject their respective mutation. Converter bytes, asset hashes and numerical
+execution remain unchanged; the expensive body parity gates were not rerun for
+this bounded follow-up.
+
+```sh
+make check_penelope check_harness_emit check_smollm_tokenizer \
+  BLAS_FLAGS= BLAS_LIBS= X86_SIMD=0 ARM_SIMD=0 MODEL=/path/to/haiku1-q8_0.gguf
+python3 tests/test_penelope_review.py --model /path/to/haiku1-q8_0.gguf
+```
+
+The red-control script reports `PENELOPE_EMIT_RED_CAUGHT` and
+`PENELOPE_KV_HEADS_RED_CAUGHT`; it leaves the working sources untouched.

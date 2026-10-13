@@ -13,6 +13,29 @@ Newest entries on top.
 
 ---
 
+## 2026-10-14 — Preserve complete CLI tokens and validate PEN7 KV heads
+
+PR168 review identified two boundary losses: the CLI still decoded into 256
+bytes after PEN7 gained complete token surfaces, and the family accepted files
+whose declared KV-head count disagreed with its full multi-head arithmetic.
+The emitter now obtains a sufficient capacity from the tokenizer, allocates
+only when its stack buffer is too small, and writes the returned byte count.
+Long UTF-8 surfaces and embedded byte zero survive the actual stdout path.
+PEN7 requires an explicit KV-head count equal to its attention-head count;
+rejected files leave caller dimensions untouched. Converter and asset bytes
+are unchanged.
+
+The bounded scalar gates pass: PEN7 family **121 checks**, actual CLI emitter
+**57 checks** with all ten recorded surfaces longer than 255 bytes (maximum
+394 at ID 1750), and shared SmolLM tokenizer **92 checks**. The emitter's
+external-file-free fixture contributes 25 checks and includes a 900-byte UTF-8
+token. `tests/test_penelope_review.py` catches both deliberate regressions:
+restored fixed-capacity output and removed KV-head validation. Reproduction
+commands are in [PEN7_GGUF.md](docs/PEN7_GGUF.md). Numerical forwards and
+converter pins are unchanged; no additional full-body parity run was needed.
+
+---
+
 ## 2026-10-14 — PEN7 Q8 bodies and owned parliament arithmetic
 
 Penelope and NanoJanus now enter the harness through their own `penelope`
