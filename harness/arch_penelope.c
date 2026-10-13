@@ -113,9 +113,10 @@ static void *pen_load(gguf_file *gf, nt_dims *dims) {
     if (gf->n_tensors != (uint64_t)(4 + 11*m->layers) ||
         !pen_string(gf, "tokenizer.ggml.model", "penelope") ||
         !pen_string(gf, "tokenizer.penelope.algorithm", "byte-rank-pass-v1")) goto fail;
-    int rotary = 0;
+    int rotary = 0, kv_heads = 0;
     const gguf_kv *position = gguf_get_kv(gf, "penelope.position_embedding");
     if (m->heads * m->hd != m->embed || m->hd % 2 ||
+        !pen_u32(gf, "penelope.attention.head_count_kv", &kv_heads, 128) || kv_heads != m->heads ||
         !pen_u32(gf, "penelope.rope.dimension_count", &rotary, 8192) || rotary != m->hd ||
         !pen_float(gf, "penelope.attention.layer_norm_rms_epsilon", m->eps) ||
         !pen_float(gf, "penelope.rope.freq_base", m->base) ||

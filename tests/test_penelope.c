@@ -38,6 +38,7 @@ static int fixture(const char*path,int mode){
 #define K(k,v) gguf_write_kv_f32(w,"penelope."k,v)
     U("vocab_size",V);U("block_count",L);U("embedding_length",E);U("context_length",mode==4?T-1:T);
     U("feed_forward_length",F);U("attention.head_count",2);U("attention.head_dim",4);
+    if(mode!=9)U("attention.head_count_kv",mode==10?1:2);
     U("rope.dimension_count",4);K("attention.layer_norm_rms_epsilon",mode==2?1e-6f:1e-5f);
     K("rope.freq_base",10000);K("silu_cutoff",-20);
     gguf_write_kv_str(w,"penelope.rope.layout",mode==1?"adjacent":"split-half");
@@ -144,9 +145,11 @@ int main(void){
     uint32_t dtype=gf->tensors[0].dtype;gf->tensors[0].dtype=GGUF_TYPE_Q4_0;
     void*badmodel=a->load(gf,&dims);CHECK(!badmodel,"unverified quantized type refused");if(badmodel)a->free(badmodel);gf->tensors[0].dtype=dtype;
     a->free(m);gguf_close(gf);kv_free(kv);
-    for(int mode=1;mode<=8;mode++){
-        CHECK(fixture(path,mode)==0,"write malformed model");gf=gguf_open(path);m=gf?a->load(gf,&dims):NULL;
+    for(int mode=1;mode<=10;mode++){
+        CHECK(fixture(path,mode)==0,"write malformed model");gf=gguf_open(path);
+        dims=(nt_dims){7,8,9};m=gf?a->load(gf,&dims):NULL;
         CHECK(!m,"unsupported metadata, shape, missing tensor or NaN refused");if(m)a->free(m);gguf_close(gf);
+        CHECK(dims.n_layers==7&&dims.kv_dim==8&&dims.vocab==9,"failed load preserves caller dimensions");
     }
     CHECK(tokenizer_fixture(path,0)==0,"write tokenizer");bpe_tokenizer*t=bpe_load(path);CHECK(t!=NULL,"load native byte tokenizer");
     if(t){int tok[16];CHECK(bpe_encode(t," AAA ",tok,16)==1&&tok[0]==259,"whole-input merges cross spaces and lowercase ASCII");

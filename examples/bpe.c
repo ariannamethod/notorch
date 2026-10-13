@@ -748,6 +748,13 @@ static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int 
     return no;
 }
 
+int bpe_decode_token_capacity(const bpe_tokenizer *t, int id) {
+    if (!t || id < 0 || id >= t->n_tokens || !t->tokens[id]) return 0;
+    size_t n = strlen(t->tokens[id]);
+    /* Every current decoder copies or contracts its stored byte spelling. */
+    return n < INT_MAX ? (int)n + 1 : 0;
+}
+
 int bpe_decode_token(const bpe_tokenizer *t, int id, char *buf, int cap) {
     if (!t || !buf || cap <= 0 || id < 0 || id >= t->n_tokens || !t->tokens[id]) return 0;
     const char *s = t->tokens[id];

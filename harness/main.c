@@ -160,15 +160,21 @@ static int encode_prompt(const session *s, const char *text, int *tokens, int ca
     return n;
 }
 
-static void emit(const session *s, int id) {
-    char piece[256];
+static int emit(const session *s, int id) {
     if (s->tok) {
-        bpe_decode_token(s->tok, id, piece, sizeof(piece));
-        fputs(piece, stdout);
-    } else if (id >= 32 && id < 127) putchar((char)id);
-    else if (id == 10) putchar('\n');
-    else printf("[%d]", id);
-    fflush(stdout);
+        char local[256];
+        int cap = bpe_decode_token_capacity(s->tok, id);
+        if (!cap) return 0;
+        char *piece = (size_t)cap <= sizeof(local) ? local : malloc((size_t)cap);
+        if (!piece) return 0;
+        int n = bpe_decode_token(s->tok, id, piece, cap);
+        int ok = fwrite(piece, 1, (size_t)n, stdout) == (size_t)n;
+        if (piece != local) free(piece);
+        if (!ok) return 0;
+    } else if (id >= 32 && id < 127) { if (putchar((char)id) == EOF) return 0; }
+    else if (id == 10) { if (putchar('\n') == EOF) return 0; }
+    else if (printf("[%d]", id) < 0) return 0;
+    return fflush(stdout) == 0;
 }
 
 /* How much of this process is actually in memory, and how much the machine has left.
@@ -240,7 +246,10 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
         if (getenv("NT_ECHO_IDS")) fprintf(stderr, "[id %d]", next);
         if (chat_is_stop(next)) break;
         if (s->tok ? (next == s->eos || bpe_is_eog(s->tok, next)) : (!g_chat.active && next <= 2)) break;
-        emit(s, next);
+        if (!emit(s, next)) {
+            fprintf(stderr, "\ndecode stopped: could not emit complete token %d\n", next);
+            break;
+        }
         gen++;
         if (pos >= s->max_seq - 1) break;
         int rc = s->arch->forward(s->model, s->kv, &next, 1, pos, s->logits);
