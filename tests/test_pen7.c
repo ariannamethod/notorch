@@ -89,7 +89,8 @@ static int fixture(const char*path,float alpha,int mode){
 #undef K
     for(int i=0;i<count;i++){uint64_t shape[]={(uint64_t)ts[i].cols,(uint64_t)ts[i].rows};
         gguf_write_tensor_decl(w,ts[i].name,ts[i].rows?2:1,shape,GGUF_TYPE_F32);}
-    for(int i=0;i<count;i++)gguf_write_tensor_f32(w,ts[i].name,ts[i].data,(ts[i].rows?ts[i].rows:1)*ts[i].cols);
+    for(int i=0;i<count;i++)gguf_write_tensor_f32(w,ts[i].name,ts[i].data,
+        (uint64_t)(ts[i].rows?ts[i].rows:1)*(uint64_t)ts[i].cols);
     free(ts);return gguf_write_close(w);
 }
 static int constant(const float*x,int n,float value){for(int i=0;i<n;i++)if(x[i]!=value)return 0;return 1;}

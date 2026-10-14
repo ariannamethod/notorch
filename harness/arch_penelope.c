@@ -54,18 +54,20 @@ static const float *pen_vector(gguf_file *gf, const char *name, int n) {
 }
 static int pen_matrix(wt *w, gguf_file *gf, const char *name, int rows, int cols) {
     int ti = pen_shape(gf, name, rows, cols);
-    if (ti < 0) return 0;
+    if (ti < 0) return NT_E_ARG;
     const gguf_tensor_info *t = &gf->tensors[ti];
     if (t->dtype == GGUF_TYPE_F32) {
         w->rows = rows; w->cols = cols; w->dtype = GGUF_TYPE_F32;
         w->f32 = (float *)(gf->data + t->offset); /* borrowed, never freed */
-        return 1;
+        return NT_OK;
     }
     /* Quantization is the storage format. The body explicitly unfolds into
      * float32 for its projections and eventual parameter-space mixtures. */
     w->rows = rows; w->cols = cols; w->dtype = GGUF_TYPE_Q8_0;
     w->f32 = gguf_dequant(gf, ti);
-    return w->f32 != NULL;
+    /* pen_shape validated the dtype, complete block geometry and byte range;
+     * the supported dequantizer's remaining failure is its allocation. */
+    return w->f32 ? NT_OK : NT_E_MEMORY;
 }
 static void pen_drop_weight(wt *w) {
     if (w->dtype != GGUF_TYPE_F32) free(w->f32);
@@ -83,10 +85,11 @@ void nt_penelope_drop(void *model) {
     }
     free(m);
 }
-pen_model *nt_penelope_load_quiet(gguf_file *gf, nt_dims *dims) {
-    if (!gf || !dims || strcmp(gf->arch, "penelope")) return NULL;
+int nt_penelope_load_checked(gguf_file *gf, nt_dims *dims, pen_model **out) {
+    if (!gf || !dims || !out || strcmp(gf->arch, "penelope")) return NT_E_ARG;
     pen_model *m = calloc(1, sizeof(*m));
-    if (!m) return NULL;
+    if (!m) return NT_E_MEMORY;
+    int status = NT_E_ARG;
     m->gf = gf; m->eps = 1e-5f; m->base = 10000.f;
 #define U(k, member, max) if (!pen_u32(gf, "penelope." k, &m->member, max)) goto fail
     U("embedding_length", embed, 8192); U("attention.head_count", heads, 128);
@@ -112,15 +115,21 @@ pen_model *nt_penelope_load_quiet(gguf_file *gf, nt_dims *dims) {
     m->tok = pen_shape(gf, "token_embd.weight", m->vocab, m->embed);
     m->pos = pen_shape(gf, "position_embd.weight", m->ctx, m->embed);
     m->norm = pen_vector(gf, "output_norm.weight", m->embed);
-    if (m->tok < 0 || m->pos < 0 || !m->norm ||
-        !pen_matrix(&m->output, gf, "output.weight", m->vocab, m->embed)) goto fail;
+    if (m->tok < 0 || m->pos < 0 || !m->norm) goto fail;
+    int rc = pen_matrix(&m->output, gf, "output.weight", m->vocab, m->embed);
+    if (rc) { status = rc; goto fail; }
     if (gf->tensors[m->tok].dtype == GGUF_TYPE_F32)
         m->token_data = (const float *)(gf->data + gf->tensors[m->tok].offset);
-    else m->token_data = m->token_owned = gguf_dequant(gf, m->tok);
+    else {
+        m->token_data = m->token_owned = gguf_dequant(gf, m->tok);
+        if (!m->token_data) { status = NT_E_MEMORY; goto fail; }
+    }
     if (gf->tensors[m->pos].dtype == GGUF_TYPE_F32)
         m->position_data = (const float *)(gf->data + gf->tensors[m->pos].offset);
-    else m->position_data = m->position_owned = gguf_dequant(gf, m->pos);
-    if (!m->token_data || !m->position_data) goto fail;
+    else {
+        m->position_data = m->position_owned = gguf_dequant(gf, m->pos);
+        if (!m->position_data) { status = NT_E_MEMORY; goto fail; }
+    }
     for (int l = 0; l < m->layers; l++) {
         pen_block *b = &m->block[l]; char name[128];
 #define V(member, suffix, len) do { \
@@ -129,7 +138,8 @@ pen_model *nt_penelope_load_quiet(gguf_file *gf, nt_dims *dims) {
 } while (0)
 #define W(member, suffix, rows, cols) do { \
     snprintf(name, sizeof(name), "blk.%d." suffix ".weight", l); \
-    if (!pen_matrix(&b->member, gf, name, rows, cols)) goto fail; \
+    int load_status = pen_matrix(&b->member, gf, name, rows, cols); \
+    if (load_status) { status = load_status; goto fail; } \
 } while (0)
         V(attn_norm, "attn_norm", m->embed); V(ffn_norm, "ffn_norm", m->embed);
         V(blend, "resonance_gate", 2);
@@ -142,10 +152,16 @@ pen_model *nt_penelope_load_quiet(gguf_file *gf, nt_dims *dims) {
 #undef W
     }
     dims->n_layers = m->layers; dims->kv_dim = m->embed; dims->vocab = m->vocab;
-    return m;
+    *out = m;
+    return NT_OK;
 fail:
     nt_penelope_drop(m);
-    return NULL;
+    return status;
+}
+pen_model *nt_penelope_load_quiet(gguf_file *gf, nt_dims *dims) {
+    pen_model *m = NULL;
+    nt_penelope_load_checked(gf, dims, &m);
+    return m;
 }
 
 /* The same equations serve the harness and immutable owner. Mixing happens
@@ -257,8 +273,10 @@ int nt_penelope_eval(const pen_model *m, const pen_model *other, float alpha,
     return rc;
 }
 static void *pen_load(gguf_file *gf, nt_dims *dims) {
-    pen_model *m = nt_penelope_load_quiet(gf, dims);
-    if (!m) fprintf(stderr, "penelope: unsupported geometry, metadata, tensor shape/dtype or nonfinite weight\n");
+    pen_model *m = NULL;
+    int status = nt_penelope_load_checked(gf, dims, &m);
+    if (status == NT_E_MEMORY) fprintf(stderr, "penelope: allocation failed\n");
+    else if (status) fprintf(stderr, "penelope: unsupported geometry, metadata, tensor shape/dtype or nonfinite weight\n");
     return m;
 }
 static int pen_forward_residual(void *model, kv_cache *kv, const int *tokens, int n,

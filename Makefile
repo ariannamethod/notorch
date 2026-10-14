@@ -375,10 +375,31 @@ check_gemma3: test_gemma3
 test_pen7: tests/test_pen7.c pen7.h libnotorch.a Makefile
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch.a -lm $(BLAS_LIBS)
 
-check_pen7: test_pen7
-	./test_pen7 $(MODEL) $(MODEL2)
+# Compile the real load path with test-only allocator interception. Production
+# objects and the public API have no failure hook or mutable allocator state.
+PEN7_FAULT_OBJ = tests/pen7_fault_owner.o tests/pen7_fault_family.o tests/pen7_fault_gguf.o
+PEN7_FAULT_FLAGS = -DNT_PEN7_FAULT_REDIRECT -include tests/pen7_fault_alloc.h
 
-.PHONY: check_pen7
+tests/pen7_fault_owner.o: pen7.c pen7.h $(HARNESS_HDR) sha256.h tests/pen7_fault_alloc.h Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) $(PEN7_FAULT_FLAGS) -c $< -o $@
+
+tests/pen7_fault_family.o: harness/arch_penelope.c $(HARNESS_HDR) tests/pen7_fault_alloc.h Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) $(PEN7_FAULT_FLAGS) -c $< -o $@
+
+tests/pen7_fault_gguf.o: gguf.c gguf.h tests/pen7_fault_alloc.h Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) $(PEN7_FAULT_FLAGS) -c $< -o $@
+
+test_pen7_faults: tests/test_pen7_faults.c tests/pen7_fault_alloc.h pen7.h sha256.h $(PEN7_FAULT_OBJ) libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< $(PEN7_FAULT_OBJ) ./libnotorch.a -lm $(BLAS_LIBS)
+
+check_pen7_faults: test_pen7_faults
+	./test_pen7_faults
+
+check_pen7: test_pen7 test_pen7_faults
+	./test_pen7 $(MODEL) $(MODEL2)
+	./test_pen7_faults
+
+.PHONY: check_pen7 check_pen7_faults
 
 test_penelope: tests/test_penelope.c libnotorch_harness.a libnotorch.a Makefile
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
@@ -402,7 +423,7 @@ check_parliament_values: test_parliament_values
 
 .PHONY: check_parliament_values
 
-test: test_pen7 test_penelope test_harness_emit test_parliament_values
+test: test_pen7 test_pen7_faults test_penelope test_harness_emit test_parliament_values
 
 .PHONY: check_residual check_gemma3
 
@@ -915,6 +936,7 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h $(CHUCK_HEADERS)
 
 test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_chuck_architect_conditioned test_chuck_architect_durability test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
 	./test_pen7
+	./test_pen7_faults
 	./test_penelope
 	./test_harness_emit
 	./test_parliament_values
@@ -1024,7 +1046,7 @@ clean:
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
 	rm -f test_sampling
-	rm -f pen7_to_gguf test_pen7 test_penelope test_harness_emit test_parliament_values test_tanh_sgd
+	rm -f pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o

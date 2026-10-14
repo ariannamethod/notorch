@@ -256,8 +256,11 @@ int nt_pen7_load(const char *path, nt_pen7_model **out) {
     span toks={0},merges={0},pairs={0};
     rc=parse(m,bytes,&toks,&merges,&pairs); if (rc) goto fail;
     nt_dims dims;
-    m->body=nt_penelope_load_quiet(m->gf,&dims);
-    if (!m->body) { rc=NT_PEN7_E_FORMAT; goto fail; }
+    int load_status=nt_penelope_load_checked(m->gf,&dims,&m->body);
+    if (load_status) {
+        rc=load_status==NT_E_MEMORY ? NT_PEN7_E_MEMORY : NT_PEN7_E_FORMAT;
+        goto fail;
+    }
     const pen_model *b=m->body;
     m->info.vocab=b->vocab; m->info.width=b->embed; m->info.context=b->ctx;
     m->info.layers=b->layers; m->info.ffn=b->ffn; m->info.heads=b->heads;
