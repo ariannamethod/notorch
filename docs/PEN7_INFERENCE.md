@@ -14,6 +14,9 @@ validates its complete PEN7 schema and expands Q8_0 matrices through
 when weights, geometry, tokenizer metadata, token surfaces, merge strings and
 merge IDs agree. Missing or malformed files return a status without writing
 stdout/stderr or changing the caller's output handle.
+Allocation failures return `NT_PEN7_E_MEMORY`, including the family body and
+every Q8-to-F32 expansion. Malformed contracts return `NT_PEN7_E_FORMAT`.
+Both paths release partial ownership before returning.
 
 The model identity is the lowercase SHA-256 of **every byte of that exact
 snapshot**, including metadata. The tokenizer identity is the SHA-256 of its
@@ -111,6 +114,7 @@ ARM_SIMD=0`):
 make -j2 test_pen7 test_penelope BLAS_FLAGS= BLAS_LIBS= X86_SIMD=0 ARM_SIMD=0
 ./test_pen7
 ./test_penelope
+make check_pen7_faults BLAS_FLAGS= BLAS_LIBS= X86_SIMD=0 ARM_SIMD=0
 python3 tests/test_pen7_mutations.py
 ./test_pen7 /path/to/haiku1.gguf /path/to/haiku2.gguf
 ```
@@ -122,6 +126,16 @@ source overwrite/unlink, lifetime, strict tokenizer, malformed containers, nonbl
 and atomic refusal paths.
 The existing family gate passes **121 checks**, including its independent
 small-model double-equation goldens and full/chunked contexts.
+
+The allocation gate compiles the actual loader sources with test-only allocator
+interception, then fails each allocation in order on independent F32 and Q8
+fixtures. All **264 F32 and 283 Q8 allocation sites** return memory failure,
+preserve the caller's handle, emit no diagnostics and leave no owned block or
+damaged allocation guard. The Q8 fixture covers quantized token and learned
+position embeddings as well as all projection matrices. Before the status fix,
+the same gate found one misreported format error for F32 and twenty for Q8;
+afterward it passes **34 checks**. `make check_pen7` and `make test` include
+this gate. The public header and pointer-only family entry remain compatible.
 
 Both published Q8 sources add real 1/9/33/256-token comparisons: **16,384 logits
 and 3,584 representation values** match the rebuilt shared harness exactly.

@@ -169,4 +169,5 @@ bench_cuda_decode
 
 # Immutable PEN7 inference gate
 /test_pen7
+/test_pen7_faults
 !tests/test_pen7_mutations.py

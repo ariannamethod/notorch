@@ -13,6 +13,37 @@ Newest entries on top.
 
 ---
 
+## 2026-10-14 — Preserve PEN7 allocation failure status
+
+PR170 review found that a failed family-body allocation or Q8 expansion lost
+its cause at the pointer-only loader boundary and became `NT_PEN7_E_FORMAT`.
+A private checked load now carries `NT_E_MEMORY` through the existing cleanup
+path to `NT_PEN7_E_MEMORY`. Schema rejection remains a format error. The public
+header and old family entry remain compatible; failure publishes no handle or
+dimensions and the public loader stays quiet, with no global error state.
+
+The new deterministic gate compiles the actual owner, family and GGUF sources
+with allocator interception confined to test objects. It first executes a
+complete small body, then fails every allocation individually: **264 F32 and
+283 Q8 sites**. The Q8 fixture includes all projections, token embeddings and
+learned positions. Before the fix, **one F32 and twenty Q8** refusals reported
+format error; after it, all **547** report memory failure. Every refusal leaves
+the output sentinel unchanged, writes no stdout/stderr, releases every tracked
+owned block and preserves its allocation guard. A successful load follows each
+sweep. The gate is included in `make check_pen7` and `make test`.
+
+GCC 13.3.0 / Linux x86-64 scalar build: **34 allocation checks**, **79 PEN7
+fixture checks** and **121 existing family checks** pass. Static, harness and
+shared libraries rebuild. The allocation gate also passes ASan/UBSan with
+`ASAN_OPTIONS=detect_leaks=0`; its explicit ownership ledger checks cleanup at
+every refusal. Commands and boundaries are in
+[immutable PEN7 inference](docs/PEN7_INFERENCE.md).
+
+The same review's integer-width finding in `tests/test_pen7.c` is corrected by
+widening both tensor-count factors to `uint64_t` before multiplication.
+
+---
+
 ## 2026-10-14 — Immutable PEN7 owners and whole-parameter mixtures
 
 `pen7.h` now brings frozen PEN7 bodies into `libnotorch.a`: quiet snapshot

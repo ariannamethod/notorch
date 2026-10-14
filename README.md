@@ -121,6 +121,8 @@ canonical tokenizer SHA-256 identities, atomic shared ownership, strict byte BPE
 and isolated reusable inference workspaces. It returns final logits together
 with the normalized contextual representation that feeds the output head.
 Every call begins with its own context; frozen parameters remain shared.
+Load-time allocation refusals report `NT_PEN7_E_MEMORY`, including Q8 expansion,
+with no diagnostics, partial handle or retained allocations.
 
 A two-body forward mixes **every parameter** as `alpha*A + (1-alpha)*B`, including
 positions, norms and resonance gates. Matrix-sized scratch replaces a permanent
