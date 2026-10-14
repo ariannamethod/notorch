@@ -13,6 +13,26 @@ Newest entries on top.
 
 ---
 
+## 2026-10-14 — Chuck living acquisition protocol, before execution
+
+PR164 is merged. Its refits learned a forced first action followed by fifteen
+decisions of the previous student; deployment then gave every decision to the
+refit. The next fixed experiment measures consequences under the current life
+at eight points in its actual 512-step training trajectory, restores the entire
+source world, and fits only the same 163 policy weights before acting again.
+
+`experiments/chuck_loss_architect/living/protocol.json` fixes two bodies, fresh
+seeds1711/2357, 32 conditioned fits per acquisition, and four arms: canonical,
+frozen, living measured credit, and deliberately rotated action credit.
+Probe-on/off and in-process Architect save/load controls bring the complete
+budget to **16,640 body updates and 2,560 policy fits**. CPU F32 only. BRAKE
+selections and actual dampen decreases are separate measurements. No claim
+of improvement precedes execution; frozen-before-fit continuation remains a
+stated limitation. The previous lives and corpora were recovered from their
+archived bytes with matching SHA-256 identities, without numerical replay.
+
+---
+
 ## 2026-10-14 — SPA history causally switches frozen acquired actions
 
 Fresh main `ca3e17a` supplies the code. A prewritten, SHA-pinned protocol changes
