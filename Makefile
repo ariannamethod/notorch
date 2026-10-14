@@ -175,20 +175,29 @@ sha256.o: sha256.c sha256.h
 sentencepiece.o: sentencepiece.c sentencepiece.h sha256.h
 	$(CC) $(CFLAGS) -c sentencepiece.c -o $@
 
-libnotorch.a: notorch.c notorch.h gguf.c gguf.h spa_agent.o spa_binding.o sentencepiece.o sha256.o Makefile $(CHUCK_HEADERS)
+pen7.o: pen7.c pen7.h harness/penelope_internal.h harness/arch.h harness/runtime.h gguf.h notorch.h sha256.h
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c pen7.c -o $@
+
+PEN7_LIB_OBJ = pen7.o harness/arch_penelope.o harness/runtime.o
+
+harness/arch_penelope.o: harness/penelope_internal.h
+
+HARNESS_HDR = harness/arch.h harness/arch_models.h harness/archs.h harness/runtime.h harness/logo.h harness/penelope_internal.h examples/bpe.h gguf.h notorch.h
+
+libnotorch.a: $(PEN7_LIB_OBJ) notorch.c notorch.h gguf.c gguf.h spa_agent.o spa_binding.o sentencepiece.o sha256.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf.o
 	rm -f libnotorch.a
-	$(AR) rcs libnotorch.a notorch.o gguf.o spa_agent.o spa_binding.o sentencepiece.o sha256.o
+	$(AR) rcs libnotorch.a notorch.o gguf.o spa_agent.o spa_binding.o sentencepiece.o sha256.o $(PEN7_LIB_OBJ)
 	@echo "Built: libnotorch.a (CPU + BLAS)"
 
 # GPU-enabled library — only when USE_CUDA=1. SFT trainer links this +
 # -lcudart -lcublas. Compiled with -DUSE_CUDA so #ifdef blocks activate.
-libnotorch_gpu.a: notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h spa_agent.o spa_binding.o sentencepiece.o sha256.o Makefile $(CHUCK_HEADERS)
+libnotorch_gpu.a: $(PEN7_LIB_OBJ) notorch.c notorch.h gguf.c gguf.h notorch_cuda.cu notorch_cuda.h spa_agent.o spa_binding.o sentencepiece.o sha256.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -DUSE_CUDA -I/usr/local/cuda/include -c notorch.c -o notorch_gpu.o
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c gguf.c -o gguf_gpu.o
 	nvcc -O2 -DUSE_CUDA -c notorch_cuda.cu -o notorch_cuda.o
-	$(AR) rcs libnotorch_gpu.a notorch_gpu.o gguf_gpu.o notorch_cuda.o spa_agent.o spa_binding.o sentencepiece.o sha256.o
+	$(AR) rcs libnotorch_gpu.a notorch_gpu.o gguf_gpu.o notorch_cuda.o spa_agent.o spa_binding.o sentencepiece.o sha256.o $(PEN7_LIB_OBJ)
 	@echo "Built: libnotorch_gpu.a (CPU + BLAS + CUDA)"
 
 # ── Python binding gate ──
@@ -214,8 +223,8 @@ endif
 
 shared: libnotorch.$(SOEXT)
 
-libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h spa_agent.c spa_agent.h spa_binding.c spa_binding.h sentencepiece.c sentencepiece.h sha256.c sha256.h Makefile $(CHUCK_HEADERS)
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c spa_agent.c spa_binding.c sentencepiece.c sha256.c -lm $(BLAS_LIBS)
+libnotorch.$(SOEXT): pen7.c pen7.h harness/arch_penelope.c harness/penelope_internal.h harness/runtime.c notorch.c notorch.h gguf.c gguf.h spa_agent.c spa_agent.h spa_binding.c spa_binding.h sentencepiece.c sentencepiece.h sha256.c sha256.h Makefile $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c spa_agent.c spa_binding.c sentencepiece.c sha256.c pen7.c harness/arch_penelope.c harness/runtime.c -lm $(BLAS_LIBS)
 	@echo "Built: libnotorch.$(SOEXT) ($(BLAS_NAME)) — load it with any FFI"
 
 # ── The harness as a linkable surface ──────────────────────────────────────
@@ -227,9 +236,9 @@ libnotorch.$(SOEXT): notorch.c notorch.h gguf.c gguf.h spa_agent.c spa_agent.h s
 # family table, the KV cache and the tokenizer in one archive, and main.c left
 # out of it as the CLI it is.
 #
-# Two archives and not one, because the split is real: libnotorch is the
-# substrate anything can use, libnotorch_harness is model-family code that only
-# means something to a caller that runs models. Link both, harness first.
+# The general family registry and tokenizer stay in libnotorch_harness. The
+# immutable PEN7 interface is also public in libnotorch, which reuses the same
+# PEN7/runtime objects. General harness consumers link both, harness first.
 HARNESS_LIB_OBJ = harness/archs.o harness/runtime.o harness/arch_llama.o \
                   harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_olmoe.o harness/arch_mamba.o \
                   harness/arch_resonance.o harness/arch_janus.o harness/arch_penelope.o examples/bpe.o
@@ -262,6 +271,7 @@ install: lib lib_harness
 	install -m 0644 libnotorch.a $(PREFIX)/lib/libnotorch.a
 	install -m 0644 libnotorch_harness.a $(PREFIX)/lib/libnotorch_harness.a
 	install -m 0644 notorch.h    $(PREFIX)/include/ariannamethod/notorch.h
+	install -m 0644 pen7.h $(PREFIX)/include/ariannamethod/pen7.h
 	install -m 0644 sentencepiece.h $(PREFIX)/include/ariannamethod/sentencepiece.h
 	install -m 0644 sha256.h $(PREFIX)/include/ariannamethod/sha256.h
 	install -m 0644 spa_agent.h  $(PREFIX)/include/ariannamethod/spa_agent.h
@@ -310,7 +320,6 @@ llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorc
 # table in harness/main.c; adding a family adds a file, not a branch.
 
 HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c harness/arch_penelope.c examples/bpe.c gguf.c notorch.c
-HARNESS_HDR = harness/arch.h harness/arch_models.h harness/archs.h harness/runtime.h harness/logo.h examples/bpe.h gguf.h notorch.h
 
 # `harness` is phony because a directory of that name sits right there, and
 # make would otherwise call it up to date and build nothing.
@@ -363,6 +372,14 @@ check_gemma3: test_gemma3
 	./test_gemma3
 
 
+test_pen7: tests/test_pen7.c pen7.h libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch.a -lm $(BLAS_LIBS)
+
+check_pen7: test_pen7
+	./test_pen7 $(MODEL) $(MODEL2)
+
+.PHONY: check_pen7
+
 test_penelope: tests/test_penelope.c libnotorch_harness.a libnotorch.a Makefile
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
 
@@ -385,7 +402,7 @@ check_parliament_values: test_parliament_values
 
 .PHONY: check_parliament_values
 
-test: test_penelope test_harness_emit test_parliament_values
+test: test_pen7 test_penelope test_harness_emit test_parliament_values
 
 .PHONY: check_residual check_gemma3
 
@@ -897,6 +914,7 @@ test_affinity: tests/test_affinity.c notorch.c notorch.h $(CHUCK_HEADERS)
 	@echo "Compiled: test_affinity (core selection on mixed-speed machines, $(BLAS_NAME))"
 
 test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_chuck_architect_conditioned test_chuck_architect_durability test_vision test_qpool test_qmatmul test_quantize test_gguf_write test_gguf_keys test_qmatvec_leak test_affinity test_plan_race test_wt_expert test_qgather test_f16_matvec test_q8_0_rows test_conv1d test_logmel test_residual test_multi_decode test_gemma3 test_smollm_tokenizer
+	./test_pen7
 	./test_penelope
 	./test_harness_emit
 	./test_parliament_values
@@ -1006,14 +1024,14 @@ clean:
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
 	rm -f test_sampling
-	rm -f pen7_to_gguf test_penelope test_harness_emit test_parliament_values test_tanh_sgd
+	rm -f pen7_to_gguf test_pen7 test_penelope test_harness_emit test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o
 	rm -f test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_chuck_architect_conditioned test_chuck_architect_durability test_chuck_lived tests/chuck_durability_notorch.o chuck_architect_train chuck_architect_future
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
 		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual test_gemma3 test_smollm_tokenizer \
-		notorch_test notorch_test_gpu notorch.o gguf.o libnotorch.a notorch_cuda.o \
+		notorch_test notorch_test_gpu notorch.o gguf.o pen7.o libnotorch.a notorch_cuda.o \
 		infer_janus_nt infer_gemma infer_llama \
 		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \
 		train_dpo train_grpo train_distillation test_vision test_gguf test_gguf_write \

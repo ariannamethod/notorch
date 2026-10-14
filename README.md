@@ -114,6 +114,21 @@ maximum observed logit differences are .224016 and .197905. Quantization and
 implementation parity are measured separately. Format, source pins, decoder
 repairs, conversion gates and reproduction: [PEN7 GGUF](docs/PEN7_GGUF.md).
 
+### Immutable PEN7 bodies for living hosts
+
+`pen7.h` links through `libnotorch.a`: quiet snapshot loading, complete file and
+canonical tokenizer SHA-256 identities, atomic shared ownership, strict byte BPE,
+and isolated reusable inference workspaces. It returns final logits together
+with the normalized contextual representation that feeds the output head.
+Every call begins with its own context; frozen parameters remain shared.
+
+A two-body forward mixes **every parameter** as `alpha*A + (1-alpha)*B`, including
+positions, norms and resonance gates. Matrix-sized scratch replaces a permanent
+third body, and alpha 0/1 preserve exact source outputs. The published Q8 bodies
+pass real 1/9/33/256-token parity, mixture and immutable-source checks; six
+compiled defects make the boundary gate fail. API, ownership, memory bounds
+and reproduction: [immutable PEN7 inference](docs/PEN7_INFERENCE.md).
+
 ### measured against llama.cpp, not against itself
 
 `make test_reference` runs both on the same weights at temperature 0 and compares the
