@@ -1,0 +1,64 @@
+{
+  "commands": [
+    {
+      "command": [
+        "python3",
+        "tests/test_spa_history_probe.py",
+        "--library",
+        "<build>/libnotorch.so",
+        "--json",
+        "<build>/preflight.json"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "{\"status\": \"PASS\", \"checks\": 10, \"deliberate_defects\": 15, \"native\": \"PASS: native composition, read-only scoring and malformed history refusal\"}\n"
+    },
+    {
+      "command": [
+        "python3",
+        "experiments/spa_agent/history_probe/run.py",
+        "--library",
+        "<build>/libnotorch.so",
+        "--protocol",
+        "experiments/spa_agent/history_probe/protocol.json",
+        "--output",
+        "<execution>"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "{\"status\": \"PASS\", \"readouts\": 2688, \"replay_updates\": 24576}\n"
+    },
+    {
+      "command": [
+        "python3",
+        "experiments/spa_agent/history_probe/audit.py",
+        "--execution-dir",
+        "<execution>",
+        "--output",
+        "<execution>/audit.json"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "{\"deliberate_corruptions_caught\": [\"missing_probe_cell\", \"duplicate_probe_cell\", \"altered_perception\", \"forged_donor_witness\"], \"independent_float32_max_score_error\": 3.5762786865234375e-07, \"records\": 2688, \"status\": \"PASS\"}\n"
+    }
+  ],
+  "compressed_probe": {
+    "bytes": 308329,
+    "sha256": "401d0c74ebf8ff33d8da57a69daf9f9cb42acb287e6611caf7b9ae7774799eaf"
+  },
+  "exact_round_trip": true,
+  "raw_probe": {
+    "bytes": 5775568,
+    "sha256": "0afeb32c92cedc529c41a3582fcbb9e53c95d53972a6bcad94aabe38fcd1fcfa"
+  },
+  "records": 2688,
+  "saved_lives": "external execution directory; exactly reconstructable through recorded recovery; excluded from Git",
+  "schema": 1,
+  "source_sha256": {
+    "experiments/spa_agent/history_probe/audit.py": "bf8f6be2441051a236a71465e6d98f11bc0ca1199862d618d1ea510ff181f3ac",
+    "experiments/spa_agent/history_probe/protocol.json": "af116f2d153e3494cba93eac55033604e8c01851431d1713658bd133c1d25af6",
+    "experiments/spa_agent/history_probe/run.py": "601a614e86f0b0fe27188218e38e007721995c3ec640418fee9af7219d3e25e7",
+    "tests/test_spa_history_probe.py": "f4543c8b10d897e4fda13f08b59eca95bf18a2cf05d67e25497c49a72abee142"
+  },
+  "status": "PASS"
+}

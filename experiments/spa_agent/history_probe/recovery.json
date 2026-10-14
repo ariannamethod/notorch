@@ -1,0 +1,30 @@
+{
+  "all_fit_receipts_and_before_after_hashes_exact": true,
+  "body_generation_runs": 0,
+  "comparison_receipts": 48,
+  "journal": {
+    "compressed": {
+      "bytes": 8031523,
+      "sha256": "803041017d0ca51967e7a074fb9aed691479b19293031d8dbbd90c79d0f9ad99"
+    },
+    "decoded_sha256": "f551bd423f99134592c0dccc2ff4b28a2cf95851aa74f2310e8e73d0e5a9eeb4"
+  },
+  "lives": {
+    "conditioned_mean8": {
+      "bytes": 2296,
+      "file": "conditioned_mean8.life",
+      "life_hash": "6b81d7cca041945e",
+      "sha256": "b4276a5ffbd920c3ca2136fc5cf029f5b5b691db39f8a35266ff0d45b306b762"
+    },
+    "initial": {
+      "bytes": 2296,
+      "file": "initial.life",
+      "life_hash": "a860088f913c7cde",
+      "sha256": "1bc29793c6cef28761f18f0e55645e8e5d59abaab60f6915c3a51eb25c1edf63"
+    }
+  },
+  "new_training_experiments": 0,
+  "purpose": "Exact recovery of previously acquired weights from original updates",
+  "replay_updates": 24576,
+  "status": "PASS"
+}

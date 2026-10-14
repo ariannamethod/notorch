@@ -1,0 +1,707 @@
+{
+  "archived_original_readouts": 192,
+  "artifacts": {
+    "probes.jsonl": {
+      "bytes": 5775568,
+      "sha256": "0afeb32c92cedc529c41a3582fcbb9e53c95d53972a6bcad94aabe38fcd1fcfa"
+    },
+    "recovery.json": {
+      "bytes": 957,
+      "sha256": "4bbef4ddac5681a6a47298bb737247e0b636a00d52fffb04106550bf7a592aee"
+    },
+    "start.json": {
+      "bytes": 2730,
+      "sha256": "ac0b9d2443ee62441ba8023de82fcddbfc42a9b3f812599898fff5cc7647313b"
+    },
+    "summary.json": {
+      "bytes": 12324,
+      "sha256": "645abe5a236b691024554167a798da7477a08f8b6898e023361da8f1da12789e"
+    }
+  },
+  "audit_policy_fit_calls": 0,
+  "audit_sha256": "bf8f6be2441051a236a71465e6d98f11bc0ca1199862d618d1ea510ff181f3ac",
+  "body_generation_runs": 0,
+  "deliberate_corruptions_caught": [
+    "missing_probe_cell",
+    "duplicate_probe_cell",
+    "altered_perception",
+    "forged_donor_witness"
+  ],
+  "groups": [
+    {
+      "arm": "conditioned_mean8",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        48,
+        0,
+        0
+      ],
+      "records": 48,
+      "split": "evaluation",
+      "stratum": "all",
+      "variant": "identity"
+    },
+    {
+      "arm": "conditioned_mean8",
+      "changed": 37,
+      "changed_sources": [
+        [
+          509,
+          1
+        ],
+        [
+          509,
+          4
+        ],
+        [
+          509,
+          5
+        ],
+        [
+          509,
+          7
+        ],
+        [
+          509,
+          11
+        ],
+        [
+          509,
+          13
+        ],
+        [
+          509,
+          14
+        ],
+        [
+          509,
+          15
+        ],
+        [
+          509,
+          16
+        ],
+        [
+          509,
+          20
+        ],
+        [
+          509,
+          21
+        ],
+        [
+          509,
+          23
+        ],
+        [
+          601,
+          4
+        ],
+        [
+          601,
+          10
+        ],
+        [
+          601,
+          13
+        ],
+        [
+          601,
+          17
+        ],
+        [
+          601,
+          20
+        ]
+      ],
+      "choices_keep_left_right": [
+        539,
+        11,
+        26
+      ],
+      "records": 576,
+      "split": "evaluation",
+      "stratum": "all",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "conditioned_mean8",
+      "changed": 29,
+      "changed_sources": [
+        [
+          509,
+          1
+        ],
+        [
+          509,
+          4
+        ],
+        [
+          509,
+          5
+        ],
+        [
+          509,
+          7
+        ],
+        [
+          509,
+          11
+        ],
+        [
+          509,
+          13
+        ],
+        [
+          509,
+          14
+        ],
+        [
+          509,
+          15
+        ],
+        [
+          509,
+          16
+        ],
+        [
+          509,
+          20
+        ],
+        [
+          509,
+          21
+        ],
+        [
+          509,
+          23
+        ],
+        [
+          601,
+          4
+        ],
+        [
+          601,
+          10
+        ],
+        [
+          601,
+          13
+        ],
+        [
+          601,
+          17
+        ],
+        [
+          601,
+          20
+        ]
+      ],
+      "choices_keep_left_right": [
+        31,
+        11,
+        18
+      ],
+      "records": 60,
+      "split": "evaluation",
+      "stratum": "donor_last_left",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "conditioned_mean8",
+      "changed": 8,
+      "changed_sources": [
+        [
+          509,
+          23
+        ],
+        [
+          601,
+          10
+        ]
+      ],
+      "choices_keep_left_right": [
+        508,
+        0,
+        8
+      ],
+      "records": 516,
+      "split": "evaluation",
+      "stratum": "donor_other_last",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "conditioned_mean8",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        48,
+        0,
+        0
+      ],
+      "records": 48,
+      "split": "evaluation",
+      "stratum": "all",
+      "variant": "zero_history"
+    },
+    {
+      "arm": "initial",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        48,
+        0,
+        0
+      ],
+      "records": 48,
+      "split": "evaluation",
+      "stratum": "all",
+      "variant": "identity"
+    },
+    {
+      "arm": "initial",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        576,
+        0,
+        0
+      ],
+      "records": 576,
+      "split": "evaluation",
+      "stratum": "all",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "initial",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        60,
+        0,
+        0
+      ],
+      "records": 60,
+      "split": "evaluation",
+      "stratum": "donor_last_left",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "initial",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        516,
+        0,
+        0
+      ],
+      "records": 516,
+      "split": "evaluation",
+      "stratum": "donor_other_last",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "initial",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        48,
+        0,
+        0
+      ],
+      "records": 48,
+      "split": "evaluation",
+      "stratum": "all",
+      "variant": "zero_history"
+    },
+    {
+      "arm": "conditioned_mean8",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        45,
+        1,
+        2
+      ],
+      "records": 48,
+      "split": "training",
+      "stratum": "all",
+      "variant": "identity"
+    },
+    {
+      "arm": "conditioned_mean8",
+      "changed": 69,
+      "changed_sources": [
+        [
+          42,
+          0
+        ],
+        [
+          42,
+          1
+        ],
+        [
+          42,
+          4
+        ],
+        [
+          42,
+          10
+        ],
+        [
+          42,
+          13
+        ],
+        [
+          42,
+          14
+        ],
+        [
+          42,
+          15
+        ],
+        [
+          42,
+          16
+        ],
+        [
+          42,
+          17
+        ],
+        [
+          42,
+          18
+        ],
+        [
+          42,
+          20
+        ],
+        [
+          42,
+          23
+        ],
+        [
+          73,
+          0
+        ],
+        [
+          73,
+          1
+        ],
+        [
+          73,
+          2
+        ],
+        [
+          73,
+          4
+        ],
+        [
+          73,
+          5
+        ],
+        [
+          73,
+          7
+        ],
+        [
+          73,
+          8
+        ],
+        [
+          73,
+          10
+        ],
+        [
+          73,
+          13
+        ],
+        [
+          73,
+          14
+        ],
+        [
+          73,
+          16
+        ],
+        [
+          73,
+          17
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          73,
+          23
+        ]
+      ],
+      "choices_keep_left_right": [
+        519,
+        18,
+        39
+      ],
+      "records": 576,
+      "split": "training",
+      "stratum": "all",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "conditioned_mean8",
+      "changed": 41,
+      "changed_sources": [
+        [
+          42,
+          0
+        ],
+        [
+          42,
+          1
+        ],
+        [
+          42,
+          10
+        ],
+        [
+          42,
+          13
+        ],
+        [
+          42,
+          14
+        ],
+        [
+          42,
+          15
+        ],
+        [
+          42,
+          16
+        ],
+        [
+          42,
+          17
+        ],
+        [
+          42,
+          18
+        ],
+        [
+          42,
+          20
+        ],
+        [
+          73,
+          0
+        ],
+        [
+          73,
+          1
+        ],
+        [
+          73,
+          2
+        ],
+        [
+          73,
+          4
+        ],
+        [
+          73,
+          5
+        ],
+        [
+          73,
+          7
+        ],
+        [
+          73,
+          8
+        ],
+        [
+          73,
+          13
+        ],
+        [
+          73,
+          14
+        ],
+        [
+          73,
+          16
+        ],
+        [
+          73,
+          17
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          73,
+          23
+        ]
+      ],
+      "choices_keep_left_right": [
+        12,
+        16,
+        32
+      ],
+      "records": 60,
+      "split": "training",
+      "stratum": "donor_last_left",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "conditioned_mean8",
+      "changed": 28,
+      "changed_sources": [
+        [
+          42,
+          4
+        ],
+        [
+          42,
+          23
+        ],
+        [
+          73,
+          0
+        ],
+        [
+          73,
+          10
+        ]
+      ],
+      "choices_keep_left_right": [
+        507,
+        2,
+        7
+      ],
+      "records": 516,
+      "split": "training",
+      "stratum": "donor_other_last",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "conditioned_mean8",
+      "changed": 4,
+      "changed_sources": [
+        [
+          42,
+          18
+        ],
+        [
+          42,
+          23
+        ],
+        [
+          73,
+          10
+        ],
+        [
+          73,
+          20
+        ]
+      ],
+      "choices_keep_left_right": [
+        45,
+        3,
+        0
+      ],
+      "records": 48,
+      "split": "training",
+      "stratum": "all",
+      "variant": "zero_history"
+    },
+    {
+      "arm": "initial",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        48,
+        0,
+        0
+      ],
+      "records": 48,
+      "split": "training",
+      "stratum": "all",
+      "variant": "identity"
+    },
+    {
+      "arm": "initial",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        576,
+        0,
+        0
+      ],
+      "records": 576,
+      "split": "training",
+      "stratum": "all",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "initial",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        60,
+        0,
+        0
+      ],
+      "records": 60,
+      "split": "training",
+      "stratum": "donor_last_left",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "initial",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        516,
+        0,
+        0
+      ],
+      "records": 516,
+      "split": "training",
+      "stratum": "donor_other_last",
+      "variant": "training_donor"
+    },
+    {
+      "arm": "initial",
+      "changed": 0,
+      "changed_sources": [],
+      "choices_keep_left_right": [
+        48,
+        0,
+        0
+      ],
+      "records": 48,
+      "split": "training",
+      "stratum": "all",
+      "variant": "zero_history"
+    }
+  ],
+  "independent_float32_max_score_error": 3.5762786865234375e-07,
+  "independent_float32_score_tolerance": 3e-06,
+  "new_training_experiments": 0,
+  "protocol_sha256": "af116f2d153e3494cba93eac55033604e8c01851431d1713658bd133c1d25af6",
+  "records": 2688,
+  "recovery_replayed_updates": 24576,
+  "schema": 1,
+  "status": "PASS"
+}

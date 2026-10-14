@@ -13,6 +13,37 @@ Newest entries on top.
 
 ---
 
+## 2026-10-14 — SPA history causally switches frozen acquired actions
+
+Fresh main `ca3e17a` supplies the code. A prewritten, SHA-pinned protocol changes
+only the ten captured history features 19–28 while fixing perception 0–18,
+recipient metadata, masks, policy weights and agent RNG/state. Each of 96
+retained sources receives original history, empty history and all twelve
+training donors with matching target/count, under initial and acquired weights.
+The complete 2,688-record native trace retains source and donor witnesses.
+
+Workspace maintenance removed the old local life files. Exact replay recovers
+the acquired policy: all 24,576 native update receipts, before/after hashes and
+the canonical life SHA match the original; 192 baseline readouts match before
+any intervention. Recovery updates are counted explicitly. There are zero new
+training experiments or body-generation runs; policy updates during probes=0.
+
+On the exposed evaluation field, donor-history changes produce 37 action
+changes across 17/48 source states (576 donor cells): KEEP/LEFT/RIGHT=539/11/26.
+Previous-LEFT donor histories account for 29 changes in 60 cells; other donors
+account for 8 in 516. These are whole-block interventions. Initial weights retain
+KEEP in all 1,344 probes. Empty history changes 4 training choices and 0 evaluation
+choices. No counterfactual host rewards are assigned; the measured consequence
+here is the typed action and native score response to captured history.
+
+Native preflight passes 10 checks and catches 15 deliberate defects. An independent
+scalar float32 policy read reconstructs all 2,688 records (maximum score error
+3.576278687e-7, fixed tolerance 3e-6), matches all aggregates and catches 4 record
+corruptions. Exact commands, raw compressed trace, acquisition identity and
+next rollout question: `experiments/spa_agent/history_probe/`.
+
+---
+
 ## 2026-10-14 — Preserve PEN7 allocation failure status
 
 PR170 review found that a failed family-body allocation or Q8 expansion lost
