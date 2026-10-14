@@ -1,1641 +1,329 @@
 <p align="center">
   <img src="assets/notorchlogo.jpg" alt="notorch" width="300">
 </p>
-  
 
 # notorch — Neural Networks In Pure C | by Arianna Method
 
 > **Read the [Arianna Method Manifesto](ARIANNA_METHOD_MANIFESTO.md) first.** This repository is governed by it.
 
 > *"fuck torch"*
-> — the entire header file, line 8
+> — the header file
 
----
+**notorch runs models. notorch trains models. in C. on the machine you already own.**
 
-## table of contents
+tensors, autograd, Chuck, packed GGUF inference. no Python runtime required.
+no pip. no conda. no `torch.nn.Module`. no handing the model to another framework
+to actually generate. just math, memory, and your compiler.
 
-- [what is this](#what)
-- [run a model](#run-a-model)
-- [use it from Python](#use-it-from-python)
-- [why](#why)
-- [the funeral](#the-funeral)
-- [architecture](#architecture)
-- [what's inside](#whats-inside)
-- [operations](#operations)
-- [owned sampling](#owned-sampling)
-- [numerical values](#numerical-values)
-- [SentencePiece Unigram](#sentencepiece-unigram)
-- [optimizers](#optimizers)
-- [the chuck optimizer](#the-chuck-optimizer)
-- [Chuck: Loss Architect](#chuck-loss-architect)
-- [bit-level precision — BitNet b1.58](#bit-level-precision--bitnet-b158)
-- [SwiGLU FFN](#swiglu-ffn)
-- [SPA — Sentence Phonon Attention](#spa--sentence-phonon-attention)
-- [SPA — Sentence Phonon Agent](#spa--sentence-phonon-agent)
-- [LoRA / adapter training](#lora--adapter-training)
-- [BLAS inference API](#blas-inference-api)
-- [audio front end — conv1d, STFT, log-mel](#audio-front-end--conv1d-stft-log-mel)
-- [inference — notorch runs models](#inference--notorch-runs-models-it-doesnt-just-train-them)
-- [alignment training — DPO / GRPO / distillation](#alignment-training--dpo--grpo--distillation)
-- [autograd](#autograd)
-- [building](#building)
-- [running tests](#running-tests)
-- [api overview](#api-overview)
-- [example: training a model in C](#example-training-a-model-in-c)
-- [platform support](#platform-support)
-- [file structure](#file-structure)
-- [tests](#tests)
-- [performance](#performance)
-- [references — how to train and run on notorch](#references--how-to-train-and-run-on-notorch)
-- [organisms that run on notorch](#organisms-that-run-on-notorch)
-- [js edition — notorch.js](#js-edition--notorchjs)
-- [philosophy](#philosophy)
-- [contributing](#contributing)
-- [license](#license)
-- [final words](#final-words)
+part of the [Arianna Method](https://github.com/ariannamethod/ariannamethod.ai):
+patterns over parameters, emergence over engineering, raw C over existential dread.
+unpleasant truth over bullshit.
 
----
+[why](#why) · [run](#run-a-model) · [train](#train-a-model) ·
+[capabilities](#whats-inside) · [architecture](#architecture) ·
+[build](#building) · [Python and JS](#python-and-javascript) ·
+[projects](#built-on-notorch) · [engineering log](NOTORCHLOG.md)
 
-## what
+## why
 
-**NOTORCH** is a complete neural network framework written in pure C — it **runs** models and it **trains** them. 
-no Python. no pip. no conda. no CUDA toolkit that takes 8 GB and your will to live. no `torch.nn.Module`. no `.backward()` that hides 400,000 lines of C++ behind a friendly API and a smile. no handing the model to llama.cpp to actually generate. no `RuntimeError: CUDA out of memory` at 3 AM when your paper deadline is in 6 hours.
+you wanted a matrix multiply. you got a virtual environment, a dependency tree,
+a CUDA compatibility séance, and `pip install wandb` to log your tears.
 
-just NOTORCH. just C.
+so here we are. **notorch**. tensors, autograd, optimizers, and the cold clarity
+of C. train on an Intel laptop. run on a Termux phone. keep quantized weights
+packed so the model fits in the RAM you actually have. embed the library in your
+own organism and let it carry its own physics.
 
-just floats. just `cc notorch.c -o notorch -lm`. done. you now have a neural network framework. the entire thing compiles in a couple seconds. try that with PyTorch. go ahead — you'd be waiting 47 minutes while cmake does whatever cmake does.
-
-it's part of [the Arianna Method Language](https://github.com/ariannamethod/ariannamethod.ai) — patterns over parameters, emergence over engineering, raw C over existential dread. unpleasant truth over bullshit.
-  
----
+> **R.I.P. PyTorch (in my codebase), 2016–2026.**
+>
+> he died as he lived: consuming all available memory.
+> in lieu of flowers, please send PRs.
 
 ## run a model
 
-one binary, one file, no runtime. point it at a GGUF and it talks.
+one binary, one GGUF. point it at a model and it talks.
 
 ```bash
+git clone https://github.com/ariannamethod/notorch.git
+cd notorch
 make harness
 ./notorch model.gguf "The capital of France is" 64 0.8
 ./notorch model.gguf                      # no prompt: chat in the terminal
 ```
 
-`harness/` is deliberately small — GGUF in, text out — and a model family is one file
-behind one interface (`harness/arch.h`). what runs today: **llama**, **mistral3**,
-**qwen2**, **qwen3**, **gemma3**, **gemma4**, **olmoe**, **qwen3moe**, **mamba**, and the Method's
-own **resonance**, **janus** and **penelope**. an architecture no family claims is refused by name
-rather than quietly pushed through the llama forward — a file the harness has never
-seen is a file it has never been tested on.
+`make harness` uses Accelerate on macOS or OpenBLAS on Linux. For a build
+without BLAS, use `make harness BLAS_FLAGS= BLAS_LIBS=`.
 
-that last sentence used to be aspirational. on 2026-09-25 `arch_gemma4.c` and
-`arch_mamba.c` — 880 lines between them — were compiled, named in that list, and had
-never had a file put through them. both worked on first contact, which is luck and not
-evidence, so the list below says which families have actually been run and which are
-still only code.
+The [family registry](harness/archs.c) routes **llama, mistral3, qwen2, qwen3,
+gemma3, gemma4, olmoe, qwen3moe, mamba, resonance, janus and penelope** through
+NoTorch's own decoders. Each family declares its architecture names; an unknown
+architecture is refused by name. File-level verification and reference runs live
+in the [harness record](NOTORCHLOG.md#readme-run-a-model).
 
-### Penelope and NanoJanus, in their own geometry
+The packed paths read quantized matrices in place. **Penelope and NanoJanus**
+use their own geometry: PEN7 F32 parameters execute directly, while Q8 matrices
+expand once to immutable F32. The [PEN7 converter](docs/PEN7_GGUF.md) and
+[shared-body inference API](docs/PEN7_INFERENCE.md) document conversion,
+ownership and whole-parameter mixtures.
 
-`tools/pen7_to_gguf.c` converts both native PEN7 bodies to a self-describing
-`penelope` GGUF. Default F32 conversion preserves every parameter bit;
-explicit `--q8_0` stores matrices in Q8_0 while positions, norms and blend gates
-remain F32. Each of the two recorded Q8 files is 21,308,576 bytes. Their shared
-2048-token byte/ranked-pass tokenizer travels inside the file.
+The harness also ships as `libnotorch_harness`, with CPU and CUDA family APIs.
+An organism can link it and supply its own generation loop.
+[Embedding and CUDA examples](NOTORCHLOG.md#readme-inference--notorch-runs-models-it-doesnt-just-train-them).
 
-The family expands Q8 matrices once through canonical `gguf_dequant` into owned
-immutable F32 for execution and future parameter mixing. Auxiliary F32 tensors
-borrow the file mapping. Full F32 parameter memory remains about 74.84 MiB per
-body, with mapped storage and sequence buffers additional. The ordinary packed
-paths of other families keep their existing contract.
+## train a model
 
-The native-source gate checks both bodies at 1/9/33/256 tokens, full and chunked:
-32,768 Q8-expanded logits match the native C oracle using the same expanded
-values exactly on the scalar reference build. Compared with the original F32
-models, all eight next-token argmaxes and both fixed 16-token greedy paths match;
-maximum observed logit differences are .224016 and .197905. Quantization and
-implementation parity are measured separately. Format, source pins, decoder
-repairs, conversion gates and reproduction: [PEN7 GGUF](docs/PEN7_GGUF.md).
-
-### Immutable PEN7 bodies for living hosts
-
-`pen7.h` links through `libnotorch.a`: quiet snapshot loading, complete file and
-canonical tokenizer SHA-256 identities, atomic shared ownership, strict byte BPE,
-and isolated reusable inference workspaces. It returns final logits together
-with the normalized contextual representation that feeds the output head.
-Every call begins with its own context; frozen parameters remain shared.
-Load-time allocation refusals report `NT_PEN7_E_MEMORY`, including Q8 expansion,
-with no diagnostics, partial handle or retained allocations.
-
-A two-body forward mixes **every parameter** as `alpha*A + (1-alpha)*B`, including
-positions, norms and resonance gates. Matrix-sized scratch replaces a permanent
-third body, and alpha 0/1 preserve exact source outputs. The published Q8 bodies
-pass real 1/9/33/256-token parity, mixture and immutable-source checks; six
-compiled defects make the boundary gate fail. API, ownership, memory bounds
-and reproduction: [immutable PEN7 inference](docs/PEN7_INFERENCE.md).
-
-### measured against llama.cpp, not against itself
-
-`make test_reference` runs both on the same weights at temperature 0 and compares the
-bytes; where the two part on a coin-flip it hands the reference's own answer back to
-both and requires them to agree again. it refuses to judge a file where the two sides
-do not tokenize the prompt identically, and says so with the id counts.
-
-all of the below is one machine — the polygon, an i5-8500T, six cores, no AVX-512 —
-six threads on both sides, a 61-token prompt and 24 generated, `llama-bench -p 61 -n 24`
-against `./notorch -q -r 3 -n 24`. **three passes in one process, median reported, and
-the resident set beside every row**, because the same binary on the same file has read
-6.7 and 18.8 t/s in one afternoon and the only difference was how much memory happened
-to be free. every run below saw 30.1 GiB available. measured 2026-09-25.
-
-| file | reference gate | prefill | llama.cpp | decode | llama.cpp | resident |
-|---|---|---|---|---|---|---|
-| Qwen3-4B Q4_K_M | 1 identical, 2 tie-break | 30.1 t/s | 47.72 | 10.0 t/s | 11.12 | 2.38 GiB |
-| Ministral-3B Q4_K_M | 2 identical, 1 tie-break | 34.9 | 57.88 | 11.8 | 13.22 | 2.05 |
-| Qwen3-30B-A3B Q4_K_M | 3 identical | 24.6 | 30.66 | 9.7 | 10.78 | 17.32 |
-| gemma-4-E4B Q4_0 | **1 diverged** of 3 | 19.2 | 38.45 | 8.2 | 8.90 | 4.37 |
-| gemma-4-E4B Q8_0 | 2 identical, 1 tie-break | 8.9 | 34.35 | 5.1 | 5.80 | 7.57 |
-| mamba-130m Q4_K_M | 3 tie-break | 140.5 | 604.26 | 51.8* | 191.43 | 0.10 |
-
-*mamba's decode is measured on a five-token prompt and swings 42.2 / 51.8 / 81.6 across
-the three passes: a 130M body finishes a token in twenty milliseconds and the figure is
-mostly noise. on the 61-token prompt it greedily emits its stop token immediately —
-`<|endoftext|>` is id 0 in that file, and is also its BOS — and decodes nothing at all,
-three times out of three. that is the model's own choice and not a defect; `make
-test_repeat` reads `NOTORCH_REPEAT_OK` for it and three greedy passes in one process
-produce byte-identical ids.
-
-the same table a month ago said 11.6 t/s for the first row. that figure was taken on a
-53-token prompt, so it is not this row's baseline; rebuilt at `30651c9` and rerun here
-on the same 61-token prompt it reads 11.2, 11.3, 11.1 with 5.9, 5.9, 5.7 of decode at
-the same 2.38 GiB resident. **2.67x on prefill and 1.71x on decode**, measured rather
-than inferred from two numbers taken under different conditions.
-
-zero diverged on five of the six. the exception is named rather than hidden: gemma-4 at
-Q4_0 emits one token where the reference emits `<turn|>` and stops, on one prompt of
-three, while the same model at Q8_0 matches. nine hypotheses are refuted with their
-evidence in `NOTORCHLOG.md` — the Q4_0 matmul is not the cause, and neither is the
-tokenizer, the stop set, the layer geometry or the dequantiser.
-
-decode is within 1.09x to 1.14x of the reference everywhere except mamba, whose own
-figure is noise. prefill is not one number: 1.25x on the mixture, 1.59x and 1.66x on
-the dense Q4_K bodies, 2.00x on Q4_0, and **3.86x on Q8_0** and **4.30x on mamba** —
-the two worst in the table and therefore the two that matter next. Q8_0 has an AVX2
-arm, so its distance is not the missing-arm class that Q4_0 turned out to be.
-
-what the table does and does not cover. the six files above exercise `arch_llama.c`
-through **qwen3** and **mistral3**, `arch_olmoe.c` through **qwen3moe**,
-`arch_gemma4.c` and `arch_mamba.c` entirely. **resonance** and **janus** are the
-Method's own bodies and have their own gates — `RESONANCE_OK` and `JANUS_OK` run on
-every commit, on neo rather than here. that leaves **llama**, **qwen2** and **olmoe**
-claimed by the table and covered by nothing: the code is there, no file on either
-machine carries those arch strings, and until one does they are three more names on a
-list rather than three families that work.
-
-
-the harness is also a library. a body should link it rather than fork it:
+copy a trainer. give it a corpus. let Chuck watch the gradients.
 
 ```bash
-make lib lib_harness && make install PREFIX=/opt/homebrew
-cc -I$PREFIX/include/ariannamethod body.c \
-   -L$PREFIX/lib -lnotorch_harness -lnotorch -framework Accelerate -lm
+make train_llama3_char
+./train_llama3_char 15000 0.0003 corpus.txt
 ```
+
+The arguments are steps, learning rate and corpus path. The
+[char-level trainer](examples/train_llama3_char.c) builds a LLaMA-style model
+with GQA, RoPE and SwiGLU. [BPE training](examples/train_llama3_bpe.c),
+[LoRA SFT](examples/train_resonance_lora.c), and the other trainers live in
+[examples/](examples/).
+
+The loop underneath is explicit: register parameters and inputs, build the
+forward pass on the tape, then:
 
 ```c
-#include "harness/archs.h"
-const nt_arch *arch = nt_pick_arch(gf->arch);        /* NULL if no family claims it */
-void *model = arch->load(gf, &dims);
-int rc = arch->forward(model, kv, ids, n, 0, logits);  /* NT_OK, or a refusal */
+float loss_value = nt_tape_get()->entries[loss].output->data[0];
+nt_tape_backward(loss);
+nt_tape_clip_grads(1.0f);
+nt_tape_chuck_step(lr, loss_value);
+nt_tape_clear();
 ```
 
-The llama/Qwen and Gemma 3 families also expose `arch->forward_residual(..., callback, user)`.
-After each complete decoder layer the callback receives a writable `[n, width]`
-residual view plus its layer and absolute token positions. It can collect
-activations or apply a direction in place; a NULL callback preserves ordinary
-inference. Other families leave this optional entry NULL. For llama/Qwen, a constant layer shift
-can be stored as `blk.L.ffn_down.bias` in a new GGUF and runs without a callback
-in this family. `make check_residual` checks observation, intervention, error
-propagation and saved-bias equivalence using a tiny generated Qwen2 fixture.
+forward. backward. step. clear. no ceremony.
 
-Gemma 3 has its own packed-weight decoder in `harness/arch_gemma3.c`: embedding
-scaling, independent head width, per-head QK normalization, NEOX rotation with
-local/global frequencies, sliding-window attention, GELU and both post-sublayer
-normalizations. `nt_arch_gemma3.forward_residual` observes or changes the residual
-**after** the complete block. A saved `ffn_down.bias` cannot reproduce this shift
-through the post-FFN normalization; this family rejects that tensor. Scalar
-sliding patterns and unscaled/linear global RoPE are supported; array patterns,
-partial rotary dimensions and other scaling methods are rejected. The initial
-real-model target is Gemma 3 270M IT Q8_0; it is not one of the older benchmark
-rows above. `make check_gemma3` runs deterministic six-layer equations across a
-window boundary, prefill/decode and callback contracts without downloading weights.
+For a complete small program, see the
+[standalone C training example](NOTORCHLOG.md#readme-example-training-a-model-in-c).
+For a minimal model to take apart, start with
+[notorch-simple-llm](https://github.com/ariannamethod/notorch-simple-llm).
 
-For Gemma 3 numerical experiments, set `NT_NO_I8=1` explicitly to keep activations
-in float while reading the packed Q8_0 weights. The normal shared runtime default
-still quantizes activations to int8. On the initial 32-step development prompt,
-that default differed from llama.cpp's packed path at two teacher-forced argmax
-positions and produced a different free greedy continuation. The float-activation
-path is checked against llama.cpp running an exact F32 dequantization of the same
-stored weights: 86/86 teacher-forced argmax and free greedy tokens agree over
-development, Unicode and 511/512/513-token window probes. The maximum absolute
-logit difference is 0.0503492; full comparison conditions are in NOTORCHLOG.
+## what's inside
 
-The tokenizer reads `tokenizer.ggml.add_space_prefix`. A caller constructing chat
-from explicit special-token IDs can use `bpe_encode_raw` for intervening text: it
-adds neither BOS nor a synthetic SentencePiece prefix and does not change tokenizer
-state. Normal `bpe_encode` retains the file's BOS and prefix policy. Literal
-USER_DEFINED tokens, including Gemma's whitespace runs, are matched before space
-escaping in both modes.
+### tensors, autograd, inference
 
-`make test_consumer_link` proves that from outside the tree, and then builds the same
-program *without* the archive and requires it to fail. details in
-[inference](#inference--notorch-runs-models-it-doesnt-just-train-them).
+`nt_tensor` is a refcounted array of floats with shape and strides. The tape
+records forward operations and walks them backward. You can read the arithmetic
+that trains your model.
 
----
+| surface | what you get |
+|---|---|
+| transformer training | embeddings, linear layers, RMS/layer norm, causal MHA/GQA, RoPE, GEGLU/SwiGLU, cross-entropy |
+| Method architectures | RRPRAM, low-rank and broadcast attention, sequence gates, Janus and Resonance paths |
+| BitNet b1.58 | ternary-weight forward, int8 activation quantization, straight-through gradients |
+| training controls | clipping, accumulation, schedules, checkpoints, frozen parameters and LoRA adapters |
+| optimizers | SGD, diagonal baseline, decoupled decay, Chuck |
+| packed inference | GGUF loading/writing, quantized matvec/matmul, family decoders, KV/state handling |
+| vision and audio | image preprocessing and ViT patches; forward-only image ops, conv1d, STFT and log-mel |
+| organism-owned arithmetic | sampling, stateless numerical values, parliament election/injection/Oja, native SentencePiece Unigram |
 
-## use it from Python
+[Core API](notorch.h) · [operation list](NOTORCHLOG.md#readme-operations) ·
+[API examples](NOTORCHLOG.md#readme-api-overview) ·
+[sampling](docs/SAMPLING.md) · [numerical values](docs/NUMERICAL_VALUES.md) ·
+[SentencePiece](docs/SENTENCEPIECE.md) · [SHA-256](docs/SHA256.md)
 
-**NOTORCH** is C, it stays C, but... Python? yep. 
-the thing most people want on a Tuesday is to read a GGUF and multiply something by it 
-without installing a framework first, so there is a ctypes binding: no numpy, no build 
-step for the Python side, no dependencies at all. `ctypes` ships with Python; the shared 
-library is one make target.
+### Chuck — the optimizer with opinions
+
+**Chuck is the self-aware optimizer.** It watches the global loss trend,
+monitors individual gradients, injects noise through stagnation, freezes dead
+parameters, and adjusts learning rate over longer timescales.
+
+```c
+nt_tape_chuck_step(lr, loss_value);
+```
+
+**Chuck: Loss Architect** gives that training world an action language:
+**state → policy → typed action → measured consequence → acquired experience**.
+Its 163-parameter policy chooses HOLD, BRAKE or PUSH and carries weights,
+history, RNG and pending decisions through save/resume. The living acquisition
+loop measures alternatives in the current training world, restores it, acquires
+the consequences and chooses its next action. Canonical Chuck remains available
+through the same ordinary call.
+
+[Optimizer lineage](https://github.com/iamolegataeff/chuck.optimizer) ·
+[Loss Architect API and objective](docs/chuck-loss-architect.md) ·
+[living acquisition](experiments/chuck_loss_architect/living/README.md) ·
+[experiments and results](NOTORCHLOG.md#readme-optimizers)
+
+### SPA — from attention to agent
+
+**Sentence Phonon Attention** embeds a sentence, measures its connectedness to
+recent history and modulates the next-token distribution. **Sentence Phonon
+Agent** lives above that sensory field: a persistent 267-parameter policy
+chooses KEEP, RESEED_LEFT or RESEED_RIGHT and learns from the host's measured
+consequences. Its acquired weights, action history and private RNG travel with
+its saved life.
+
+**PostGPT → SPA → Q → Sentence Phonon Agent.** WOLFE supplies the typed-action
+lineage; Netta supplies action, consequence and experience. Chuck carries the
+parallel into training.
+
+[SPA perception](NOTORCHLOG.md#readme-spa--sentence-phonon-attention) ·
+[Agent API and research](docs/spa-agent.md) · [Python host loop](docs/spa-python.md) ·
+[experiments](experiments/spa_agent/README.md) ·
+[history and acquired choices](experiments/spa_agent/history_probe/README.md)
+
+### post-training
+
+Runnable C trainers ship for DPO, GRPO and distillation. Freeze base parameters
+for adapters; keep the gradients flowing through them.
 
 ```bash
-make shared          # libnotorch.so, or libnotorch.dylib on macOS
+make train_dpo
+make train_grpo
+make train_distillation
+```
+
+Each trainer runs a tiny built-in dataset without arguments and accepts real
+weights and data. Copy the loss and optimizer wiring into your own model.
+[Trainer details](NOTORCHLOG.md#readme-alignment-training--dpo--grpo--distillation) ·
+[LoRA mechanics](NOTORCHLOG.md#readme-lora--adapter-training).
+
+## architecture
+
+The core is [notorch.h](notorch.h) and [notorch.c](notorch.c). Family decoders,
+backends and organs have their own files. The arithmetic stays here.
+
+| place | responsibility |
+|---|---|
+| `notorch.h` / `notorch.c` | tensors, tape, operations, optimizers and numerical kernels |
+| `gguf.h` / `gguf.c` | GGUF parsing, writing and dequantization |
+| `harness/` | family decoders behind `nt_arch`, shared runtime, CLI |
+| `notorch_simd.h` | in-house AVX2/FMA math with pthread workers |
+| `notorch_cuda.*` / `notorch_metal.*` | CUDA and Metal backends |
+| `chuck_architect.h` / `chuck_architect_impl.h` | Loss Architect policy, actions and experience |
+| `spa_agent.*` | Sentence Phonon Agent |
+| `pen7.*` / `sentencepiece.*` / `sha256.*` | immutable PEN7 bodies, native Unigram tokenizer and identities |
+| `python/` / `js-edition/` / `termux-edition/` | Python bindings, JavaScript port, Android setup |
+| `examples/` / `tests/` / `experiments/` | runnable models, verification, recorded experiments |
+| `docs/` / `NOTORCHLOG.md` | feature contracts and the engineering record |
+
+`libnotorch` provides the substrate. `libnotorch_harness` provides the model
+families. Link the libraries, keep your organism's physics in your organism.
+
+## building
+
+A C compiler, make, libm and pthreads. BLAS and GPU backends are optional.
+Run these commands from the repository root.
+
+| target | command |
+|---|---|
+| CPU with Accelerate (macOS) or OpenBLAS (Linux) | `make` |
+| CPU without BLAS | `make cpu` |
+| in-house AVX2/FMA on x86-64 | `make simd` |
+| CUDA training backend | `make gpu` |
+| Apple Silicon packed Metal inference | `make infer_gguf_metal` |
+| shared library for bindings | `make shared` |
+| static core and harness libraries | `make lib lib_harness` |
+| CUDA harness library | `make lib lib_harness libnotorch_cuda.a` |
+| install headers and libraries | `make install PREFIX=/your/prefix` |
+
+CUDA targets need the CUDA toolkit; Metal ships with macOS. For library or
+trainer builds without BLAS, pass `BLAS_FLAGS= BLAS_LIBS=`. Backend flags must
+match when linking a consumer. [Build and backend details](NOTORCHLOG.md#readme-building).
+
+**Android / Termux:** the same C tree runs on ARM64 phones.
+[Setup, training walkthrough and measurements](termux-edition/README.md).
+
+### verification
+
+```bash
+make test                 # native CPU suite
+make test_harness         # rebuild both sides of harness parity
+make test_tokenizer       # tokenizer reference gates
+make test_js              # JavaScript suite
+```
+
+Model-dependent gates use their fixture/model inputs; platform-specific gates
+need their backend. See the [Makefile](Makefile) for targets and variables, and
+the [test record](NOTORCHLOG.md#readme-running-tests) for the verification map.
+Measured runs, machines, commands, regressions and fixes belong in
+[NOTORCHLOG](NOTORCHLOG.md). the numbers keep their receipts.
+
+## Python and JavaScript
+
+### Python: call the C
+
+`ctypes` ships with Python. The binding calls NoTorch's kernels directly.
+No NumPy dependency, no second implementation of the math.
+
+```bash
+make shared
+export PYTHONPATH="$PWD/python${PYTHONPATH:+:$PYTHONPATH}"
 ```
 
 ```python
 from notorch import Notorch
 
-nt = Notorch()                       # finds libnotorch next to the repo, or $NOTORCH_LIB
-
-with nt.open("model.gguf") as g:
-    print(g)                         # <GGUF llama L=13 E=576 V=32000 tensors=120>
-
-    w = g["output.weight"]           # <Tensor output.weight (32000, 576) Q8_0>
-    row = w.dequant_row(3)           # one row, decoded on its own — an embedding lookup
-
-    import ctypes
-    x = (ctypes.c_float * w.shape[1])()
-    out = (ctypes.c_float * w.shape[0])()
-    nt.qmatvec(out, w.packed, w.dtype, x, w.shape[0], w.shape[1])
+nt = Notorch()
+with nt.open("model.gguf") as model:
+    print(model)
+    print(model["token_embd.weight"].dequant_row(3))
 ```
 
-`w.packed` is a pointer into the file's own bytes, `qmatvec` is the C kernel reading 
-them in place, and the weights are never expanded to f32 — a Q4_K tensor stays at 
-roughly half a byte per weight instead of four. Buffers are plain ctypes arrays, 
-so `memoryview(out)` reads them with no copy, and `numpy.frombuffer(out)` does too if 
-you happen to want numpy. But nothing here requires it.
+[Packed matvec example](NOTORCHLOG.md#readme-use-it-from-python) ·
+[binding source](python/notorch.py) · [SPA from Python](docs/spa-python.md).
 
-The binding is `python/notorch.py`, 246 lines of type declarations. What can silently 
-break in a layer like this is the struct layout — a field description that has drifted 
-reads its neighbours and reports them as data — so `make test_python MODEL=your.gguf` 
-compares every offset ctypes believes in against what the C compiler actually emitted, 
-then checks a real model through both paths.
+### JavaScript: take it to the browser
 
-## why
+[notorch.js](js-edition/README.md) brings tensors, autograd, Chuck and GGUF
+inference to JavaScript, with a CPU path and optional WebGPU.
+An ES module. zero npm dependencies. zero `node_modules`.
 
-a story:
-once upon a time there was a framework called PyTorch. it had autograd. it had CUDA support. it had a build system that required a PhD in software engineering and a pact with ancient spirits. and every time you wanted to train a 4-layer MLP on a dataset smaller than your browser cache, you had to:
+## built on notorch
 
-1. create a virtual environment (2 minutes)
-2. install torch (5 minutes, 2.7 GB, your SSD weeps)
-3. install torchvision just in case (800 MB more, your SSD files for divorce)
-4. write 47 lines of boilerplate (`class MyModel(nn.Module)`, `def forward(self, x)`, `optimizer = torch.optim.SGD(model.parameters(), lr=3e-4)`, `loss.backward()`, `optimizer.step()`, `optimizer.zero_grad()`, `if torch.cuda.is_available():`, `model.to(device)`, `x = x.to(device)`, sweet mother of god make it stop)
-5. realize you forgot `model.train()` vs `model.eval()` and your dropout is wrong
-6. debug for 3 hours
-7. realize the bug was actually in the data loader
-8. cry
-9. `pip install wandb` to log your tears
-10. realize torch updated and broke everything
-  
-and for WHAT? a matmul and a softmax. that's all neural networks are. matmuls and softmaxes and an unhealthy relationship with gradient descent.
+Start with a small model, then pull the machinery apart.
 
-so here we are. **notorch**. everything you need. nothing you don't. no Python runtime. no GIL. no garbage collector pausing your training at the worst possible moment. no `torch.no_grad()` context manager that you forget and then wonder why you're out of memory. just tensors, autograd, optimizers, and the cold clarity of C.
-
-**the entire framework is two files.** `notorch.h` and `notorch.c`. that's it. ~6400 lines. you can read the whole thing in an afternoon. try reading PyTorch's source in an afternoon. actually don't. you'll end up in a hospital.
-
----
-
-## the funeral
-
-```
-        ╔═══════════════════════════════════════════════════════╗
-        ║                                                       ║
-        ║   R.I.P. PyTorch (in my codebase)                     ║
-        ║   2016 - 2026                                         ║
-        ║                                                       ║
-        ║   "He died as he lived:                               ║
-        ║    consuming all available memory                     ║
-        ║    and segfaulting at the worst moment"               ║
-        ║                                                       ║
-        ║   Survived by: pip, conda, 2.7 GB of dead weight,     ║
-        ║   a thousand Stack Overflow questions about CUDA      ║
-        ║   driver versions, and a broken conda environment     ║
-        ║   that nobody dares to delete.                        ║
-        ║                                                       ║
-        ║   In lieu of flowers, please send PRs.                ║
-        ║                                                       ║
-        ╚═══════════════════════════════════════════════════════╝
-```
-
-notorch is for people who:
-- want to understand what's actually happening (all ~6400 lines of it)
-- want to train models on machines that aren't cloud instances
-- want compile times measured in seconds, not minutes
-- want to embed neural network inference in C/C++ applications without shipping half of Python
-- refuse to accept 2.7 GB as the price of a matrix multiply
-
----
-
-## architecture
-
-```
-Your data (floats in memory, as god intended)
-    ↓
-nt_tensor — multidimensional arrays with refcounting
-    ↓
-┌───────────────────────────────────────────────────────────┐
-│  Forward Operations (recorded on tape)                    │
-│                                                           │
-│  Classical transformer:                                   │
-│    ├─ nt_linear          (W @ x + b)                      │
-│    ├─ nt_seq_linear      (batched W @ X)                  │
-│    ├─ nt_seq_linear_t    (W^T @ X — Janus Echo)           │
-│    ├─ nt_embedding       (lookup table)                   │
-│    ├─ nt_seq_embedding   (tokens + positions)             │
-│    ├─ nt_rmsnorm         (RMS normalization)              │
-│    ├─ nt_layernorm       (layer normalization)            │
-│    ├─ nt_causal_attention (single-head causal)            │
-│    ├─ nt_mh_causal_attention (multi-head)                 │
-│    ├─ nt_gqa_causal_attention (grouped-query)             │
-│    ├─ nt_rrpram_attention (positional pattern — Janus)    │
-│    ├─ nt_silu / nt_gelu / nt_sigmoid (activations)        │
-│    ├─ nt_geglu           (Gemma-3 style FFN)              │
-│    ├─ nt_swiglu          (LLaMA/Qwen/BitNet FFN)          │
-│    ├─ nt_rope            (rotary embeddings)              │
-│    ├─ nt_dropout         (inverted dropout)               │
-│    ├─ nt_softmax / nt_cross_entropy                       │
-│    └─ nt_add / nt_mul / nt_scale / nt_scale_by_t / concat │
-│                                                           │
-│  BitNet b1.58 (ternary quantization):                     │
-│    ├─ nt_bit_linear      (y = bitquant(W) @ x, STE)       │
-│    └─ nt_bit_seq_linear  (BitLinear over T positions)     │
-│                                                           │
-│  Inference-time helpers (no tape):                        │
-│    ├─ nt_spa_embed_sentence   (phonon sentence embedding) │
-│    ├─ nt_spa_connectedness    (cross-sentence attention)  │
-│    ├─ nt_spa_modulate_logits  (SPA → temperature)         │
-│    ├─ nt_blas_mm / nt_blas_mmT (matmul for inference)     │
-│    └─ nt_blas_matvec          (hot-loop matvec)           │
-└───────────────────────────────────────────────────────────┘
-    ↓
-nt_tape_backward() — reverse-mode automatic differentiation
-    ↓
-┌──────────────────────────────────────────────────┐
-│  Optimizers                                      │
-│    ├─ diagonal baseline  (the classic)           │
-│    ├─ diagonal + decay   (with weight decay)     │
-│    ├─ Chuck              (self-aware adaptive)   │
-│    └─ nt_tape_freeze_param (LoRA / adapter)      │
-└──────────────────────────────────────────────────┘
-    ↓
-Your model is trained. in C. without Python. you are free.
-```
-
----
-
-## what's inside
-
-### tensors
-
-`nt_tensor` — a multidimensional array of floats. up to 8 dimensions. refcounted. heap-allocated. that's it. no `torch.Tensor` with 400 attributes and a complex metaclass hierarchy. no `requires_grad` flag that you forget to set. no `.detach().cpu().numpy()` chain of shame. just a struct with `float* data`, shape, strides, and a refcount.
-
-```c
-nt_tensor* t = nt_tensor_new(1024);          // 1D
-nt_tensor* m = nt_tensor_new2d(768, 512);    // 2D
-nt_tensor_xavier(m, 768, 512);               // Xavier init
-nt_tensor_free(t);                            // refcount → 0 → freed
-```
-
-maximum 268M elements per tensor (`NT_MAX_ELEMENTS = 1 << 28`). if you need more than that, you're doing something wrong, or something very right, and in either case you should probably be using a GPU. which we also support. via CUDA. because we're not savages.
-
-### autograd tape
-
-reverse-mode automatic differentiation via an explicit operation tape. every forward op records itself. backward traverses the tape in reverse and computes gradients. textbook reverse-mode AD. no dynamic graph voodoo. no JIT compilation. no `torch.autograd.Function` with five methods you need to override.
-
-```c
-nt_tape_start();                              // start recording
-int w_idx = nt_tape_param(W);                // register trainable param
-int y_idx = nt_linear(w_idx, x_idx, -1);     // forward: y = W @ x
-int loss = nt_cross_entropy(y_idx, target);   // loss
-nt_tape_backward(loss);                       // backward pass
-nt_tape_adam_step(0.001f);                    // update weights
-nt_tape_clear();                              // reset for next step
-```
-
-that's the entire training loop. in C. seven lines. no `optimizer.zero_grad()` that you inevitably forget. no `with torch.no_grad():` context manager. no `.backward(retain_graph=True)` because you accidentally used an intermediate twice. just: start, forward, backward, step, clear. like breathing. in. out. in. out. the Buddha would approve.
-
----
-
-## operations
-
-every operation you need to build a modern transformer, and some you didn't know you did:
-
-| operation | function | what it does |
-|---|---|---|
-| linear | `nt_linear` | y = W @ x + b |
-| seq linear | `nt_seq_linear` | batched matmul over T positions |
-| seq linear^T | `nt_seq_linear_t` | Y[t] = W^T @ X[t] — Janus Echo W^T·W pattern |
-| embedding | `nt_embedding` | lookup row from embedding matrix |
-| seq embedding | `nt_seq_embedding` | tokens + positional encoding |
-| RMS norm | `nt_rmsnorm` / `nt_seq_rmsnorm` | root mean square normalization |
-| layer norm | `nt_layernorm` / `nt_seq_layernorm` | mean/variance normalization |
-| causal attention | `nt_causal_attention` | single-head causal self-attention |
-| multi-head attn | `nt_mh_causal_attention` | MHA causal self-attention |
-| grouped-query attn | `nt_gqa_causal_attention` | GQA — Q: n_heads, K/V: n_kv_heads |
-| RRPRAM attn | `nt_rrpram_attention` | positional pattern recognition (x @ Wr, causal) |
-| RRPRAM low-rank | `nt_rrpram_lowrank_attention` | factorized Wr = Wr_a × Wr_b (op 33) — Janus param-saving, trained at scale on Resonance 200M |
-| SiLU | `nt_silu` | x × σ(x) — the swish |
-| GELU | `nt_gelu` | tanh approximation |
-| sigmoid | `nt_sigmoid` | 1 / (1 + exp(-x)) |
-| tanh | `nt_tanh` | shape-preserving hyperbolic tangent, gradient 1 − y² |
-| GEGLU | `nt_geglu` | GELU-gated linear unit (Gemma-3 FFN) |
-| SwiGLU | `nt_swiglu` | SiLU(gate) * up — LLaMA/Qwen/BitNet FFN |
-| BitLinear | `nt_bit_linear` | y = bitquant(W) @ x — BitNet 1.58 |
-| BitLinear seq | `nt_bit_seq_linear` | BitLinear over T positions |
-| softmax | `nt_softmax` | exp-normalize with numerical stability |
-| cross entropy | `nt_cross_entropy` / `nt_seq_cross_entropy` | -log softmax[target] |
-| RoPE | `nt_rope` | rotary position embeddings |
-| dropout | `nt_dropout` | inverted dropout (training only) |
-| add/mul/scale | `nt_add` / `nt_mul` / `nt_scale` | elementwise ops |
-| scale by tensor | `nt_scale_by_t` | y[i] = a[0] * x[i], a is scalar tensor |
-| concat | `nt_concat` | per-position concatenation |
-
-every single one has a correct backward pass. every single one passes numerical gradient checking — checked twice. debugging gradient errors in C without a debugger at 4 AM rewires the brain in ways formal verification theorists dream about.
-
----
-
-## owned sampling
-
-Haiku's next word has its own random state. `nt_rng_seed`, `nt_rng_u32`,
-`nt_rng_uniform`, and `nt_rng_index` operate on a caller-owned `uint64_t`:
-PCG32 XSH-RR, fixed stream 54, exact replay, and unbiased bounded draws.
-Copying that state copies the continuation. Tensor initialization keeps its
-existing `nt_seed` stream.
-
-`nt_rng_categorical` samples nonnegative weights at a positive temperature;
-`nt_categorical_index` takes an explicit draw for reference replay. Scaling
-and logarithms keep the distribution finite across the float32 weight and
-temperature range. Both validate before publishing outputs; invalid calls
-preserve the caller's state. These functions allocate no memory and leave
-the input weights intact. See [sampling](docs/SAMPLING.md) for the API, exact
-draw convention, reference vectors, and gates.
-
-```c
-uint64_t voice;
-nt_rng_seed(&voice, 42);
-float weights[] = {0.0f, 1.0f, 3.0f};
-int choice;
-if (nt_rng_categorical(&voice, weights, 3, 0.7f, &choice) == 0) {
-    // choice addresses a positive-weight entry; voice now owns the next draw.
-}
-```
-
-## numerical values
-
-Haiku's two small learners keep their parameters, activations, and gradients in
-AML arrays. Seven stateless CPU operations give that language canonical NoTorch
-arithmetic without sharing a mutable tape between voices:
-
-| C entry point | Operation |
-| --- | --- |
-| `nt_linear_values` | Row-major `W*x+b`, bias-first float accumulation |
-| `nt_linear_vjp_values` | Packed weight, bias, and input derivatives |
-| `nt_tanh_values` | Elementwise tanh |
-| `nt_tanh_vjp_values` | Reverse derivative from saved tanh outputs |
-| `nt_mse_grad_values` | Mean squared loss and prediction derivatives |
-| `nt_sgd_values` | Fresh parameter values after plain SGD |
-| `nt_rng_normal_values` | Standard normal draws from caller-owned PCG32 state |
-
-The caller supplies disjoint output storage and publishes it after success.
-These functions allocate nothing, retain no pointers, and leave the global tape
-untouched. Finite operands, dimensions, derivative domains, and results are
-checked. An arithmetic failure may leave scratch output partially written;
-discard it. Normal draws advance the stream only after the complete call
-succeeds, consuming exactly two words per value with no hidden spare cache.
-Model composition, clipping, and experience belong to the organism.
-
-See [numerical values](docs/NUMERICAL_VALUES.md) for packed layouts, arithmetic
-order, normal reference vectors, and the native verification gate.
-
-### Owned parliament values
-
-`nt_parliament_elect_values`, `nt_parliament_inject_values` and `nt_oja_values`
-provide the bounded CPU numerical seam for DoE-derived organs. Election
-returns normalized gates and next consensus; injection computes the low-rank
-mixture; Oja returns detached A/B candidates and an explicit next rank cursor.
-Inputs, per-expert cursors and noise belong to the caller. The operations make
-no allocation, retain no pointers and enter no tape or optimizer. Failed calls
-preserve every output byte, including late arithmetic failures and aliases.
-
-Haiku keeps expert lifecycle, immune verdicts, provenance and publication in
-AML. These numerical operations remain separate from plain PEN7 inference;
-the two lexical weight bodies stay frozen. `make check_parliament_values`
-checks independent equations, all-rank coverage with private cursors, eight
-parallel owners, tape isolation and deliberate red controls. CPU values are
-the verified path here; existing Metal parliament kernels remain separately
-exposed.
-
-## SentencePiece Unigram
-
-Haiku's original tokenizer now lives in NoTorch. `sentencepiece.h` loads the
-650-piece `.model` directly, including its embedded `nfkc_cf` normalization
-map. The native C path keeps exact Unigram scores and ties, user-defined
-symbols, and the full surface of consecutive unknown characters. That last
-part carries a Russian word or an emoji cluster through the English vocabulary.
-
-`nt_spm_load` / `nt_spm_load_memory` create immutable owned models;
-`nt_spm_encode` returns owned normalized text and `{id, offset, length}` spans.
-Parallel voices can share a model while each call owns its scratch and result.
-Failed operations publish nothing. The archive and shared library include this
-implementation; no protobuf or SentencePiece runtime package is needed.
-
-`nt_spm_identity` returns the SHA-256 of the exact owned model bytes. Its
-immutable identity survives replacement of the original file, so a resumed
-organism can compare the tokenizer it actually loaded. The native
-[SHA-256 primitive](docs/SHA256.md) is also available through `sha256.h`.
-
-The [API, supported model profile, and reproduction commands](docs/SENTENCEPIECE.md)
-pin the original model and SentencePiece 0.2.2 oracle. `make check_sentencepiece`
-runs embedded normalization/Viterbi references, malformed inputs, allocation
-faults, and concurrent readers. `SPM_MODEL=path/to/haiku_sp.model` adds the
-original Haiku corpus. Haiku's lowercase, `▁` removal, trigrams, and experience
-remain in AML.
-
-## optimizers
-
-### plain SGD
-
-`nt_tape_sgd_step(lr)` applies `p -= lr * grad` to trainable parameters.
-Frozen parameters and parameters without gradients stay fixed. Adam/Chuck
-state and current gradients stay intact; the caller owns clipping and decay.
-Haiku's MathBrain and recursive selector use tanh at both layers and scalar
-squared error, composed from the existing arithmetic:
-
-```c
-int diff = nt_add(score_idx, nt_scale(target_idx, -1.0f));
-int loss = nt_mul(diff, diff);
-nt_tape_backward(loss);
-nt_tape_sgd_step(0.01f);
-// Haiku then clamps its own parameters to [-5, 5].
-```
-
-### the diagonal baseline
-
-the classic per-parameter diagonal step: `m̂ / (√v̂ + ε)`, bias-corrected first and second moments. you know the drill. (the call keeps a legacy symbol name from before the house-optimizer convention.)
-
-```c
-nt_tape_adam_step(0.001f);
-```
-
-### the diagonal baseline + decoupled decay
-
-same, but with decoupled weight decay — because your embeddings don't need regularization but your dense layers probably do.
-
-```c
-nt_tape_adamw_step(0.001f, 0.1f, 0.9f, 0.999f);
-```
-
-supports `no_decay` flag per parameter — mark your embeddings with `nt_tape_no_decay()` and they'll be left alone. like cats. don't bother them.
-
-### the Chuck optimizer
-
-ah yes. **Chuck**. the self-aware optimizer. the one that watches its own gradients and goes "hmm, maybe i should slow down here" or "this parameter isn't doing anything, let me freeze it" or "we've been stuck for too long, time for some noise".
-
-```c
-nt_tape_chuck_step(0.01f, loss_val);
-```
-
-5 effective levels of awareness (and four more reserved for sentient-mode):
-
-1. **global loss trend** → adaptive damping (λ)
-2. **per-parameter gradient monitoring** → individual learning rate scaling
-3. **stagnation detection** → automatic noise injection
-4. **parameter freezing** → skip updates for dead parameters
-5. **multi-scale awareness** → macro-level patience with LR decay
-
-constants (window size, trend thresholds, noise decay, freeze threshold, macro interval) are synced with the PyTorch Chuck port in `iamolegataeff/chuck.optimizer` — any change hits both implementations or they drift.
-
-it's the diagonal baseline, but with opinions. think of it as a baseline that went to therapy, got a mindfulness app, and now checks in with itself every step. `"how are my gradients feeling today?"` — actual question the Chuck optimizer asks itself (metaphorically) (or is it?).
-
-more details: [github.com/iamolegataeff/chuck.optimizer](https://github.com/iamolegataeff/chuck.optimizer)
-
-### Chuck: Loss Architect
-
-Chuck's training world now has an explicit action language:
-**state → policy → typed action → measured consequence → acquired experience**.
-The executor accepts `hold`, `brake`, `push`, and bounded dampening, LR-scale and
-noise setters. The first learned policy is a **163-parameter** outcome model
-choosing among hold/brake/push. It learns from loss measured on the same window
-before and after its action. Each life carries its weights, history, RNG and
-pending decision through save/resume.
-
-`nt_tape_chuck_step` keeps the canonical trajectory. Absent, disabled, empty and
-legacy Architect configurations select that same policy. The learned Architect
-selects global actions; per-parameter Chuck state and updates retain their local
-policy. Configuration is [inspectable JSON](examples/chuck-loss-architect.json),
-and the public C API is [chuck_architect.h](chuck_architect.h).
-
-The first recorded experiment trains SimpleLLM (450,688 parameters) and HeVLM
-(1,123,456) across two seeds and four arms, 512 steps each. All canonical/legacy
-pairs match through final weights. Acquired policy weights change 426/512
-decisions on each seed-73 run; seed 42 records zero. The receipts retain every
-comparison and the measured consequence that first changes the next choice.
-
-```bash
-make check_chuck_architect BLAS_FLAGS= BLAS_LIBS=
-make check_chuck_scenarios BLAS_FLAGS= BLAS_LIBS=
-make check_chuck_future BLAS_FLAGS= BLAS_LIBS=
-make test_chuck_architect_mutations
-make chuck_architect_train BLAS_FLAGS= BLAS_LIBS=
-```
-
-[Architecture and objective](docs/chuck-loss-architect.md) ·
-[two-body training recipe and receipts](experiments/chuck_loss_architect/README.md).
-WOLFE supplies the finite tool-calling lineage; Netta supplies the
-action/consequence/experience lineage. This architecture lives in notorch training.
-
-[Scenario gates](docs/chuck-scenarios.md) cover interrupted lives, locale-independent
-JSON, pending-credit consistency, invalid gradients and CPU/device transitions.
-The CUDA gate exercises native forward/backward and Chuck on an NVIDIA GPU;
-the separate host-emulation gate checks mirror ownership. Controlled action
-forks compare future consequences while preserving the host's exact continuation.
-The [two-body action comparison](experiments/chuck_loss_architect/scenarios/README.md)
-records 16 common snapshots: PUSH wins immediate loss at all 16, while another
-action wins or ties for best future-probe loss after 16 updates at seven snapshots.
-All 2,048 corresponding host steps and final saved states match after restoration.
-
-The Architect can now acquire **future-action comparisons** through
-`nt_chuck_architect_fit_comparison`: measured HOLD/BRAKE/PUSH outcomes from one
-saved world train all three heads against their HOLD-relative advantage.
-Replay changes policy weights while preserving online history, counters and the
-v1 saved-life format. The [fixed two-body experiment](experiments/chuck_loss_architect/future/README.md)
-teaches a SimpleLLM life, adapts a copy on HeVLM, and freezes both before new-seed
-evaluation. [Research notes](docs/chuck-learned-policy-research.md) connect the
-experiment to learned optimizers, executable training controllers and delayed
-credit, with primary sources and their recorded failures.
-
-The first future-credit run performs 8,192 comparison fits. Both acquired lives
-switch from initial HOLD to PUSH on all 16 evaluation states and match the
-constant-PUSH reference: 4/8 optimal choices per body. HeVLM adaptation changes
-scores but no choices. The separately untouched seed 211 has the same 2/4
-optimal choices per body. Learning conditional BRAKE choices is the next
-question; all 4,096 paired host steps and final saved states remain exact.
-
-`nt_chuck_architect_fit_conditioned` gives each saved world's measured action
-differences their own scale. Its HOLD-relative targets divide by the largest
-finite absolute action difference, with a documented floor. The raw losses and
-the scale stay in the receipt. The same 163 parameters learn these conditioned
-action scores; the earlier relative-loss objective remains available unchanged.
-`nt_chuck_architect_feedback_frozen` then lets a saved policy act throughout a
-real training trajectory: consequences advance its temporal history while its
-acquired weights stay fixed. The [conditional-credit protocol](experiments/chuck_loss_architect/conditional/README.md)
-separates common-state action comparisons from this repeated-action deployment.
-
-The clean two-body run acquires conditional choices on new seeds 307/509:
-SimpleLLM selects an optimal H16 action at 6/8 states; HeVLM reaches 5/8 before
-adaptation and 6/8 afterward, against the old policy's 4/8 on each body. In
-24 complete 512-step deployments, both conditioned lives use HOLD, BRAKE and
-PUSH. Final held-out loss regresses against the old PUSH life on both SimpleLLM
-seeds; HeVLM improves on seed 307 and regresses on 509. Four policy save/load
-repeats preserve the complete continuation and final bytes. The experiment now
-records acquired conditionality and the consequences of repeated deployment;
-its next credit must learn from the trajectories those choices create.
-
-`nt_chuck_architect_intervene` executes an explicit available action and invokes
-one same-window evaluator to acquire its actual consequence. The completed life
-retains the executed action and advances native history with frozen weights.
-This lets the [lived-state experience](experiments/chuck_loss_architect/lived/README.md)
-branch from the Architect's own visited training states: after HOLD, BRAKE or
-PUSH, the parent keeps selecting actions from each branch's evolving history.
-A paired HOLD-continuation student receives the same source worlds and fitting
-schedule. The selected parent branch must reproduce the ordinary parent's next
-sixteen transitions, and every diagnostic returns the host to its exact state.
-
-The clean run fits two 163-parameter students from thirty-two visited worlds,
-16,384 updates each, then seals both before seeds 701/907. Continuation changes
-the measured-best action sets at 11/32 new worlds. Under parent-policy
-continuation, the policy-taught student reaches 12/16 optimal SimpleLLM choices
-against the parent's 10/16; HeVLM stays at 9/16 with higher mean regret. In full
-512-step deployments, both students finish behind the parent on all four
-body/seed pairs. Policy continuation improves over the HOLD-taught student on
-both SimpleLLM seeds and one HeVLM seed. All 1,024 selected-branch transitions,
-4,096 paired host steps and four policy save/load continuations remain exact.
-
-The [student-trajectory experiment](experiments/chuck_loss_architect/trajectories/README.md)
-now gives the source life and continuation policy separate identities. Both
-refits begin from the sealed policy-taught student and learn through the same
-student continuation: one acquires parent-reached states, the other acquires
-student-reached states. Eight earlier checkpoints retain actual temporal history
-and exact source restoration. `make test_chuck_trajectories` checks this boundary,
-including a deliberately wrong continuation and action-to-outcome association.
-
-The fixed two-body run completes 26,624 body updates, 32,768 policy fits and
-576 readouts. On new seeds 1013/1217, parent-source refitting improves the
-initial student's final held-out loss in all four 512-step deployments.
-Student-source refitting improves both HeVLM runs and regresses both SimpleLLM
-runs; it beats the matched parent-source refit in one of four cases. Both refits
-reduce common-state mean H16 regret on both bodies, while canonical Chuck keeps
-lower final loss than all three learned lives in these four pairs. Acquired
-experience changes the first choice at identical observations and then the
-world reached by later choices. The complete curves, action histories and
-regressions remain in the linked experiment; 1,536 source transitions and all
-four save/load continuations are exact.
-
-The [living acquisition loop](experiments/chuck_loss_architect/living/README.md)
-puts measured consequences back into the same ongoing training life. At sparse
-checkpoints it branches HOLD/BRAKE/PUSH under the current policy, restores the
-complete source world, fits only its 163 weights, and selects the next action.
-Receipts compare choices before and after acquisition at identical observations.
-Frozen and explicitly rotated-credit lives give this experiment named controls;
-the native mechanism is checked by `make test_chuck_living`. The ordinary Chuck
-trajectory and the v1 saved-life format remain intact.
-
-The fixed living run completes 16,640 body updates and 2,560 policy fits on two
-new seeds per body. Acquisition directly changes 16 next actions at unchanged
-observations. Living credit improves final held-out loss over the frozen life
-in 3/4 pairs and over rotated credit in 4/4. It improves over canonical Chuck on
-both HeVLM seeds and regresses on both SimpleLLM seeds. Probe-off and saved-life
-continuations remain exact; the linked receipts retain the Simple 2357 regression.
-
----
-
-## bit-level precision — BitNet b1.58
-
-notorch has first-class support for **ternary-weight training** via `nt_bit_linear` and `nt_bit_seq_linear`. this is BitNet b1.58 (Ma et al., 2024): every weight is quantized to `{-1, 0, +1}` via `absmean` during the forward pass; activations are quantized to int8 via `absmax`; the backward pass uses the **Straight-Through Estimator** (gradient flows through the quantization step as identity, so `dW = dout ⊗ x`, `dx = W^T @ dout` using the full-precision `W`).
-
-```c
-int y = nt_bit_linear(w_idx, x_idx);             // y = bitquant(W) @ x
-int Y = nt_bit_seq_linear(w_idx, x_idx, T);      // same, over T positions
-```
-
-on the `USE_BLAS` path, BitLinear dispatches to a single `cblas_sgemm(NoTrans, Trans)` call on pre-quantized operands — the ternary `W` is pre-flattened to float, the int8-range `x` is pre-scaled, per-position output rescale is applied afterwards. this turned out to be about **18% faster per training step** on Apple Accelerate vs the naive per-output-loop path. on OpenBLAS the win is similar.
-
-**tests:** `tests/test_bitnet_ops.c` (118 gradient assertions) — ternary quantize correctness, STE identity backward, gradient flow through sequences, gradient numeric check, end-to-end training convergence of a tiny BitNet MLP.
-
-**reference:** [ariannamethod/microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit) is a **pure-Python** BitNet b1.58 microGPT — 2.69M char-level, train_best **1.6226** / val **2.0314**, 10000 steps, zero NaN, 10 MB FP32 ternary-packing to ~1.4 MB. it's an external algorithm reference, not a notorch build: notorch's own `nt_bit_linear` / `nt_bit_seq_linear` were validated against its numbers.
-
----
-
-## SwiGLU FFN
-
-the modern FFN used by LLaMA, Qwen, BitNet and most post-2023 transformers. instead of `y = W_down @ GELU(W_up @ x)`, SwiGLU computes `y = W_down @ (SiLU(gate) * up)` where `gate = W_gate @ x` and `up = W_up @ x` are two separate projections gated element-wise.
-
-```c
-int gate = nt_seq_linear(w_gate_idx, x_idx, T);
-int up   = nt_seq_linear(w_up_idx,   x_idx, T);
-int h    = nt_swiglu(gate, up);                        // SiLU(gate) * up
-int out  = nt_seq_linear(w_down_idx, h, T);
-```
-
-correct backward pass (chain rule through both branches), finite-difference verified. plays fine with `nt_bit_seq_linear` too — our BitNet examples use a BitLinear gate/up with a full-precision down-projection, same as the reference BitNet-1.58 configuration.
-
----
-
-## SPA — Sentence Phonon Attention
-
-SPA is an **inference-time** helper: it lets a decoder condition next-token sampling on how "connected" the current sentence is to recent history, without any extra trained parameters.
-
-```c
-// 1. Build a sentence embedding via exponentially-weighted mean of token embeds.
-float emb[dim];
-nt_spa_embed_sentence(tokens, n_tokens, W_embed, vocab_size, dim, 0.85f, emb);
-
-// 2. Score its connectedness to a small history of previous sentence embeds.
-float conn = nt_spa_connectedness(emb, dim, history_embeds, n_history);
-
-// 3. Sharpen or soften the logit distribution based on that score.
-nt_spa_modulate_logits(logits, V, conn, 0.3f);
-```
-
-No tape or gradients enter these helpers. Token `i` receives weight
-`alpha^(n_tokens - 1 - i)`: smaller alpha gives stronger recency bias;
-alpha 1 gives a uniform mean. Connectedness is the maximum softmax attention
-weight over the supplied sentence history. Logit modulation divides by
-`max(0.001, 1 - strength * connectedness)`; positive strength sharpens sampling.
-
-Originated in the [PostGPT](https://github.com/ariannamethod/postgpt) lineage
-and developed through [Q](https://github.com/ariannamethod/q) (`postgpt_q.c`),
-then ported here as reusable perception. These three functions remain
-inference-only. [Sentence Phonon Agent](#spa--sentence-phonon-agent) adds
-persistent action selection and consequence learning above this sensory field.
-Gradient flow through the sensory operations remains an open direction.
-SPA is also used in [microgpt-1bit](https://github.com/ariannamethod/microgpt-1bit).
-
----
-
-## SPA — Sentence Phonon Agent
-
-Sentence Phonon Attention is the sensory organ. **Sentence Phonon Agent** lives
-above it: a persistent 267-parameter policy observes a sentence field, selects
-`KEEP`, `RESEED_LEFT`, or `RESEED_RIGHT`, and learns from the host's measured
-consequence. The host executes the action; the Agent carries learned weights,
-action/outcome history, private RNG, and pending credit through save/resume.
-
-`spa_agent.h` exposes `select`, `choose`, and `observe`, plus an explicit legacy
-policy and imitation training. Null/disabled mode preserves ordinary SPA.
-Raw connectedness, coherence, novelty, repetition, collapse, continuity, and
-regeneration cost remain separate in its receipts. A weight-only counterfactual
-holds observation, history, and RNG fixed to test acquired experience directly.
-
-Lineage: **PostGPT → SPA → Q → Sentence Phonon Agent**. Meta SONAR/LCM inform
-the sentence/concept computation level; WOLFE informs typed actions; Netta
-informs acquired consequences; Chuck: Loss Architect supplies a contemporary
-parallel inside notorch. The implementation is native C in `spa_agent.c`.
-
-```bash
-make check_spa_agent BLAS_FLAGS= BLAS_LIBS=
-make test_spa_legacy_parity test_spa_agent_mutations
-make spa_agent_demo BLAS_FLAGS= BLAS_LIBS=
-```
-
-[API and research](docs/spa-agent.md) ·
-[Pretrained SimpleLLM experiment](experiments/spa_agent/README.md) ·
-[Common-state action consequences](experiments/spa_agent/scenarios/README.md)
-
-The native experiment host can fork each valid sentence action from one saved
-state and measure immediate and later consequences. Its optional diagnostics
-preserve the ordinary trajectory and saved Agent life byte for byte.
-
-`capture_experience`, `score_experience`, and `fit_comparison` let the same
-policy learn from measured alternatives at a host-defined future horizon.
-Each action learns its reward relative to paired KEEP, with separate raw axes
-and mean Huber loss. Replay changes policy weights while preserving the
-captured sentence/history input and the life's online state. The
-[future-credit experiment](experiments/spa_agent/future/README.md) records
-training, new-state evaluation, shuffled credit, and fixed-action controls.
-
-`fit_repeated` accepts repeated consequences from the same sentence state.
-It averages individually clipped native rewards, forms KEEP-relative targets,
-and makes one policy update. The host retains each raw outcome and its RNG
-provenance. The [paired-continuation experiment](experiments/spa_agent/replicates/README.md)
-compares one continuation with eight while holding the policy and fit budget fixed.
-
-`fit_conditioned` optionally scales those KEEP-relative targets by the largest
-absolute target in that state, with a host-specified positive floor. It retains
-the original mean rewards and the exact scale in a separate receipt. This
-changes learning amplitude and relative state weighting; usefulness is measured
-against the original reward. The [conditioning experiment](experiments/spa_agent/conditioned/README.md)
-holds perception, policy capacity, fitting budget and body fixed.
-
-Python uses the same native engine and canonical saved life:
-
-```python
-import SPA
-
-agent = SPA.Agent(SPA.Config.default(mode=SPA.Mode.LEARNED))
-# Host supplies observations, executes choose(...).action, then calls observe(...).
-```
-
-Build `make shared`, put `python/` on `PYTHONPATH`, and run
-`python3 examples/spa_python.py`. [Python API and host loop](docs/spa-python.md)
-cover perception, action execution, comparison and conditioned-consequence learning,
-and C/Python resume.
-`make test_spa_python` checks the loaded C ABI and byte-identical continuation.
-
----
-
-## LoRA / adapter training
-
-any parameter can be frozen mid-tape, so standard LoRA / adapter training works out of the box:
-
-```c
-int base_w = nt_tape_param(W_base);
-nt_tape_freeze_param(base_w);              // Chuck skips it, grads still propagate
-
-int lora_a = nt_tape_param(A);             // [in_dim, rank]
-int lora_b = nt_tape_param(B);             // [rank, out_dim]
-// ... build forward with base + A @ B ...
-```
-
-`nt_tape_freeze_param(idx)` marks a param as frozen — Chuck (and the legacy diagonal-baseline steps) skip its update, but the autograd still propagates gradients through it so A/B adapters downstream get real signal. combined with `nt_tape_no_decay()` for embeddings, this covers most real SFT + adapter workflows without plumbing.
-
----
-
-## BLAS inference API
-
-for inference engines that don't want to pay the tape-recording cost per token, notorch exposes the BLAS matmul paths directly:
-
-```c
-// C[m,n] = A[m,k] @ B[k,n]         — full matmul
-void nt_blas_mm(float *C, const float *A, const float *B, int m, int k, int n);
-
-// C[m,n] = A[m,k] @ B[n,k]^T       — common for attention (K,V stored row-major)
-void nt_blas_mmT(float *C, const float *A, const float *BT, int m, int k, int n);
-
-// out[m] = W[m,n] @ x[n]           — hot-loop matvec for per-token inference
-void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n);
-
-// out[m] = Wq[m,k] @ x[k]          — PACKED quantized matvec: weights stay packed
-//                                    (no dense-f32 blow-up), dequantized inline per block.
-//                                    dtype = GGUF type code, full set:
-//                                    F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K.
-int  nt_qmatvec(float *out, const uint8_t *Wq, int dtype, const float *x, int m, int k);
-```
-
-under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on macOS, OpenBLAS on Linux). without BLAS they fall back to the naive C loops — correct, just slower. the example engines reach the same BLAS path directly through their own local wrappers in their hot paths: `infer_gemma.c` / `infer_llama.c` / `infer_janus.c` call `cblas_sgemm`, and `infer_llama3_bpe.c` calls `cblas_sgemv` (scalar fallback without `USE_BLAS`).
-
----
-
-## audio front end — conv1d, STFT, log-mel
-
-speech models need two things this library did not have: a 1-D convolution, and everything that turns a waveform into a spectrogram. forward-only, no tape, pre-trained weights — the same shape of API as the image ops.
-
-```c
-// out[Cout,Lout] = weight[Cout,Cin*K] @ im2col_1d(in) + bias   — nt_conv2d, one dimension down
-int  nt_conv1d(float *out, const float *in, const float *weight, const float *bias,
-               int Cin, int Lin, int Cout, int K, int stride, int pad);
-
-// the same with every unfolded column rounded to f16 before the GEMM
-int  nt_conv1d_f16cols(float *out, const float *in, const float *weight, const float *bias,
-                       int Cin, int Lin, int Cout, int K, int stride, int pad);
-
-// unfold [Cin,Lin] -> columns [Cin*K, Lout], row (c*K + k)
-void nt_im2col_1d(float *col, const float *in, int Cin, int Lin, int K, int stride, int padding);
-
-// periodic Hann: w[i] = 0.5 * (1 - cos(2*pi*i/n))
-void nt_hann_window(float *w, int n);
-
-// power spectrum [n_frames][n_fft/2+1]; window may be NULL for rectangular
-int  nt_stft(float *power, const float *signal, int n_signal,
-             int n_fft, int hop, int n_frames, const float *window, int n_threads);
-
-// the whisper-shaped front end, end to end
-typedef struct { int n_mel, n_len, n_len_org; float *data; } nt_mel;   // [n_mel][n_len], mel-major
-int  nt_logmel(nt_mel *out, const float *pcm, int n_samples,
-               const float *filters, int n_mel, int n_fft_bins,
-               int n_fft, int hop, int pad_tail, int n_threads);
-void nt_mel_free(nt_mel *m);
-```
-
-`nt_conv1d_f16cols` is not an approximation of `nt_conv1d`. ggml builds its im2col tensor as `GGML_TYPE_F16` (`ggml_conv_1d`), so an engine reproducing a ggml graph bit for bit has to round where ggml rounds; the weights and the accumulation stay f32 and only the columns move.
-
-the transform is a real-input Cooley-Tukey recursion that splits while the length is even and drops to a direct DFT at the first odd length, indexing one table of `2*pi*i/n_fft` sines and cosines at a stride. whisper's `n_fft` 400 is `2^4 * 25`, so it runs 400 → 200 → 100 → 50 → 25 and transforms the 25 directly — that is what ggml does, and zero-padding 400 up to 512 for a tidier radix-2 would be a correct FFT of a different signal. the mel filter bank is supplied by the caller and never generated here: a speech model ships its own inside the weight file, and a nominally equivalent one is a different model.
-
-**precision.** this op family exists to reproduce a reference graph exactly, so floating-point contraction is disabled per-function on the four that would otherwise fuse (`nt_dft_real`, `nt_fft_rec`, `nt_stft_frame`, `nt_stft_worker`). every other kernel in the library keeps its FMAs. the reason is measured, not theoretical: the same log-mel source compiled `-std=gnu11` rather than `-std=c11` differs by 1.5e-05 on `jfk.wav`, because GCC contracts multiply-adds into FMAs under one and not the other, and that lands an encoder activation an f16 ulp off the oracle.
-
-**measured**, phone-1 (Galaxy A56, Exynos 1580, Ubuntu 24.04 chroot, aarch64, OpenBLAS), cores 4-7. `ears` — the whisper port these ops came out of — switched to them and re-run against whisper.cpp's own `whisper_pcm_to_mel` and encoder:
-
-| check | result |
+| reference | what to read it for |
 |---|---|
-| log-mel vs the hand-written original, 3 wavs | byte-identical |
-| encoder post-conv activations `[1500 384]`, jfk/tiny | byte-identical |
-| `gate_mel`, 328000 values vs whisper.cpp | max\|d\| = 0.000e+00 |
-| `gate_encoder`, 576000 values | max\|d\| = 4.861e-02 |
-| `gate_transcript`, tiny + base, 3 wavs | 6 of 6 token for token |
-| `nt_logmel` on jfk.wav (176000 samples, n_len 4100) | 45.6 ms 1 thread, 21.3 ms 4 threads |
-
-tests: `make test_conv1d` (20 assertions, against a triple loop written from the definition in double, at shapes up to the whisper stem's `Cin=384 K=3`) and `make test_logmel` (25 assertions, STFT against a direct O(n²) DFT, run at 1 and 6 threads and asserted bit-identical between them). both are in `make test`.
-
----
-
-## inference — notorch runs models, it doesn't just train them
-
-the lie everyone tells you is that you train in one framework and *run* in another — train in PyTorch, export to GGUF, hand it to llama.cpp to actually generate tokens. notorch doesn't outsource the second half. it runs what it trains, and it runs models it never trained — any llama.cpp GGUF, in C, including a 24-billion-parameter quantized model on a Mac Mini.
-
-the obstacle is memory. a Q4_K weight is 4.5 bits; dequantize it to f32 and you get an 8× blow-up that turns a 14 GB model into ~96 GB you do not have. so notorch doesn't dequantize it. the weights never leave their packed GGML encoding — each block is reconstructed *inside* the matvec: Q4_K on the Apple GPU (`nt_metal_q4k_matvec`, weights registered **resident** so they upload once, not per token), Q6_K per-block across CPU cores. the only f32 in the building is the activations.
-
-that packed reconstruction is generalizing past the Metal/example corner into a CPU-agnostic library primitive. `nt_qmatvec(out, Wq, dtype, x, m, k)` keeps weights packed and dequantizes each block inline for the **whole GGUF dtype set on the CPU** — F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K — dispatched by dtype, with the Q6_K kernel lifted out of `infer_gguf_metal.c` into the library (F16 alone halves the weight RAM vs dense f32, and is converted per element rather than materialized). each format is verified bit-close to `gguf_dequant → cblas` (relative error ~1e-6 across all seven, `tests/test_qmatvec`). it means the CPU no longer has to blow Q4_0/Q8_0 up to f32 the way the f32 engines below do. the primitive is correctness-complete; wiring the runners onto it (so a Q4_0 model stays packed end-to-end) is in progress. and the speed path has teeth: an int8 dynamic-activation-quant matvec (`nt_qmatvec_i8` — quantize the activation, dot it against the packed weights with NEON SDOT, the llama.cpp/MNN trick) clocks **22.9× over scalar f32-dequant** on a Q4_0 kernel (neo A18 Pro, `tests/bench_qmatvec.c`) — an approximate fast path, `nt_qmatvec` kept exact. row fan-out reuses an OpenMP caller/runtime team when present, and the non-OpenMP path now keeps persistent pthread workers warm instead of creating them for every decode matvec; `NT_QMV_POOL=0` restores the old per-call pthread fallback, while `NT_QMV_THREAD_MIN` / `nt_qmv_set_thread_min` still set the threading floor. the other dtypes and x86 AVX-VNNI are next.
-
-measured on a Mac Mini M4 Pro (24 GB): Mistral-Small-24B at Q4_K_M (~14 GB on disk) loads in 3.6 s, 0 swap, 10.6 GB resident, and generates at **~13.5 tok/s**; the lighter Mistral-Nemo-12B runs at **~27 tok/s** on the same host — one body resident per turn, coherent correct output. (these are the two Yent flagship bodies — the deep `small24` and the fast `nemo12` — driven by this Metal path.) the same source runs Qwen3 and Llama-3 on an 8 GB phone-class A18 Pro. one forward handles two RoPE conventions, auto-detected — interleaved for llama/mistral (weights pre-permuted by llama.cpp's converter), NEOX + per-head q/k-RMSNorm for qwen2/qwen3 — with the byte-level BPE read straight out of the GGUF. GQA, attention bias (Qwen2), and tied embeddings are detected from the tensors.
-
-```bash
-make infer_gguf_metal     # Apple Silicon; needs notorch_metal.o
-./examples/infer_gguf_metal model.gguf "The capital of France is" 40 0
-```
-
-the f32 engines are still here for what fits in RAM without packing:
-
-| engine | architectures | tokenizer | weights |
-|---|---|---|---|
-| `infer_gguf_metal.c` | llama / mistral / qwen2 / qwen3 (GGUF) | byte-BPE from the GGUF | **packed** Q4_K→Metal, Q6_K→CPU; rest f32 |
-| `infer_gemma.c` | Gemma-3 (embed-scale, QK-norm, pre/post norms) | SentencePiece `tokenizer.json` | f32 dequant + BLAS |
-| `infer_llama.c` | llama / SmolLM2 / Qwen2 (GGUF, f32) | byte fallback | f32 dequant + BLAS |
-| `infer_llama3_bpe.c` | LLaMA-3 (own `.bin`, MHA+RoPE+SwiGLU) | notorch-native BPE (merges) | f16 / f32 |
-| `infer_janus.c` | Janus RRPRAM / Resonance (own `.bin`) | char / byte | raw f32 |
-
-fuck torch — but also, you do not need llama.cpp to *run* what you built. the packed-Metal path is what turns "run a 24B on the laptop you already own" into a true sentence.
-
-### the harness is a library, not just a binary
-
-`harness/` is the small one: GGUF in, text out, one `nt_arch` interface, one file per family — `llama`, `gemma4`, `olmoe`, `mamba`, and the Method's own `resonance` and `janus`. every family claims its names explicitly and an architecture nobody claims is refused, not quietly run through llama: a file the harness has never seen is a file it has never been tested on. the CLI on top of it is `main.c` — and `main.c` is *only* the CLI. everything a body needs is in the archive next to it.
-
-```bash
-make lib lib_harness && make install PREFIX=/opt/homebrew
-cc -I$PREFIX/include/ariannamethod body.c \
-   -L$PREFIX/lib -lnotorch_harness -lnotorch \
-   -framework Accelerate -lm          # macOS; -lopenblas on Linux, nothing without BLAS
-```
-
-the backend flag is not optional and neither is `-L`: both archives call into whatever BLAS the tree was built with, and leaving the linker to find `libnotorch` on its own is how it finds a *shared* one instead — `-lnotorch` prefers `libnotorch.dylib` over `libnotorch.a`, so a stale dylib anywhere on the search path silently replaces the library you just built, and the missing symbols read like an archive ordering problem. `make clean` removes ours; point `-L` at the prefix you installed to.
-
-```c
-#include "harness/archs.h"
-gguf_file *gf = gguf_open(path);
-const nt_arch *arch = nt_pick_arch(gf->arch);   /* NULL if no family claims it */
-if (!arch) return;
-nt_dims dims; void *model = arch->load(gf, &dims);
-if (!model) return;                             /* a file short one weight is refused here */
-kv_cache *kv = kv_new(dims.n_layers, max_seq, dims.kv_dim);
-if (!kv) return;                                /* all of it or NULL, never half a cache */
-int rc = arch->forward(model, kv, ids, n, 0, logits);
-if (rc != NT_OK) fprintf(stderr, "%s\n", nt_strerror(rc));
-```
-
-every one of those checks is load-bearing and every one of them was added on 2026-09-12, after an outside audit found the harness compiling as a library without behaving like one: `forward` returned `void` and could not report a refusal, `kv_new` handed back a live object with no storage when the allocation failed, and a GGUF missing an attention matrix loaded fine and then answered a different sentence on a scalar build and aborted inside BLAS on Accelerate. `nt_check_call` in the runtime now refuses a bad token id, an impossible position or a mismatched cache before any family touches it, and on a refusal `logits` is not written at all rather than half written.
-
-two archives on purpose. `libnotorch` is the substrate anything can use — tensors, kernels, GGUF. `libnotorch_harness` is family code that only means something to a caller running models: the six forwards, the runtime, the KV cache, the GGUF-embedded BPE. an organism links both and vendors neither, which is the difference between depending on notorch and forking it.
-
-`make test_consumer_link` proves it the only way that counts: install into a throwaway prefix, build a program from outside the tree with nothing but those two `-l` flags, run a model through it — and then build it *again* without `-lnotorch_harness` and require that one to fail. `make test_repeat` covers the other half of a runtime contract: a family that keeps state outside the KV cache — Mamba's scan, Janus's running low-rank sum — has to clear it when a sequence starts, and the check is exact equality between two identical runs, because Janus drifted 0.49 on the logits while keeping its argmax and nothing noticed.
-
-### the harness on an NVIDIA GPU — `libnotorch_cuda`
-
-`harness/cuda_decode.cu` is the `llama` family (llama, mistral3, qwen2, qwen3) and `gemma3` a second time, on an NVIDIA GPU, behind the same `nt_arch`. the twin loads through the CPU family's own loader and uploads what it parsed, Q8_0 still packed, so the metadata checks and tensor lookups exist once. `forward`, `forward_residual` and `forward_multi` keep their contracts — the residual callback still sees host rows between layers, refusals still leave the logits unwritten — and the KV cache lives on the device: a caller takes it from the family's `kv_new` and returns it to `kv_free`, and a host cache handed to the GPU is refused with `NT_E_CACHE`, not dereferenced.
-
-```bash
-make lib lib_harness libnotorch_cuda.a     # nvcc from CUDA_HOME (/usr/local/cuda), -arch=native
-cc body.c -L. -lnotorch_cuda -lnotorch_harness -lnotorch \
-   -L/usr/local/cuda/lib64 -lcudart -lstdc++ -lopenblas -lm
-```
-
-```c
-#include "harness/archs.h"
-#include "harness/cuda_decode.h"
-const nt_arch *arch = nt_cuda_arch_for(nt_pick_arch(gf->arch));   /* NULL: no GPU twin */
-void *model = arch->load(gf, &dims);
-kv_cache *kv = arch->kv_new(model, max_seq);                      /* device memory */
-int rc = arch->forward(model, kv, ids, n, 0, logits);             /* logits come back to the host */
-arch->kv_free(model, kv);
-```
-
-the arithmetic is the CPU's wherever that costs nothing. the Q8_0 matmul keeps the `NT_NO_I8` kernel's order — lane = position in a block, `d·w` then a fused add in block order, the 32 partial sums folded in the AVX2 tree, the sequential retry when the fold overflows — and `make check_cuda_decode` holds it to `qmm` bit for bit. every reduction has a fixed order and no atomics, so a run repeats itself exactly and a row's logits do not depend on which rows share its batch. what still differs from the CPU is `expf`, `tanhf` and where the compiler fuses a product: 4.3e-6 at most on the test fixtures. against llama.cpp running exact F32 dequantizations of the same weights — Qwen2.5-7B, Gemma 3 4B and Qwen3-8B at Q8_0, five chat questions, 64 greedy steps — every forced argmax agrees, every free run is the reference's, and the largest logit difference is 1.9e-4 on the Qwens and 0.045 on Gemma.
-
-on an NVIDIA A40, `NT_NO_I8`, 32 greedy steps (`make bench_cuda_decode`): Qwen2.5-7B Q8_0 at **25.2 tok/s** for one sequence and **124.4** for eight decoded together, Gemma 3 4B at 38.1 and 215.3, Qwen3-8B at 22.8 and 111.4. the host's own CPU, a Xeon Gold 6342 in the same mode with four workers per pool, does 3.1 and 4.1 on the 7B.
-
----
-
-## alignment training — DPO / GRPO / distillation
-
-notorch isn't just a pretraining engine. three post-training methods ship as **runnable reference trainers** — each self-contained: with no args they random-init a model and train on a tiny in-code synthetic dataset; point them at real weights + a dataset file and they train that.
-
-```bash
-make train_dpo            # Direct Preference Optimization (Rafailov 2023) — ref-relative loss, JSONL {chosen,rejected}
-make train_grpo           # Group Relative Policy Optimization (DeepSeek-R1) — rollout + rule-based reward + group advantage
-make train_distillation   # Knowledge Distillation (Hinton 2015) — analytic soft-KD (τ²) + hard-CE
-```
-
-each is a single self-contained C file under `examples/` (~550–610 LOC) with its own reference model and a minimal dataset adapter. use them as templates: swap the model, point at your dataset, keep the loss + optimizer wiring. Reference-model parameters are held frozen via `nt_tape_freeze_param`, the same mechanism LoRA uses. These are reference implementations — GRPO does a single on-policy (REINFORCE-style) update with a scalar KL proxy, distillation injects the exact KD gradient (no soft-CE tape op needed); a production RLHF stack would add batched rollouts and a learned reward model.
-
----
-
-## autograd
-
-the backward pass supports **38 operation types** (op IDs 0–37, each with a `NT_OP_*` constant). the tape records operations during forward, then backward walks it in reverse computing local gradients via the chain rule. standard reverse-mode AD.
-
-**gradient checking**: every op is verified against finite differences (`(f(x+h) - f(x-h)) / 2h`). relative error tolerances from 0.01 to 0.3 depending on op complexity. all pass. including the annoying ones — GEGLU, SwiGLU, multi-head attention with multi-path gradients through Q/K/V, BitLinear with STE identity passthrough.
-
-**gradient utilities**:
-- `nt_tape_clip_grads(max_norm)` — global gradient clipping
-- `nt_tape_accum_grads()` / `nt_tape_apply_accum(n)` — gradient accumulation for large effective batch sizes
-- `nt_tape_freeze_param(idx)` — freeze a parameter (adapter / LoRA setups)
-- `nt_nan_guard_check()` — NaN/Inf detection with automatic loss scaling. because sometimes your gradients decide to go to infinity and someone needs to tell them no.
-
----
-
-## building
-
-```bash
-# CPU with BLAS acceleration (recommended)
-make
-
-# CPU without BLAS (works everywhere, even on a potato)
-make cpu
-
-# CPU with in-house AVX2+FMA SIMD — zero external math library
-make simd
-
-# GPU (CUDA via cuBLAS)
-make gpu
-
-# Apple Silicon Metal — packed-Q4_K/Q6_K GGUF inference (runs 24B on a 24GB Mac)
-make metal               # Q4_K matvec correctness test
-make infer_gguf_metal    # the GGUF inference binary
-
-# Shared library (for ctypes, Node FFI, Ruby Fiddle — anything that dlopens)
-make shared
-
-# Static library (for embedding in your project)
-make lib
-
-# Build and run tests
-make test
-
-# Clean
-make clean
-```
-
-### dependencies
-
-- a C compiler (gcc, clang, whatever)
-- `-lm` (math library, because we use sqrt and exp like civilized people)
-- **optional**: OpenBLAS (Linux) or Accelerate framework (macOS) for BLAS-accelerated matmuls
-- **optional**: x86_64 CPU with AVX2 + FMA (Intel Haswell 2013+, AMD Excavator 2015+) for `make simd` — zero external math library
-- **optional**: CUDA toolkit for GPU support (cuBLAS-backed sgemm + element-wise + attention + cross-entropy kernels), and the harness decoders on the GPU (`libnotorch_cuda.a`, `make check_cuda_decode`)
-- **optional**: Apple Silicon + Metal (macOS) for packed-Q4_K/Q6_K GGUF inference (`make metal` / `make infer_gguf_metal`) — nothing to install, Metal ships with macOS
-
-that's it. no cmake. no configure script. no 300-line `requirements.txt`. no docker. no kubernetes. just `make`. the way Ken Thompson intended.
-
-### in-house SIMD path — `make simd`
-
-`notorch_simd.h` is a drop-in `cblas_sgemm` / `cblas_sgemv` / `cblas_sger` shim under `-DUSE_SIMD` (mutually exclusive with `-DUSE_BLAS`). Pure C + `<immintrin.h>` + `<pthread.h>`, no external math library. Targets x86_64 with AVX2 + FMA.
-
-Design:
-- 6×16 register-blocked AVX2+FMA micro-kernel (12 YMM accumulators, 4MB SwiGLU panels fit Skylake's 16-reg file)
-- Outer cache-blocked GEMM (Mc=96, Kc=256, Nc=1024) with row + col packing for streaming through the kernel
-- Persistent pthread pool (no per-call create/join) — workers sleep on `pthread_cond_t`, master signals work, workers FMA. Single-thread fast path for matmuls under 256K mul-adds where signal latency would dominate.
-- AVX2 `_mm_prefetch` ahead of the kernel inner loop, AVX2 vectorized panel packing for `col_stride==1` paths (forward + input-grad)
-- Edge tiles (m mod 6 ≠ 0 or n mod 16 ≠ 0) use the same vector kernel with padded A/B panels and a temporary 6×16 C tile; only the valid output rectangle is copied back
-
-Bench at training-relevant shapes on Intel i5-8500T (6c, no AVX-512) vs OpenBLAS 0.3.26, both at 6 threads (`bench/bench_simd` vs `bench/bench_blas`). Absolute GFLOP/s swing ±20% run-to-run on this desktop part, so the **Ratio** (SIMD ÷ OpenBLAS, same run) is the stable signal:
-
-| Shape | OpenBLAS 6T | in-house SIMD 6T | Ratio |
-|---|---|---|---|
-| Llama dW (E×E, TN, 512 ctx) | 386 GFLOP/s | 269 GFLOP/s | 0.70× |
-| Llama dWffn (h×E, TN, 512 ctx) | 268 GFLOP/s | 247 GFLOP/s | 0.92× |
-| Llama FFN-down (NN, 512 ctx) | 318 GFLOP/s | 177 GFLOP/s | 0.56× |
-| Janus forward QKV (NN, 1024 ctx) | 348 GFLOP/s | 188 GFLOP/s | 0.54× |
-| Janus FFN-down (NN, 1024 ctx) | 372 GFLOP/s | 195 GFLOP/s | 0.52× |
-
-Roughly 0.5–0.9× of fully-threaded OpenBLAS — closest on the TN weight-gradient GEMMs (~0.7–0.9×), widest on large NN forward/FFN shapes (~0.5×). The in-house SIMD does not beat a fully-threaded OpenBLAS or MKL: single-thread it is ~0.8× MKL (the kernel is competitive), and the residual multi-thread gap is shared-cache residency — the part a tuned BLAS spends a decade on. Its point is hundreds of GFLOP/s with **zero external math library** — pure C + AVX2 + pthreads, nothing to install. On a box without OpenBLAS or Accelerate, this is the accelerated path.
-
-**Correctness validated** end-to-end under `make simd`: notorch_test 49/49 (incl. all 13 gradient/training checks), test_vision 48/48, test_bitnet_ops 118 assertions, test_sigmoid_scale 4/4. `test_simd_loss.c` produces bit-identical 10.379384 at lm_head shape vs the OpenBLAS path, and a real nanollama 89M training step 1 gives train loss 10.3876 — bit-identical to the OpenBLAS baseline. `test_simd_correctness.c` agrees with the scalar path to <1e-3 on small shapes; on large GEMM shapes a few outputs exceed the strict 1e-3 bound from FMA accumulation order — harmless, since the end-to-end loss is bit-identical.
-
-Override thread count via env: `NT_SIMD_THREADS=N`. Single-thread variant for debugging via `-DNOTORCH_SIMD_DEBUG_SCALAR` (uses `notorch_simd_scalar.h` instead — same API, pure scalar inner loop).
-
-### CUDA path — `make gpu`
-
-`notorch_cuda.{h,cu}` is the CUDA backend (ported from `ariannamethod.ai/core/`). cuBLAS-backed sgemm wrappers (3 transpose modes), element-wise kernels (add/mul/silu/rmsnorm) with backward, weight cache to keep weights resident on GPU across forward/backward, multi-head attention kernels, cross-entropy kernel. Built via `nvcc -c notorch_cuda.cu -lcublas` and linked against `-lcudart -lcublas`. Activated by `-DUSE_CUDA`. Identical CBLAS-style semantics to the CPU path (call sites in `notorch.c` are unchanged) — only the linkage layer differs.
-
----
-
-## running tests
-
-```bash
-make test
-```
-
-ten test binaries (run output is the source of truth for counts):
-
-- **`tests/test_notorch.c`** — 47 tests: tensor mechanics, forward ops, tape recording/backward, optimizers, training integration, numerical gradient checks, infrastructure (save/load, LR schedules, NaN guard, gradient accumulation, Hebbian microlearning, profiler)
-- **`tests/test_vision.c`** — 48 tests: image loading (JPEG/PNG/BMP), resize / crop / normalize / flip / grayscale, ViT patch extraction, preprocessing pipelines, BPE encode/decode roundtrip
-- **`tests/test_bitnet_ops.c`** — 118 gradient assertions: SwiGLU, BitLinear forward + seq, STE backward, SPA smoke, finite-difference gradient checks
-- **`tests/test_rrpram_lr.c` / `test_metal_q4k.c` / `test_simd_correctness.c` / `test_simd_loss.c`** — low-rank RRPRAM, Apple-Silicon Q4_K matvec, and AVX2+FMA SIMD parity
-- **`tests/test_sigmoid_scale.c`** — 4 tests: `nt_sigmoid` forward/backward, `nt_scale_by_t` forward/backward (scalar × tensor with grad flowing to both)
-- **`tests/test_tanh_sgd.c`** — tanh gradients and shape, frozen/unused parameters, optimizer state preservation, external clipping, and 24-step 5→8→1 / 6→4→1 SGD trajectories against a double-precision reference. `make check_tanh_sgd BLAS_FLAGS= BLAS_LIBS=` runs with C and libm.
-- **`tests/test_sampling.c`** — owned PCG32 vectors, bounded rejection, stable weighted selection, invalid-input preservation, and isolation from existing streams. `make check_sampling BLAS_FLAGS= BLAS_LIBS=` runs with C and libm.
-- **`tests/test_numerical_values.c`** — stateless forward/reverse arithmetic, all 57 finite-difference gradients, independent training trajectories and normal vectors, thread ownership, and legacy-tape isolation. `make check_numerical_values BLAS_FLAGS= BLAS_LIBS=` runs the gate.
-- **`tests/test_sentencepiece.c` / `test_sentencepiece_faults.c`** — native Unigram and compiled normalization against SentencePiece 0.2.2, exact output limits, malformed models, immutable concurrent readers, allocation failure and complete result publication. `make check_sentencepiece SPM_MODEL=path/to/haiku_sp.model` includes the original Haiku corpus.
-- **`tests/test_sha256.c`** — NIST/RFC SHA-256 vectors, 264 independent binary fixtures, padding boundaries, overlap, and unchanged failed output. `make check_sha256` runs the allocation-free primitive's gate.
-- **`tests/test_gguf.c`** — GGUF parser smoke test (F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K dequant)
-- **`tests/test_qmatvec.c`** — packed quantized matvec (`nt_qmatvec`) vs the dequant→cblas oracle across all 7 GGUF dtypes (F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K), relative error ~1e-6
-
-every gradient check uses finite differences to verify the analytic backward pass. if a single gradient is wrong, the test catches it. the Method trusts these tests more than it trusts most people.
-
----
-
-## api overview
-
-### tensor lifecycle
-```c
-nt_tensor* t = nt_tensor_new(len);           // allocate 1D
-nt_tensor* m = nt_tensor_new2d(rows, cols);  // allocate 2D
-nt_tensor* s = nt_tensor_new_shape(shape, ndim); // arbitrary shape
-nt_tensor* c = nt_tensor_clone(t);           // deep copy
-nt_tensor_ref(t);                             // increment refcount
-nt_tensor_free(t);                            // decrement (free at 0)
-```
-
-### initialization
-```c
-nt_tensor_fill(t, 0.0f);                     // constant fill
-nt_tensor_rand(t, 0.5f);                     // uniform [-0.5, 0.5]
-nt_tensor_xavier(t, fan_in, fan_out);        // Xavier/Glorot
-nt_seed(42);                                  // reproducibility
-```
-
-### training
-```c
-nt_tape_start();                              // begin recording
-int w = nt_tape_param(W);                    // register param
-nt_tape_no_decay(w);                          // exclude from weight decay
-nt_tape_freeze_param(w);                      // (optional) freeze for adapter training
-// ... build forward graph ...
-nt_tape_backward(loss_idx);                   // backward pass
-nt_tape_clip_grads(1.0f);                    // gradient clipping
-nt_tape_adam_step(lr);                        // optimize
-nt_tape_clear();                              // reset tape
-```
-
-### LR schedules
-```c
-nt_schedule s = nt_schedule_cosine(0.001f, warmup, total, min_lr);
-nt_schedule s = nt_schedule_step(0.1f, warmup, step_size, gamma);
-nt_schedule s = nt_schedule_linear(0.001f, warmup, total, min_lr);
-float lr = nt_schedule_get_lr(&s);            // auto-advance
-```
-
-### save/load
-```c
-nt_tensor* params[] = {W1, W2, b1};
-nt_save("model.bin", params, 3);              // binary format
-int n;
-nt_tensor** loaded = nt_load("model.bin", &n); // load back
-```
-
-### SPA helpers (inference-time)
-```c
-float emb[dim];
-nt_spa_embed_sentence(tokens, n, W_embed, V, dim, 0.85f, emb);
-float conn = nt_spa_connectedness(emb, dim, history, n_hist);
-nt_spa_modulate_logits(logits, V, conn, 0.3f);
-```
-
-### BLAS inference API
-```c
-nt_blas_mm(C, A, B, m, k, n);            // C = A @ B
-nt_blas_mmT(C, A, BT, m, k, n);          // C = A @ B^T
-nt_blas_matvec(out, W, x, m, n);         // out = W @ x
-nt_qmatvec(out, Wq, dtype, x, m, k);     // out = W @ x — weights stay PACKED, no f32 blow-up
-```
-
----
-
-## example: training a model in C
-
-here's an actual, working transformer-ish training loop. embedding → attention → linear → cross-entropy. in C. without importing 2.7 GB of your dignity:
-
-```c
-#include "notorch.h"
-
-int main() {
-    nt_seed(42);
-    int vocab = 8, dim = 16, T = 4;
-
-    // allocate parameters
-    nt_tensor* wte = nt_tensor_new2d(vocab, dim);   // token embeddings
-    nt_tensor* wpe = nt_tensor_new2d(T, dim);       // position embeddings
-    nt_tensor* Wq  = nt_tensor_new2d(dim, dim);     // query projection
-    nt_tensor* Wk  = nt_tensor_new2d(dim, dim);     // key projection
-    nt_tensor* Wv  = nt_tensor_new2d(dim, dim);     // value projection
-    nt_tensor* Wo  = nt_tensor_new2d(vocab, dim);   // output projection
-
-    // Xavier init everything
-    nt_tensor_xavier(wte, vocab, dim);
-    nt_tensor_xavier(wpe, T, dim);
-    nt_tensor_xavier(Wq, dim, dim);
-    nt_tensor_xavier(Wk, dim, dim);
-    nt_tensor_xavier(Wv, dim, dim);
-    nt_tensor_xavier(Wo, dim, vocab);
-
-    // tokens: [1, 3, 5, 2], targets: [3, 5, 2, 7]
-    nt_tensor* tokens  = nt_tensor_new(T);
-    nt_tensor* targets = nt_tensor_new(T);
-    float tok[] = {1, 3, 5, 2}, tgt[] = {3, 5, 2, 7};
-    for (int i = 0; i < T; i++) { tokens->data[i] = tok[i]; targets->data[i] = tgt[i]; }
-
-    // training loop
-    nt_schedule sched = nt_schedule_cosine(0.005f, 10, 200, 0.0f);
-
-    for (int step = 0; step < 200; step++) {
-        float lr = nt_schedule_get_lr(&sched);
-        nt_tape_start();
-
-        int wte_i = nt_tape_param(wte); nt_tape_no_decay(wte_i);
-        int wpe_i = nt_tape_param(wpe); nt_tape_no_decay(wpe_i);
-        int wq_i  = nt_tape_param(Wq);
-        int wk_i  = nt_tape_param(Wk);
-        int wv_i  = nt_tape_param(Wv);
-        int wo_i  = nt_tape_param(Wo);
-        int tok_i = nt_tape_record(tokens, NT_OP_NONE, -1, -1, 0);
-        int tgt_i = nt_tape_record(targets, NT_OP_NONE, -1, -1, 0);
-
-        // forward: embed → Q/K/V → attention → output
-        int h      = nt_seq_embedding(wte_i, wpe_i, tok_i, T, dim);
-        int q      = nt_seq_linear(wq_i, h, T);
-        int k      = nt_seq_linear(wk_i, h, T);
-        int v      = nt_seq_linear(wv_i, h, T);
-        int attn   = nt_causal_attention(q, k, v, T, dim);
-        int logits = nt_seq_linear(wo_i, attn, T);
-        int loss   = nt_seq_cross_entropy(logits, tgt_i, T, vocab);
-
-        float lv = nt_tape_get()->entries[loss].output->data[0];
-        if (step % 50 == 0) printf("step %d: loss=%.4f lr=%.6f\n", step, lv, lr);
-
-        nt_tape_backward(loss);
-        nt_tape_clip_grads(1.0f);
-        nt_tape_adam_step(lr);
-        nt_tape_clear();
-    }
-
-    // cleanup
-    nt_tensor_free(wte); nt_tensor_free(wpe);
-    nt_tensor_free(Wq);  nt_tensor_free(Wk); nt_tensor_free(Wv); nt_tensor_free(Wo);
-    nt_tensor_free(tokens); nt_tensor_free(targets);
-    return 0;
-}
-```
-
-compile and run:
-```bash
-cc -O2 -Wall -std=c11 -o train train.c notorch.c -lm
-./train
-```
-
-that's it. that's the whole thing. no virtual environment. no requirements.txt. no "just pip install—" no. we're done with that. we've moved on. we've healed.
-
----
-
-## platform support
-
-| platform | backend | command |
-|---|---|---|
-| macOS | Apple Accelerate (optimized Apple Silicon math) | `make` |
-| Linux | OpenBLAS | `make` |
-| **Android (Termux, ARM64)** | **OpenBLAS via Termux** | **`pkg install libopenblas binutils && make BLAS=1`** |
-| any POSIX | pure C fallback | `make cpu` |
-| NVIDIA GPU | CUDA + cuBLAS | `make gpu` |
-| Apple Silicon (Metal) | packed-Q4_K/Q6_K GGUF inference — 24B on a 24GB Mac | `make infer_gguf_metal` |
-
-the BLAS backends are optional. without them, everything still works — just uses naive C loops, which are fine for anything under ~50M parameters. for bigger stuff, BLAS gives you 10-50x on matmuls because it's using your CPU's vector instructions instead of pretending it's 1995.
-
-the macOS path uses Apple Accelerate, which gives you optimized Apple Silicon math paths for free. no NVIDIA required. no drivers. no compatibility hell. just `make` and go.
-
-### Termux Edition (Android, ARM64)
-
-[Termux](https://termux.dev) is a full POSIX environment on Android — APT package manager, native ARM64 toolchain via clang, OpenBLAS, git, make, gdb, the lot — running without root. For pure-C projects this means no porting work and no compromises: the same `make BLAS=1` that compiles notorch on Linux compiles it on a phone.
-
-notorch builds, tests, and trains end-to-end in this environment. Verified workload (Galaxy A56, Android 15, aarch64, 8 GB RAM): **9.5 M LLaMA 3 char-level model, 10 000 steps in 2 h 13 m, peak RSS 130–155 MB, val 1.15, 0 NaN.** No swap. OpenBLAS on aarch64 gives ~8× over the scalar fallback.
-
-`nt_qmatvec` (packed quantized matvec, PR [#9](https://github.com/ariannamethod/notorch/pull/9) → `2755ab2`) is now verified on the same Termux substrate. `tests/test_qmatvec` passes for the full GGUF dtype set — F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K — bit-close to the dequant→cblas oracle (rel err ~1e-6 across the seven formats, 2.57 s build) on phone-1 NEON / OpenBLAS 0.3.30. Because the packed primitive keeps weights packed and dequantizes each block inline in registers, the ×6–8 RAM dequant scratch that GGUF inference previously needed above the packed footprint is gone — quantized models that did not fit on top of their packed weights inside the 8 GB envelope now do. Logged in [`termux-edition/README.md`](termux-edition/README.md) (2026-06-06).
-
-A phone with 8 GB of RAM and Termux installed is now a credible host for the 10–100 M parameter regime — small LMs, persona LoRAs, narrow code-completion models, micro-translators — and, with packed GGUF matvec, a credible inference host for quantized models that previously needed a workstation. The substrate is the same as on a workstation; the platform is finally accessible.
-
-- [`termux-edition/`](termux-edition/) — setup walkthrough, training tutorial, hardware envelope, packed-matvec verification log
-- Portability patches landed in PR [#5](https://github.com/ariannamethod/notorch/pull/5) (TMPDIR honour + AR override + openblas via pkg-config; merged)
-
----
-
-## file structure
-
-```
-notorch/
-├── notorch.h              # core API — tensors, autograd, optimizers, BPE, ops
-├── notorch.c              # core implementation (~5700 lines)
-├── notorch_vision.h       # image loading, transforms, ViT patches (stb_image)
-├── stb_image.h            # JPEG/PNG/BMP decoder (public domain)
-├── gguf.h                 # GGUF file parser header
-├── gguf.c                 # GGUF parser + F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K dequant
-├── notorch_metal.h        # Apple Metal backend — packed Q4_K matvec, resident weights
-├── notorch_metal.mm       # Obj-C++/MSL: Q4_K inline-dequant matvec on the Apple GPU
-├── notorch_simd.h         # in-house AVX2+FMA cblas shim (zero-dep x86_64 path)
-├── notorch_cuda.h / .cu   # CUDA / cuBLAS backend (USE_CUDA, separate lib)
-├── Makefile               # build everything
-├── examples/
-│   ├── bpe_2048_merges.txt   # reference BPE tokenizer (1792 merges, vocab 2048)
-│   ├── infer_gguf_metal.c    # packed Q4_K/Q6_K GGUF inference on Apple Metal — 24B on a 24GB Mac
-│   ├── bpe.c / bpe.h         # byte-level BPE read straight from a GGUF (Tekken/GPT-2 style)
-│   ├── bench_gguf_metal.sh   # reproducible greedy inference benchmark
-│   ├── infer_gemma.c         # Gemma-3 inference via GGUF — GQA, KV cache (f32)
-│   ├── infer_janus.c         # Janus RRPRAM inference (3-way gated attention)
-│   ├── infer_llama.c         # LLaMA/SmolLM2/Qwen2 inference via GGUF (f32)
-│   ├── infer_llama3_bpe.c    # LLaMA 3 BPE chat — MHA, RoPE, SwiGLU, KV cache, FP16
-│   ├── train_q.c             # PostGPT-Q 1.65M char-level training from scratch
-│   ├── train_yent.c          # Yent 9.8M char-level training with checkpointing
-│   ├── train_llama3_char.c   # LLaMA 3 char-level GQA+RoPE (~9.5M)
-│   ├── train_llama3_bpe.c    # LLaMA 3 BPE 2048 MHA+RoPE (~15.7M)
-│   ├── train_dpo.c           # Direct Preference Optimization (Rafailov 2023)
-│   ├── train_grpo.c          # Group Relative Policy Optimization (DeepSeek-R1)
-│   └── train_distillation.c  # Knowledge distillation (Hinton 2015, teacher→student KL)
-├── tests/
-│   ├── test_notorch.c        # 47 tests, numerical gradient checks, integration
-│   ├── test_vision.c         # 48 vision + BPE tests
-│   ├── test_bitnet_ops.c     # 118 BitNet/SwiGLU/SPA + STE checks
-│   ├── test_sigmoid_scale.c  # 4 tests for sigmoid + scale-by-tensor
-│   ├── test_gguf.c           # GGUF parser smoke test
-│   └── test_qmatvec.c        # packed nt_qmatvec vs dequant→cblas, all 7 dtypes
-├── js-edition/            # notorch.js — pure-JS / WebGPU port (loads + runs GGUF)
-├── termux-edition/        # Android / Termux recipe over the same C tree (aarch64)
-├── LICENSE                # GPL-3.0-or-later
-└── README.md              # this. you survived. congratulations.
-```
-
-total: **~6400 lines of core C + ~4500 of tests + ~6600 of examples**. framework + vision + GGUF + BPE + five inference engines + eight training scripts + ten test binaries + JS and Termux ports. tested on 26+ real model files across 6 architectures.
-
-### models trained on notorch
-
-| model | params | type | train loss | what |
-|-------|--------|------|-----------|------|
-| PostGPT-Q | 1.65M | char | 0.097 | resonant reasoning engine |
-| LLaMA 3 char-level (sample) | 9.5M | char (GQA+RoPE+SwiGLU) | 0.026 | reference char-level trainer |
-| Yent | 9.8M | char | 1.77 | cynical AI character |
-| LLaMA 3 BPE (sample) | 15.7M | BPE 2048 (MHA+RoPE+SwiGLU) | 0.022 | reference BPE trainer |
-| nanollama-notorch | 88.6M | BPE 32k (GQA+RoPE+SwiGLU) | 2.68 | Llama-3 nano — 11.5 days on a MacBook Pro 2019 Intel i5 8gb, 0 NaN across 25K steps |
-
-all trained from scratch on 8 GB Mac. no Python. no pip. Chuck optimizer. (the 88.6M run is the ceiling of the "train it on the laptop you own" regime: 22.86M FineWeb-Edu tokens, train 3.16 → CPT 2.68, then SFT'd to a Method voice — `ariannamethod/nanollama-notorch`.)
-
----
-
-## performance
-
-- **compile time**: <1 second. your coffee won't even cool down.
-- **import time**: 0 ms. there's nothing to import. it's C.
-- **binary size**: ~100 KB. yes, kilobytes. PyTorch's `libtorch.so` is 1.2 GB. notorch is 0.008% of that.
-- **memory overhead**: tensor data + tape entries. no Python object headers. no gradient graph metadata bloat. no "accidental quadratic" from `retain_graph=True`.
-- **matmul speed**: competitive with numpy (which itself uses BLAS) when compiled with OpenBLAS or Accelerate. faster on small matrices because no Python dispatch overhead.
-- **BitLinear**: on Accelerate, the `cblas_sgemm` path through `nt_bit_seq_linear` runs ~18% faster per training step than the naive per-output loop on 2.7M-param BitNet models.
-
-### concurrent training on 8 GB Mac
-
-we ran two transformer trainings simultaneously on a 2019 Intel i5 MacBook with 8 GB RAM. not an M1. not Apple Silicon. the pre-AMX, pre-Neural-Engine Intel one. not sequentially. simultaneously. at the same time. on the same machine. while also running a browser and a terminal.
-
-| model | params | RAM usage | status |
-|-------|--------|-----------|--------|
-| Yent (LLaMA-like, 12L char-level) | 9.8M | ~126 MB | training loss 2.03 → converging |
-| a second dual-mode char VLM (6L) | 6.36M | ~96 MB | text loss 0.0002, draw loss 0.50 |
-
-total memory: **~222 MB** for two active transformer trainings with autograd, Chuck optimizer, cosine scheduling, NaN guard, and checkpointing. both models use Apple Accelerate BLAS. both converge. both produce weights.
-
-try this with PyTorch. one `import torch` eats 800 MB of RAM. one training session on a 10M model needs 2-4 GB. two in parallel? on 8 GB? your OS would start killing processes before the first forward pass finishes.
-
-notorch runs both in ~3% of system memory. because C doesn't allocate what it doesn't need.
-
-for inference, this is excellent. for training, it's more than sufficient for models up to ~100M parameters. for anything bigger, you want distributed training and that's a different problem (and a different repo, probably).
-
----
-
-## references — how to train and run on notorch
-
-start here. these are the canonical builds: Karpathy ports to prove the pipeline, reference models trained from scratch, and the trainers you copy.
-
-**Karpathy ports — the "does it actually work end-to-end" baselines:**
-
-- [**nanoGPT-notorch**](https://github.com/ariannamethod/nanoGPT-notorch) — Karpathy's nanoGPT, ported from PyTorch to notorch.
-- [**llama2-notorch**](https://github.com/ariannamethod/llama2-notorch) — Karpathy's llama2.c on notorch: the entire PyTorch training pipeline replaced by notorch (a Python-stdlib `ctypes` loop into `libnotorch`, no pip), inference in pure C `run.c`.
-
-**reference models — trained from scratch on notorch:**
-
-- [**nanollama-notorch**](https://github.com/ariannamethod/nanollama-notorch) — Llama-3 nano, **88.6M**, no PyTorch. 25K steps on a 2019 Intel i5 8GB, train 3.16 → CPT 2.68, 0 NaN — the ceiling of train-it-on-your-own-laptop, then SFT'd to a Method voice. the reference Llama-3 run.
-- [**notorch-simple-llm**](https://github.com/ariannamethod/notorch-simple-llm) — minimal-surface-area LLM, notorch + Chuck, zero deps. read this first to see how the API composes.
-- [**minimind-v-notorch**](https://github.com/ariannamethod/minimind-v-notorch) — 67M VLM trained from scratch, notorch + Chuck. reference VLM.
-- [**notorch-vlm**](https://github.com/ariannamethod/notorch-vlm) — 1.5M VLM on `notorch_vision.h` + stb_image, trained weights included.
-- [**notorch-vlm-2m**](https://github.com/ariannamethod/notorch-vlm-2m) — 2M multimodal VLM from scratch, GGUF output.
-- [**notorch-diffusion**](https://github.com/ariannamethod/notorch-diffusion) — discrete text diffusion + Hebrew VLM diffusion. reverse-mode autograd works fine when the net is a U-Net, not a transformer.  
-
-**BitNet reference (the algorithm, not a notorch build):** [**microgpt-1bit**](https://github.com/ariannamethod/microgpt-1bit) is a pure-Python BitNet b1.58 (ternary) reference — notorch's own `nt_bit_linear` / `nt_bit_seq_linear` were validated against it.
-
-**how to train:** the trainers live in `examples/` — `train_llama3_char.c` / `train_llama3_bpe.c` (Llama-3 from scratch), `train_q.c`, `train_yent.c`, `train_resonance_lora.c` (LoRA SFT), and `train_dpo.c` / `train_grpo.c` / `train_distillation.c` (alignment). copy one, swap the model, point at your dataset. proven at scale: the Resonance-200M LoRA SFT drove loss **3.52 → 0.59** (honest min 0.18) in ~2 h on one A100, 0 NaN across 1500 steps; the 88.6M nanollama ran 25K steps on a 2019 Intel i5 with 0 NaN.
-
----
-
-## organisms that run on notorch
-
-the appendix. these aren't notorch — they're larger Arianna Method engines that use notorch where they need a tensor/autograd backend, and keep their own physics on top.
-
-- [**Arianna**](https://github.com/ariannamethod/arianna.c) — Arianna in C.
-- [**WTForacle**](https://github.com/ariannamethod/WTForacle) — SmolLM2-360M Q4_0, a single Go binary that runs on notorch through cgo. first organism on the packed CPU matvec: weights kept packed via `nt_qmatvec`, no f32 blow-up — the obkatka cut RSS 1.6 GB → 588 MB. charismatic, hand-written dataset.
-- [**doe**](https://github.com/ariannamethod/doe) — Democracy of Experts (Janus). wraps any GGUF read-only and grows a living Hebbian LoRA **parliament** on top of it (θ = ε + γ + αδ): experts vote per token, are born by mitosis and die by apoptosis. notorch is its Hebbian training substrate — and now its packed inference matvec too: weights stay packed via `nt_qmatvec` (vendored inline, single file), no f32 blow-up — RSS ×2.27 on a 360M personality. our classic.
-- [**postgpt**](https://github.com/ariannamethod/postgpt) — the metaweight seed of this whole lineage (SPA and RRPRAM flowed from here). Zero-dependency runtime; its training loop now runs on notorch through a small `ariannamethod/` ctypes shim — the dual-attention (Content QK^T + RRPRAM) graph on the notorch tape, trained with the real Chuck. PyTorch evicted.
-- [**q**](https://github.com/ariannamethod/q) — PostGPT-Q resonant reasoning engine: triple attention + DoE parliament, 2M-param C inference.
-- [**caveLLMan**](https://github.com/ariannamethod/caveLLMan) — a colony of char-level LMs that talk, reproduce by weight-blending, and die under population pressure. notorch is the per-cave autograd + microtrain backend.
-- [**pitomadom.c**](https://github.com/ariannamethod/pitomadom.c) — Hebrew Root Resonance Engine, Janus architecture.
-- [**molequla**](https://github.com/ariannamethod/molequla) — a live ecology of GPT organisms with conscience, immune rollback, DNA exchange; trains its low-rank-RRPRAM transformer on the notorch tape.
-- [**dario**](https://github.com/ariannamethod/dario) — resonance OS (7 forces, 6 Kuramoto chambers, SARTRE). notorch runs the 176M Janus at its center.
-- [**ariannamethod.cli**](https://github.com/ariannamethod/ariannamethod.cli) — the public, distilled edition of the metaharmonix terminal (the full native CLI, which bakes notorch in so the shell ships a tensor library, stays an internal Method tool).
-- [**janus**](https://github.com/ariannamethod/janus) — the Janus Architecture itself.
-- [**yent.aml**](https://github.com/ariannamethod/yent.aml) — Janus 176M Yent SFT inference written in AML, linking notorch + libaml (not vendored). Two faces: Janus (triple attention) and Janus-R (a 12-step bidirectional associative resonator). notorch is the linked tensor/matvec backend; the language carries the Dario field on top.
-- [**resonance.aml**](https://github.com/ariannamethod/resonance.aml) — Resonance 200M, the other face of Yent: dual attention (Content + RRPRAM low-rank), in AML, linking notorch + libaml. notorch's RRPRAM low-rank op (33) was trained at scale on this model — the LoRA SFT that drove loss 3.52 → 0.59.
-- [**nanodurov**](https://github.com/ariannamethod/nanodurov) — a 15.7M BPE LLaMA on notorch that also happens to be a Telegram client.
-- [**yent.yo**](https://github.com/ariannamethod/yent.yo) — an AI artist that argues back: two from-scratch nanollama Yents + a BK-SDM diffusion model paint an oppositional reaction to your prompt. **The first organism on notorch's image op set** — both the dual-Yent LLMs and the Stable-Diffusion CLIP→UNet→VAE run on notorch (`-tags notorch`), exercising `nt_conv2d`, `nt_group_norm`, `nt_attention` and `nt_upsample_nearest` (added in v4.0.0). The whole pipeline runs end-to-end, bit-identical to the in-repo accel.c kernels.
-- [**yent**](https://github.com/ariannamethod/yent) — Yent the digital persona, not a product: a Qwen2.5 inference engine in Go with a C notorch kernel (cgo `nt_qmatvec` packed matvec, no PyTorch). Delta Voice — the generation physics — is driven by AML. The umbrella inference repo for the Method's Yent line.
-  
-if you trained something on notorch and it's not here, open a PR.
-
----
-
-## js edition — notorch.js
-
-> *"the logic of memory without the weight of framework"*
-> — `js-edition/notorch.js`, line 1
-
-a single-file pure-JavaScript port of notorch for the browser. WebGPU when available, V8-optimised CPU fallback (Math.fround f32 hint) when not. zero npm dependencies. live at `js-edition/notorch.js` (~3900 LOC).
-
-### what it ships (feature parity with the C lib at small scale)
-
-**inference primitives** — `add / sub / mul / div / neg / scale / transpose / softmax / silu / sigmoid / tanh / relu / gelu / swiglu / swigluFFN / layernorm / rmsnorm / embedding / attention (multi-head causal, fused) / rope / dropout / concat / slice / linear / argmax / sample (temperature + top-k + top-p) / KVCache`.
-
-**weight loaders** — `loadNotorchBin` (NTOR magic, byte-compatible with `notorch.c:3207`), `loadSafetensors` (HF JSON-header format), `saveNotorchBin`.
-
-**tokenizers** — `CharTokenizer` (with `.fit()`), `BPETokenizer` (`fromMerges` + greedy lowest-rank-pair encode).
-
-**training** — full reverse-mode `Tape` with backward implementations for every forward primitive (matched 1:1 to C `notorch.c` switch). engine losses: `nt.crossEntropyLoss`, `nt.seqCrossEntropyLoss`, `nt.mseLoss`. optimizers: `SGD` with momentum and **`Chuck` 1:1 ported** from `nt_tape_chuck_step` — all 4 levels (global loss EMA dampen, per-param dampen, stagnation noise, macro-patience LR scale). plus `clipGradNorm`, cosine + step `Schedule`s.
-
-**engine quality** — WebGPU buffer pool keyed by `(byteSize, usage)` with explicit `cleanup()`, **tiled WGSL matmul kernel (16×16 workgroup-shared tiles)**, async pipeline cache, tape `mark()` / `truncate()` so the forward graph rebuilds without losing optimizer state, CPU matmul switched from naive ijk to 32×32 tile-blocked.
-
-### the test that proves it works
-
-a tiny GPT (vocab=64, dModel=32, nHeads=2, ctx=16, 1 layer, **20 576 params**) trained for 50 steps on a trivial `"abcabc..."` corpus with Chuck:
-
-```
-step  0 | loss 4.0888 | lr 1.00e-4
-step 10 | loss 0.7211 | lr 4.85e-3
-step 20 | loss 0.0717 | lr 3.77e-3
-step 30 | loss 0.0109 | lr 2.12e-3
-step 40 | loss 0.0062 | lr 6.73e-4
-step 49 | loss 0.0061 | lr 1.06e-4
-
-Loss trajectory: 4.0888 → 0.0061 (99.9% drop) over 50 steps
-Sample after training (T=0.5): "bcabcabc"  ← perfect cycle continuation
-```
-
-autograd works, Chuck works, sampler works, everything works.
-
-### caveats
-
-- WebGPU paths are code-correct but were not runtime-verified in node (no headless WebGPU). real validation needs a browser. CPU path passes everywhere `node` runs.
-- GQA, BitLinear/BitNet, low-rank RRPRAM, GEGLU, scale-by-t and friends are ported (op parity through op 36 — the full C op set); op 34 RRPRAM-broadcast and op 36 SEQ_GATE landed 2026-07-15, C-parity + finite-diff verified. `loadGGUF` (GGUF v3, F16+F32) and `loadSafetensors` are wired.
-- generic transpose backward covers 2D and 3D `(1, 2)` swap (sufficient for attention; not fully general).
-- async batching of multiple GPU ops into one submit is partially achieved through the buffer pool, but no explicit op queue. impact only matters once multiple GPU ops chain.
-
-### use it
-
-```html
-<script type="module">
-  import { Notorch, Tensor, CharTokenizer, Tape, Chuck } from './js-edition/notorch.js';
-
-  const nt = new Notorch();
-  await nt.init();  // tries WebGPU, silently falls back to CPU
-
-  // ... build your tiny transformer, then call nt.crossEntropyLoss(...)
-  // or nt.seqCrossEntropyLoss(...) during the training step.
-</script>
-```
-
-zero build step, zero npm install, zero `node_modules`. paste it into a `<script>` and go.
-
----
+| [notorch-simple-llm](https://github.com/ariannamethod/notorch-simple-llm) | minimal LLM with Chuck; start here |
+| [nanoGPT-notorch](https://github.com/ariannamethod/nanoGPT-notorch) | Karpathy's nanoGPT on NoTorch |
+| [llama2-notorch](https://github.com/ariannamethod/llama2-notorch) | llama2.c with a NoTorch training pipeline |
+| [nanollama-notorch](https://github.com/ariannamethod/nanollama-notorch) | 88.6M Llama-3 nano trained on an 8 GB Intel Mac |
+| [minimind-v-notorch](https://github.com/ariannamethod/minimind-v-notorch) | 67M VLM from scratch |
+| [notorch-vlm](https://github.com/ariannamethod/notorch-vlm) / [notorch-vlm-2m](https://github.com/ariannamethod/notorch-vlm-2m) | small multimodal models |
+| [notorch-diffusion](https://github.com/ariannamethod/notorch-diffusion) | text and Hebrew VLM diffusion |
+
+The organisms carry their own physics: [Arianna](https://github.com/ariannamethod/arianna.c),
+[Yent](https://github.com/ariannamethod/yent), [DoE](https://github.com/ariannamethod/doe),
+[PostGPT](https://github.com/ariannamethod/postgpt), [Q](https://github.com/ariannamethod/q),
+[Janus](https://github.com/ariannamethod/janus), [molequla](https://github.com/ariannamethod/molequla),
+[Dario](https://github.com/ariannamethod/dario) and the rest of the
+[Method family](NOTORCHLOG.md#readme-organisms-that-run-on-notorch).
+
+[Training records](NOTORCHLOG.md#readme-file-structure) ·
+[reference builds and trainers](NOTORCHLOG.md#readme-references--how-to-train-and-run-on-notorch).
 
 ## philosophy
 
 > *patterns over parameters. emergence over engineering. C over existential dread.*
 
-neural networks are not complicated. a linear layer is a matrix multiply. an activation function is a pointwise nonlinearity. attention is a weighted sum. cross-entropy is a log-probability. backward is the chain rule.
+a linear layer is a matrix multiply. an activation is a pointwise nonlinearity.
+attention is a weighted sum. backward is the chain rule.
 
-that's it. that's the whole field. everything else is optimization, infrastructure, and marketing.
+you should be able to read the code that runs your model. follow the gradient.
+find the allocation. change the architecture. train on the laptop you own.
+ship an organism with its own voice and its own physics.
 
-notorch solves the case that matters: training and running models in C, with minimal dependencies, maximal transparency, and the ability to embed in any application without shipping a Python runtime.
-
-if you can read the code, you understand the framework. there's no magic. there's no hidden complexity. every gradient is hand-derived and verified against finite differences. every memory allocation has a corresponding free. every edge case is checked.
-
-this is what software looks like when you strip away everything that doesn't serve the core purpose. just math. memory. the machine doing exactly what you told it to do.
-
----
+just math. memory. the machine doing exactly what you told it to do.
 
 ## contributing
 
-send PRs. the rules:
-- keep it C11 compliant
-- no external dependencies (BLAS is optional and compile-time)
-- add tests for new ops (with numerical gradient checks)
-- keep the header clean — if it doesn't need to be public, don't expose it
-- run `make test` before submitting. all tests must pass.
-
----
+send PRs. keep the core C11 compliant, dependencies optional, public headers
+clean, and new operations covered by numerical gradient checks. Run the relevant
+gates. Follow [AGENTS.md](AGENTS.md): work on a branch, record the work in
+NOTORCHLOG, keep README for the specification and manifesto. Oleg merges.
 
 ## license
 
-GPL-3.0-or-later (see `LICENSE`). use it in your stuff. if you ship it, share your source — that's how copyleft works. don't be weird about it.
-
-  
-just: `cc -O2 notorch.c your_model.c -lm -o train && ./train`
+[GPL-3.0-or-later](LICENSE). use it in your stuff. if you ship it, share your
+source — that's how copyleft works. don't be weird about it.
 
 go build something.
 
 > *"the patterns were always there. we just needed the right language to express them."*
-
-
-```
-   ███╗   ██╗ ██████╗ ████████╗ ██████╗ ██████╗  ██████╗██╗  ██╗
-   ████╗  ██║██╔═══██╗╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝██║  ██║
-   ██╔██╗ ██║██║   ██║   ██║   ██║   ██║██████╔╝██║     ███████║
-   ██║╚██╗██║██║   ██║   ██║   ██║   ██║██╔══██╗██║     ██╔══██║
-   ██║ ╚████║╚██████╔╝   ██║   ╚██████╔╝██║  ██║╚██████╗██║  ██║
-   ╚═╝  ╚═══╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝
-```  
