@@ -759,6 +759,13 @@ Frozen and explicitly rotated-credit lives give this experiment named controls;
 the native mechanism is checked by `make test_chuck_living`. The ordinary Chuck
 trajectory and the v1 saved-life format remain intact.
 
+The fixed living run completes 16,640 body updates and 2,560 policy fits on two
+new seeds per body. Acquisition directly changes 16 next actions at unchanged
+observations. Living credit improves final held-out loss over the frozen life
+in 3/4 pairs and over rotated credit in 4/4. It improves over canonical Chuck on
+both HeVLM seeds and regresses on both SimpleLLM seeds. Probe-off and saved-life
+continuations remain exact; the linked receipts retain the Simple 2357 regression.
+
 ---
 
 ## bit-level precision — BitNet b1.58

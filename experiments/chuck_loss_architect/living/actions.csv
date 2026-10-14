@@ -1,0 +1,17 @@
+body,seed,arm,legacy,hold,brake,push,brake_changed_dampen,brake_at_bound,first_floor,fit_action_changes
+simple,1711,canonical,512,0,0,0,0,0,,0
+simple,1711,frozen,0,35,350,127,127,223,283,0
+simple,1711,living,0,124,202,186,105,97,287,5
+simple,1711,rotated,0,263,246,3,43,203,113,5
+simple,2357,canonical,512,0,0,0,0,0,,0
+simple,2357,frozen,0,43,340,129,114,226,284,0
+simple,2357,living,0,47,339,126,110,229,202,3
+simple,2357,rotated,0,232,243,37,76,167,269,4
+hevlm,1711,canonical,512,0,0,0,0,0,,0
+hevlm,1711,frozen,0,5,451,56,80,371,141,0
+hevlm,1711,living,0,130,229,153,174,55,298,6
+hevlm,1711,rotated,0,97,381,34,73,308,113,5
+hevlm,2357,canonical,512,0,0,0,0,0,,0
+hevlm,2357,frozen,0,1,452,59,79,373,139,0
+hevlm,2357,living,0,55,350,107,125,225,180,2
+hevlm,2357,rotated,0,155,323,34,73,250,122,6

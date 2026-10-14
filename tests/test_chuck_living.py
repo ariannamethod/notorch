@@ -123,7 +123,7 @@ def final_parity(left: Path, right: Path, policy=True) -> dict:
 
 
 def validate(rows: list[dict], arm: str, steps: int, probes: bool) -> dict:
-    """Independent event/action joins; the production runner has its own gate."""
+    """Receipt gate shared by the native fixture and the production runner."""
     assert rows and rows[0]["type"] == "living_run" and rows[-1]["type"] == "living_summary", "incomplete living trace"
     metadata, summary = rows[0], rows[-1]
     assert len(selected(rows, "living_run")) == len(selected(rows, "living_summary")) == 1

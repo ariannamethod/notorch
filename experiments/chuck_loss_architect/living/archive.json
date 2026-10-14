@@ -1,0 +1,16 @@
+{
+  "file": "chuck-living-52dca982-evidence.tar.gz",
+  "bytes": 14456626,
+  "sha256": "a443f4a20e996a7defae3e5fc570a2f4b9542c5cf5c818cc04e9358435e31c45",
+  "members": 932,
+  "index": {
+    "bytes": 170299,
+    "sha256": "5876b7aadb92a54212515ff5b1904ec924fcc6b9cf8b337ba7abe1c05d66e893"
+  },
+  "verified_original_anchors": {
+    "raw": 350,
+    "smoke": 102
+  },
+  "all_members_verified": true,
+  "numerical_replay": false
+}
