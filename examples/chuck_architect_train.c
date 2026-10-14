@@ -21,9 +21,15 @@
 
 #define MAX_LAYERS 4
 #define MAX_PARAMS (2 + MAX_LAYERS * 9 + 2)
+#ifdef NT_CHUCK_ARCHITECT_TEST
+#define CTX 8
+#define DIM 8
+#define HD 4
+#else
 #define CTX 64
 #define DIM 128
 #define HD 32
+#endif
 #define EVAL_WINDOWS 8
 
 typedef struct {
@@ -78,6 +84,9 @@ static void body_init(body *m, const char *name) {
     } else if (!strcmp(name, "hevlm")) {
         m->layers = 4; m->hidden = 512; m->vocab = 256; m->positional = 1;
     } else die("body must be simple or hevlm");
+#ifdef NT_CHUCK_ARCHITECT_TEST
+    m->layers = 1; m->hidden = 16; m->vocab = 8;
+#endif
     matrix(m, m->vocab, DIM, m->vocab, DIM);
     if (m->positional) matrix(m, CTX, DIM, CTX, DIM);
     float residual_scale = m->positional ? 0.02f / sqrtf(2.0f * m->layers) / 0.1f : 1.0f;
@@ -286,12 +295,14 @@ static long parse_integer(const char *text, long low, long high) {
 #include "chuck_architect_scenarios.h"
 #include "chuck_architect_rollout.h"
 #include "chuck_architect_lived.h"
+#include "chuck_architect_living.h"
 
 int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "--scenarios")) return scenario_main(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "--rollout")) return rollout_main(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "--lived")) return lived_main(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "--trajectory")) return lived_main(argc, argv);
+    if (argc > 1 && !strcmp(argv[1], "--living")) return living_main(argc, argv);
     if (argc != 8 && argc != 9) {
         fprintf(stderr, "usage: %s simple|hevlm adam|chuck|legacy|learned TOKENS OUT_PREFIX STEPS SEED LR [ARCHITECT_JSON]\n", argv[0]);
         return 2;

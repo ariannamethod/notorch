@@ -1,0 +1,142 @@
+{
+  "schema": 1,
+  "name": "living-credit-v1",
+  "status": "preregistered-before-new-seed-runs",
+  "question": "Can the same 163-weight Chuck acquire measured consequences in its current training life, and does the action-to-outcome association change that life?",
+  "source_base": "f88183ffeb506abd00242a075d629cd5edb604ad",
+  "previous_results_sha256": "99b7f72453ecc36e420e1aa7a13048c1889d7ec6fa717b12b889e09682751416",
+  "previous_archive_sha256": "187be0ac0f45557285a28b3a4e3708e03730dbfa3d6ad7c7408c798149e36474",
+  "input_life": {
+    "file": "refit-parent.policy.bin",
+    "bytes": 1016,
+    "sha256": "03d1bb5072166d44384cf301a0fd7e7630d988a6a33ed19626bee82f892d6640",
+    "reason": "The previous parent-state refit improved over its input student on all four sealed deployments. This informed choice is fixed before the two new seeds; it is not a fresh model-selection result."
+  },
+  "bodies": {
+    "simple": 450688,
+    "hevlm": 1123456
+  },
+  "body_order": [
+    "simple",
+    "hevlm"
+  ],
+  "seeds": [
+    1711,
+    2357
+  ],
+  "steps": 512,
+  "context": 64,
+  "body_lr": 0.0003,
+  "gradient_clip": 1,
+  "threads": 2,
+  "dtype": "F32",
+  "cpu_only": true,
+  "arms": [
+    "canonical",
+    "frozen",
+    "living",
+    "rotated"
+  ],
+  "checkpoints_before_updates": [
+    1,
+    65,
+    129,
+    193,
+    257,
+    321,
+    385,
+    449
+  ],
+  "initialization": "Each independent body/seed arm starts identical body/window/noise RNG. Learned arms copy only the same 163 saved weights into fresh Architect history; seed=body seed, exploration=0. Canonical uses nt_tape_chuck_step.",
+  "acquisition": {
+    "arms": [
+      "frozen",
+      "living",
+      "rotated"
+    ],
+    "actions": [
+      "hold",
+      "brake",
+      "push"
+    ],
+    "horizon": 16,
+    "continuation": "Force first action, then fifteen decisions by this checkpoint's current frozen weights with actual frozen-feedback history after every update.",
+    "snapshot": "Capture complete body/tape/gradients/moments/global and per-slot Chuck/Architect/RNG/train mode. Each branch begins at the same captured state; restore exact source before any fit or host update.",
+    "measurements": "Keep each branch's H16 loss on the next four fixed training windows separate from same-window feedback and fixed held-out loss. Arithmetic and comparisons execute in C.",
+    "fit": "living receives current measured H/B/P future-four losses; rotated assigns H/B/P = measured P/H/B. Frozen fits zero. Record measured and assigned values separately; do not silently relabel actions.",
+    "failure": "Retain and stop on nonfinite/incomplete measurement or restoration failure; fit no incomplete world. No numerical replay is used to repair damaged evidence."
+  },
+  "objective": "state-span-huber-v1: delta[a]=double(loss[HOLD])-loss[a]; scale=max(max_abs_finite_delta,1e-6*(abs(double(loss[HOLD]))+1)); target[a]=delta[a]/scale. Native mean three-head Huber delta1 with simultaneous update from pre-fit weights.",
+  "fitting": {
+    "parameters": 163,
+    "learning_rate": 0.03,
+    "updates_per_checkpoint": 32,
+    "updates_per_fitting_run": 256,
+    "weights_only": true,
+    "history_feedback_regression": false
+  },
+  "controls": {
+    "frozen": "Same life, observations, actual feedback and diagnostics; weights stay fixed. Compared with living, asks what acquisition changes.",
+    "rotated": "Same measurement and fitting budget, deliberately shifted credit. Compared with living, asks whether matching an executed action to its consequence matters. A negative-control arm is not a claim that living must win.",
+    "canonical": "Unchanged Chuck reference; no Architect decisions or diagnostic branches.",
+    "probe_off": "Repeat frozen without probes for all four body/seed pairs; every host transition, evaluation and final policy must match.",
+    "resume": "Repeat living with full Architect save/load after step256 for first seed1711 on each body. Actual body remains in process. All host/acquisition/evaluation events and final policy match uninterrupted execution; this does not claim out-of-process full-body resumption."
+  },
+  "evaluations_after_updates": [
+    0,
+    128,
+    256,
+    384,
+    512
+  ],
+  "primary_comparisons": [
+    "living versus frozen: acquired experience within one life",
+    "living versus rotated: correct action credit at matched fit budget"
+  ],
+  "metrics": [
+    "held-out curves and final paired deltas",
+    "pre/post-fit scores and selected action at an identical restored world",
+    "measured/assigned H16 outcomes and native target/objective",
+    "actual decreases of dampen versus saturated BRAKE selections",
+    "first floor entry and action sequence",
+    "full source/restored state identities and policy checkpoint hashes",
+    "elapsed seconds and peak RSS (descriptive, not a throughput benchmark)"
+  ],
+  "fixed_counts": {
+    "primary_processes": 16,
+    "probe_off_processes": 4,
+    "resume_processes": 2,
+    "total_processes": 22,
+    "host_updates": 11264,
+    "acquisition_checkpoints": 112,
+    "measured_branches": 336,
+    "branch_updates": 5376,
+    "all_body_updates": 16640,
+    "fit_updates": 2560,
+    "frozen_source_continuation_checks": 512
+  },
+  "gates": [
+    "legacy golden trajectory remains",
+    "probe-on/off exact host parity",
+    "source restore exact before fitting",
+    "only weights change across fitting",
+    "actual measured values reach the named action's target",
+    "deliberately wrong living credit is rejected",
+    "deterministic full trace and Architect save/load continuation",
+    "old --trajectory receipts remain compatible"
+  ],
+  "limits": [
+    "Only two bodies and two new seeds, CPU F32. No GPU claim.",
+    "H16 continuation is frozen before the 32 fits; the newly fitted life may subsequently choose different actions. This remaining mismatch is recorded, not declared solved.",
+    "No recurrent capacity, extra action, DOE integration, new scalar penalty or hyperparameter sweep.",
+    "Held-out windows are reported, not fitting targets.",
+    "Success of the mechanism does not require beating canonical Chuck."
+  ],
+  "receipts": "Commit protocol, runner, compact summaries and SHA-256 identities. Preserve raw traces, input corpora/tokens/vocab, source/config, initial/acquired/final lives and immutable byte anchors separately. No huge fork-body copies; deterministic source+inputs+seed+complete trace reconstruct the trajectory.",
+  "smoke": {
+    "seed": 42,
+    "steps": 16,
+    "purpose": "Development-only fixture and wiring. Never tune on1711/2357."
+  }
+}
+

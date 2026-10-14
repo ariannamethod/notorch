@@ -1,0 +1,36 @@
+{
+  "status": "PASS",
+  "source_commit": "52dca982df285d06c71e58c0d458839702be746c",
+  "cpu_suite": {
+    "command": "make -j2 test BLAS_FLAGS= BLAS_LIBS=",
+    "exit_code": 0,
+    "log": {
+      "bytes": 123169,
+      "sha256": "0c23d2142aed42f7379a5f0f7bb10667d15a87c647b25e428cd787573267f77b"
+    },
+    "observed_test_recipe_lines": 50
+  },
+  "host_build": {
+    "command": "make chuck_architect_train BLAS_FLAGS= BLAS_LIBS=",
+    "exit_code": 0,
+    "log": {
+      "bytes": 148,
+      "sha256": "1c7c1dd44763f72615b4ea580bf8dd3e5fecdca6128bf31d47d5cf12e6b5f84b"
+    }
+  },
+  "old_trajectories": {
+    "command": "python3 tests/test_chuck_trajectories.py --json RECEIPT",
+    "exit_code": 0,
+    "receipt": {
+      "bytes": 1563983,
+      "sha256": "ac48b0e00156694f87a36eaf0374ced5e81d54fe82f2e3224e7428d11355aaff"
+    }
+  },
+  "existing_output_refusal": {
+    "status": "PASS",
+    "existing_output_preserved": true,
+    "exit_code": 1,
+    "reason": "refusal did not create failure.json"
+  },
+  "numeric_core_unchanged_since_base": true
+}

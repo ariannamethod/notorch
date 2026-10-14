@@ -1,0 +1,64 @@
+{
+  "status": "PASS",
+  "archive_sha256": "187be0ac0f45557285a28b3a4e3708e03730dbfa3d6ad7c7408c798149e36474",
+  "index_sha256": "5621a0e3992d5d8994c4b8987fd78143b8e87baa91cacdf876e844dbdb6d458f",
+  "verified_files": {
+    "simple.corpus": {
+      "bytes": 852813,
+      "sha256": "16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c"
+    },
+    "results.json": {
+      "bytes": 778689,
+      "sha256": "99b7f72453ecc36e420e1aa7a13048c1889d7ec6fa717b12b889e09682751416"
+    },
+    "protocol.json": {
+      "bytes": 8798,
+      "sha256": "86673afd0abc04b5f389aeb4400765287fbc9a0951963639d961fc70a9c6c121"
+    },
+    "hevlm.corpus": {
+      "bytes": 69766,
+      "sha256": "c00b8bcc31785798771aad5fb49f3b420b6a8eb3b7a20c28d0f09c967a52587e"
+    },
+    "architect-config.json": {
+      "bytes": 313,
+      "sha256": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5"
+    },
+    "simple.tokens.u32": {
+      "bytes": 3374540,
+      "sha256": "a1876f953a5a306dea7cf9896ea4d634e52808ee7b61570387b590a5b2e0d7d8"
+    },
+    "hevlm.vocab.json": {
+      "bytes": 1685,
+      "sha256": "3e799c43339132e8709ebd0c566262d1893e3f30d4b94fa63014fff5229648a0"
+    },
+    "simple.vocab.json": {
+      "bytes": 683,
+      "sha256": "faad8eeec3efadd4b3f26bbeea45f18c4cacd52a990219c51681c5e7eaab2c82"
+    },
+    "parent.policy.bin": {
+      "bytes": 1016,
+      "sha256": "e93349d96f31a6a8be37e0f35571ad48d32d9c3213613d223416158c9d572dcb"
+    },
+    "student.policy.bin": {
+      "bytes": 1016,
+      "sha256": "713c3c2d505cabc03de00d7d04d6814cd40e1ec6fc716c0ef2532f4c3494bec1"
+    },
+    "refit-parent.policy.bin": {
+      "bytes": 1016,
+      "sha256": "03d1bb5072166d44384cf301a0fd7e7630d988a6a33ed19626bee82f892d6640"
+    },
+    "manifest.json": {
+      "bytes": 16116,
+      "sha256": "dbc60ec33f986de910ede40f9c55a7f014431d5cd3dbee0c8d56f4d305d86513"
+    },
+    "refit-self.policy.bin": {
+      "bytes": 1016,
+      "sha256": "742c7919856a068ccc5b03cda6c14046b022f81f079413cdf9d7d414a45a62fd"
+    },
+    "hevlm.tokens.u32": {
+      "bytes": 279064,
+      "sha256": "4231823fb9cd54610541223c05222d186167c7633a8070a15d5888921573328b"
+    }
+  },
+  "numerical_replay": false
+}

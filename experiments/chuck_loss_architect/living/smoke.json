@@ -1,0 +1,82 @@
+{
+  "status": "PASS",
+  "counts": {
+    "total_processes": 12,
+    "host_updates": 192,
+    "acquisition_checkpoints": 8,
+    "branch_updates": 384,
+    "fit_updates": 192,
+    "frozen_source_continuation_checks": 32,
+    "all_body_updates": 576,
+    "measured_branches": 24
+  },
+  "results": {
+    "bytes": 55039,
+    "sha256": "bae716439bb2d52b30ee3e410626e72fa5b2ef4393e011618394bd7bcd59e15a"
+  },
+  "source_sha256": {
+    "notorch.c": "252a745c48ac0e138d613e3d9f9ad54b549e5f86c58298d409cff2fc1c9f8e46",
+    "notorch.h": "08643bb7b9f6299ae44672daec0c860d2d3457686eb5e6a9d298bf108381b013",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+    "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+    "examples/chuck_architect_train.c": "78ae07740796d2a21ddc614e39f3b0512b429a69eb23efc28cfd59bb122365a8",
+    "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+    "examples/chuck_architect_rollout.h": "d56e44f403d9d371c7b376ca6791428d1d5f54f76828fb0d504f8e90aae62de7",
+    "examples/chuck_architect_lived.h": "e9719b667d3268cee8e01030e8f69f9056c14c0dc66b741b334dd16305c7d074",
+    "examples/chuck_architect_living.h": "bf97e5b1d11380f7bf76f6f02dce9b9425fab4216f09b671ce2d8b2d76935331",
+    "examples/chuck-loss-architect.json": "ee842f88cba738e8a0fd85e4a879e734f46d0f6a10331ddc3c4765a9308c87b5",
+    "tests/test_chuck_living.py": "20d181539dacbba8636fbcb96c96ce3a2a27bdf3728b6c7306403fe6aa2f8f0d",
+    "experiments/chuck_loss_architect/conditional/run.py": "4cc2a8151ecfd4b2edf0f82163671eb8552b93b126e73ed4f335c3dc3cdc6a35",
+    "experiments/chuck_loss_architect/future/run.py": "8a4474b08bb77f3903735e7de6e1d25569a160c9d2c38d3f7c4a0998b5929391",
+    "experiments/chuck_loss_architect/lived/run.py": "81f50ed8aa2f704136a398175d6968b3bbd1fba3aee3dbd2ba1cc0ff9f4191c9",
+    "experiments/chuck_loss_architect/living/run.py": "7674f60ac25c73f79eb6e2e9c93be10fdd7c0714108d429ec27dd1ffd414ce48",
+    "experiments/chuck_loss_architect/run.py": "1e9b6b61a4c0e8cb532b27cfd8bacf621b400d678648546bfb3a4f2104e98ffc",
+    "experiments/chuck_loss_architect/scenarios/run.py": "695e73a779f86f7d09de2cb015ff69e60736bf7516d4f997dcd17d33858b0b24",
+    "experiments/chuck_loss_architect/trajectories/run.py": "de58f9455a74d56648ba62360d89e55bbd583a63fb2a23d154cfcdb1e76db26c",
+    "experiments/chuck_loss_architect/living/protocol.json": "c38e985263cd40f941f25bc3516f084fbb8c6a7da09bf2d17df4091ec7bf9240"
+  },
+  "smoke": true,
+  "dirty_source_recorded": true,
+  "probe_parity": [
+    {
+      "status": "PASS",
+      "left": "runs/simple-s42-frozen",
+      "right": "runs/simple-s42-frozen-probe-off",
+      "compared_events": 18,
+      "policy_files": 2,
+      "steps": 16,
+      "final_state_hash": "b0ae729903036eb6"
+    },
+    {
+      "status": "PASS",
+      "left": "runs/hevlm-s42-frozen",
+      "right": "runs/hevlm-s42-frozen-probe-off",
+      "compared_events": 18,
+      "policy_files": 2,
+      "steps": 16,
+      "final_state_hash": "aff0024acf935cb9"
+    }
+  ],
+  "resume_parity": [
+    {
+      "status": "PASS",
+      "left": "runs/simple-s42-living",
+      "right": "runs/simple-s42-living-resume",
+      "compared_events": 104,
+      "policy_files": 4,
+      "steps": 16,
+      "final_state_hash": "eea2ddb7db20183d"
+    },
+    {
+      "status": "PASS",
+      "left": "runs/hevlm-s42-living",
+      "right": "runs/hevlm-s42-living-resume",
+      "compared_events": 104,
+      "policy_files": 4,
+      "steps": 16,
+      "final_state_hash": "748efc2971da3e3c"
+    }
+  ],
+  "integrity_failures": []
+}

@@ -13,6 +13,96 @@ Newest entries on top.
 
 ---
 
+## 2026-10-14 — Chuck living consequences change choices; both outcomes retained
+
+Preregistered living acquisition completes from clean published `52dca982`:
+22 CPU processes, **16,640 body updates and 2,560 native policy fits**. SimpleLLM
+(450,688) and HeVLM (1,123,456) run 512 steps with seeds 1711/2357, F32, context 64,
+body LR .0003 and 2 SIMD threads on AMD EPYC 9V74. Input life, corpora, machine
+metadata, compiler, command, all source hashes and raw-result identity are recorded
+in `experiments/chuck_loss_architect/living/results.json`.
+
+The four primary living lives change **16 next actions in 32 acquisitions**
+while the source world and captured features remain fixed. In Simple 1711 at 129,
+measured H/B/P losses 2.63455939/2.63477254/2.63438725 train conditioned targets
+0/-1/.80760628. Thirty-two fits change HOLD to PUSH; the actual host executes
+PUSH at that same restored world. The first living/frozen differences occur
+earlier, at steps 48/82 on Simple and 39/43 on HeVLM, with identical preceding
+training paths and current observations. Consequences alter later action within
+the same life, without expanding the 163-parameter policy.
+
+Final held-out loss improves over frozen in 3/4 pairs and rotated credit in 4/4.
+Against canonical Chuck it improves both HeVLM runs and regresses both Simple
+runs. Simple 2357 also regresses against frozen: 2.56772947 versus 2.55345941.
+Its dampen floor arrives at 202 versus 284 despite 339 versus 340 BRAKE selections.
+The actual increases/decreases and saturated selections stay separate in the
+action table; no aggregate count substitutes for the training trajectory.
+
+All 512 frozen source-continuation checks, four 512-step probe-off controls and
+two 512-step living save/load repeats are exact. An independent read-only audit
+authenticates 296 artifacts and 112 pre/post-acquisition lives, preserving every
+non-weight byte. No full-run or smoke artifact integrity failure occurred.
+The complete raw archive has 932 verified members, 350 full-run byte anchors and
+102 smoke anchors; its SHA-256 is published in `living/archive.json`.
+The native defect gate and full CPU suite already passed at the source commit.
+
+This is acquired action selection in the ongoing training world. The measured
+H16 continuation still precedes its 32 fits; repeated updated choices may differ
+from it. The results retain that boundary, the regression and the full curves.
+The experiment makes no GPU claim and introduces no inference-side change.
+
+---
+
+## 2026-10-14 — Chuck acquires measured consequences before its next action
+
+The native `--living` host now executes the registered loop: snapshot current
+training world, measure H/B/P followed by the current frozen life through H16,
+restore exactly, fit the same 163 weights, then select the actual host action.
+The old optimizer arithmetic, legacy policy, intervention API, trajectory modes
+and saved-life format are unchanged. Raw and deliberately rotated credit have
+separate identities; held-out measurements never supply fitting targets.
+
+The 792-parameter native fixture changes BRAKE to PUSH through acquisition at
+identical captured features, then executes that PUSH. Probe-on/off matches 80
+host transitions and final body/moment/control/policy bytes; save/load matches
+the full acquired continuation. Six saved-life checks preserve every non-weight
+field, and four independent native 32-fit replays reproduce acquired lives.
+A compiled wrong-credit defect executes successfully and is then rejected by
+the measured action-to-outcome gate. Duplicate continuation evidence also fails.
+The bounded fixture totals 837 body updates and 352 fits, including its negative
+control and independent replays; compact proof is `living/verification.json`.
+
+Both real bodies pass the separate seed 42 smoke: 576 body updates, 192 fits,
+probe-off and in-process policy resumption exact, no artifact integrity failures.
+Scores change while the first PUSH remains unchanged. Existing lived/trajectory
+compatibility gates, the complete `make -j2 test BLAS_FLAGS= BLAS_LIBS=` CPU suite,
+and the normal host build pass. Existing core compiler warnings remain.
+The runner records source/config/data/life hashes and refuses to write a failure
+receipt into an output directory it did not create. No fresh-seed results have
+been generated at this implementation checkpoint.
+
+---
+
+## 2026-10-14 — Chuck living acquisition protocol, before execution
+
+PR164 is merged. Its refits learned a forced first action followed by fifteen
+decisions of the previous student; deployment then gave every decision to the
+refit. The next fixed experiment measures consequences under the current life
+at eight points in its actual 512-step training trajectory, restores the entire
+source world, and fits only the same 163 policy weights before acting again.
+
+`experiments/chuck_loss_architect/living/protocol.json` fixes two bodies, fresh
+seeds 1711/2357, 32 conditioned fits per acquisition, and four arms: canonical,
+frozen, living measured credit, and deliberately rotated action credit.
+Probe-on/off and in-process Architect save/load controls bring the complete
+budget to **16,640 body updates and 2,560 policy fits**. CPU F32 only. BRAKE
+selections and actual dampen decreases are separate measurements. No claim
+of improvement precedes execution; frozen-before-fit continuation remains a
+stated limitation. The previous lives and corpora were recovered from their
+archived bytes with matching SHA-256 identities, without numerical replay.
+
+---
+
 ## 2026-10-14 — SPA history causally switches frozen acquired actions
 
 Fresh main `ca3e17a` supplies the code. A prewritten, SHA-pinned protocol changes
