@@ -13,6 +13,40 @@ Newest entries on top.
 
 ---
 
+## 2026-10-15 — Restore the README's funeral, voice and working examples
+
+The previous README edit cut away too much of the manifesto along with the
+engineering detail. Restore the original scenes from `README.md` at `0f8e011`
+(2026-09-13): the ten-step PyTorch story, the full funeral, tensors and the
+"chain of shame", the breathing tape, Chuck with opinions, the architecture
+diagram, the complete C training program, philosophy and closing logo.
+The operation table, bindings, reference projects and organism descriptions
+have room again. The opening now runs through what, why and the funeral before
+the current run/train quickstarts and the framework itself.
+
+Keep the current concise Chuck: Loss Architect and Sentence Phonon Agent
+sections, the corrected SPA helper semantics, current harness families and
+links to the feature documents. The detailed engineering record relocated by
+the previous edit stays intact below. This is a restoration of the README's
+voice with current entry points, not a rollback of the repository.
+
+Correct the standalone compile commands for the current C implementation
+(`-std=gnu11 -pthread`), add the training program's missing `<stdio.h>`, and
+retain the Python import-path setup. Remove obsolete line counts; the Python
+example looks up `token_embd.weight`, which also exists in tied-output models.
+
+Verification: compare the restored scenes against `0f8e011`, allowing only
+whitespace normalization and the training program's added header. All 79 local
+README links resolve and both Markdown files have balanced fences. The earlier
+log, including the relocated archive, remains byte-identical. Extract the full
+training program from the README, compile with
+`cc -O2 -Wall -Werror=implicit-function-declaration -std=gnu11 -pthread -I. -o train train.c notorch.c -lm`
+and run all 200 steps: loss is 2.1043 at step 0, 0.0807 at step 50, 0.0026 at
+step 100 and 0.0020 at step 150. The existing unused `nsub` warning in
+`notorch.c` remains. `git diff --check` passes. Only README and this log change.
+
+---
+
 ## 2026-10-15 — README back to the point; engineering detail comes home
 
 The README now leads from purpose to running a GGUF, training, the core
