@@ -1,0 +1,33 @@
+{
+  "command": [
+    "cc",
+    "-std=c11",
+    "-O2",
+    "-DUSE_SIMD",
+    "-march=native",
+    "-pthread",
+    "-I.",
+    "-fPIC",
+    "-shared",
+    "spa_binding.c",
+    "spa_agent.c",
+    "notorch.c",
+    "-lm",
+    "-o",
+    "<build>/libnotorch.so"
+  ],
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+  "library_sha256": "f61dadf4c9aa716ba76fd6ada9b3ce1685c2acf6978b50ec052025c7060b72d3",
+  "machine": "Linux-6.18.44-x86_64-with-glibc2.39",
+  "returncode": 0,
+  "source_sha256": {
+    "notorch.c": "252a745c48ac0e138d613e3d9f9ad54b549e5f86c58298d409cff2fc1c9f8e46",
+    "notorch.h": "08643bb7b9f6299ae44672daec0c860d2d3457686eb5e6a9d298bf108381b013",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "notorch_simd_scalar.h": "c3fa8f3ec388f7398bfbcb5fba7f67055354873775398c306e2340d42d50dc86",
+    "spa_agent.c": "9b747d02dc680717474b65bc202ac320dd4c91905eba423599dd8b7e9190c268",
+    "spa_agent.h": "501a4fe672e77e5fe29d5d9eedea49a06eefd2a7c94d61912ef00137b65e779e",
+    "spa_binding.c": "6ccb244cbe4714fa38a37da4a5acea1018e64a285a0f557693d8dc2792aa22a6",
+    "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55"
+  }
+}

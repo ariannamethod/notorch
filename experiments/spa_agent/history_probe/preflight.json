@@ -1,0 +1,33 @@
+{
+  "checks": [
+    "identity first nineteen features",
+    "zero_history first nineteen features",
+    "training_donor first nineteen features",
+    "source immutable",
+    "all twelve donors source ordered",
+    "invalid high head masked",
+    "native accepts identity",
+    "native accepts zero_history",
+    "native accepts training_donor",
+    "refusal preserves native life"
+  ],
+  "deliberate_defects_caught": [
+    "perception leakage",
+    "partial history swap",
+    "metadata leakage",
+    "wrong donor coordinates",
+    "unknown intervention",
+    "missing donor",
+    "duplicate donor",
+    "unmasked action",
+    "changed mask",
+    "wrong typed target",
+    "corrupted receipt",
+    "truncated receipt",
+    "changed frozen protocol",
+    "native refuses incoherent one-hot",
+    "native readout state mutation"
+  ],
+  "native": "PASS: native composition, read-only scoring and malformed history refusal",
+  "status": "PASS"
+}

@@ -1,0 +1,64 @@
+{
+  "arms": [
+    "initial",
+    "conditioned_mean8"
+  ],
+  "base_commit": "ca3e17a24852ad1db08a6e6b908fb37036011d2d",
+  "causal_scope": "Intervention on the complete history block. Last-LEFT stratification describes donor classes; ten history coordinates move jointly.",
+  "consequence_scope": "Synthetic histories have no new host rollout or measured reward. Original action rewards are not assigned to counterfactual choices.",
+  "controls": "Original history and all-ten-coordinates zero; initial policy readout for every intervention.",
+  "donor_rule": "All training sources with identical sentence_count and target; preserve ordinal order; identity donors are retained. No filtering or weighting by action reward, acquired scores or prior LEFT.",
+  "donors_per_state": 12,
+  "epochs": 512,
+  "evaluation_seeds": [
+    509,
+    601
+  ],
+  "future_question": "A separately registered actor-driven rollout will measure actual future consequences under the agent-generated history.",
+  "generation_runs": 0,
+  "history_coordinates": [
+    19,
+    29
+  ],
+  "history_fields": {
+    "19:22": "EMA reward/connectedness/novelty",
+    "22:25": "action frequencies",
+    "25:28": "last action one-hot",
+    "28": "last reward"
+  },
+  "input_scope": "96 previously exposed source states, 12 episodes and two seeds per split. All12donors crossed with each source within matching target/count.",
+  "learning_rate": 0.03,
+  "name": "SPA frozen-policy history intervention",
+  "outcomes": "Native scores, score deltas, chosen typed action, action changes, source/donor witnesses and immutable policy/life identity.",
+  "question": "Does changing the complete captured history block alter native action scores and choices when perception, policy, recipient metadata, mask and RNG remain fixed?",
+  "readout_rule": "Native score_experience and strict masked argmax; byte-identical original readout required before any synthetic input. Compare whole agent state before/after all scoring.",
+  "records": 2688,
+  "recovery_rule": "Replay exactly24576recorded conditioned updates in registered order; every native fit receipt and original final saved life must match before intervention. These updates reconstruct previously published weights.",
+  "registered_before_probe": true,
+  "replay_updates": 24576,
+  "scale_floor": 0.001,
+  "schema": 1,
+  "source_rows": {
+    "evaluation": 48,
+    "training": 48
+  },
+  "source_sha256": {
+    "experiments/spa_agent/conditioned/policy.py": "aaea182a0c006f658c1dcd7b7191421497a739c9c93c3607c8e9158bbd05293d",
+    "experiments/spa_agent/replicates/policy.py": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca",
+    "experiments/spa_agent/transfer/analyze.py": "710002d7d642bfd045972186920437190bd3d1e7a5d891312ff850563338a7db",
+    "python/SPA.py": "7b498dc6ea6f41cdfac118f9fd9bc94b7726c52c5c0c8c7c073891b3da339cc7",
+    "spa_agent.c": "9b747d02dc680717474b65bc202ac320dd4c91905eba423599dd8b7e9190c268",
+    "spa_agent.h": "501a4fe672e77e5fe29d5d9eedea49a06eefd2a7c94d61912ef00137b65e779e",
+    "spa_binding.c": "6ccb244cbe4714fa38a37da4a5acea1018e64a285a0f557693d8dc2792aa22a6",
+    "spa_binding.h": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55"
+  },
+  "training_seeds": [
+    42,
+    73
+  ],
+  "variants": [
+    "identity",
+    "zero_history",
+    "training_donor"
+  ]
+}

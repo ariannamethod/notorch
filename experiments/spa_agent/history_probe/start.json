@@ -1,0 +1,78 @@
+{
+  "inputs": {
+    "archive_sha256": "595bf9f75e68f1b8fe562bc2bbb68c3908d71a4817205d2684714657a2f68dca",
+    "members": {
+      "evaluation.json": {
+        "bytes": 4644076,
+        "sha256": "6ec23b69fefb4b23711099e906701d03fe92ba96633e2302461f19ad6037e106"
+      },
+      "evaluation.readout-1.jsonl": {
+        "bytes": 157684,
+        "sha256": "ac33ed24e05d782296acbaefcda623fe148af6a70d28c3c0762985237cb76eed"
+      },
+      "evaluation.readout-2.jsonl": {
+        "bytes": 157684,
+        "sha256": "ac33ed24e05d782296acbaefcda623fe148af6a70d28c3c0762985237cb76eed"
+      },
+      "training.json": {
+        "bytes": 4742198,
+        "sha256": "acecc15820ac63c5fba35220a6e3d379de5fd427f8642c091e5f4167e2603b34"
+      },
+      "training.readout-1.jsonl": {
+        "bytes": 157483,
+        "sha256": "a29539c5d6b59296c51c068d1aed720b37291dc729bae98fd502837c61c08c3c"
+      },
+      "training.readout-2.jsonl": {
+        "bytes": 157483,
+        "sha256": "a29539c5d6b59296c51c068d1aed720b37291dc729bae98fd502837c61c08c3c"
+      }
+    },
+    "receipts_sha256": "398ba12f745f38e3365dc184fa49af01538d2e1b8ba6e70981eaf378330ee3d2"
+  },
+  "library": {
+    "bytes": 271200,
+    "sha256": "f61dadf4c9aa716ba76fd6ada9b3ce1685c2acf6978b50ec052025c7060b72d3"
+  },
+  "protocol": {
+    "bytes": 3338,
+    "sha256": "af116f2d153e3494cba93eac55033604e8c01851431d1713658bd133c1d25af6"
+  },
+  "source_ids": {
+    "experiments/spa_agent/conditioned/policy.py": {
+      "bytes": 17789,
+      "sha256": "aaea182a0c006f658c1dcd7b7191421497a739c9c93c3607c8e9158bbd05293d"
+    },
+    "experiments/spa_agent/history_probe/run.py": {
+      "bytes": 17687,
+      "sha256": "601a614e86f0b0fe27188218e38e007721995c3ec640418fee9af7219d3e25e7"
+    },
+    "experiments/spa_agent/replicates/policy.py": {
+      "bytes": 19319,
+      "sha256": "26b9aaee18170887e3bdc34b6171bda9c319fd6f90d7cf175782e6b174512cca"
+    },
+    "experiments/spa_agent/transfer/analyze.py": {
+      "bytes": 14277,
+      "sha256": "710002d7d642bfd045972186920437190bd3d1e7a5d891312ff850563338a7db"
+    },
+    "python/SPA.py": {
+      "bytes": 24421,
+      "sha256": "7b498dc6ea6f41cdfac118f9fd9bc94b7726c52c5c0c8c7c073891b3da339cc7"
+    },
+    "spa_agent.c": {
+      "bytes": 54267,
+      "sha256": "9b747d02dc680717474b65bc202ac320dd4c91905eba423599dd8b7e9190c268"
+    },
+    "spa_agent.h": {
+      "bytes": 14298,
+      "sha256": "501a4fe672e77e5fe29d5d9eedea49a06eefd2a7c94d61912ef00137b65e779e"
+    },
+    "spa_binding.c": {
+      "bytes": 6527,
+      "sha256": "6ccb244cbe4714fa38a37da4a5acea1018e64a285a0f557693d8dc2792aa22a6"
+    },
+    "spa_binding.h": {
+      "bytes": 586,
+      "sha256": "1f39f99c053e9ccd3ac8e07312c7b71949870a694aea10b30754e74888430a55"
+    }
+  }
+}
