@@ -13,6 +13,50 @@ Newest entries on top.
 
 ---
 
+## 2026-10-14 — Immutable PEN7 owners and whole-parameter mixtures
+
+`pen7.h` now brings frozen PEN7 bodies into `libnotorch.a`: quiet snapshot
+loading, complete loaded-file SHA-256, authenticated canonical tokenizer
+identity, atomic retained ownership and bounded private sequence workspaces.
+One regular-file snapshot supplies both the weights and tokenizer; later path
+replacement, in-place writes or deletion leave the loaded body intact. The
+strict reader refuses malformed counts, dimensions, tensor ranges, duplicate
+metadata, inconsistent token surfaces/merges and nonfinite weights. A FIFO is
+refused without blocking. BPE returns all IDs or an explicit refusal.
+
+The existing family arithmetic now serves both the harness and the owner API.
+It returns last-token logits and the normalized contextual representation
+feeding the output head. A mixed forward combines every parameter as
+`alpha*A + (1-alpha)*B`, including positions, norms and resonance gates; one
+reusable matrix buffer avoids a permanent third body. Endpoints reproduce their
+sources exactly. Calls start at position zero, own their sequence scratch and
+publish both outputs atomically. A finite-weight red fixture exposed RMS sum
+of squares overflowing to infinity and producing a successful finite zero
+result; checked accumulation now refuses that path before publication.
+
+GCC 13.3.0 / Linux x86-64 scalar gates: **79 fixture checks**, **121 existing
+family checks**, and **130 checks with both published Q8 files**. The latter
+compares 16,384 logits and 3,584 representation values exactly at 1/9/33/256
+tokens, then checks both endpoints and a genuine interior parameter mixture.
+At alpha .37 on the fixed twelve-token sentence, maximum absolute differences
+from source A are 7.30835009 for logits and 7.66948795 for representation.
+The source readouts remain byte-identical after mixing. Four concurrent owners,
+source overwrite/unlink, immutable identities and rejected-call outputs are
+covered. Six compiled defects are detected, including omitted norm/position
+mixing, half-file identity and the reproduced RMS overflow.
+
+The full scalar `make -j2 test BLAS_FLAGS= BLAS_LIBS= X86_SIMD=0 ARM_SIMD=0`
+suite passes. Installed static and shared-library consumers both execute real
+bodies. ASan/UBSan pass the 79-check fixture gate with leak scanning disabled;
+an explicit LeakSanitizer attempt is blocked by its runner ptrace restriction.
+A 32-token workspace requests 5,187,424 bytes, a 256-token workspace 15,738,720
+bytes; shared attention scores additionally use at most four bytes per active
+token. The model snapshot and Q8-to-F32 body are shared by retained references.
+API, full identities, memory accounting and commands:
+[immutable PEN7 inference](docs/PEN7_INFERENCE.md).
+
+---
+
 ## 2026-10-14 — Preserve complete CLI tokens and validate PEN7 KV heads
 
 PR168 review identified two boundary losses: the CLI still decoded into 256

@@ -166,3 +166,7 @@ bench_cuda_decode
 !tests/test_spa_conditioned_audit.py
 !tests/test_spa_conditioned_runner.py
 /experiments/spa_agent/conditioned/raw_records.tar.gz
+
+# Immutable PEN7 inference gate
+/test_pen7
+!tests/test_pen7_mutations.py
