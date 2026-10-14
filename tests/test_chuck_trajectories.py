@@ -23,7 +23,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 NUMERICAL = ("notorch.c", "notorch.h", "notorch_simd.h", "chuck_architect.h", "chuck_architect_impl.h",
              "examples/chuck_architect_train.c", "examples/chuck_architect_scenarios.h",
-             "examples/chuck_architect_rollout.h", "examples/chuck_architect_lived.h")
+             "examples/chuck_architect_rollout.h", "examples/chuck_architect_lived.h",
+             "examples/chuck_architect_living.h")
 FIXTURE = r'''
 #include "chuck_architect.h"
 #include <inttypes.h>

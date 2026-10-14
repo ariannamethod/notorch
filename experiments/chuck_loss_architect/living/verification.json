@@ -1,0 +1,83 @@
+{
+  "status": "PASS",
+  "fixture": {
+    "body": "simple",
+    "build_define": "NT_CHUCK_ARCHITECT_TEST",
+    "context": 8,
+    "dimension": 8,
+    "head_dimension": 4,
+    "layers": 1,
+    "hidden": 16,
+    "vocabulary": 8,
+    "steps": 80,
+    "seed": 42,
+    "resume_after": 40,
+    "corpus": "6400 synthetic tokens; token[i] = i mod 8"
+  },
+  "source_sha256": {
+    "notorch.c": "252a745c48ac0e138d613e3d9f9ad54b549e5f86c58298d409cff2fc1c9f8e46",
+    "notorch.h": "08643bb7b9f6299ae44672daec0c860d2d3457686eb5e6a9d298bf108381b013",
+    "notorch_simd.h": "eea8e74cd943325db32647eda7e1ebae458dbad41d1486937adf8df0fca1633c",
+    "chuck_architect.h": "e98c1705d0fafc6448faa5a27dac94e5aa03fe9f80a91dc653eb9145a556af43",
+    "chuck_architect_impl.h": "72504dfa76fd3fffc494aaafec57793a7c6ab4321e32e420083e488bc786c17c",
+    "examples/chuck_architect_train.c": "78ae07740796d2a21ddc614e39f3b0512b429a69eb23efc28cfd59bb122365a8",
+    "examples/chuck_architect_scenarios.h": "68f813a2778f33362fb1c05050cfcce4c1c7bfc227f9ef5d8e37e6d01f6a5afa",
+    "examples/chuck_architect_rollout.h": "d56e44f403d9d371c7b376ca6791428d1d5f54f76828fb0d504f8e90aae62de7",
+    "examples/chuck_architect_lived.h": "e9719b667d3268cee8e01030e8f69f9056c14c0dc66b741b334dd16305c7d074",
+    "examples/chuck_architect_living.h": "bf97e5b1d11380f7bf76f6f02dce9b9425fab4216f09b671ce2d8b2d76935331"
+  },
+  "test_source_sha256": "e6fb40ac82e3d747fc6d3aad4d0922fd58ffa96fcf1c96a4818fdc156b4d6842",
+  "counts": {
+    "primary_fixture_processes": 6,
+    "primary_host_updates": 402,
+    "primary_branch_updates": 384,
+    "primary_fit_updates": 192,
+    "primary_total_body_updates": 786,
+    "legacy_reference_host_updates": 2,
+    "wrong_credit_host_updates": 1,
+    "wrong_credit_branch_updates": 48,
+    "wrong_credit_fit_updates": 32,
+    "independent_native_fit_replay_updates": 128,
+    "all_test_body_updates": 837,
+    "all_test_policy_fit_updates": 352
+  },
+  "frozen_exact_transitions": 80,
+  "frozen_source_branch_exact_transitions": 32,
+  "resume_exact_transitions": 80,
+  "saved_policy_weight_only_checks": 6,
+  "independent_native_fit_replays": 4,
+  "first_acquired_choice": {
+    "checkpoint": 1,
+    "before": 2,
+    "after": 3,
+    "source_hash": "5e4de2a3f78b6972",
+    "policy_before": "eb2e8b3d3a8431e9",
+    "policy_after": "262fc34faf6e93b8",
+    "actual_host_action": 3
+  },
+  "compiled_wrong_credit_caught": true,
+  "compiled_wrong_credit_reason": "action-to-outcome association differs from named arm",
+  "supplemental_semantic_mutations": [
+    {
+      "name": "compiled_wrong_credit",
+      "caught": true,
+      "reason": "action-to-outcome association differs from named arm"
+    },
+    {
+      "name": "duplicated_frozen_transition",
+      "caught": true,
+      "reason": "missing or duplicated frozen continuation"
+    }
+  ],
+  "originals": {
+    "verification-first.json": {
+      "sha256": "b2208ec12db316c217b3e0991fd7a5fbfc10b941220e856c9d329e4c7ada19ad",
+      "bytes": 3585957
+    },
+    "verification-supplement.json": {
+      "sha256": "3c0a1a7af79d6c6e67e518d346afaa7d6a1689aaba3ce2bf4e91a38dc8efa88c",
+      "bytes": 2750
+    }
+  },
+  "working_numerical_sources_unchanged": true
+}

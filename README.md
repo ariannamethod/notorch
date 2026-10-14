@@ -750,6 +750,15 @@ world reached by later choices. The complete curves, action histories and
 regressions remain in the linked experiment; 1,536 source transitions and all
 four save/load continuations are exact.
 
+The [living acquisition loop](experiments/chuck_loss_architect/living/README.md)
+puts measured consequences back into the same ongoing training life. At sparse
+checkpoints it branches HOLD/BRAKE/PUSH under the current policy, restores the
+complete source world, fits only its 163 weights, and selects the next action.
+Receipts compare choices before and after acquisition at identical observations.
+Frozen and explicitly rotated-credit lives give this experiment named controls;
+the native mechanism is checked by `make test_chuck_living`. The ordinary Chuck
+trajectory and the v1 saved-life format remain intact.
+
 ---
 
 ## bit-level precision — BitNet b1.58

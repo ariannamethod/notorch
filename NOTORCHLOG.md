@@ -13,6 +13,36 @@ Newest entries on top.
 
 ---
 
+## 2026-10-14 — Chuck acquires measured consequences before its next action
+
+The native `--living` host now executes the registered loop: snapshot current
+training world, measure H/B/P followed by the current frozen life through H16,
+restore exactly, fit the same 163 weights, then select the actual host action.
+The old optimizer arithmetic, legacy policy, intervention API, trajectory modes
+and saved-life format are unchanged. Raw and deliberately rotated credit have
+separate identities; held-out measurements never supply fitting targets.
+
+The 792-parameter native fixture changes BRAKE to PUSH through acquisition at
+identical captured features, then executes that PUSH. Probe-on/off matches80
+host transitions and final body/moment/control/policy bytes; save/load matches
+the full acquired continuation. Six saved-life checks preserve every non-weight
+field, and four independent native32-fit replays reproduce acquired lives.
+A compiled wrong-credit defect executes successfully and is then rejected by
+the measured action-to-outcome gate. Duplicate continuation evidence also fails.
+The bounded fixture totals837 body updates and352 fits, including its negative
+control and independent replays; compact proof is `living/verification.json`.
+
+Both real bodies pass the separate seed42 smoke:576 body updates,192 fits,
+probe-off and in-process policy resumption exact, no artifact integrity failures.
+Scores change while the first PUSH remains unchanged. Existing lived/trajectory
+compatibility gates, the complete `make -j2 test BLAS_FLAGS= BLAS_LIBS=` CPU suite,
+and the normal host build pass. Existing core compiler warnings remain.
+The runner records source/config/data/life hashes and refuses to write a failure
+receipt into an output directory it did not create. No fresh-seed results have
+been generated at this implementation checkpoint.
+
+---
+
 ## 2026-10-14 — Chuck living acquisition protocol, before execution
 
 PR164 is merged. Its refits learned a forced first action followed by fifteen

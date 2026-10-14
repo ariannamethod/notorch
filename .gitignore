@@ -57,6 +57,7 @@ tests/bench_*
 !tests/test_numerical_values_mutations.py
 !tests/test_chuck_trajectories.py
 !tests/test_chuck_trajectory_receipts.py
+!tests/test_chuck_living.py
 examples/infer_*
 examples/train_*
 !examples/*.c

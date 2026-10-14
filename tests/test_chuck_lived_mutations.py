@@ -24,7 +24,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 NUMERICAL = ("notorch.c", "notorch.h", "notorch_simd.h", "chuck_architect.h", "chuck_architect_impl.h",
              "examples/chuck_architect_train.c", "examples/chuck_architect_scenarios.h",
-             "examples/chuck_architect_rollout.h", "examples/chuck_architect_lived.h", "tests/test_chuck_lived.c")
+             "examples/chuck_architect_rollout.h", "examples/chuck_architect_lived.h",
+             "examples/chuck_architect_living.h", "tests/test_chuck_lived.c")
 VERIFIERS = ("experiments/chuck_loss_architect/lived/run.py", "experiments/chuck_loss_architect/lived/protocol.json",
              "experiments/chuck_loss_architect/conditional/run.py", "experiments/chuck_loss_architect/future/run.py",
              "experiments/chuck_loss_architect/scenarios/run.py", "experiments/chuck_loss_architect/run.py")

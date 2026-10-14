@@ -667,6 +667,10 @@ test_chuck_trajectories:
 	python3 tests/test_chuck_trajectories.py
 	python3 tests/test_chuck_trajectory_receipts.py
 
+.PHONY: test_chuck_living
+test_chuck_living:
+	python3 tests/test_chuck_living.py
+
 # Save syscall injection stays in this private object; production libc is intact.
 tests/chuck_durability_notorch.o: notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 \
@@ -686,7 +690,7 @@ check_chuck_device_host:
 check_chuck_device_cuda:
 	sh tests/run_chuck_architect_device.sh cuda
 
-chuck_architect_train: examples/chuck_architect_train.c examples/chuck_architect_scenarios.h examples/chuck_architect_rollout.h examples/chuck_architect_lived.h libnotorch.a $(CHUCK_HEADERS)
+chuck_architect_train: examples/chuck_architect_train.c examples/chuck_architect_scenarios.h examples/chuck_architect_rollout.h examples/chuck_architect_lived.h examples/chuck_architect_living.h libnotorch.a $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ examples/chuck_architect_train.c ./libnotorch.a -lm $(BLAS_LIBS)
 
 chuck_architect_future: examples/chuck_architect_future.c libnotorch.a $(CHUCK_HEADERS)
