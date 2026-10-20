@@ -13,6 +13,48 @@ Newest entries on top.
 
 ---
 
+## 2026-10-20 — Build Chuck's living runner from its authenticated source snapshot
+
+Close the P1 [review on PR #173](https://github.com/ariannamethod/notorch/pull/173#discussion_r4267196961).
+The living runner retained and hashed `output/source`, then invoked a build
+helper whose default still read the mutable checkout. A concurrent edit could
+therefore change the executed binary after the recorded source was captured.
+
+The shared build helper now accepts an explicit source root for both C
+translation units, the include directory and compiler working directory. The
+living runner supplies its retained snapshot. It pins HEAD before capture,
+compares each clean-run source file against that exact Git commit, and refuses
+a changed file before compilation. Each file is read once for capture and
+authentication. The manifest keeps the pinned commit and hashes the protocol
+bytes actually parsed. Dirty development smokes retain and build their actual
+captured bytes under the existing explicit smoke authorization.
+
+`tests/test_chuck_living_build.py` exercises this production boundary with a
+small native C sentinel and a synthetic local Git fixture. After capture, it
+changes both translation units, a header and HEAD: the retained binary still
+prints **41**. A deliberate wrong-root build compiles and exits successfully
+but prints **99**; the identity assertion rejects it. Other gates refuse an
+edit between the clean check and capture, verify dirty-smoke bytes, and preserve
+the shared helper's default and explicit mutant-source calling conventions.
+All **5 tests pass**; `make test_chuck_living` includes this gate before the
+existing native living tests.
+
+Verification on Linux x86-64, based on main `2ed0cb0`:
+
+- `python3 tests/test_chuck_living_build.py`: PASS, including the wrong-root
+  defect and the real compiler/executable checks above.
+- Compile the actual host through `build_snapshot` with its 20 retained source
+  files, `cc -O2 -std=gnu11 -DUSE_SIMD -march=native -pthread`; verify every
+  retained SHA-256 and invoke `host_runner --living`: expected usage and exit 2.
+  The first CLI smoke incorrectly expected the living usage in the no-argument
+  general usage; the corrected explicit invocation passes.
+- `make -j2 test BLAS_FLAGS= BLAS_LIBS=`: exit 0, including the canonical Chuck
+  golden-vector gate. Existing compiler warnings remain.
+- `git diff --check`: PASS. This fix changes build orchestration and its gates;
+  the recorded training results remain attached to their original source.
+
+---
+
 ## 2026-10-15 — Restore the README's funeral, voice and working examples
 
 The previous README edit cut away too much of the manifesto along with the

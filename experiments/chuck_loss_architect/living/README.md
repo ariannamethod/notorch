@@ -50,6 +50,13 @@ python3 experiments/chuck_loss_architect/living/run.py \
 The runner refuses a dirty production tree and authenticates the previous
 results, input life, corpora, tokens and vocabulary. `--smoke --allow-dirty`
 uses only development seed 42 and 16 host steps. It does not spend the new seeds.
+Since the 2026-10-20 build fix, the runner pins HEAD before capture, checks clean
+source bytes against that commit, and compiles both C translation units and
+their headers from the retained `output/source` tree. The manifest records that
+same commit and the protocol bytes actually parsed. Later working-tree edits
+and HEAD changes cannot enter the native build. The native sentinel gate is
+`python3 tests/test_chuck_living_build.py`; it includes a successfully executing
+wrong-source mutant that the identity assertion rejects.
 All numerical execution is native C; Python launches processes, checks receipts
 and summarizes measurements. Full traces, checkpoint lives and first-byte
 anchors remain outside Git. The completed run is recorded in
