@@ -13,6 +13,68 @@ Newest entries on top.
 
 ---
 
+## 2026-10-20 — Ship Chuck's standalone train / resume / generate path
+
+`make train_chuck` now builds a native C trainer against the working notorch
+tree. A raw UTF-8 corpus starts a fresh SimpleLLM and fresh 163-parameter Chuck
+life. The existing living H16 mechanism measures HOLD/BRAKE/PUSH branches,
+restores the source world, fits the policy and executes its selected action.
+No prior experiment archive or pretrained policy is required. The graph and
+numerical engine are reused; canonical Chuck arithmetic is unchanged.
+
+One versioned, SHA-256-protected checkpoint contains model weights, Adam
+moments/counters, global/local Chuck, canonical Architect life, vocabulary,
+corpus identity, random streams and acquisition schedule. Atomic saves cover
+initialization, periodic saves, completion and SIGINT/SIGTERM. `resume` runs
+in a new process; `generate` needs only the checkpoint. Loading validates the
+payload before installing the model. README and `docs/chuck-trainer.md` give
+the three runnable commands, objective and exact-continuation boundary.
+
+**Delivered training.** SimpleLLM E128/L2/FF384/RoPE, context64, FP32,
+450,688 parameters; Dracula raw UTF-8 from
+`notorch-simple-llm@80b3bd611ed8c937efdc481dc07895c8e13e345d`, 852,813 bytes,
+94 characters, SHA-256
+`16faafe5f8e4a958fe4437e561035b1f82235602ab6ef9801cafe2bcc25aef5c`.
+Seed42, LR.0003, acquisition every64 steps, 90/10 split; reported held-out
+cross-entropy averages eight fixed windows. Linux x86_64, AMD EPYC 9V74,
+nine visible CPUs, notorch SIMD default nine threads. Build:
+
+```sh
+make train_chuck BLAS_FLAGS='-DUSE_SIMD -mavx2 -mfma' BLAS_LIBS=
+./train_chuck train --corpus dracula.txt --checkpoint first.ntc --steps 1000 --trace first.jsonl
+./train_chuck resume --corpus dracula.txt --checkpoint first.ntc --output resumed.ntc --steps 4000 --trace resumed.jsonl
+./train_chuck train --corpus dracula.txt --checkpoint continuous.ntc --steps 4000 --trace continuous.jsonl
+cmp resumed.ntc continuous.ntc
+./train_chuck generate --checkpoint resumed.ntc --prompt 'The ' --tokens 512 --seed 42 --temperature .8
+```
+
+Held-out loss: **4.80649185 → 2.538402 at step1000 → 2.159829 at step4000**.
+The split and continuous runs match every one of their 4,000 step receipts,
+63 acquisition receipts and the entire 5,412,140-byte final checkpoint.
+Checkpoint SHA-256:
+`1ef0ebe84f9ffb70041536e2d1187013eae24e4b8cbacf8ef3d9170565500ae4`.
+63 acquisitions performed 2,016 fits and 3,024 branch updates; host actions:
+954 HOLD, 2,846 BRAKE, 200 PUSH. Nine acquisitions changed the immediately
+selected action. Both sampled and greedy generation load the saved model.
+The sample contains word fragments and short recognizable phrases, not coherent
+prose; this establishes a working trained model and continuation path, not text
+quality or an advantage over another optimizer. Checkpoint, corpus, samples,
+commands, traces and source/binary hashes are retained outside Git.
+
+**Gates.** `python3 tests/test_chuck_trainer.py` passes nine native tests:
+73 continuous steps equal 31+resume73 and initialization+resume73; no-op resume;
+actual policy weight changes; deterministic UTF-8 generation; malformed input,
+checkpoint and alias refusal; SIGTERM saves a completed step whose resumed
+continuation matches. A deliberately omitted window-RNG restoration still runs
+successfully but fails the exact-continuation gate. `make -j4 test BLAS_FLAGS=
+BLAS_LIBS=` passes, including the canonical Chuck golden vector. The existing
+original Haiku SentencePiece corpus gate reports SKIP without `SPM_MODEL`;
+its 106 embedded oracle cases pass. Final checkpoint-validator hardening was
+checked by loading/resaving the delivered checkpoint byte-identically and
+rerunning the suite. No GPU result is claimed by this CPU trainer.
+
+---
+
 ## 2026-10-20 — Build Chuck's living runner from its authenticated source snapshot
 
 Close the P1 [review on PR #173](https://github.com/ariannamethod/notorch/pull/173#discussion_r4267196961).

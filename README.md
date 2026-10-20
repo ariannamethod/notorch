@@ -382,6 +382,19 @@ loop measures alternatives in the current training world, restores it, acquires
 the consequences and chooses its next action. Canonical Chuck remains available
 through the same ordinary call.
 
+Give it a UTF-8 corpus. `train_chuck` starts a fresh life, learns from measured
+HOLD/BRAKE/PUSH consequences, and saves the model and its entire training state:
+
+```sh
+make train_chuck
+./train_chuck train --corpus book.txt --checkpoint book.ntc --steps 1000
+./train_chuck resume --corpus book.txt --checkpoint book.ntc --output book.ntc --steps 4000
+./train_chuck generate --checkpoint book.ntc --prompt "The " --tokens 256
+```
+
+The checkpoint includes weights, moments, Chuck, policy, vocabulary and RNGs.
+Generation needs only that file. [Trainer commands and resume contract](docs/chuck-trainer.md).
+
 [Optimizer lineage](https://github.com/iamolegataeff/chuck.optimizer) ·
 [Loss Architect API and objective](docs/chuck-loss-architect.md) ·
 [living acquisition](experiments/chuck_loss_architect/living/README.md) ·

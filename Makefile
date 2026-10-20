@@ -694,6 +694,17 @@ check_chuck_device_cuda:
 chuck_architect_train: examples/chuck_architect_train.c examples/chuck_architect_scenarios.h examples/chuck_architect_rollout.h examples/chuck_architect_lived.h examples/chuck_architect_living.h libnotorch.a $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ examples/chuck_architect_train.c ./libnotorch.a -lm $(BLAS_LIBS)
 
+# Standalone UTF-8 training, complete checkpoint/resume and generation.
+# Compile the chosen backend here so a pre-existing library cannot hide flags.
+train_chuck: examples/chuck_architect_train.c examples/chuck_architect_scenarios.h examples/chuck_architect_rollout.h examples/chuck_architect_lived.h examples/chuck_architect_living.h examples/chuck_trainer.h examples/chuck_trainer_state.h examples/chuck_trainer_checkpoint.h notorch.c notorch.h notorch_simd.h sha256.c sha256.h $(CHUCK_HEADERS) Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -DNT_CHUCK_TRAINER -I. -o $@ examples/chuck_architect_train.c notorch.c sha256.c -lm $(BLAS_LIBS)
+
+.PHONY: check_chuck_trainer
+check_chuck_trainer:
+	python3 tests/test_chuck_trainer.py
+
+test: check_chuck_trainer
+
 chuck_architect_future: examples/chuck_architect_future.c libnotorch.a $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ examples/chuck_architect_future.c ./libnotorch.a -lm $(BLAS_LIBS)
 
@@ -1047,6 +1058,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
+	rm -f train_chuck
 	rm -f test_sentencepiece test_sentencepiece_faults test_sha256 sentencepiece.o sha256.o
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
@@ -1068,6 +1080,7 @@ clean:
 
 help:
 	@echo "notorch — neural networks in pure C"
+	@echo "  make train_chuck        UTF-8 training with Chuck, full resume and generation"
 	@echo ""
 	@echo "  make                    Build and run tests with BLAS"
 	@echo "  make cpu                Build tests without BLAS (portable)"
