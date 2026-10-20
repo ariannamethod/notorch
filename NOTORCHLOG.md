@@ -13,6 +13,45 @@ Newest entries on top.
 
 ---
 
+## 2026-10-20 — Complete Q's full-corpus runtime and verify saved memory
+
+The original Q C runtime at `f5d00a36ecfcdb5e655e1576770f03d06d900e04`
+completed its full startup/generation/save cycle with Chuck's trained QPTQ
+export from `8eb97dcea169fee77d5e037306435de072c1a111`. The complete original
+corpus is **439,326 bytes / 137,327 BPE tokens**. From an empty working directory,
+`stdbuf -oL -eL ./q q.bin q.merges q.txt < /dev/null` finished all **12 generation
+steps**, exited **0**, and produced empty stderr. Single-run completion receipt:
+289.805424 seconds wall / 289.771257 seconds CPU; Linux x86_64 AMD EPYC 9V74,
+original native runtime compiled with `cc -O2 postgpt_q.c -lm -o q`.
+
+All three persisted files exist: `q.sqlite` (5,750,784 bytes), `q.memory`
+(2,015,868 bytes), and `spores/q.spore.bin` (641 bytes). SQLite's
+`PRAGMA integrity_check` returns `ok`. Every key and FP32 value agrees between
+SQLite and binary memory: **47,409 bigrams, 65,536 trigrams, 32,276 Hebbian
+entries and 875 periodic elements**. The database contains one completed
+snapshot and 12 phase events; the spore has the expected magic/version and
+finite state. SHA-256 receipts:
+
+- `q.sqlite`: `fa62dc50b39ae431f0d5064608310395489a6ac4a7ebc9b2e91e975906e2807c`
+- `q.memory`: `174cdf7c074085f80943be13ddd92aabdc71479b16c9025208523ef5964eebf9`
+- `q.spore.bin`: `d9fdf133b75b7b61104b9c8d3c56f7b9fd9ab88107e956e1342dff455e53dd04`
+
+The first full repeat finished in 268.352233 seconds with exit 0, but exposed
+a missing dependency: Q prints its memory-save message even when `sqlite3`
+is absent. Binary memory and the spore existed; the SQLite database did not.
+The earlier 80-line run also lacked that database. Installed the native SQLite
+CLI built from `sqlite/sqlite@2f641dbdeb07ac16ffde5796bcabef11b1fc840a`,
+then repeated the entire full-corpus cycle in a fresh directory and checked
+actual files as above. The trainer guide now includes the SQLite prerequisite
+and a nonempty-file guard before checking database integrity.
+
+The updated model archive contains the trained weights, full Chuck checkpoint,
+complete traces, both completed-run logs, verified runtime memory and hashes.
+The earlier interrupted attempt remains recorded. Training weights, optimizer
+arithmetic and Q runtime source are unchanged by this completion check.
+
+---
+
 ## 2026-10-20 — Train Q through Chuck and export its native runtime weights
 
 `make train_chuck_q` connects Q's `rrpram3_janus3` substrate to the same

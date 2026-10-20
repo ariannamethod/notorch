@@ -124,8 +124,14 @@ learning rates, H16 acquisition, saves and sampling match the SimpleLLM trainer.
 destination must be new. Load it using the original Q runtime:
 
 ```sh
+sqlite3 --version
 ./q q.bin q.merges q.txt
+test -s q.sqlite && sqlite3 q.sqlite 'PRAGMA integrity_check;'
 ```
+
+Q's native runtime requires the `sqlite3` command for its database memory.
+Install it before running Q. A completed session creates `q.sqlite`,
+`q.memory` and `spores/q.spore.bin`; the integrity check above returns `ok`.
 
 The Q runtime supplies its existing MetaWeights, parliament, chambers and
 generation process. `train_chuck_q generate` samples the trained substrate
