@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import time
 import traceback
@@ -30,6 +31,35 @@ gates = module("chuck_living_gates", ROOT / "tests/test_chuck_living.py")
 v1, scenarios = previous.v1, previous.scenarios
 identity, write_json = previous.identity, previous.write_json
 DurableArtifacts = previous.DurableArtifacts
+SOURCE_FILES = (
+    "notorch.c", "notorch.h", "notorch_simd.h", "chuck_architect.h", "chuck_architect_impl.h",
+    "examples/chuck_architect_train.c", "examples/chuck_architect_scenarios.h",
+    "examples/chuck_architect_rollout.h", "examples/chuck_architect_lived.h",
+    "examples/chuck_architect_living.h", "examples/chuck-loss-architect.json",
+    "tests/test_chuck_living.py",
+)
+
+
+def build_snapshot(output, durable, source_commit, dirty):
+    """Compile exactly the source bytes retained with this run's receipts."""
+    source_names = list(SOURCE_FILES)
+    source_names += [str(p.relative_to(ROOT)) for p in sorted(HERE.parent.rglob("run.py"))]
+    source_names.append(str((HERE / "protocol.json").relative_to(ROOT)))
+    snapshot = output / "source"
+    source_hashes = {}
+    for name in source_names:
+        data = (ROOT / name).read_bytes()
+        if not dirty:
+            committed = subprocess.check_output(["git", "show", f"{source_commit}:{name}"], cwd=ROOT)
+            if data != committed:
+                raise ValueError("source changed after clean-tree check: " + name)
+        path = snapshot / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        source_hashes[name] = durable.identity(path)["sha256"]
+    # Both C translation units, quoted headers, -I and cwd use the snapshot.
+    command = scenarios.build(output / "host_runner", root=snapshot)
+    return source_hashes, command
 
 
 def authenticate_inputs(directory, protocol):
@@ -97,7 +127,9 @@ def run(args):
     output, inputs = args.output.resolve(), args.inputs.resolve()
     if output.exists() or output == ROOT or ROOT in output.parents:
         raise ValueError("choose a fresh output directory outside Git")
-    protocol = scenarios.strict_json((HERE / "protocol.json").read_text())
+    source_commit = v1.command(["git", "rev-parse", "HEAD"])
+    protocol_bytes = (HERE / "protocol.json").read_bytes()
+    protocol = scenarios.strict_json(protocol_bytes.decode("utf-8"))
     old, selected = authenticate_inputs(inputs, protocol)
     status = v1.command(["git", "status", "--porcelain"])
     if status and not (args.smoke and args.allow_dirty):
@@ -112,24 +144,15 @@ def run(args):
     for name in selected:
         shutil.copyfile(inputs / name, output / name)
         assert durable.identity(output / name) == selected[name]
-    shutil.copyfile(HERE / "protocol.json", output / "protocol.json")
-    source_names = ["notorch.c", "notorch.h", "notorch_simd.h", "chuck_architect.h", "chuck_architect_impl.h",
-                    "examples/chuck_architect_train.c", "examples/chuck_architect_scenarios.h",
-                    "examples/chuck_architect_rollout.h", "examples/chuck_architect_lived.h",
-                    "examples/chuck_architect_living.h", "examples/chuck-loss-architect.json",
-                    "tests/test_chuck_living.py"]
-    source_names += [str(p.relative_to(ROOT)) for p in sorted((HERE.parent).rglob("run.py"))]
-    source_names.append(str((HERE / "protocol.json").relative_to(ROOT)))
-    source_hashes = {}
-    for name in source_names:
-        path = output / "source" / name; path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / name, path)
-        source_hashes[name] = durable.identity(path)["sha256"]
+    (output / "protocol.json").write_bytes(protocol_bytes)
+    source_hashes, build_command = build_snapshot(output, durable, source_commit, bool(status))
+    protocol_name = str((HERE / "protocol.json").relative_to(ROOT))
+    if source_hashes[protocol_name] != v1.digest(output / "protocol.json"):
+        raise ValueError("protocol changed after it was read")
     binary = output / "host_runner"
-    build_command = scenarios.build(binary)
     durable.require([binary, output / "protocol.json"])
-    manifest = {"source_commit": v1.command(["git", "rev-parse", "HEAD"]), "source_status": status,
-                "source_sha256": source_hashes, "protocol_sha256": v1.digest(HERE / "protocol.json"),
+    manifest = {"source_commit": source_commit, "source_status": status,
+                "source_sha256": source_hashes, "protocol_sha256": v1.digest(output / "protocol.json"),
                 "datasets": old["manifest"]["datasets"], "machine": v1.machine(),
                 "compiler": v1.command(["cc", "--version"]).splitlines()[0], "build_command": build_command,
                 "binary": durable.identity(binary), "smoke": args.smoke, "seeds": seeds, "steps": steps,

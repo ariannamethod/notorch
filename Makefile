@@ -669,6 +669,7 @@ test_chuck_trajectories:
 
 .PHONY: test_chuck_living
 test_chuck_living:
+	python3 tests/test_chuck_living_build.py
 	python3 tests/test_chuck_living.py
 
 # Save syscall injection stays in this private object; production libc is intact.

@@ -29,10 +29,11 @@ def events(path: Path) -> list[dict]:
     return [strict_json(line) for line in path.read_text().splitlines()]
 
 
-def build(binary: Path, source: Path | None = None) -> list[str]:
-    command = ["cc", "-O2", "-std=gnu11", "-DUSE_SIMD", "-march=native", "-pthread", "-I", str(ROOT),
-               str(source or ROOT / "examples/chuck_architect_train.c"), str(ROOT / "notorch.c"), "-lm", "-o", str(binary)]
-    subprocess.run(command, check=True, cwd=ROOT)
+def build(binary: Path, source: Path | None = None, *, root: Path | None = None) -> list[str]:
+    root = (root or ROOT).resolve()
+    command = ["cc", "-O2", "-std=gnu11", "-DUSE_SIMD", "-march=native", "-pthread", "-I", str(root),
+               str(source or root / "examples/chuck_architect_train.c"), str(root / "notorch.c"), "-lm", "-o", str(binary)]
+    subprocess.run(command, check=True, cwd=root)
     return command
 
 
