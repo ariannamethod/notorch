@@ -3,12 +3,18 @@
 #define NOTORCH_CHUCK_TRAINER_STATE_H
 
 #define TRAINER_MAX_VOCAB 4096
+#ifdef NT_CHUCK_Q_TRAINER
+#include "chuck_q_tokenizer.h"
+#endif
 
 typedef struct {
     body model;
     nt_chuck_architect architect;
     uint32_t *vocab;              /* sorted Unicode scalar values, owned */
     uint32_t vocab_size;
+#ifdef NT_CHUCK_Q_TRAINER
+    q_tokenizer tokenizer;
+#endif
     unsigned char corpus_sha256[32];
     uint64_t token_count, split;
     uint64_t step, windows;

@@ -19,12 +19,20 @@
 #include <sys/resource.h>
 #include <time.h>
 
+#if defined(NT_CHUCK_Q_TRAINER) && !defined(NT_CHUCK_TRAINER)
+#define NT_CHUCK_TRAINER
+#endif
+
 #define MAX_LAYERS 4
 #define MAX_PARAMS (2 + MAX_LAYERS * 9 + 2)
 #ifdef NT_CHUCK_ARCHITECT_TEST
 #define CTX 8
 #define DIM 8
 #define HD 4
+#elif defined(NT_CHUCK_Q_TRAINER)
+#define CTX 64
+#define DIM 192
+#define HD 32
 #else
 #define CTX 64
 #define DIM 128
@@ -76,6 +84,9 @@ static void norm(body *m) {
     m->elements += p->len;
 }
 
+#ifdef NT_CHUCK_Q_TRAINER
+#include "chuck_q_body.h"
+#else
 static void body_init_vocab(body *m, const char *name, int vocab) {
     memset(m, 0, sizeof(*m));
     m->name = name;
@@ -107,10 +118,6 @@ static void body_init_vocab(body *m, const char *name, int vocab) {
     }
     norm(m);
     matrix(m, m->vocab, DIM, DIM, m->vocab);
-}
-
-static void body_init(body *m, const char *name) {
-    body_init_vocab(m, name, 0);
 }
 
 static int body_forward(body *m, const uint32_t *data, size_t offset, int train) {
@@ -150,6 +157,11 @@ static int body_forward(body *m, const uint32_t *data, size_t offset, int train)
     int loss = nt_seq_cross_entropy(logits, yi, CTX, m->vocab);
     if (loss < 0) die("forward tape failed");
     return loss;
+}
+#endif
+
+static void body_init(body *m, const char *name) {
+    body_init_vocab(m, name, 0);
 }
 
 static float read_loss(int index) {

@@ -395,6 +395,16 @@ make train_chuck
 The checkpoint includes weights, moments, Chuck, policy, vocabulary and RNGs.
 Generation needs only that file. [Trainer commands and resume contract](docs/chuck-trainer.md).
 
+Q's **RRPRAM + Janus** body trains through the same Chuck life and checkpoint
+path. Its original byte BPE is stored inside the checkpoint; `export` produces
+the QPTQ weights consumed by Q's existing engines:
+
+```sh
+make train_chuck_q
+./train_chuck_q train --corpus q.txt --merges q.merges --checkpoint q.ntc --steps 1000
+./train_chuck_q export --checkpoint q.ntc --output q.bin
+```
+
 [Optimizer lineage](https://github.com/iamolegataeff/chuck.optimizer) ·
 [Loss Architect API and objective](docs/chuck-loss-architect.md) ·
 [living acquisition](experiments/chuck_loss_architect/living/README.md) ·

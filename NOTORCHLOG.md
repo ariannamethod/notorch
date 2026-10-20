@@ -13,6 +13,74 @@ Newest entries on top.
 
 ---
 
+## 2026-10-20 — Train Q through Chuck and export its native runtime weights
+
+`make train_chuck_q` connects Q's `rrpram3_janus3` substrate to the same
+living Chuck acquisition loop, full checkpoint and train/resume/generate CLI.
+Width 192, three layers, three RRPRAM and three Janus heads, head width 32,
+learned positions 128, sequence 64, tied output, parameter-free RMSNorm,
+trained sigmoid gates and ReLU FFN 768 give **1,653,894 parameters** with
+Q's vocabulary 1280. Its original ordered byte BPE is embedded in a distinct
+`NTCHTRQ1` checkpoint. `export` writes atomic QPTQ v1, including gate biases,
+for Q's existing engines. SimpleLLM's checkpoint format stays unchanged.
+
+Reference: `ariannamethod/q@f5d00a36ecfcdb5e655e1576770f03d06d900e04`.
+The entire 439,326-byte `q.txt` produces the same 137,327 token IDs as its native
+BPE; all 1,280 decoded vocabulary entries agree. Raw corpus SHA-256:
+`410b71c59117269ac77739c442f4ba45c7f15ee6e4351eeeea3652d429ad8a3d`;
+`q.merges` SHA-256:
+`c0448406163490abe4cc3a5549074c9baddd2fe0300da069e690e9547e5409bf`.
+Native Janus uses epsilon 1e-8; the older Python trainer used effective
+epsilon `B*1e-6`. The new graph preserves native epsilon using scaled RMSNorm.
+The native raw-logit fixture agrees within 1.49e-8 across 64 recorded checks,
+including tiny Janus projections. Finite differences pass for all 10 fixture
+tensors. Removing Janus input scaling deliberately breaks 32 oracle checks
+(maximum error 0.0515181).
+
+**Training delivered:** FP32, seed 42, LR .0003, H16 acquisition every 64 steps,
+90/10 BPE-token split, eight fixed held-out windows. Linux x86_64, AMD EPYC 9V74,
+notorch AVX2/FMA SIMD with `NT_SIMD_THREADS=2`:
+
+```sh
+make train_chuck_q BLAS_FLAGS='-DUSE_SIMD -mavx2 -mfma' BLAS_LIBS=
+NT_SIMD_THREADS=2 ./train_chuck_q train --corpus q.txt --merges q.merges --checkpoint first.ntc --steps 250 --trace first.jsonl
+NT_SIMD_THREADS=2 ./train_chuck_q resume --corpus q.txt --checkpoint first.ntc --output resumed.ntc --steps 1000 --trace resumed.jsonl
+NT_SIMD_THREADS=2 ./train_chuck_q train --corpus q.txt --merges q.merges --checkpoint continuous.ntc --steps 1000 --trace continuous.jsonl
+cmp resumed.ntc continuous.ntc
+./train_chuck_q export --checkpoint resumed.ntc --output q.bin
+```
+
+Held-out cross-entropy **7.161573 → 6.437096 at 250 → 6.100315 at 1000**.
+All 1,000 step receipts, 16 acquisition receipts and the 19,858,960-byte complete
+checkpoint match between split and continuous runs. Checkpoint SHA-256:
+`59dc55691e11f16409eb62b00e1fc59ff258e50cc079f14140e6e2e4f5f30104`.
+The life completed 512 policy fits and 768 branch updates; host actions:
+324 BRAKE and 676 PUSH. Ten acquisitions changed the immediately selected action.
+The 6,615,620-byte QPTQ export has SHA-256
+`dc90b5762ed866f3d91bea6f78acba87154c7440fe0764c363c6b500e4cf11ef`.
+Weights, checkpoint, corpus, traces and generation outputs are retained outside Git.
+
+The pinned original C runtime loads the export and computes 1,280 finite,
+nonzero logits. Its complete startup/generation/save cycle also exits 0 with
+the first 80 corpus lines (7,133 bytes, 2,077 BPE tokens), with empty stderr.
+The separate whole-corpus native runtime attempt exceeded 312 observed CPU
+seconds and was interrupted (exit 130). That runtime attempt is retained
+alongside the successful bounded run; all training above used the full corpus.
+
+**Gates:** `make check_chuck_q_trainer BLAS_FLAGS= BLAS_LIBS=` runs the native
+model oracle/gradient gate, four tokenizer tests (including a reversed-merge
+mutant) and six Q trainer tests. Full 73 equals 31 + resume to 73 and 0 + resume
+to 73; all exported tensor bytes match the decoded checkpoint, including
+gate-bias reordering. Invalid merge graphs, foreign corpus, output aliases and
+wrong checkpoint family are refused. Existing nine SimpleLLM tests and the full
+CPU `make -j4 test BLAS_FLAGS= BLAS_LIBS=` pass. The optional original Haiku
+SentencePiece corpus remains SKIP without `SPM_MODEL`; 106 embedded cases pass.
+The first production save caught a boolean body-shape result being treated as
+an element count. The adapter now calculates the count; actual initialization,
+save and resume gates cover that boundary.
+
+---
+
 ## 2026-10-20 — Ship Chuck's standalone train / resume / generate path
 
 `make train_chuck` now builds a native C trainer against the working notorch

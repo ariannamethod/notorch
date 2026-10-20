@@ -89,3 +89,49 @@ is separate from the public policy-only life format.
 `make check_chuck_trainer` verifies fresh training, cross-process resume,
 initial-state resume, deterministic generation, learned policy change and input
 refusal. Its deliberate resume-RNG defect must break checkpoint equality.
+
+## Q: RRPRAM + Janus
+
+`train_chuck_q` uses Q's `rrpram3_janus3` architecture with the same Chuck
+acquisition loop, checkpoint lifecycle and commands:
+
+```sh
+make train_chuck_q
+./train_chuck_q train --corpus q.txt --merges q.merges --checkpoint q.ntc --steps 1000
+./train_chuck_q resume --corpus q.txt --checkpoint q.ntc --output q.ntc --steps 4000
+./train_chuck_q generate --checkpoint q.ntc --prompt "The " --tokens 128
+./train_chuck_q export --checkpoint q.ntc --output q.bin
+```
+
+Use `q.txt` and `q.merges` from
+[Q](https://github.com/ariannamethod/q/tree/f5d00a36ecfcdb5e655e1576770f03d06d900e04).
+The architecture has width 192, three layers, three RRPRAM heads and three Janus
+heads, head width 32, learned positions 128, tied token/output embeddings,
+parameter-free RMSNorm, sigmoid mechanism gates with trained biases and ReLU
+FFN width 768. Training windows contain 64 BPE tokens. With Q's vocabulary 1280
+this is **1,653,894 parameters**. Q's native Janus norm uses epsilon 1e-8;
+the tape graph preserves that value using scaled RMSNorm. Other RMSNorms use 1e-6.
+
+The tokenizer preserves Q's ordered byte-BPE merges and raw byte decoding.
+`--merges` is required only for fresh training. Resume and generation reconstruct
+the tokenizer from the complete `NTCHTRQ1` checkpoint. `--tokens` counts BPE
+tokens for Q. Q supports vocabularies 256–1280 and decoded token lengths up to 63
+bytes. Corpus identity is the SHA-256 of its raw bytes. The final 10% of BPE
+tokens is held out, with eight fixed evaluation windows. Defaults for seed,
+learning rates, H16 acquisition, saves and sampling match the SimpleLLM trainer.
+
+`export` atomically writes QPTQ version 1, including learned gate biases. Its
+destination must be new. Load it using the original Q runtime:
+
+```sh
+./q q.bin q.merges q.txt
+```
+
+The Q runtime supplies its existing MetaWeights, parliament, chambers and
+generation process. `train_chuck_q generate` samples the trained substrate
+directly. Both use the exported substrate's tied embeddings and native norm.
+
+SimpleLLM `NTCHTRN1` and Q `NTCHTRQ1` checkpoints are distinct and each trainer
+rejects the other family. The existing SimpleLLM format remains unchanged.
+Backend build options and exact-continuation requirements above also apply to Q.
+`make check_chuck_q_trainer` runs tokenizer, model and full-checkpoint gates.

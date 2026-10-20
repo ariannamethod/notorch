@@ -13,6 +13,13 @@
 
 #define TRAINER_CP_LIMIT ((size_t)64 * 1024 * 1024)
 #define TRAINER_CP_LIFE_LIMIT 16384
+#ifdef NT_CHUCK_Q_TRAINER
+#define TRAINER_CP_MAGIC "NTCHTRQ1"
+#define TRAINER_CP_BODY "q"
+#else
+#define TRAINER_CP_MAGIC "NTCHTRN1"
+#define TRAINER_CP_BODY "simple"
+#endif
 
 typedef struct {
     unsigned char *bytes;
@@ -88,6 +95,11 @@ static void trainer_cp_array(trainer_cp_codec *c, float *data, size_t count, int
 }
 
 static int trainer_cp_shape(int slot, int vocab, int shape[2], int *ndim) {
+#ifdef NT_CHUCK_Q_TRAINER
+    *ndim = 0;
+    if (!q_body_shape(slot, vocab, shape, ndim)) return 0;
+    return *ndim == 1 ? shape[0] : shape[0] * shape[1];
+#else
 #ifdef NT_CHUCK_ARCHITECT_TEST
     const int layers = 1, hidden = 16;
 #else
@@ -104,10 +116,13 @@ static int trainer_cp_shape(int slot, int vocab, int shape[2], int *ndim) {
         else { shape[0] = DIM; shape[1] = DIM; }
     } else return 0;
     return *ndim == 1 ? shape[0] : shape[0] * shape[1];
+#endif
 }
 
 static int trainer_cp_params(void) {
-#ifdef NT_CHUCK_ARCHITECT_TEST
+#ifdef NT_CHUCK_Q_TRAINER
+    return q_body_params();
+#elif defined(NT_CHUCK_ARCHITECT_TEST)
     return 12;
 #else
     return 21;
@@ -216,6 +231,27 @@ static void trainer_cp_metadata(trainer_cp_codec *c, trainer_state *s, int *trai
         s->acquisitions != expected || s->fit_updates != expected * 32 || s->branch_updates != expected * 48)
         c->failed = 1;
     if (c->failed) return;
+#ifdef NT_CHUCK_Q_TRAINER
+    if (s->vocab || s->vocab_size < 256 || s->vocab_size > 1280) {
+        c->failed = 1; return;
+    }
+    s->tokenizer.merge_count = trainer_cp_u32(c, s->tokenizer.merge_count);
+    if (c->failed || s->tokenizer.merge_count >
+        sizeof(s->tokenizer.pairs) / sizeof(s->tokenizer.pairs[0])) {
+        c->failed = 1; return;
+    }
+    if (c->reading) s->tokenizer.vocab_size = 256 + s->tokenizer.merge_count;
+    if (s->vocab_size != s->tokenizer.vocab_size ||
+        s->vocab_size != 256 + s->tokenizer.merge_count) {
+        c->failed = 1; return;
+    }
+    for (uint32_t i = 0; i < s->tokenizer.merge_count && !c->failed; ++i)
+        for (int j = 0; j < 2; ++j)
+            s->tokenizer.pairs[i][j] = trainer_cp_u32(c, s->tokenizer.pairs[i][j]);
+    char tokenizer_error[160];
+    if (!c->failed && q_tokenizer_validate(&s->tokenizer, tokenizer_error, sizeof(tokenizer_error)))
+        c->failed = 1;
+#else
     if (c->reading) {
         s->vocab = malloc((size_t)s->vocab_size * sizeof(*s->vocab));
         if (!s->vocab) { c->failed = 1; return; }
@@ -226,6 +262,7 @@ static void trainer_cp_metadata(trainer_cp_codec *c, trainer_state *s, int *trai
         if (!scalar || scalar > 0x10ffff || (scalar >= 0xd800 && scalar <= 0xdfff) ||
             (i && scalar <= s->vocab[i - 1])) c->failed = 1;
     }
+#endif
 }
 
 static int trainer_cp_atomic(const unsigned char *bytes, size_t size, const char *path) {
@@ -282,7 +319,7 @@ static int trainer_checkpoint_save(const trainer_state *state, const char *path,
     if (trainer_cp_life(&s.architect, life, &life_size, 0))
         return trainer_cp_error(error, error_size, "cannot encode Architect life");
     trainer_cp_codec c = {0};
-    char magic[] = "NTCHTRN1";
+    char magic[] = TRAINER_CP_MAGIC;
     trainer_cp_bytes(&c, magic, 8);
     trainer_cp_u32(&c, 1); trainer_cp_u64(&c, 0);
     int training = nt_is_training();
@@ -296,7 +333,7 @@ static int trainer_checkpoint_save(const trainer_state *state, const char *path,
         const nt_tensor *p = state->model.param[i];
         const nt_adam_state *a = &tape->adam[i];
         int shape[2] = {0}, ndim, length = trainer_cp_shape(i, (int)state->vocab_size, shape, &ndim);
-        if (!p || p->ndim != ndim || p->len != length ||
+        if (length <= 0 || !p || p->ndim != ndim || p->len != length ||
             memcmp(p->shape, shape, (size_t)ndim * sizeof(int)) || !a->m || !a->v ||
             a->m->len != length || a->v->len != length || a->acc_grad || a->t < 0 ||
             (uint64_t)a->t > state->step) { c.failed = 1; break; }
@@ -355,7 +392,7 @@ static int trainer_checkpoint_load(trainer_state *out, const char *path,
     trainer_state s = {0};
     trainer_cp_codec c = {bytes, size - 32, 0, size - 32, 1, 0};
     char magic[8]; trainer_cp_bytes(&c, magic, sizeof(magic));
-    if (memcmp(magic, "NTCHTRN1", 8) || trainer_cp_u32(&c, 0) != 1 || trainer_cp_u64(&c, 0) != size)
+    if (memcmp(magic, TRAINER_CP_MAGIC, 8) || trainer_cp_u32(&c, 0) != 1 || trainer_cp_u64(&c, 0) != size)
         c.failed = 1;
     int training = 0;
     uint32_t noise = 0;
@@ -377,6 +414,7 @@ static int trainer_checkpoint_load(trainer_state *out, const char *path,
     trainer_cp_slot slots[MAX_PARAMS] = {{0}};
     for (uint32_t i = 0; i < parameters && !c.failed; ++i) {
         int shape[2] = {0}, ndim, length = trainer_cp_shape((int)i, (int)s.vocab_size, shape, &ndim);
+        if (length <= 0) { c.failed = 1; break; }
         if (trainer_cp_u32(&c, 0) != (uint32_t)ndim) c.failed = 1;
         for (int j = 0; j < ndim; ++j)
             if (trainer_cp_u32(&c, 0) != (uint32_t)shape[j]) c.failed = 1;
@@ -393,7 +431,7 @@ static int trainer_checkpoint_load(trainer_state *out, const char *path,
         return trainer_cp_error(error, error_size, "checkpoint version, dimensions, fields or payload invalid");
     }
     /* Only fully authenticated and validated bytes can allocate/install a body. */
-    body_init_vocab(&s.model, "simple", (int)s.vocab_size);
+    body_init_vocab(&s.model, TRAINER_CP_BODY, (int)s.vocab_size);
     nt_tape_start();
     for (int i = 0; i < s.model.count; ++i) {
         nt_tensor *p = s.model.param[i];

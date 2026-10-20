@@ -728,6 +728,20 @@ check_chuck_trainer:
 
 test: check_chuck_trainer
 
+train_chuck_q: examples/chuck_architect_train.c examples/chuck_architect_scenarios.h examples/chuck_architect_rollout.h examples/chuck_architect_lived.h examples/chuck_architect_living.h examples/chuck_trainer.h examples/chuck_trainer_state.h examples/chuck_trainer_checkpoint.h examples/chuck_q_body.h examples/chuck_q_tokenizer.h notorch.c notorch.h notorch_simd.h sha256.c sha256.h $(CHUCK_HEADERS) Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -DNT_CHUCK_Q_TRAINER -I. -o $@ examples/chuck_architect_train.c notorch.c sha256.c -lm $(BLAS_LIBS)
+
+.PHONY: check_chuck_q_trainer
+test_chuck_q_body: tests/test_chuck_q_body.c examples/chuck_architect_train.c examples/chuck_q_body.h examples/chuck_q_tokenizer.h examples/chuck_trainer.h examples/chuck_trainer_state.h examples/chuck_trainer_checkpoint.h notorch.c notorch.h sha256.c sha256.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ tests/test_chuck_q_body.c notorch.c sha256.c -lm $(BLAS_LIBS)
+
+check_chuck_q_trainer: test_chuck_q_body
+	./test_chuck_q_body
+	python3 tests/test_chuck_q_tokenizer.py
+	python3 tests/test_chuck_q_trainer.py
+
+test: check_chuck_q_trainer
+
 chuck_architect_future: examples/chuck_architect_future.c libnotorch.a $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -I. -o $@ examples/chuck_architect_future.c ./libnotorch.a -lm $(BLAS_LIBS)
 
@@ -1081,7 +1095,7 @@ bench: bench/bench_simd bench/bench_blas
 # tree silently replaces libnotorch.a and the missing symbols read as an archive
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
-	rm -f train_chuck
+	rm -f train_chuck train_chuck_q test_chuck_q_body
 	rm -f spa_text_body.so spa_text_body.dylib
 	rm -f test_sentencepiece test_sentencepiece_faults test_sha256 sentencepiece.o sha256.o
 	rm -f test_spa_agent_conditioned
