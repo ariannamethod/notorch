@@ -227,6 +227,29 @@ libnotorch.$(SOEXT): pen7.c pen7.h harness/arch_penelope.c harness/penelope_inte
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -fPIC -shared -o libnotorch.$(SOEXT) notorch.c gguf.c spa_agent.c spa_binding.c sentencepiece.c sha256.c pen7.c harness/arch_penelope.c harness/runtime.c -lm $(BLAS_LIBS)
 	@echo "Built: libnotorch.$(SOEXT) ($(BLAS_NAME)) — load it with any FFI"
 
+# Complete SPA text host: train a small native body, act, learn and resume.
+SPA_BODY_RPATH = -Wl,-rpath,'$$ORIGIN'
+ifeq ($(UNAME), Darwin)
+  SPA_BODY_RPATH = -Wl,-rpath,@loader_path
+endif
+.PHONY: spa_text test_spa_runtime test_spa_install
+spa_text: spa_text_body.$(SOEXT)
+
+spa_text_body.$(SOEXT): examples/spa_text_body.c examples/spa_text_body.h libnotorch.$(SOEXT)
+	$(CC) $(CFLAGS) -fPIC -shared -o $@ $< -L. -lnotorch $(SPA_BODY_RPATH) -lm
+ifeq ($(UNAME), Darwin)
+	install_name_tool -change libnotorch.dylib @loader_path/libnotorch.dylib $@
+endif
+
+test_spa_runtime: spa_text
+	PYTHONPATH=python python3 tests/test_spa_engine.py
+	PYTHONPATH=python python3 tests/test_spa_text.py
+
+test_spa_install:
+	python3 tests/test_spa_install.py
+
+test: test_spa_runtime
+
 # ── The harness as a linkable surface ──────────────────────────────────────
 #
 # A body that wants to run a GGUF through this tree used to have two options:
@@ -1059,6 +1082,7 @@ bench: bench/bench_simd bench/bench_blas
 # ordering problem. Anything this Makefile can produce, this target removes.
 clean:
 	rm -f train_chuck
+	rm -f spa_text_body.so spa_text_body.dylib
 	rm -f test_sentencepiece test_sentencepiece_faults test_sha256 sentencepiece.o sha256.o
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values

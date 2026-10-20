@@ -9,12 +9,35 @@ from __future__ import annotations
 
 import ctypes as C
 from enum import IntEnum
+import importlib.util
 import math
 import operator
 import os
+import sys
 import threading
 
-from notorch import find_library
+
+def find_library(path=None):
+    """Explicit path, NOTORCH_LIB, installed native wheel, or checkout build."""
+    if path is not None:
+        path = os.fspath(path)
+        return os.path.abspath(path) if os.path.isfile(path) else path
+    if os.environ.get("NOTORCH_LIB"):
+        path = os.environ["NOTORCH_LIB"]
+        return os.path.abspath(path) if os.path.isfile(path) else path
+    spec = importlib.util.find_spec("_notorch_spa_native")
+    if spec is not None and spec.origin:
+        return spec.origin
+    ext = "dylib" if sys.platform == "darwin" else "so"
+    here = os.path.dirname(os.path.abspath(__file__))
+    for candidate in (os.path.join(here, os.pardir, f"libnotorch.{ext}"),
+                      os.path.join(here, f"libnotorch.{ext}")):
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+    if os.path.isfile(f"libnotorch.{ext}"):
+        return os.path.abspath(f"libnotorch.{ext}")
+    raise OSError("SPA native library not found. Install with `python -m pip install .` "
+                  "from notorch, build `make shared`, or set NOTORCH_LIB.")
 
 NO_SOURCE = 0xFFFFFFFF
 EMBED, FEATURES, HIDDEN, ACTIONS, HISTORY = 4, 29, 8, 3, 8
@@ -586,3 +609,10 @@ __all__ = ["Native", "Agent", "Config", "Mode", "ActionKind", "Action", "Metrics
            "Experience", "Alternative", "Comparison", "Readout", "ComparisonReceipt",
            "ConditionedReceipt",
            "Status", "Error", "ABIError", "NO_SOURCE", "MAX_REPEATS", "default_native"]
+
+
+# Import after the native value types: the runtime delegates all SPA arithmetic
+# to this module and owns only host execution and whole-engine persistence.
+from spa_engine import Engine, StepResult, CheckpointError, RollbackError
+
+__all__ += ["Engine", "StepResult", "CheckpointError", "RollbackError"]

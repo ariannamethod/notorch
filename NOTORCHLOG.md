@@ -75,6 +75,37 @@ rerunning the suite. No GPU result is claimed by this CPU trainer.
 
 ---
 
+## 2026-10-20 — SPA: installable engine, complete resume, native text body
+
+`pip install .` builds upstream SPA and notorch C into the Python distribution.
+`import SPA; SPA.Engine(host)` now owns the complete observation/action/host
+execution/consequence/learning loop. Failed steps restore both lives; one
+atomic checkpoint saves the canonical Agent life with the host's body, sentence
+field and generation RNG. Disabled mode skips execution. Existing native SPA
+arithmetic, ABI and Agent checkpoint format stay unchanged.
+
+`make spa_text` builds a trainable native word model and runnable Python host.
+It accepts a text corpus, generates sentences, executes neighbour reseeds,
+learns online and resumes without retraining. Reseeds start from the neighbour's
+first content word; using its terminal word caused immediate sentence endings.
+The host exposes all seven consequence axes and cost. README and the existing
+API documents now lead to installation and execution.
+
+Validation on Linux x86-64 with GCC 13.3 and Python 3.12.14:
+`make test_spa_runtime BLAS_FLAGS= BLAS_LIBS=` passes 12 Engine and 9 text-body
+tests, including actual native training, acquired-policy action change, two
+deliberate defects, error rollback, disabled parity, corruption refusal and
+byte-exact continuation. `make test_spa_install` independently builds and
+installs a wheel and a source archive outside the checkout. Existing
+`make check_spa_agent test_spa_python BLAS_FLAGS= BLAS_LIBS=` passes native
+SPA/state/durability gates and all 12 Python ABI/parity groups.
+`make test_spa_legacy_parity` matches all 1,024 sensory steps byte for byte
+against main `e842626` (114,688 bytes).
+Integrated main `321fac1`: preserved both trainers' clean targets and both
+engineering entries when resolving the shared-file conflicts.
+
+---
+
 ## 2026-10-20 — Build Chuck's living runner from its authenticated source snapshot
 
 Close the P1 [review on PR #173](https://github.com/ariannamethod/notorch/pull/173#discussion_r4267196961).

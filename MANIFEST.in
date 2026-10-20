@@ -1,0 +1,4 @@
+include LICENSE ARIANNA_METHOD_MANIFESTO.md
+include notorch.c notorch.h spa_agent.c spa_agent.h spa_binding.c spa_binding.h
+include chuck_architect.h chuck_architect_impl.h
+include python/SPA.py python/spa_engine.py

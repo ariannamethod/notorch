@@ -175,3 +175,11 @@ bench_cuda_decode
 /test_pen7
 /test_pen7_faults
 !tests/test_pen7_mutations.py
+
+# SPA runtime installation and host gates
+spa_text_body.so
+spa_text_body.dylib
+!tests/test_spa_engine.py
+!tests/test_spa_text.py
+!tests/test_spa_install.py
+*.egg-info/
