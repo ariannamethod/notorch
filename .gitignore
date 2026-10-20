@@ -18,6 +18,7 @@ infer_nanodurov
 train_dpo
 train_grpo
 train_distillation
+train_chuck
 test_sigmoid_scale
 test_tanh_sgd
 test_penelope
@@ -59,6 +60,7 @@ tests/bench_*
 !tests/test_chuck_trajectory_receipts.py
 !tests/test_chuck_living.py
 !tests/test_chuck_living_build.py
+!tests/test_chuck_trainer.py
 examples/infer_*
 examples/train_*
 !examples/*.c

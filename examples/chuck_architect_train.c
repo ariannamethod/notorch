@@ -76,7 +76,7 @@ static void norm(body *m) {
     m->elements += p->len;
 }
 
-static void body_init(body *m, const char *name) {
+static void body_init_vocab(body *m, const char *name, int vocab) {
     memset(m, 0, sizeof(*m));
     m->name = name;
     if (!strcmp(name, "simple")) {
@@ -87,6 +87,7 @@ static void body_init(body *m, const char *name) {
 #ifdef NT_CHUCK_ARCHITECT_TEST
     m->layers = 1; m->hidden = 16; m->vocab = 8;
 #endif
+    if (vocab > 0) m->vocab = vocab;
     matrix(m, m->vocab, DIM, m->vocab, DIM);
     if (m->positional) matrix(m, CTX, DIM, CTX, DIM);
     float residual_scale = m->positional ? 0.02f / sqrtf(2.0f * m->layers) / 0.1f : 1.0f;
@@ -106,6 +107,10 @@ static void body_init(body *m, const char *name) {
     }
     norm(m);
     matrix(m, m->vocab, DIM, DIM, m->vocab);
+}
+
+static void body_init(body *m, const char *name) {
+    body_init_vocab(m, name, 0);
 }
 
 static int body_forward(body *m, const uint32_t *data, size_t offset, int train) {
@@ -297,7 +302,16 @@ static long parse_integer(const char *text, long low, long high) {
 #include "chuck_architect_lived.h"
 #include "chuck_architect_living.h"
 
+#ifdef NT_CHUCK_TRAINER
+#include "chuck_trainer_state.h"
+#include "chuck_trainer_checkpoint.h"
+#include "chuck_trainer.h"
+#endif
+
 int main(int argc, char **argv) {
+#ifdef NT_CHUCK_TRAINER
+    return chuck_trainer_main(argc, argv);
+#else
     if (argc > 1 && !strcmp(argv[1], "--scenarios")) return scenario_main(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "--rollout")) return rollout_main(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "--lived")) return lived_main(argc, argv);
@@ -493,4 +507,5 @@ int main(int argc, char **argv) {
     for (int i = 0; i < m.count; i++) nt_tensor_free(m.param[i]);
     free(data);
     return 0;
+#endif
 }
