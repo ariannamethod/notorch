@@ -7,7 +7,21 @@ serialization execute in the same upstream `libnotorch` used by C hosts.
 
 ## Build and import
 
-From the notorch checkout:
+Install from the notorch checkout into an external Python project:
+
+```sh
+python3 -m pip install .
+python3 -c 'import SPA; print(SPA.Native().path)'
+```
+
+The `notorch-spa` distribution builds `notorch.c`, `spa_agent.c` and
+`spa_binding.c` together and installs their native library with `SPA` and its
+host runtime. Python 3.10+, a C compiler and Linux or macOS are required.
+The installed runtime uses the Python standard library. Building a wheel
+requires setuptools; `--no-build-isolation` uses an already installed build
+toolchain. The wheel carries portable CPU code rather than build-host CPU flags.
+
+To work directly from the checkout:
 
 ```sh
 make shared BLAS_FLAGS= BLAS_LIBS=
@@ -15,11 +29,90 @@ PYTHONPATH=python python3 examples/spa_python.py
 make test_spa_python BLAS_FLAGS= BLAS_LIBS=
 ```
 
-For an external Python project, put the checkout's `python/` directory on
-`PYTHONPATH`. It contains `SPA.py` and the existing `notorch.py` library locator.
-Choose a library with `SPA.Native(path)`, `NOTORCH_LIB`, or automatic discovery
-next to the checkout. The filename is `libnotorch.so` on Linux and
-`libnotorch.dylib` on macOS. This module is distributed with the repository.
+Choose a library with `SPA.Native(path)` or `NOTORCH_LIB`. Otherwise SPA loads
+its installed native library, then looks for a checkout build next to the
+module or in the current directory. A checkout build is named `libnotorch.so`
+on Linux and `libnotorch.dylib` on macOS. `PYTHONPATH=python` remains supported;
+the module no longer depends on importing the separate `notorch` Python binding.
+
+## Complete engine
+
+```python
+import SPA
+
+engine = SPA.Engine(host)       # LEARNED policy by default
+result = engine.step(target=1)
+print(result.action.kind, result.receipt.reward)
+engine.save("sentence.engine")  # agent + body + field + generation RNG
+engine.load("sentence.engine")
+```
+
+The host is the model boundary. Implement these five members:
+
+| Member | Contract |
+| --- | --- |
+| `host_id` | Stable string identifying the host's checkpoint format and measurement/action semantics. |
+| `snapshot()` | Return bytes containing the complete mutable body, sentence field, generation RNG and cursor needed to resume. |
+| `restore(data)` | Validate a snapshot and restore it transactionally. |
+| `observe(target)` | Pure call returning `(SPA.Observation, SPA.Metrics)` for the requested target. |
+| `execute(action)` | Execute the typed action and return regeneration cost in `[0,1]`. |
+
+`Engine.step` validates the observation and before metrics, chooses an action,
+executes it, measures the after metrics, and credits the exact native decision
+once. Its receipt keeps all seven before/after axes and cost. An exception
+restores both the host and Agent, including policy, history and RNG. The host
+must make its side effects reversible through `restore`. If rollback itself
+fails, the Engine refuses further steps and saves until a valid checkpoint
+loads. Use each host with one Engine; the Engine serializes its operations and
+refuses recursive calls from host callbacks.
+
+The target and sentence count stay fixed across a step's measurement window.
+The host chooses its observation window: it may measure immediately after a
+replacement or include future generation inside `execute`. Define KEEP and
+that future window consistently across actions. In DISABLED mode, Engine
+returns a KEEP preview with `receipt=None`, skips execution and leaves both
+lives and the step count unchanged. A supplied `SPA.Agent` retains its own
+configuration; pending low-level decisions must finish before Engine adoption.
+
+`engine.run(targets)` yields committed step results. `engine.steps` counts
+successful active steps. Existing `engine.agent` methods expose imitation,
+comparison learning, policy controls and memory reset between steps.
+
+Engine checkpoints are one versioned, length-bounded file, with a SHA-256 over
+the header and complete payload. They contain the existing canonical C Agent
+life, host bytes and host identity. Load verifies the file and native life
+before replacing the live pair. Save uses a same-directory temporary file,
+file fsync, atomic replacement and directory fsync. Errors after replacement
+leave the new checkpoint installed. Host payloads default to a 256 MiB bound;
+set `max_host_bytes` explicitly for larger bodies. The original
+`Agent.save`/`Agent.load` remain available for Agent-only C-compatible lives.
+
+## Train and run a text body
+
+```sh
+make spa_text BLAS_FLAGS= BLAS_LIBS=
+PYTHONPATH=python python3 examples/spa_text.py --steps 20 --save spa.engine
+PYTHONPATH=python python3 examples/spa_text.py --resume spa.engine --steps 20
+```
+
+`--corpus text.txt` replaces the built-in short corpus (up to 4,096 tokens and
+512 distinct words/punctuation). The example trains a word-level neural
+next-token body with 16-dimensional embeddings, tanh and a vocabulary
+projection using upstream notorch's tape and SGD.
+Its learned token embeddings feed native SPA perception. KEEP preserves the
+target; neighbour reseeds generate a replacement starting with the neighbour's
+first content word through the trained body.
+SPA learns online from the executed action's measured change, including
+novelty, repetition, collapse and generation cost. The complete checkpoint
+resumes without the corpus or retraining. The native example body links the
+same upstream `libnotorch` as SPA; its C interface is in
+[`spa_text_body.h`](../examples/spa_text_body.h).
+
+Run `make test_spa_runtime BLAS_FLAGS= BLAS_LIBS=` for the host/runtime gates.
+`make test_spa_install` checks installation from both wheel and source archive
+in isolated directories without relying on the checkout's shared library.
+
+## Low-level agent
 
 ```python
 import SPA
@@ -199,7 +292,7 @@ sentence. The Agent can receive that host's existing scores through an explicit
 Those measurements have their own definitions; notorch's native convenience
 perception uses the original softmax-maximum SPA connectedness.
 
-The inspected Molequla source supplies a concrete next consumer boundary.
-Its host integration will carry a separate parity fixture and acquisition
-experiment. This change publishes the shared upstream primitive and Python
-entry point.
+Molequla's Go body can call the installed native SPA API through its existing
+CGO boundary. Python bodies can implement the five-member Engine host contract
+above. Each body supplies its own sentence segmentation, action execution and
+measurements while using upstream perception, policy and acquired memory.

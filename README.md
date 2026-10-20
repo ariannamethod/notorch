@@ -474,6 +474,30 @@ above it: a persistent 267-parameter policy observes a sentence field, selects
 consequence. The host executes the action; the Agent carries learned weights,
 action/outcome history, private RNG, and pending credit through save/resume.
 
+Install the native Python engine from this checkout:
+
+```sh
+python3 -m pip install .
+python3 -c 'import SPA; print(SPA.Native().path)'
+```
+
+`SPA.Engine(host)` runs perception → action → execution → measured consequence
+→ learning. It saves the Agent and the host's complete state in one checkpoint,
+and rolls both back when a step fails. The wheel compiles upstream C; Python
+needs no numerical framework. C hosts include `spa_agent.h` and link notorch.
+
+Run a complete text engine, including training its small native language body:
+
+```sh
+make spa_text BLAS_FLAGS= BLAS_LIBS=
+PYTHONPATH=python python3 examples/spa_text.py --steps 20 --save spa.engine
+PYTHONPATH=python python3 examples/spa_text.py --resume spa.engine --steps 20
+```
+
+Supply `--corpus your-text.txt` to train on your own text. The example keeps its
+learned body, sentence field, generation RNG and acquired Agent together on
+resume. [Host interface and installation](docs/spa-python.md).
+
 `spa_agent.h` exposes `select`, `choose`, and `observe`, plus an explicit legacy
 policy and imitation training. Null/disabled mode preserves ordinary SPA.
 Raw connectedness, coherence, novelty, repetition, collapse, continuity, and
@@ -485,9 +509,8 @@ the sentence/concept computation level; WOLFE informs typed actions; Netta
 informs acquired consequences; Chuck: Loss Architect supplies a contemporary
 parallel inside notorch. The implementation is native C in `spa_agent.c`.
 
-[API and research](docs/spa-agent.md) · [Python host loop](docs/spa-python.md) ·
-[experiments and acquired choices](experiments/spa_agent/README.md) ·
-[history interventions](experiments/spa_agent/history_probe/README.md).
+[Native API](docs/spa-agent.md) · [Python engine](docs/spa-python.md) ·
+[Earlier experiments](experiments/spa_agent/README.md).
 
 ---
 

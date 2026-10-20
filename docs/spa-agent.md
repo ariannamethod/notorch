@@ -9,6 +9,12 @@ eight tanh units, and three action-value heads. The host executes `KEEP`,
 `RESEED_LEFT`, or `RESEED_RIGHT`. Its model, tokenizer, sentence segmentation,
 generation RNG, and candidate acceptance rule remain host responsibilities.
 
+Python hosts use `SPA.Engine` to execute that boundary as a complete loop,
+including consequence credit, rollback and a single Agent/host checkpoint.
+Install it with `python3 -m pip install .`; the package compiles these upstream
+C sources. `make spa_text` builds the trainable text-body example. See
+[the runtime contract and commands](spa-python.md).
+
 ## Perception and the registered legacy rule
 
 `nt_spa_embed_sentence`, `nt_spa_connectedness`, and `nt_spa_modulate_logits`
