@@ -2,6 +2,7 @@
  * Compile notorch.c separately with -Dcalloc=spa_test_calloc for the injected
  * allocation gate. The policy and this test use the ordinary C allocator. */
 #define _POSIX_C_SOURCE 200809L
+#define _DARWIN_C_SOURCE /* mkdtemp is hidden on Darwin under strict POSIX */
 #include "spa_agent.h"
 #include <dirent.h>
 #include <math.h>

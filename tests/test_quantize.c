@@ -89,11 +89,14 @@ static int roundtrip(int dtype, const char *name, int *pass, int *fail) {
      * -8 or -16, so one side of zero reaches one step further than the other, and values
      * past the short side clamp with an error of a full step rather than half of one. That
      * makes the bound amax/8 and amax/16, not half of each. Q8_0 is symmetric: half a step
-     * of amax/127. A quantizer that is mis-scaled fails this; one that is mis-rounded by a
-     * level needs the byte comparison below, which is why both are here. */
+     * of amax/127. Every format stores its scale d in f16, which is off by up to d/2048 and
+     * is multiplied by levels up to 8, 16 or 127; d times that level is amax in all three,
+     * so the stored scale adds amax/2048. For Q8_0 that is an eighth of its half step, more
+     * than the 5% slack. A quantizer that is mis-scaled fails this; one that is mis-rounded
+     * by a level needs the byte comparison below, which is why both are here. */
     float step = amax / (dtype == GGUF_TYPE_Q4_0 ? 8.0f
                        : dtype == GGUF_TYPE_Q5_0 ? 16.0f : 254.0f);
-    float bound = step * 1.05f;
+    float bound = (step + amax / 2048.0f) * 1.05f;
     float worst = 0.0f;
     for (int i = 0; i < K; i++) { float e = fabsf(back[i] - x[i]); if (e > worst) worst = e; }
     if (worst > bound) {
