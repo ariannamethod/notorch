@@ -5,6 +5,7 @@
  * This exercises real files plus ordered fault injection.
  */
 #define _POSIX_C_SOURCE 200809L
+#define _DARWIN_C_SOURCE /* mkdtemp is hidden on Darwin under strict POSIX */
 #include "spa_agent.h"
 #include <dirent.h>
 #include <errno.h>

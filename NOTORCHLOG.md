@@ -13,6 +13,41 @@ Newest entries on top.
 
 ---
 
+## 2026-10-27 — `make test` green on Apple silicon: legacy Chuck under FMA, Darwin mkdtemp, Q8_0 bound
+
+`make test` on the MacBook Neo (A18 Pro, Apple clang, default CFLAGS) stopped at
+three compile errors and, with those bypassed, two failures; all five predate
+`c2f411c` (reproduced on `2ed0cb0`). Now `make test` rc=0, zero FAIL lines.
+
+**Legacy Chuck ≠ ordinary Chuck at -O2.** `test_chuck_architect_scenarios`
+`mode_transitions:289` failed: a LEGACY/DISABLED architect step must leave the body
+bit-identical to `nt_tape_chuck_step`, and did not. Both pass at `-O0` and at
+`-O2 -ffp-contract=off`, fail at `-O2`: the action path handed `chuck_step_impl`
+norms from `chuck_gradient_norms`, the plain path computes them inline, and FMA
+contraction makes the two differ in the last bit. A legacy action now recomputes
+inside the step like the plain path (`notorch.c`, `nt_tape_chuck_step_action`);
+checked norms still serve the validation and every non-legacy action. Scenarios 6/6.
+
+**Darwin hides `mkdtemp` under strict POSIX.** `test_spa_agent_state`,
+`test_spa_agent_durability`, `test_chuck_architect_durability` define
+`_POSIX_C_SOURCE 200809L`; Darwin then declares `mkdtemp` only with
+`_DARWIN_C_SOURCE`, now defined next to it (glibc ignores it).
+
+**Q8_0 round-trip bound ignored the f16 scale.** The scale d is stored in f16
+(error ≤ d/2048) and multiplied by levels up to 127; d·127 = amax, so the stored
+scale adds amax/2048, an eighth of Q8_0's half step and more than the 5% slack.
+Worst error 2.081e-04 was over the old bound 2.067e-04; the bound is now
+(step + amax/2048)·1.05 = 2.323e-04 for all three block formats. The quantizer
+was right: the byte comparison against the reference GGUF passes unchanged.
+
+Mutations, each red by name and restored by SHA-256: norms handed back to the
+legacy step → `FAIL mode_transitions:289`; Q8_0 `roundf` → truncation →
+`FAIL Q8_0: worst error 3.973e-04 over bound 2.323e-04`; `_DARWIN_C_SOURCE`
+removed from one test → `mkdtemp` undeclared in that test only. Installed to
+`/opt/homebrew`: `libnotorch.a` SHA-256 prefix `69a676923f30b9f0`.
+
+---
+
 ## 2026-10-20 — Ship Chuck's standalone train / resume / generate path
 
 `make train_chuck` now builds a native C trainer against the working notorch

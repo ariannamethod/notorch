@@ -3494,7 +3494,10 @@ int nt_tape_chuck_step_action(float lr, float loss,
     if (!legacy && !chuck_controls_within(&pending, &bound)) return NT_CHUCK_E_BOUNDS;
     float norms[NT_TAPE_MAX_PARAMS];
     if (!chuck_gradient_norms(norms, NULL, 0)) return NT_CHUCK_E_STATE;
-    chuck_step_impl(lr, loss, &selected, &bound, norms);
+    // Legacy recomputes its norms inside the step, as nt_tape_chuck_step does: under
+    // FMA contraction (clang -O2 on arm64) the checked norms differ in the last bit,
+    // and a legacy action must equal ordinary Chuck exactly.
+    chuck_step_impl(lr, loss, &selected, &bound, legacy ? NULL : norms);
     return NT_CHUCK_OK;
 }
 
