@@ -9,6 +9,8 @@
 > *"fuck torch"*
 > — the header file
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ariannamethod/notorch)
+
 ---
 
 ## table of contents
