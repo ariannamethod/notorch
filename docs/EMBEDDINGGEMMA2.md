@@ -63,7 +63,8 @@ changing backend flags; the executable cannot switch a compiled backend.
 ## Explicit token boundary
 
 Each TSV row contains a safe identifier, integer IDs separated by spaces, and
-an optional equally long mask, separated by tabs:
+an optional equally long mask, separated by tabs. A row holding a NUL byte is
+refused in either mode:
 
 ```text
 fixture01<TAB>2 123 456 1<TAB>1 1 1 1
