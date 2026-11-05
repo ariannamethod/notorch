@@ -13,6 +13,56 @@ Newest entries on top.
 
 ---
 
+## 2026-11-05 — EmbeddingGemma 2 text to IDs in C: converter, tokenizer file, CLI text mode
+
+The encoder took token IDs only, and the IDs came from the Python tokenizer.
+SUBLITERATUS's EG2 relaunch needs new texts encoded under the official task
+prefixes without Python, so the boundary moves into C.
+
+**Converter.** `tools/embeddinggemma2_to_gguf.c` reads `config.json` and the
+safetensors header with a narrow JSON reader (`tools/narrow_json.h`: skip, find
+key, walk, unescape including surrogate pairs, numbers) and writes through
+`gguf_write_*`. On revision `f9972ac2…` it prints `{"tensors": 413, "sha256":
+"cc8495a4…"}` and `cmp` finds its 542,041,024 bytes identical to the GGUF of
+the Python converter. A second run refuses the existing output.
+
+**Tokenizer file.** `--tokenizer` turns `tokenizer.json` (sha256 `4d777ef5…`)
+into a 14,714,400-byte GGUF: 262,144 tokens, 514,906 merges, the 24 added
+(special) tokens typed CONTROL, BOS 2 and EOS 1 read from the `<bos> A <eos>`
+post-processor rather than assumed, `tokenizer.ggml.model = gemma4`, and the
+source hash. Separate from the model file, so `cc8495a4…` stays the model's
+identity.
+
+**CLI text mode.** `--tokenizer FILE --condition NAME` reads `id<TAB>text`,
+prefixes with the upstream prompt of that name, tokenizes the whole string with
+`examples/bpe.c`, appends EOS and writes `input_ids` beside the vectors. ID-mode
+output bytes are unchanged. Refused, never repaired: TAB/CR/LF in the text; a
+text holding an added-token literal such as `<eos>`, named in the error, because
+the upstream tokenizer would turn it into that token and no frozen input
+exercises that path, so it is kept out of the measuring path until verified on
+its own; a sequence over the model limit; and IDs that do not decode back to
+the text, the check that catches bpe.c's dropped-symbol path.
+
+**Gates.** Against the official reference IDs (`make
+check_embeddinggemma2_tokenizer`): 110/110 sequences identical, 104 corpus
+inputs and the six fixtures, by condition `query` 26, `document` 83,
+`QuestionAnswering` 1, including the multilingual and the TAB/newline fixture.
+On the real checkpoint the text-mode CLI gives g01–g04 the frozen IDs and
+embedding arrays identical, as printed text, to the ID-mode scalar run of the
+`98ca1b2` source. Red: removing merge 2525 `["▁","|"]` gives 0/110. The first
+red attempt removed `["▁th","e"]` and stayed at 110/110, because `▁the` has
+other producing pairs; one removed merge proves sensitivity only when it is the
+sole route to a token the inputs use, and `▁|` (id 1109, in every prefix) is.
+`make test_embeddinggemma2_text` (synthetic two-merge vocabulary, converter
+refusals, CLI over an analytic model) fails with four checks when the second
+merge is deleted, and with two when the literal check is switched off; on the
+real tokenizer the CLI refuses `<eos>` and `<|turn>` by name, rc 1. `test_embeddinggemma2` and the text test now run in
+`make test`; on Apple silicon scalar `make test` passes before and after.
+
+**Limits.** The merge loop in bpe.c's Gemma 4 path rescans all symbols per
+merge, so a text near 8,192 tokens is slow; the measured inputs stop at 619.
+Texts with tabs or newlines need ID mode.
+
 ## 2026-11-05 — EmbeddingGemma 2 checkpoint and complete-corpus parity pass
 
 The frozen native implementation at

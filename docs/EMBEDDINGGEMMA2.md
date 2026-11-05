@@ -19,16 +19,30 @@ masked mean pooling. Task prefixes and special tokens participate in pooling.
 ## Build and convert
 
 ```sh
-make embeddinggemma2_encode X86_SIMD=0  # scalar F32
-python3 tools/embeddinggemma2_to_gguf.py MODEL_SNAPSHOT text.gguf
+make embeddinggemma2_encode embeddinggemma2_to_gguf X86_SIMD=0  # scalar F32
+./embeddinggemma2_to_gguf MODEL_SNAPSHOT text.gguf
+./embeddinggemma2_to_gguf --tokenizer MODEL_SNAPSHOT/tokenizer.json tokenizer.gguf
 ./embeddinggemma2_encode text.gguf tokens.tsv vectors.jsonl --trace traces
 ```
 
-The standard-library converter copies the 413 text tensors directly from the
-safetensors file and omits vision/audio tensors. It preserves every BF16/F32
-tensor byte, writes shape and architecture metadata, and produces a JSON receipt
-with checkpoint/config/output hashes and per-tensor hashes. It refuses existing
-outputs. Place generated files outside a frozen input snapshot.
+The converter copies the 413 text tensors directly from the safetensors file
+and omits vision/audio tensors. It preserves every BF16/F32 tensor byte, writes
+shape and architecture metadata, and prints the output's SHA-256. It refuses
+existing outputs. Place generated files outside a frozen input snapshot. The C
+converter and the standard-library `tools/embeddinggemma2_to_gguf.py` write the
+same metadata in the same order; for the target revision both produce the text
+GGUF `cc8495a4e5e3b54bcacbafa9fe8bd8adf24c3cf5e47dc0b11922476634416033`. The
+Python converter additionally writes a JSON receipt with per-tensor hashes.
+The C converter is the canonical conversion path of this encoder line.
+
+`--tokenizer` writes a separate tokenizer GGUF from `tokenizer.json`, so the
+model file's hash does not depend on it: the vocabulary, the merge list, the
+added tokens typed CONTROL, BOS and EOS from the `<bos> A <eos>` post-processor,
+the `gemma4` scheme name `examples/bpe.c` dispatches on, and the source file's
+SHA-256. It refuses a file that is not BPE with byte fallback and the
+space-to-U+2581 normalizer, a vocabulary that is not a dense map of distinct
+IDs, a merge that is not a pair, and an added token that is not a special token
+of the vocabulary.
 
 The input embedding table remains memory-mapped BF16/F32 and only requested rows
 are expanded. Other weights are expanded once to F32 for arithmetic. Scratch
@@ -55,11 +69,35 @@ an optional equally long mask, separated by tabs:
 fixture01<TAB>2 123 456 1<TAB>1 1 1 1
 ```
 
-These are format examples, not a tokenizer encoding claim. Tokenization and
-task formatting belong to the caller; the CLI does not implement Gemma's
-tokenizer. For reference parity, supply the exact frozen tokenizer's ID arrays.
-Search queries use the upstream `task: search result | query: ` prefix;
-documents use `title: none | text: `. Other task formats are separate conditions.
+These are format examples, not a tokenizer encoding claim. In this mode
+tokenization and task formatting belong to the caller.
+
+With `--tokenizer tokenizer.gguf --condition NAME` each row is instead an
+identifier and a text, and the CLI tokenizes in C:
+
+```sh
+./embeddinggemma2_encode text.gguf queries.tsv vectors.jsonl \
+  --tokenizer tokenizer.gguf --condition query
+```
+
+```text
+q01<TAB>Where is the blue cup?
+```
+
+The condition names and prefixes are the upstream sentence-transformers prompts:
+`query` (`task: search result | query: `), `document` (`title: none | text: `),
+`QuestionAnswering`, `SentenceSimilarity`, and `none` for no prefix. Prefix and
+text are tokenized as one string, since a merge may cross their boundary; BOS
+comes from the tokenizer and EOS is appended by ID. Each output line carries the
+`input_ids` it encoded. A row is refused, and the batch fails, when its text
+contains TAB, CR or LF, when it contains the literal of an added token such as
+`<eos>` (named in the error; the upstream tokenizer would turn it into that token,
+and that path is not verified against the reference), when the framed sequence
+exceeds the model's token limit (never truncated), or when the IDs do not decode
+back to the text, which is how a character with neither a token nor a byte
+fallback would otherwise vanish.
+The tokenizer's vocabulary size must equal the model's. Texts with tabs or
+newlines go through ID mode.
 
 The JSONL output contains ID, token count, elapsed encode time, `pooled`, and
 `embedding`. Both vectors are native C results. Output files and trace directories
@@ -99,6 +137,23 @@ double-precision expected answer, including local windows, masks, residuals,
 layer scalar, final RMS and mean pooling. It also checks writable hooks,
 callback failure, nonfinite state, invalid IDs/masks, limits, deterministic
 repetition and unchanged output buffers on failure.
+
+`make test_embeddinggemma2_text` converts a synthetic `tokenizer.json` with two
+merges, an escaped token and a surrogate-pair token with the C converter, checks
+hand-worked IDs (merge order, U+2581 blocking a merge, byte fallback, refusal of
+an uncarried byte and of `<eos>` by name, refusal instead of truncation), then
+runs the CLI over an analytic model: IDs beside each vector, the text-mode vector
+equal to the ID-mode vector for the same IDs, and refusal of TAB, CR, over-long,
+lossy and added-literal rows. Both tests are part of `make test`. Against the official record:
+
+```sh
+make check_embeddinggemma2_tokenizer EG2_TOKENIZER=tokenizer.gguf \
+  EG2_ENCODED=encoded_inputs.jsonl EG2_GOLDEN=golden_inputs.json \
+  EG2_FIXTURE_TOKENS=tokens.tsv
+```
+
+splits each formatted reference text into condition and text, tokenizes it and
+requires every ID sequence to equal the official one.
 
 `tools/embeddinggemma2_parity.py` reads already-frozen NPZ goldens produced by an
 independent reference. NumPy compares recorded arrays; the native executable

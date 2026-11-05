@@ -345,13 +345,29 @@ llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorc
 EG2_FLAGS = $(if $(filter 1,$(BLAS)),$(BLAS_FLAGS),$(if $(filter 1,$(SIMD)),$(SIMD_FLAGS)))
 EG2_LIBS = $(if $(filter 1,$(BLAS)),$(BLAS_LIBS),$(if $(filter 1,$(SIMD)),$(SIMD_LIBS)))
 EG2_SRC = harness/arch_embeddinggemma2.c harness/runtime.c gguf.c notorch.c
-embeddinggemma2_encode: tools/embeddinggemma2_encode.c $(EG2_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
-	$(CC) $(CFLAGS) $(EG2_FLAGS) -o $@ tools/embeddinggemma2_encode.c $(EG2_SRC) -lm $(EG2_LIBS)
+EG2_TEXT = tools/embeddinggemma2_text.h tools/narrow_json.h examples/bpe.c examples/bpe.h
+embeddinggemma2_encode: tools/embeddinggemma2_encode.c $(EG2_TEXT) $(EG2_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(EG2_FLAGS) -o $@ tools/embeddinggemma2_encode.c examples/bpe.c $(EG2_SRC) -lm $(EG2_LIBS)
 
-.PHONY: test_embeddinggemma2
+embeddinggemma2_to_gguf: tools/embeddinggemma2_to_gguf.c tools/narrow_json.h gguf.c gguf.h sha256.c sha256.h notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tools/embeddinggemma2_to_gguf.c gguf.c sha256.c notorch.c -lm
+
+.PHONY: test_embeddinggemma2 test_embeddinggemma2_text check_embeddinggemma2_tokenizer
 test_embeddinggemma2: tests/test_embeddinggemma2.c $(EG2_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(EG2_FLAGS) -o $@ tests/test_embeddinggemma2.c $(EG2_SRC) -lm $(EG2_LIBS)
 	./test_embeddinggemma2
+
+test_embeddinggemma2_text: tests/test_embeddinggemma2_text.c embeddinggemma2_encode embeddinggemma2_to_gguf $(EG2_TEXT) gguf.c notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tests/test_embeddinggemma2_text.c examples/bpe.c gguf.c notorch.c -lm
+	./test_embeddinggemma2_text
+
+# Frozen tokenizer gate against the official reference IDs:
+# make check_embeddinggemma2_tokenizer EG2_TOKENIZER=tokenizer.gguf EG2_ENCODED=encoded_inputs.jsonl \
+#      EG2_GOLDEN=golden_inputs.json EG2_FIXTURE_TOKENS=tokens.tsv
+check_embeddinggemma2_tokenizer: test_embeddinggemma2_text
+	./test_embeddinggemma2_text "$(EG2_TOKENIZER)" "$(EG2_ENCODED)" "$(EG2_GOLDEN)" "$(EG2_FIXTURE_TOKENS)"
+
+test: test_embeddinggemma2 test_embeddinggemma2_text
 
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
