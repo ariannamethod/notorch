@@ -90,7 +90,7 @@ The condition names and prefixes are the upstream sentence-transformers prompts:
 text are tokenized as one string, since a merge may cross their boundary; BOS
 comes from the tokenizer and EOS is appended by ID. Each output line carries the
 `input_ids` it encoded. A row is refused, and the batch fails, when its text
-contains TAB, CR or LF, when it contains the literal of an added token such as
+contains TAB, CR, LF or a NUL byte, when it contains the literal of an added token such as
 `<eos>` (named in the error; the upstream tokenizer would turn it into that token,
 and that path is not verified against the reference), when the framed sequence
 exceeds the model's token limit (never truncated), or when the IDs do not decode

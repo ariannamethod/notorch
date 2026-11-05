@@ -227,6 +227,15 @@ int main(int argc, char **argv) {
     char *err = nj_load(path, NULL);
     CHECK(literal_rc != 0 && err && strstr(err, "row 1: holds the added-token literal \"<eos>\""), "CLI refuses an added-token literal by name");
     free(err);
+    FILE *nul = fopen(tsv, "wb");
+    if (!nul || fwrite("t8\tab\0c\n", 1, 8, nul) != 8 || fclose(nul)) { perror(tsv); return 1; }
+    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode %s/model.gguf %s %s/nul.jsonl --tokenizer %s/tok.gguf "
+             "--condition none 2>%s/nul.err", dir, tsv, dir, dir, dir);
+    int nul_rc = sh(cmd);
+    snprintf(path, sizeof(path), "%s/nul.err", dir);
+    err = nj_load(path, NULL);
+    CHECK(nul_rc != 0 && err && strstr(err, "row 1: NUL byte inside the text"), "CLI refuses a NUL byte instead of encoding the prefix");
+    free(err);
     put(tsv, "t1\t2 7 1\n");
     snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode %s/model.gguf %s %s/ids.jsonl 2>/dev/null", dir, tsv, dir);
     CHECK(sh(cmd) == 0, "CLI ID mode runs");
@@ -241,7 +250,7 @@ int main(int argc, char **argv) {
     CHECK(id_out && !strstr(id_out, "input_ids"), "ID mode output unchanged");
     free(i1); free(i2); free(e1); free(e0); free(text_out); free(id_out);
     const char *made[] = {"tokenizer.json", "tok.gguf", "model.gguf", "in.tsv", "ids.jsonl", "out0.jsonl", "out1.jsonl",
-                          "out2.jsonl", "out3.jsonl", "out4.jsonl", "literal.jsonl", "literal.err"};
+                          "out2.jsonl", "out3.jsonl", "out4.jsonl", "literal.jsonl", "literal.err", "nul.jsonl", "nul.err"};
     for (size_t i = 0; i < sizeof(made) / sizeof(*made); i++) {
         snprintf(path, sizeof(path), "%s/%s", dir, made[i]);
         unlink(path);
