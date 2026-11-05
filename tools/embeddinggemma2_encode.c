@@ -1,9 +1,13 @@
-/* Native text-encoder batch runner. Tokenization/task prefixing is an explicit
- * input boundary: each TSV row is id<TAB>integer IDs<TAB>optional 0/1 mask.
+/* Native text-encoder batch runner. Each TSV row is id<TAB>integer IDs<TAB>
+ * optional 0/1 mask, or, with --tokenizer and --condition, id<TAB>text: the
+ * condition's task prefix and the text are tokenized in C and the IDs used are
+ * written next to the vectors. A text holding TAB, CR or LF is refused, as is a
+ * sequence longer than the model's limit or one the tokenizer cannot carry whole.
  * Output JSONL includes both pooled and normalized vectors. Optional trace files
  * are little-endian host F32 (this runner refuses big-endian hosts).
  * All outputs are create-only; an interrupted batch remains visibly partial. */
 #include "harness/arch.h"
+#include "tools/embeddinggemma2_text.h"
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
@@ -67,31 +71,41 @@ static void array(FILE *f,const char *key,const float *values,int n) {
 static void usage(const char *prog) {
     fprintf(stderr,"usage: %s MODEL.gguf TOKENS.tsv RESULTS.jsonl [--trace DIR]\n"
         "       [--offset vector.f32 --layer N --scale ALPHA] [--nonpad]\n"
+        "       [--tokenizer TOKENIZER.gguf --condition NAME]  (rows: id<TAB>text)\n"
         "offset applies after complete block N, before the next block/final norm;\n"
-        "all tokens by default, only unmasked tokens with --nonpad.\n",prog);
+        "all tokens by default, only unmasked tokens with --nonpad.\nconditions:",prog);
+    for(int i=0;i<EG2_CONDITIONS;i++)fprintf(stderr," %s",eg2_conditions[i][0]);
+    fputc('\n',stderr);
 }
 int main(int argc,char **argv) {
     if(argc<4){usage(argv[0]);return 2;}
     uint16_t endian=1;if(*(unsigned char*)&endian!=1){fprintf(stderr,"little-endian host required\n");return 2;}
     runner r={0};r.layer=-1;r.scale=1;
-    const char *offset_path=NULL;
+    const char *offset_path=NULL,*tokenizer_path=NULL,*condition=NULL,*prefix=NULL;
     for(int i=4;i<argc;i++) {
         if(!strcmp(argv[i],"--nonpad")){r.nonpad=1;continue;}
         if(i+1>=argc){usage(argv[0]);return 2;}
         const char *key=argv[i],*value=argv[++i];char *end;
         if(!strcmp(key,"--trace"))r.dir=value;
         else if(!strcmp(key,"--offset"))offset_path=value;
+        else if(!strcmp(key,"--tokenizer"))tokenizer_path=value;
+        else if(!strcmp(key,"--condition")){condition=value;if(!(prefix=eg2_prefix(value))){usage(argv[0]);return 2;}}
         else if(!strcmp(key,"--layer")){errno=0;long v=strtol(value,&end,10);if(errno || *end || v<0 || v>127)return 2;r.layer=(int)v;}
         else if(!strcmp(key,"--scale")){errno=0;r.scale=strtof(value,&end);if(errno || *end || !isfinite(r.scale))return 2;}
         else{usage(argv[0]);return 2;}
     }
     if((offset_path!=NULL)!=(r.layer>=0)){fprintf(stderr,"--offset and --layer must be paired\n");return 2;}
-    int status=1;gguf_file *gf=NULL;void *model=NULL;FILE *in=NULL,*out=NULL;
+    if((tokenizer_path!=NULL)!=(condition!=NULL)){fprintf(stderr,"--tokenizer and --condition must be paired\n");return 2;}
+    int status=1;gguf_file *gf=NULL;void *model=NULL;FILE *in=NULL,*out=NULL;eg2_tokenizer tok={0};
     char *line=NULL;size_t line_cap=0;int *ids=NULL,*masks=NULL;unsigned char *mask=NULL;
     float *pooled=NULL,*embedding=NULL;
     gf=gguf_open(argv[1]);if(!gf)goto done;
     nt_encode_dims d;model=nt_encoder_embeddinggemma2.load(gf,&d);if(!model)goto done;
     if(r.layer>=d.n_layers){fprintf(stderr,"layer out of bounds\n");goto done;}
+    if(tokenizer_path) {
+        if(eg2_tokenizer_load(&tok,tokenizer_path))goto done;
+        if(bpe_n_vocab(tok.bpe)!=d.vocab){fprintf(stderr,"tokenizer vocabulary %d differs from the model's %d\n",bpe_n_vocab(tok.bpe),d.vocab);goto done;}
+    }
     if(offset_path) {
         r.offset=malloc((size_t)d.width*sizeof(float));if(!r.offset)goto done;
         FILE *f=fopen(offset_path,"rb");if(!f){perror(offset_path);goto done;}
@@ -116,20 +130,32 @@ int main(int argc,char **argv) {
         if(!tab){fprintf(stderr,"row %u: expected id TAB IDs [TAB mask]\n",row);goto done;}
         *tab++=0;r.id=line;
         if(!safe_id(r.id)){fprintf(stderr,"row %u: invalid ID\n",row);goto done;}
-        char *mask_text=strchr(tab,'\t');if(mask_text)*mask_text++=0;
-        int n=parse_ints(tab,ids,d.max_tokens,d.vocab-1);
-        if(n<1){fprintf(stderr,"row %u: invalid token IDs\n",row);goto done;}
-        r.mask=NULL;
-        if(mask_text) {
-            if(parse_ints(mask_text,masks,d.max_tokens,1)!=n){fprintf(stderr,"row %u: invalid mask\n",row);goto done;}
-            for(int j=0;j<n;j++)mask[j]=(unsigned char)masks[j];
-            r.mask=mask;
+        r.mask=NULL;int n;
+        if(tok.bpe) {
+            size_t len=strlen(tab);if(len && tab[len-1]=='\n')tab[--len]=0;
+            if(strpbrk(tab,"\t\r\n")){fprintf(stderr,"row %u: TAB, CR or LF inside the text\n",row);goto done;}
+            const char *literal=NULL;
+            n=eg2_text_ids(&tok,prefix,tab,ids,d.max_tokens,&literal);
+            if(n==-4){fprintf(stderr,"row %u: holds the added-token literal \"%s\", refused\n",row,literal);goto done;}
+            if(n<0){fprintf(stderr,"row %u: %s\n",row,n==-1?"longer than the model's token limit, refused":
+                n==-2?"the tokenizer cannot carry this text whole":"out of memory");goto done;}
+        } else {
+            char *mask_text=strchr(tab,'\t');if(mask_text)*mask_text++=0;
+            n=parse_ints(tab,ids,d.max_tokens,d.vocab-1);
+            if(n<1){fprintf(stderr,"row %u: invalid token IDs\n",row);goto done;}
+            if(mask_text) {
+                if(parse_ints(mask_text,masks,d.max_tokens,1)!=n){fprintf(stderr,"row %u: invalid mask\n",row);goto done;}
+                for(int j=0;j<n;j++)mask[j]=(unsigned char)masks[j];
+                r.mask=mask;
+            }
         }
         double start=seconds();
         int rc=nt_encoder_embeddinggemma2.encode(model,ids,r.mask,n,pooled,embedding,(r.dir||r.offset)?hook:NULL,&r);
         double elapsed=seconds()-start;
         if(rc){fprintf(stderr,"row %u (%s): encode failed %d\n",row,r.id,rc);goto done;}
-        fprintf(out,"{\"id\":\"%s\",\"tokens\":%d,\"seconds\":%.9g,",r.id,n,elapsed);
+        fprintf(out,"{\"id\":\"%s\",\"tokens\":%d,",r.id,n);
+        if(tok.bpe){fputs("\"input_ids\":[",out);for(int j=0;j<n;j++)fprintf(out,"%s%d",j?",":"",ids[j]);fputs("],",out);}
+        fprintf(out,"\"seconds\":%.9g,",elapsed);
         array(out,"pooled",pooled,d.output_dim);fputc(',',out);array(out,"embedding",embedding,d.output_dim);fputs("}\n",out);
         if(fflush(out) || (r.index && fflush(r.index))){perror("output");goto done;}
         fprintf(stderr,"%s\t%d tokens\t%.3f s\n",r.id,n,elapsed);
@@ -143,5 +169,6 @@ done:
     if(r.index && fclose(r.index))status=1;
     if(model)nt_encoder_embeddinggemma2.free(model);
     if(gf)gguf_close(gf);
+    eg2_tokenizer_free(&tok);
     return status;
 }
