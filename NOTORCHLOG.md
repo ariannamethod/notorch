@@ -13,6 +13,40 @@ Newest entries on top.
 
 ---
 
+## 2026-11-05 — EmbeddingGemma 2 native encoder and frozen parity instrument
+
+Added a full-sequence `nt_encoder` contract alongside the existing decoder API.
+The EmbeddingGemma 2 text implementation owns bidirectional local/full attention,
+per-layer head layouts, Q/K/V normalization, NEOX RoPE, GELU-tanh FFN,
+projection-only PLE, layer scalars, final projection, masked pooling and L2
+normalization. Synchronous writable hooks expose input/PLE, attention/FFN/block
+residuals, final norm and projected tokens. Model weights remain immutable.
+
+The converter copies BF16/F32 text tensor bytes without numerical conversion;
+the input table stays mapped while arithmetic weights expand to F32. The batch
+CLI accepts explicit token IDs/masks, exports vectors and raw traces, and can
+apply a block offset. Existing decoder families and tokenizer dispatch are
+unchanged. `libnotorch_harness` includes the encoder symbol.
+
+Validation before any real-checkpoint forward: `make test_embeddinggemma2
+X86_SIMD=0` and `make test_embeddinggemma2 SIMD=1` pass on Linux x86-64. The
+analytical fixture checks full/local bidirectional attention, inclusive window
+edges, masking/pooling, layer scalar, writable hooks, deterministic repetition,
+and atomic failure outputs. Removing the inclusive right edge in a temporary
+source copy makes the same gate abort (`0.88237381 != 0.832606298`); original
+source is unchanged. `make lib_harness BLAS_FLAGS= BLAS_LIBS=` builds all family
+objects and the archive. ASan/UBSan passes with leak detection disabled;
+LeakSanitizer cannot execute under this host's ptrace environment.
+
+The six-fixture external-reference parity instrument freezes normalized error
+<=2e-5, cosine >=0.999999, norm error <=2e-6 and internal relative L2 <=2e-3.
+It requires all 24 block comparisons plus input/PLE/final/projection/pooling.
+Actual checkpoint parity is pending at this instrument freeze. Python is used
+only for byte-copy conversion and comparison of recorded arrays; inference runs
+in native C. See [the encoder guide](docs/EMBEDDINGGEMMA2.md).
+
+---
+
 ## 2026-10-27 — `make test` green on Apple silicon: legacy Chuck under FMA, Darwin mkdtemp, Q8_0 bound
 
 `make test` on the MacBook Neo (A18 Pro, Apple clang, default CFLAGS) stopped at

@@ -117,4 +117,34 @@ extern const nt_arch nt_arch_resonance;
 extern const nt_arch nt_arch_janus;
 extern const nt_arch nt_arch_penelope;
 
+/* Full-sequence encoders have a different contract from causal decoders: no
+ * token-logit output and no KV state carried between calls. All n positions
+ * participate in one bidirectional call. mask is NULL (all positions) or n
+ * bytes in {0,1}; masked positions cannot be keys or enter the mean pool.
+ * Callbacks run synchronously and may inspect or alter each named boundary.
+ * The caller's pooled/output buffers are committed only on NT_OK. */
+typedef struct {
+    int n_layers, width, output_dim, vocab, max_tokens;
+} nt_encode_dims;
+
+typedef enum {
+    NT_ENCODE_INPUT, NT_ENCODE_PLE, NT_ENCODE_POST_ATTENTION,
+    NT_ENCODE_POST_FFN, NT_ENCODE_BLOCK, NT_ENCODE_FINAL_NORM,
+    NT_ENCODE_PROJECTED
+} nt_encode_site;
+
+typedef int (*nt_encode_fn)(void *user, nt_encode_site site, int layer,
+                            int n, int width, float *states);
+
+typedef struct {
+    const char *name;
+    void *(*load)(gguf_file *gf, nt_encode_dims *dims);
+    void (*free)(void *model);
+    int (*encode)(void *model, const int *tokens, const unsigned char *mask,
+                  int n, float *pooled, float *normalized,
+                  nt_encode_fn callback, void *user);
+} nt_encoder;
+
+extern const nt_encoder nt_encoder_embeddinggemma2;
+
 #endif

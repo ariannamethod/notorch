@@ -263,7 +263,7 @@ test: test_spa_runtime
 # immutable PEN7 interface is also public in libnotorch, which reuses the same
 # PEN7/runtime objects. General harness consumers link both, harness first.
 HARNESS_LIB_OBJ = harness/archs.o harness/runtime.o harness/arch_llama.o \
-                  harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_olmoe.o harness/arch_mamba.o \
+                  harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_embeddinggemma2.o harness/arch_olmoe.o harness/arch_mamba.o \
                   harness/arch_resonance.o harness/arch_janus.o harness/arch_penelope.o examples/bpe.o
 
 lib_harness: libnotorch_harness.a
@@ -339,6 +339,20 @@ llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorc
 	@echo "Compiled: infer_llama (LLaMA/Qwen GGUF + GGUF-BPE tokenizer, $(BLAS_NAME))"
 
 # ── Harness — the simple way to run a model ──
+
+# Explicit full-sequence encoder surface; task formatting/tokenization supplied
+# as token IDs. Portable native CPU by default, optional BLAS=1 or SIMD=1.
+EG2_FLAGS = $(if $(filter 1,$(BLAS)),$(BLAS_FLAGS),$(if $(filter 1,$(SIMD)),$(SIMD_FLAGS)))
+EG2_LIBS = $(if $(filter 1,$(BLAS)),$(BLAS_LIBS),$(if $(filter 1,$(SIMD)),$(SIMD_LIBS)))
+EG2_SRC = harness/arch_embeddinggemma2.c harness/runtime.c gguf.c notorch.c
+embeddinggemma2_encode: tools/embeddinggemma2_encode.c $(EG2_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(EG2_FLAGS) -o $@ tools/embeddinggemma2_encode.c $(EG2_SRC) -lm $(EG2_LIBS)
+
+.PHONY: test_embeddinggemma2
+test_embeddinggemma2: tests/test_embeddinggemma2.c $(EG2_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(EG2_FLAGS) -o $@ tests/test_embeddinggemma2.c $(EG2_SRC) -lm $(EG2_LIBS)
+	./test_embeddinggemma2
+
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
