@@ -1,5 +1,7 @@
 # binaries
 notorch
+embeddinggemma2_encode
+test_embeddinggemma2
 notorch_test
 notorch_test_gpu
 infer_gemma

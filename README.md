@@ -148,6 +148,16 @@ The harness also ships as `libnotorch_harness`, with CPU and CUDA family APIs.
 An organism can link it and supply its own generation loop.
 [Embedding and CUDA examples](NOTORCHLOG.md#readme-inference--notorch-runs-models-it-doesnt-just-train-them).
 
+**EmbeddingGemma 2 text** has a separate full-sequence encoder API: native F32
+bidirectional attention, projection-only per-layer inputs, masked mean pooling,
+and 768-dimensional normalized output. Read/write activation hooks expose every
+block. The [encoder guide](docs/EMBEDDINGGEMMA2.md) describes unchanged BF16/F32
+checkpoint conversion, explicit token-ID inputs, and the frozen layer-by-layer
+reference parity gate. Six neutral fixtures and the complete frozen
+80-document/24-query corpus pass numerical parity, with exact native replay;
+[measured results](docs/validation/embeddinggemma2-validation-2026-11-05.json)
+record the source, checkpoint and tokenizer boundary.
+
 fuck torch — but also, you do not need llama.cpp to *run* what you built.
 The CPU, Metal and CUDA paths live here. Packed matrices stay packed through
 their kernels; the PEN7 path owns its immutable parameters. The engineering

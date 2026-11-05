@@ -1,0 +1,408 @@
+{
+  "schema": "notorch.embeddinggemma2.validation.v1",
+  "date": "2026-11-05",
+  "status": "PASS",
+  "measured_source": {
+    "repository": "https://github.com/ariannamethod/notorch",
+    "commit": "dab8386c62793bcdd8e4c8254d836c67274bbdf9",
+    "tree": "af6b995159200112361255ad1cd612f0e1016f56"
+  },
+  "model": {
+    "id": "google/embeddinggemma-2",
+    "revision": "f9972ac22e696a105c482202646979e33e4b5a1e",
+    "configuration": "text-only",
+    "registered_parameters": 271002624,
+    "layer_scalar_buffer_values": 24,
+    "checkpoint_tensor_elements": 271002648,
+    "text_tensors": 413,
+    "text_gguf_bytes": 542041024,
+    "text_gguf_sha256": "cc8495a4e5e3b54bcacbafa9fe8bd8adf24c3cf5e47dc0b11922476634416033",
+    "conversion": "BF16/F32 source tensor bytes preserved; no quantization"
+  },
+  "input_boundary": {
+    "native_tokenizer": false,
+    "source": "exact official tokenizer IDs and attention masks from frozen reference",
+    "pooling": "mean over mask=1 projected tokens, including task prefix and special tokens",
+    "normalization": "L2, eps=1e-12",
+    "output_dimensions": 768,
+    "runtime_context_limit": 8192
+  },
+  "environment": {
+    "platform": "Linux-6.18.57-x86_64-with-glibc2.39",
+    "reported_cpu": "AMD EPYC 9V74 80-Core Processor",
+    "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+    "backend": "NoTorch native AVX2/FMA SIMD",
+    "arithmetic": "F32",
+    "NT_SIMD_THREADS": 4,
+    "scalar_build_command": "make -B embeddinggemma2_encode X86_SIMD=0",
+    "simd_build_command": "make -B embeddinggemma2_encode SIMD=1",
+    "scalar_binary_sha256": "be071f667dfeb09a6156bbe1ba149416c8e06a1564015a3052b8aff9d0da83b7",
+    "simd_binary_sha256": "fef439feac31fc5e7fc7702c514a89f07754849f070099edca951b4caa22ba93",
+    "reference": {
+      "implementation": "Hugging Face Transformers 5.22.1 / PyTorch 2.15.0+cpu",
+      "device": "CPU",
+      "dtype": "float32",
+      "attention": "eager",
+      "measurement_commit": "93fd8e643c4845c746739a75c3ee6eca811c3d62",
+      "manifest_sha256": "1fa5e4ccc4fd520f9fbda67f0f2fa936dae712aee6dbba4ad901e52c84d6e2f1"
+    }
+  },
+  "frozen_thresholds": {
+    "normalized_max_abs": 2e-05,
+    "normalized_min_cosine": 0.999999,
+    "normalized_max_norm_error": 2e-06,
+    "internal_max_relative_l2": 0.002
+  },
+  "goldens": {
+    "scalar_g01": {
+      "pass": true,
+      "tokens": 15,
+      "normalized": {
+        "count": 768,
+        "max_abs": 9.126283292797133e-08,
+        "relative_l2": 7.235284029451437e-07,
+        "cosine": 0.9999999999997387
+      },
+      "norm_error": 6.105923033850047e-08,
+      "internal_max_relative_l2": 1.550076948085676e-06
+    },
+    "simd": [
+      {
+        "id": "g01",
+        "tokens": 15,
+        "pass": true,
+        "comparisons": 34,
+        "normalized": {
+          "count": 768,
+          "max_abs": 1.1546283292841741e-07,
+          "relative_l2": 8.274811237338773e-07,
+          "cosine": 0.9999999999996638
+        },
+        "norm_error": 8.541510387871654e-08,
+        "worst_internal_relative_l2": {
+          "site": "block_10",
+          "count": 7680,
+          "max_abs": 1.3589859008789062e-05,
+          "relative_l2": 1.515130556446827e-06,
+          "cosine": 0.9999999999988528
+        },
+        "worst_internal_max_abs": {
+          "site": "projected",
+          "count": 11520,
+          "max_abs": 0.0009765625,
+          "relative_l2": 1.303094915579841e-06,
+          "cosine": 0.9999999999991537
+        }
+      },
+      {
+        "id": "g02",
+        "tokens": 25,
+        "pass": true,
+        "comparisons": 34,
+        "normalized": {
+          "count": 768,
+          "max_abs": 1.1176436195275974e-07,
+          "relative_l2": 8.739893566403587e-07,
+          "cosine": 0.9999999999996209
+        },
+        "norm_error": 7.183012196154692e-08,
+        "worst_internal_relative_l2": {
+          "site": "block_10",
+          "count": 12800,
+          "max_abs": 1.621246337890625e-05,
+          "relative_l2": 1.8089163103285931e-06,
+          "cosine": 0.9999999999983641
+        },
+        "worst_internal_max_abs": {
+          "site": "projected",
+          "count": 19200,
+          "max_abs": 0.001953125,
+          "relative_l2": 1.6062300821362838e-06,
+          "cosine": 0.999999999998713
+        }
+      },
+      {
+        "id": "g03",
+        "tokens": 17,
+        "pass": true,
+        "comparisons": 34,
+        "normalized": {
+          "count": 768,
+          "max_abs": 9.318150901577171e-08,
+          "relative_l2": 7.653484604656672e-07,
+          "cosine": 0.9999999999997076
+        },
+        "norm_error": 3.059216813205978e-08,
+        "worst_internal_relative_l2": {
+          "site": "block_10",
+          "count": 8704,
+          "max_abs": 1.7642974853515625e-05,
+          "relative_l2": 1.6142550704985278e-06,
+          "cosine": 0.9999999999986975
+        },
+        "worst_internal_max_abs": {
+          "site": "projected",
+          "count": 13056,
+          "max_abs": 0.0013427734375,
+          "relative_l2": 1.269119852310577e-06,
+          "cosine": 0.9999999999992047
+        }
+      },
+      {
+        "id": "g04",
+        "tokens": 26,
+        "pass": true,
+        "comparisons": 34,
+        "normalized": {
+          "count": 768,
+          "max_abs": 1.2760839653014333e-07,
+          "relative_l2": 1.1046032399515862e-06,
+          "cosine": 0.999999999999391
+        },
+        "norm_error": 4.4522204256658426e-08,
+        "worst_internal_relative_l2": {
+          "site": "final_norm",
+          "count": 13312,
+          "max_abs": 7.456541061401367e-05,
+          "relative_l2": 2.3496025356770143e-06,
+          "cosine": 0.9999999999972501
+        },
+        "worst_internal_max_abs": {
+          "site": "projected",
+          "count": 19968,
+          "max_abs": 0.00128173828125,
+          "relative_l2": 2.14852800635785e-06,
+          "cosine": 0.9999999999976981
+        }
+      },
+      {
+        "id": "g05",
+        "tokens": 29,
+        "pass": true,
+        "comparisons": 34,
+        "normalized": {
+          "count": 768,
+          "max_abs": 1.583232292177994e-07,
+          "relative_l2": 1.282561819610745e-06,
+          "cosine": 0.9999999999991869
+        },
+        "norm_error": 1.5704691436191354e-07,
+        "worst_internal_relative_l2": {
+          "site": "final_norm",
+          "count": 14848,
+          "max_abs": 6.4849853515625e-05,
+          "relative_l2": 2.09148607763272e-06,
+          "cosine": 0.9999999999978155
+        },
+        "worst_internal_max_abs": {
+          "site": "projected",
+          "count": 22272,
+          "max_abs": 0.002197265625,
+          "relative_l2": 1.9926005499704537e-06,
+          "cosine": 0.9999999999980148
+        }
+      },
+      {
+        "id": "g06",
+        "tokens": 619,
+        "pass": true,
+        "comparisons": 34,
+        "normalized": {
+          "count": 768,
+          "max_abs": 1.788625240348174e-07,
+          "relative_l2": 1.2646945271534115e-06,
+          "cosine": 0.9999999999992031
+        },
+        "norm_error": 8.857558020380907e-08,
+        "worst_internal_relative_l2": {
+          "site": "block_15",
+          "count": 316928,
+          "max_abs": 0.0006811618804931641,
+          "relative_l2": 7.951975995169985e-06,
+          "cosine": 0.9999999999683832
+        },
+        "worst_internal_max_abs": {
+          "site": "projected",
+          "count": 475392,
+          "max_abs": 0.005615234375,
+          "relative_l2": 3.830603504881465e-06,
+          "cosine": 0.999999999992701
+        }
+      }
+    ],
+    "required_sites": "scaled input, PLE, all24 blocks, final RMS, projected tokens, pooled and normalized vectors; available post-attention/FFN substeps",
+    "independent_rebuild": {
+      "pass": true,
+      "native_source_commit": "dab8386c62793bcdd8e4c8254d836c67274bbdf9",
+      "binary_sha256": "fef439feac31fc5e7fc7702c514a89f07754849f070099edca951b4caa22ba93",
+      "fresh_build_binary_identical": true,
+      "fixtures": 6,
+      "pooled_and_normalized_vectors_identical": true,
+      "raw_trace_files_byte_identical": 456,
+      "trace_bytes_compared": 148960256,
+      "runs": [
+        "native-simd-six",
+        "native-simd-six-rebuild"
+      ]
+    }
+  },
+  "full_corpus": {
+    "experiment": "EG2-NATIVE-BASELINE-001",
+    "instrument_commit": "fbfa61f30ed20f94046d1b47f9bd0fecf19f6fcf",
+    "documents": 80,
+    "questions": 24,
+    "vectors_per_process": 104,
+    "tokens_min": 14,
+    "tokens_max": 66,
+    "separate_hands": 2,
+    "processes_per_hand": 2,
+    "total_native_encodings": 416,
+    "reference_parity": {
+      "vectors": {
+        "pass": true,
+        "vectors": 104,
+        "max_abs": 2.7101486921310425e-07,
+        "min_cosine": 0.999999999998158,
+        "max_norm_error": 6.708911552966157e-07,
+        "pooled_max_abs": 0.00030517578125
+      },
+      "repeat_exact": true,
+      "retrieval": {
+        "top1_equal": 24,
+        "questions": 24,
+        "scores": 1920,
+        "identical_full_rankings": 24,
+        "changed_rank_positions": 0,
+        "inversions": 0,
+        "near_tie_inversions": 0,
+        "max_score_abs": 8.344650268554688e-07
+      },
+      "pass": true
+    },
+    "independent_replay": {
+      "status": "PASS",
+      "experiment": "EG2-NATIVE-BASELINE-001",
+      "measurement_commit": "fbfa61f30ed20f94046d1b47f9bd0fecf19f6fcf",
+      "notorch_commit": "dab8386c62793bcdd8e4c8254d836c67274bbdf9",
+      "primary_hand": "Astra native corpus primary",
+      "replay_hand": "Astra independent native replay / retrieval_design",
+      "primary_manifest_sha256": "126f7db6f46354ccb2a2079a7f19881d8b3d9b6cd8fe7847f574827c5bda0667",
+      "replay_manifest_sha256": "d35bb95ef1a0079164e281090c15dda6282abc1aa48aa0ac2d1258bb302abe0c",
+      "primary_recount": {
+        "inputs": 104,
+        "native_processes": 2,
+        "native_encodings": 208,
+        "scores": 1920,
+        "rankings": 24
+      },
+      "replay_recount": {
+        "inputs": 104,
+        "native_processes": 2,
+        "native_encodings": 208,
+        "scores": 1920,
+        "rankings": 24
+      },
+      "exact_npz_f32_coordinates": 161768,
+      "exact_raw_f32_coordinates": 0,
+      "scientific_json_artifacts": 6,
+      "all_artifact_receipts_checked": 34,
+      "json_timing_exclusions": [
+        "seconds",
+        "timing"
+      ],
+      "comparator_sha256": "c238e39f6cfa13e7581ba3025e5da999924c16dce815c6dfd73a86cdda2c1885"
+    },
+    "recorded_encode_seconds_excludes_model_loading": {
+      "primary_hand": [
+        53.892493471,
+        49.091660098000006
+      ],
+      "independent_hand": [
+        51.584653421,
+        48.785216145
+      ]
+    }
+  },
+  "native_regressions": [
+    {
+      "command": "make test_embeddinggemma2 X86_SIMD=0",
+      "status": "PASS",
+      "scope": "analytical bidirectional attention, inclusive windows, masks, pooling, scalar, hooks, deterministic repeat, invalid-input and callback failure atomicity"
+    },
+    {
+      "command": "make test_embeddinggemma2 SIMD=1",
+      "status": "PASS",
+      "scope": "same analytical gate, native SIMD backend"
+    },
+    {
+      "command": "ASAN_OPTIONS=detect_leaks=0 /tmp/test_eg2_sanitize",
+      "status": "PASS",
+      "leak_sanitizer": "unavailable under host ptrace",
+      "build_command": "cc -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -std=gnu11 -pthread -I. tests/test_embeddinggemma2.c harness/arch_embeddinggemma2.c harness/runtime.c gguf.c notorch.c -lm -o /tmp/test_eg2_sanitize"
+    },
+    {
+      "mutation": "remove inclusive right local-window edge in temporary source copy",
+      "status": "REJECTED",
+      "evidence": "0.88237381 != 0.832606298"
+    },
+    {
+      "build_command": "make test_residual test_multi_decode test_gemma3 test_gguf_write BLAS_FLAGS= BLAS_LIBS=",
+      "run_commands": [
+        "./test_residual",
+        "./test_multi_decode",
+        "./test_gemma3",
+        "./test_gguf_write"
+      ],
+      "status": "PASS",
+      "checks": {
+        "residual": 19,
+        "multi_decode": 753,
+        "gemma3": 42,
+        "gguf_writer": 66
+      }
+    },
+    {
+      "scope": "external encoder API consumer links/runs with both archives; omission of harness archive fails on undefined nt_encoder_embeddinggemma2",
+      "status": "PASS"
+    }
+  ],
+  "recorded_receipts": {
+    "native-scalar-g01/parity.json": {
+      "sha256": "4edf12839e45ed39576e88019fa47bcf9fb19fb8ccb6ac019e8cb4ab721d3656",
+      "bytes": 6630
+    },
+    "native-simd-six/parity.json": {
+      "sha256": "bdf0ebb2e816b6632f906dd3bc40259408d6b2a8383b9b95f90e72e807cc64ef",
+      "bytes": 39552
+    },
+    "native-simd-six-rebuild/parity.json": {
+      "sha256": "f730012bd1b069849c77a6b655093d519b9cc25a25dd529b15aef9c3705ae41c",
+      "bytes": 39552
+    },
+    "native-replay-comparison.json": {
+      "sha256": "a38bb19e4774fc3e8c5f0836a222769b7e53755cfc56fdb995ead944f5b01a97",
+      "bytes": 432
+    },
+    "native-baseline-primary/manifest.json": {
+      "sha256": "126f7db6f46354ccb2a2079a7f19881d8b3d9b6cd8fe7847f574827c5bda0667",
+      "bytes": 8748
+    },
+    "native-baseline-primary/parity.json": {
+      "sha256": "61196f699703a31ff4e8f9eaa5b716c25c9977feafa16f995d2c917e902f59d7",
+      "bytes": 707
+    },
+    "native-baseline-independent/manifest.json": {
+      "sha256": "d35bb95ef1a0079164e281090c15dda6282abc1aa48aa0ac2d1258bb302abe0c",
+      "bytes": 8736
+    },
+    "native-baseline-independent/parity.json": {
+      "sha256": "a5c105e7913bd747316c16f91655e212bc31d035d27ef8e773b1b9820e4fe167",
+      "bytes": 702
+    },
+    "native-comparison-reference-bound.json": {
+      "sha256": "d394de3a72609b315ef95e8fd1819ef1f71d551316333912dcb83263b4fe78e3",
+      "bytes": 3638
+    }
+  },
+  "research_results": "https://github.com/ariannamethod/SUBLITERATUS/tree/astra/eg2-ssr-001/research/results/eg2-ssr-001"
+}
