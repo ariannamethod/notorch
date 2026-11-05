@@ -13,6 +13,19 @@ Newest entries on top.
 
 ---
 
+## 2026-11-05 — ID mode refuses a NUL byte too: one check for the whole row
+
+The ID-mode reader of the EmbeddingGemma 2 encoder (merged in `98ca1b2`), the
+path through which the frozen parity runs feed their official IDs, also stopped
+at an embedded NUL: the row `2 8071 236787\0 3927 1354 1` encoded three IDs,
+rc 0. The check now runs on the whole row as `getline` returned it, before the
+TAB split and before either mode: `row 1: NUL byte inside the row, refused`,
+rc 1, in ID mode and in text mode; the text-mode check of the entry below is
+folded into it. With the check switched off the synthetic test fails twice.
+The 104 frozen corpus inputs and six fixtures encode through the new binary
+with every pooled and normalized vector identical, as printed, to the scalar
+run of `98ca1b2`. `make test` passes on Apple silicon scalar.
+
 ## 2026-11-05 — Text mode refuses a NUL byte instead of encoding its prefix
 
 Merged as #185: merge `365bafa`, change `342e867`, whose message carries its

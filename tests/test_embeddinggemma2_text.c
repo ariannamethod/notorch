@@ -234,7 +234,15 @@ int main(int argc, char **argv) {
     int nul_rc = sh(cmd);
     snprintf(path, sizeof(path), "%s/nul.err", dir);
     err = nj_load(path, NULL);
-    CHECK(nul_rc != 0 && err && strstr(err, "row 1: NUL byte inside the text"), "CLI refuses a NUL byte instead of encoding the prefix");
+    CHECK(nul_rc != 0 && err && strstr(err, "row 1: NUL byte inside the row"), "CLI refuses a NUL byte instead of encoding the prefix");
+    free(err);
+    nul = fopen(tsv, "wb");
+    if (!nul || fwrite("t9\t2 7\0 1\n", 1, 10, nul) != 10 || fclose(nul)) { perror(tsv); return 1; }
+    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode %s/model.gguf %s %s/nul-ids.jsonl 2>%s/nul-ids.err", dir, tsv, dir, dir);
+    nul_rc = sh(cmd);
+    snprintf(path, sizeof(path), "%s/nul-ids.err", dir);
+    err = nj_load(path, NULL);
+    CHECK(nul_rc != 0 && err && strstr(err, "row 1: NUL byte inside the row"), "ID mode refuses a NUL byte instead of encoding the IDs before it");
     free(err);
     put(tsv, "t1\t2 7 1\n");
     snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode %s/model.gguf %s %s/ids.jsonl 2>/dev/null", dir, tsv, dir);
@@ -250,7 +258,8 @@ int main(int argc, char **argv) {
     CHECK(id_out && !strstr(id_out, "input_ids"), "ID mode output unchanged");
     free(i1); free(i2); free(e1); free(e0); free(text_out); free(id_out);
     const char *made[] = {"tokenizer.json", "tok.gguf", "model.gguf", "in.tsv", "ids.jsonl", "out0.jsonl", "out1.jsonl",
-                          "out2.jsonl", "out3.jsonl", "out4.jsonl", "literal.jsonl", "literal.err", "nul.jsonl", "nul.err"};
+                          "out2.jsonl", "out3.jsonl", "out4.jsonl", "literal.jsonl", "literal.err", "nul.jsonl", "nul.err",
+                          "nul-ids.jsonl", "nul-ids.err"};
     for (size_t i = 0; i < sizeof(made) / sizeof(*made); i++) {
         snprintf(path, sizeof(path), "%s/%s", dir, made[i]);
         unlink(path);

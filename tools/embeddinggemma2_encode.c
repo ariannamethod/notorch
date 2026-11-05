@@ -1,8 +1,9 @@
 /* Native text-encoder batch runner. Each TSV row is id<TAB>integer IDs<TAB>
  * optional 0/1 mask, or, with --tokenizer and --condition, id<TAB>text: the
  * condition's task prefix and the text are tokenized in C and the IDs used are
- * written next to the vectors. A text holding TAB, CR, LF or NUL is refused, as is a
- * sequence longer than the model's limit or one the tokenizer cannot carry whole.
+ * written next to the vectors. A row holding NUL in either mode is refused, as is
+ * a text holding TAB, CR or LF, a sequence longer than the model's limit or one
+ * the tokenizer cannot carry whole.
  * Output JSONL includes both pooled and normalized vectors. Optional trace files
  * are little-endian host F32 (this runner refuses big-endian hosts).
  * All outputs are create-only; an interrupted batch remains visibly partial. */
@@ -127,13 +128,14 @@ int main(int argc,char **argv) {
     unsigned row=0;
     ssize_t got;
     while((got=getline(&line,&line_cap,in))>=0) {
-        row++;char *tab=strchr(line,'\t');
+        row++;
+        if(memchr(line,0,(size_t)got)){fprintf(stderr,"row %u: NUL byte inside the row, refused\n",row);goto done;}
+        char *tab=strchr(line,'\t');
         if(!tab){fprintf(stderr,"row %u: expected id TAB IDs [TAB mask]\n",row);goto done;}
         *tab++=0;r.id=line;
         if(!safe_id(r.id)){fprintf(stderr,"row %u: invalid ID\n",row);goto done;}
         r.mask=NULL;int n;
         if(tok.bpe) {
-            if(memchr(tab,0,(size_t)(line+got-tab))){fprintf(stderr,"row %u: NUL byte inside the text, refused\n",row);goto done;}
             size_t len=strlen(tab);if(len && tab[len-1]=='\n')tab[--len]=0;
             if(strpbrk(tab,"\t\r\n")){fprintf(stderr,"row %u: TAB, CR or LF inside the text\n",row);goto done;}
             const char *literal=NULL;
