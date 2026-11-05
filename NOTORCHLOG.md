@@ -13,6 +13,37 @@ Newest entries on top.
 
 ---
 
+## 2026-11-05 — EmbeddingGemma 2 retrieval scores in C
+
+Score matrices, rankings and Matryoshka truncation were computed with NumPy
+next to the encoder. `tools/embeddinggemma2_score.c` takes query and document
+JSONL as the encoder writes it, reads each value as its F32, and prints per
+query the float64 dot product with every document in file order, the ranking
+with exact ties broken by ascending document ID, `top1_margin`, and with
+`--top N` the first N plus the margin at the cut. `--dim K` re-normalizes the
+leading K coordinates of both sides in float64 first.
+
+**Gate.** `make check_embeddinggemma2_score` writes the reference's own F32
+embeddings from the members of `embeddings.npz` (sha256 `460c45f2…`, deflated,
+so unzipped first; the `.npy` headers and arrays are read in C), scores them and
+compares: maximum |score − frozen `scores.npy`| is `5.28e-7` over 1,920 pairs,
+within the `1e-6` gate, and all 24 complete rankings equal those of
+`baseline_results.jsonl` (`7cef8dc3…`). Red: two document rows swapped in a
+copy of `documents_embeddings.npy` with `dd` give maximum difference `0.141` and
+0/24 rankings. The native scalar vectors of the 104 inputs, scored straight from
+encoder output, also give 24/24 rankings.
+
+**What the first gate run caught.** The scorer first refused any value whose
+decimal did not equal an F32 exactly as a double. The encoder writes `%.9g`,
+which recovers the F32 through `strtof` but is not that F32 as a double, so
+the scorer refused its own encoder's output and the gate scored 0 pairs. Values
+are now read with `strtof`; the synthetic test carries `0.100000001` (`%.9g` of
+`0.1f`) and fails under the old check.
+
+`make test_embeddinggemma2_score` (dyadic vectors exact in double, an exact
+tie per query, `--top 2`, `--dim 2` moving a score from 0.375 to 1, every
+refusal) runs in `make test`, which passes on Apple silicon scalar.
+
 ## 2026-11-05 — EmbeddingGemma 2 text to IDs in C: converter, tokenizer file, CLI text mode
 
 The encoder took token IDs only, and the IDs came from the Python tokenizer.

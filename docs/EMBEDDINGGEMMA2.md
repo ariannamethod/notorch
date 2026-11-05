@@ -129,6 +129,26 @@ layer scale in the vector/scale. Default application covers all token positions;
 `--nonpad` restricts it to unmasked positions. Traces show the states after this
 offset. `index.tsv` records every trace's shape and filename.
 
+## Retrieval scores
+
+```sh
+make embeddinggemma2_score
+./embeddinggemma2_score queries.jsonl documents.jsonl scores.jsonl [--dim 128] [--top 10]
+```
+
+Inputs are encoder JSONL (a safe `id` and an `embedding` per line; values are
+read as the nearest F32, which recovers the encoder's `%.9g` exactly). Each score
+is a float64 dot product of the two F32 vectors. `--dim K` keeps the leading K
+coordinates of both sides and re-normalizes them in float64 first (Matryoshka);
+without it the encoder's normalized vectors are used as written. One output line
+per query, in input order: `scores` for every document in document-file order,
+`ranking` as `[id, score]` pairs ordered by score with exact ties broken by
+ascending document ID (all documents, or the first N with `--top N`),
+`top1_margin`, and with `--top` below the document count `margin_at_top` (N-th
+minus N+1-th score). Scores print with `%.17g` and read back as the same double.
+Refused: repeated or unsafe IDs, unequal widths, values beyond F32, a zero norm
+after truncation, `--dim`/`--top` out of range, an existing output.
+
 ## Validation protocol
 
 `make test_embeddinggemma2` uses an analytical two-channel encoder with zero
@@ -154,6 +174,22 @@ make check_embeddinggemma2_tokenizer EG2_TOKENIZER=tokenizer.gguf \
 
 splits each formatted reference text into condition and text, tokenizes it and
 requires every ID sequence to equal the official one.
+
+`make test_embeddinggemma2_score` scores dyadic four-dimensional vectors whose
+dot products are exact in double, with an exact tie per query, in full, with
+`--top 2` and with `--dim 2`, where re-normalization moves one score from 0.375
+to 1, and checks every refusal above plus acceptance of the encoder's own F32
+text. It is part of `make test`. Against the official record (its NPZ is
+deflated, so unzip it first):
+
+```sh
+unzip -q embeddings.npz -d reference-npz
+make check_embeddinggemma2_score EG2_NPY_DIR=reference-npz EG2_BASELINE=baseline_results.jsonl
+```
+
+writes the reference's own F32 query and document embeddings as JSONL, scores
+them, and requires every score within 1e-6 of the frozen `scores.npy` and every
+complete ranking equal to the frozen one. The `.npy` members are read in C.
 
 `tools/embeddinggemma2_parity.py` reads already-frozen NPZ goldens produced by an
 independent reference. NumPy compares recorded arrays; the native executable

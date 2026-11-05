@@ -2,8 +2,10 @@
 notorch
 embeddinggemma2_encode
 embeddinggemma2_to_gguf
+embeddinggemma2_score
 test_embeddinggemma2
 test_embeddinggemma2_text
+test_embeddinggemma2_score
 notorch_test
 notorch_test_gpu
 infer_gemma

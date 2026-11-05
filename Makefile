@@ -369,6 +369,21 @@ check_embeddinggemma2_tokenizer: test_embeddinggemma2_text
 
 test: test_embeddinggemma2 test_embeddinggemma2_text
 
+embeddinggemma2_score: tools/embeddinggemma2_score.c tools/narrow_json.h
+	$(CC) $(CFLAGS) -o $@ tools/embeddinggemma2_score.c -lm
+
+.PHONY: test_embeddinggemma2_score check_embeddinggemma2_score
+test_embeddinggemma2_score: tests/test_embeddinggemma2_score.c tools/narrow_json.h embeddinggemma2_score
+	$(CC) $(CFLAGS) -o $@ tests/test_embeddinggemma2_score.c -lm
+	./test_embeddinggemma2_score
+
+# Frozen scorer gate: the reference NPZ is deflated, so unzip it first.
+# make check_embeddinggemma2_score EG2_NPY_DIR=unzipped-embeddings-npz EG2_BASELINE=baseline_results.jsonl
+check_embeddinggemma2_score: test_embeddinggemma2_score
+	./test_embeddinggemma2_score "$(EG2_NPY_DIR)" "$(EG2_BASELINE)"
+
+test: test_embeddinggemma2_score
+
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
