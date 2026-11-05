@@ -118,3 +118,35 @@ Run a short fixture first, then the complete six-fixture set, including a
 sequence longer than the local window. The manifest binds executable, model,
 tokens, reference arrays, command, thresholds and platform. Checkpoint parity
 status and actual measurements belong in `NOTORCHLOG.md` and experiment receipts.
+
+## Measured validation — 2026-11-05
+
+Measured native source: `dab8386c62793bcdd8e4c8254d836c67274bbdf9`. The checkpoint
+revision above contains 271,002,624 registered text parameters and 24
+`layer_scalar` buffer values, in 413 tensors. These results use Linux x86-64,
+GCC 13.3.0, native AVX2/FMA F32 kernels and `NT_SIMD_THREADS=4`.
+
+The scalar implementation passed the first neutral fixture. The SIMD build
+passed all six fixtures (15, 25, 17, 26, 29 and 619 tokens), including a sequence
+beyond the 512-token local-attention radius. All 24 block outputs, input/PLE,
+final normalization, projection and pooling passed the frozen comparison gates.
+The worst normalized coordinate error was `1.79e-7`; the largest internal
+relative L2 error was `7.952e-6`. A fresh build produced the same executable bytes;
+its replay reproduced all six pooled/normalized vectors and all 456 raw trace
+files exactly (148,960,256 trace bytes).
+
+The complete frozen retrieval corpus then passed: 80 documents and 24 queries,
+with a repeated native process and a second hand running the same frozen
+instrument from an independent SUBLITERATUS checkout. Across all 104 vectors,
+maximum normalized error was `2.71015e-7`, minimum cosine was
+`0.999999999998158`, and maximum unit-norm error was `6.70892e-7`. All 24 complete
+80-document rankings matched the official reference. Native/reference score
+error over all 1,920 pairs was at most `8.34466e-7`. The native repeats and
+independent hand reproduced vectors, pooled values, norms and scores exactly.
+
+The token boundary remains explicit: all these measurements used the official
+tokenizer's recorded IDs and masks, with its task prefixes and special tokens.
+NoTorch performed the complete token-ID-to-embedding calculation in C.
+The [machine-readable validation record](validation/embeddinggemma2-validation-2026-11-05.json)
+binds thresholds, executable/checkpoint hashes, source commits, every fixture's
+metrics, regression checks and the underlying research receipts.

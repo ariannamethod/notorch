@@ -13,6 +13,61 @@ Newest entries on top.
 
 ---
 
+## 2026-11-05 — EmbeddingGemma 2 checkpoint and complete-corpus parity pass
+
+The frozen native implementation at
+`dab8386c62793bcdd8e4c8254d836c67274bbdf9` now passes the independent F32
+reference for `google/embeddinggemma-2` revision
+`f9972ac22e696a105c482202646979e33e4b5a1e`. Its text checkpoint carries
+271,002,624 registered parameters plus 24 layer-scalar buffer values. The
+542,041,024-byte text GGUF preserves the 413 source tensor payloads; an
+independent readback verified every payload SHA-256 against conversion receipts.
+
+**Neutral fixtures and rebuild.** Scalar g01 passes. Native SIMD passes all six
+fixtures, including 619 tokens across the inclusive local window. The normalized
+maximum absolute error is `1.78863e-7`, minimum cosine
+`0.9999999999991869`, and maximum internal relative L2 error `7.95198e-6`.
+The comparisons cover all 24 blocks, scaled input, PLE, final RMS, projection,
+pooling, normalization and available attention/FFN substeps. A fresh build
+produced the same binary and reproduced all six pooled/normalized vectors and
+456 raw trace files byte-for-byte: 148,960,256 bytes compared.
+
+**Complete frozen corpus.** SUBLITERATUS instrument
+`fbfa61f30ed20f94046d1b47f9bd0fecf19f6fcf` ran all 80 documents and 24 queries
+twice per hand. An independent checkout repeated the same stage. Every one of
+the 104 normalized vectors passes the prospective `2e-5` absolute-error,
+`0.999999` cosine and `2e-6` unit-norm gates. Actual maxima are `2.71015e-7`
+coordinate error and `6.70892e-7` norm error; minimum cosine is
+`0.999999999998158`. All 24 full rankings agree with the official reference;
+there are zero changed positions or pair inversions among all 1,920 scores
+(maximum score error `8.34466e-7`). Repeated native processes and the independent
+hand give byte-identical scientific arrays, including 161,768 F32 coordinates.
+The final comparator also verifies execution arguments, authoritative reference
+metrics, artifact completeness and the full ranking recount.
+
+**Execution boundary.** Exact official tokenizer IDs and masks enter the C
+encoder; task prefixes and special tokens remain in the masked mean. This
+measures native inference from token IDs, with task formatting/tokenization
+supplied by the caller. CPU F32 throughout, Linux x86-64 (reported AMD EPYC 9V74),
+GCC 13.3.0, NoTorch AVX2/FMA SIMD, four native threads. The Python reference is
+an independent numerical target; the native executable owns inference.
+
+**Regression checks.** `make test_embeddinggemma2 X86_SIMD=0` and
+`make test_embeddinggemma2 SIMD=1` pass. The analytical window-edge mutation
+fails as intended; ASan/UBSan passes with LeakSanitizer disabled because ptrace
+prevents it on this host. Existing archive-linked gates pass: residual 19 checks,
+multi-decode 753, Gemma3 42, GGUF writer 66. The external encoder API links and
+runs through the two archives; removing the harness archive fails on the encoder
+symbol. No decoder runtime or tokenizer dispatch was changed.
+
+Exact metrics, thresholds, source/binary/model identities, commands and receipt
+hashes are in [the validation record](docs/validation/embeddinggemma2-validation-2026-11-05.json).
+The [encoder guide](docs/EMBEDDINGGEMMA2.md) documents the API and reproducible
+commands. This entry records completed measurements; the earlier entry below
+retains the state at instrument freeze.
+
+---
+
 ## 2026-11-05 — EmbeddingGemma 2 native encoder and frozen parity instrument
 
 Added a full-sequence `nt_encoder` contract alongside the existing decoder API.
