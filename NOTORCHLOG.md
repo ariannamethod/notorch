@@ -13,6 +13,34 @@ Newest entries on top.
 
 ---
 
+## 2026-11-05 — Text mode refuses a NUL byte instead of encoding its prefix
+
+Merged as #185: merge `365bafa`, change `342e867`, whose message carries its
+Quote and Method lines. The review of #182 found that `getline` returns the
+whole row while `strlen` and every check after it stop at an embedded NUL, so
+the round trip validated a prefix. Red on the merged binary: `Where is the blue
+cup?\0 and the red plate` under `--condition query` gave rc 0 and 15 IDs equal
+to those of frozen fixture g01; the tail vanished. Green: `memchr` over the text
+up to the `getline` length refuses it, `row 1: NUL byte inside the text,
+refused`, rc 1. The synthetic test writes the row with an explicit length and
+fails with the check off. `make test` passes on Apple silicon scalar.
+
+## 2026-11-05 — EmbeddingGemma 2 index products widened before they are added
+
+Merged as #184: merge `3b2c181`, change `4ec126b`, whose message carries its
+Quote and Method lines. CodeQL alerts 68–71
+(`cpp/integer-multiplication-cast-to-long`) flagged four int products formed
+in 32 bits and then widened, in the encoder merged in `98ca1b2`:
+`harness/arch_embeddinggemma2.c:211` (`h*hd`, `kh*hd`), `:220` (`kh*hd`) and
+`tests/test_embeddinggemma2.c:58` (`rows*cols`). Each left operand is cast to
+`size_t` or `uint64_t`. With four heads and head width at most 512 no value
+moves, and none did: the fresh scalar binary re-encoded the 104 frozen corpus
+inputs and six fixtures from their frozen IDs with all 110 pooled and
+normalized vectors identical, as printed, to the scalar run of `98ca1b2`, and
+scoring them reproduces the 24 frozen rankings. `make test` passes. The same
+product `h*hd` in the attention row pointer at line 217 carries no alert and is
+left as it is.
+
 ## 2026-11-05 — EmbeddingGemma 2 retrieval scores in C
 
 Score matrices, rankings and Matryoshka truncation were computed with NumPy
