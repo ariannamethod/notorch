@@ -208,7 +208,7 @@ static int eg2_encode(void *ptr,const int *ids,const unsigned char *mask,int n,
             float max=-INFINITY;
             for(int j=lo;j<hi;j++) {
                 float sum=0;
-                if(!mask || mask[j])for(int z=0;z<hd;z++)sum+=q[(size_t)t*Q+h*hd+z]*k[(size_t)j*K+kh*hd+z];
+                if(!mask || mask[j])for(int z=0;z<hd;z++)sum+=q[(size_t)t*Q+(size_t)h*hd+z]*k[(size_t)j*K+(size_t)kh*hd+z];
                 else sum=-INFINITY;
                 scores[j]=sum;if(sum>max)max=sum;
             }
@@ -217,7 +217,7 @@ static int eg2_encode(void *ptr,const int *ids,const unsigned char *mask,int n,
             float *row=attn+(size_t)t*Q+h*hd;memset(row,0,(size_t)hd*sizeof(float));
             if(total>0)for(int j=lo;j<hi;j++) {
                 float p=scores[j]/total;
-                for(int z=0;z<hd;z++)row[z]+=p*v[(size_t)j*K+kh*hd+z];
+                for(int z=0;z<hd;z++)row[z]+=p*v[(size_t)j*K+(size_t)kh*hd+z];
             }
         }
         mm(b,&ly->o,attn,n);norms(b,b,ly->post_attn,n,E,m->eps);

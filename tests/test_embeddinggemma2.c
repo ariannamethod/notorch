@@ -55,7 +55,7 @@ static void write_model(const char *path,int window) {
         assert(!gguf_write_tensor_decl(w,t->name,t->rank,dims,GGUF_TYPE_F32));
     }
     for(size_t i=0;i<sizeof(tensors)/sizeof(*tensors);i++) {
-        tensor *t=&tensors[i];assert(!gguf_write_tensor_f32(w,t->name,t->data,t->rows*t->cols));
+        tensor *t=&tensors[i];assert(!gguf_write_tensor_f32(w,t->name,t->data,(uint64_t)t->rows*t->cols));
     }
     assert(!gguf_write_close(w));
 }
