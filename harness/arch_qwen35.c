@@ -193,7 +193,7 @@ static void delta_heads(void *ptr,int h0,int h1) {
                 for(int j=0;j<m->VD;j++){row[j]+=(k[i]*ks)*delta[j];out[j]+=row[j]*(q[i]*qs);}
             }
             rmsnorm(out,out,a->norm,m->VD,m->eps);
-            for(int j=0;j<m->VD;j++)out[j]*=silu(c->z[(size_t)t*VD+h*m->VD+j]);
+            for(int j=0;j<m->VD;j++)out[j]*=silu(c->z[(size_t)t*VD+(size_t)h*m->VD+j]);
         }
     }
 }
@@ -205,7 +205,7 @@ static void attention_heads(void *ptr,int h0,int h1) {
     attention_context *c=ptr;q35_model *m=c->m;int Q=m->H*m->HD,K=m->KV*m->HD;
     for(int h=h0;h<h1;h++) {
         float *scores=c->scores+(size_t)h*c->cache->base.max_seq;
-        size_t off=(size_t)c->a->index*c->cache->base.max_seq*K+(h/(m->H/m->KV))*m->HD;
+        size_t off=(size_t)c->a->index*c->cache->base.max_seq*K+(size_t)(h/(m->H/m->KV))*m->HD;
         for(int t=0;t<c->n;t++) {
             const float *q=c->q+(size_t)t*2*Q+h*2*m->HD;
             float *out=c->out+(size_t)t*Q+h*m->HD;
