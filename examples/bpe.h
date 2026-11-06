@@ -36,6 +36,11 @@ int bpe_encode(const bpe_tokenizer *t, const char *text, int *out_ids, int cap);
  * synthetic SentencePiece space prefix; no tokenizer state is changed. */
 int bpe_encode_raw(const bpe_tokenizer *t, const char *text, int *out_ids, int cap);
 
+/* Explicitly parse CONTROL and USER_DEFINED token literals, e.g. a complete
+ * caller-rendered chat prompt. Ordinary bpe_encode keeps CONTROL literals raw.
+ * The qwen35-ascii pre-type returns zero for non-ASCII input (NFC boundary). */
+int bpe_encode_special(const bpe_tokenizer *t, const char *text, int *out_ids, int cap);
+
 /* Decode one token id -> its UTF-8 bytes, appended to buf (cap incl. NUL).
  * Returns bytes appended. */
 int bpe_decode_token(const bpe_tokenizer *t, int id, char *buf, int cap);

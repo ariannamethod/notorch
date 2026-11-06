@@ -1,4 +1,9 @@
 # binaries
+/qwen35_eval
+/qwen35_to_gguf
+/qwen35_tokenize
+/test_qwen35
+/test_qwen35_text
 notorch
 embeddinggemma2_encode
 embeddinggemma2_to_gguf

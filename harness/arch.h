@@ -109,6 +109,7 @@ int nt_check_call(const kv_cache *kv, const int *tokens, int n, int pos0,
                   int vocab, int n_layers, int kv_dim);
 
 extern const nt_arch nt_arch_llama;
+extern const nt_arch nt_arch_qwen35;
 extern const nt_arch nt_arch_gemma3;
 extern const nt_arch nt_arch_gemma4;
 extern const nt_arch nt_arch_olmoe;
