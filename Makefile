@@ -262,7 +262,7 @@ test: test_spa_runtime
 # The general family registry and tokenizer stay in libnotorch_harness. The
 # immutable PEN7 interface is also public in libnotorch, which reuses the same
 # PEN7/runtime objects. General harness consumers link both, harness first.
-HARNESS_LIB_OBJ = harness/archs.o harness/runtime.o harness/arch_llama.o \
+HARNESS_LIB_OBJ = harness/archs.o harness/runtime.o harness/arch_llama.o harness/arch_qwen35.o \
                   harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_embeddinggemma2.o harness/arch_olmoe.o harness/arch_mamba.o \
                   harness/arch_resonance.o harness/arch_janus.o harness/arch_penelope.o examples/bpe.o
 
@@ -384,10 +384,33 @@ check_embeddinggemma2_score: test_embeddinggemma2_score
 
 test: test_embeddinggemma2_score
 
+QWEN35_SRC = harness/arch_qwen35.c harness/runtime.c gguf.c notorch.c
+.PHONY: test_qwen35 test_qwen35_text
+qwen35_eval: tools/qwen35_eval.c $(QWEN35_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tools/qwen35_eval.c $(QWEN35_SRC) -lm $(BLAS_LIBS)
+
+qwen35_to_gguf: tools/qwen35_to_gguf.c tools/narrow_json.h gguf.c sha256.c notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tools/qwen35_to_gguf.c gguf.c sha256.c notorch.c -lm
+
+qwen35_tokenize: tools/qwen35_tokenize.c tools/narrow_json.h examples/bpe.c examples/bpe.h gguf.c notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tools/qwen35_tokenize.c examples/bpe.c gguf.c notorch.c -lm
+
+test_qwen35: tests/test_qwen35.c tests/qwen35_fixture.h $(QWEN35_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_qwen35.c $(QWEN35_SRC) -lm $(BLAS_LIBS)
+	./test_qwen35
+
+test: test_qwen35
+
+test_qwen35_text: tests/test_qwen35_text.c examples/bpe.c examples/bpe.h gguf.c notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tests/test_qwen35_text.c examples/bpe.c gguf.c notorch.c -lm
+	./test_qwen35_text
+
+test: test_qwen35_text
+
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
-HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c harness/arch_penelope.c examples/bpe.c gguf.c notorch.c
+HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_qwen35.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c harness/arch_penelope.c examples/bpe.c gguf.c notorch.c
 
 # `harness` is phony because a directory of that name sits right there, and
 # make would otherwise call it up to date and build nothing.

@@ -166,6 +166,15 @@ with the machine and the model beside them.
 
 ---
 
+### Qwen3.5 dense text
+
+Native full attention + GatedDeltaNet inference, source-layout BF16/F32 loading,
+C safetensors conversion and explicit ASCII chat tokenization. The CPU path
+uses F32 matrix weights and owns recurrent/convolution state. Fourteen original
+OneJev prompts pass every-layer and full-logit comparison with Transformers;
+1,214 frozen-fixture checks exercise chunking and failures.
+See [commands, format boundaries and measured parity](docs/qwen35.md).
+
 ## train a model
 
 copy a trainer. give it a corpus. let Chuck watch the gradients.

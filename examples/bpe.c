@@ -100,6 +100,8 @@ struct bpe_tokenizer {
      * shift from the first whitespace onward and the text still reads like text. */
     int pre_qwen2;
     int pre_smollm;
+    int pre_qwen35_ascii;
+    int *special_id, n_special;
     /* Tokens the file marks USER_DEFINED. They are stored as literal text rather than in the
      * byte-level encoding — a run of four real spaces, not four 'Ġ' — so the merge path can
      * never produce them, and the reference matches them against the raw text before it runs.
@@ -175,6 +177,7 @@ bpe_tokenizer *bpe_load(const char *path) {
     if (gguf_read_str_kv(path, "tokenizer.ggml.pre", pre, sizeof(pre)) == 0) {
         t->pre_qwen2 = (strcmp(pre, "qwen2") == 0);
         t->pre_smollm = (strcmp(pre, "smollm") == 0);
+        t->pre_qwen35_ascii = (strcmp(pre, "qwen35-ascii") == 0);
     }
 
     int ntt = 0;
@@ -199,6 +202,18 @@ bpe_tokenizer *bpe_load(const char *path) {
                 }
                 t->added_id[b + 1] = v;
             }
+        }
+    }
+    if(ttypes && ntt==nt) {
+        for(int i=0;i<nt;i++)if((ttypes[i]==3 || ttypes[i]==4) && toks[i] && toks[i][0])t->n_special++;
+        t->special_id=calloc((size_t)t->n_special,sizeof(int));
+        if(t->n_special && !t->special_id){free(ttypes);bpe_free(t);return NULL;}
+        int k=0;
+        for(int i=0;i<nt;i++)if((ttypes[i]==3 || ttypes[i]==4) && toks[i] && toks[i][0])t->special_id[k++]=i;
+        for(int a=1;a<t->n_special;a++) {
+            int v=t->special_id[a],b=a-1;size_t len=strlen(toks[v]);
+            while(b>=0 && strlen(toks[t->special_id[b]])<len){t->special_id[b+1]=t->special_id[b];b--;}
+            t->special_id[b+1]=v;
         }
     }
     free(ttypes);
@@ -324,6 +339,7 @@ void bpe_free(bpe_tokenizer *t) {
     smap_free(&t->vocab); smap_free(&t->merges);
     free(t->scores);
     free(t->added_id);
+    free(t->special_id);
     free(t->pen_pairs);
     free(t);
 }
@@ -599,6 +615,9 @@ static int scheme_encode_span(const bpe_tokenizer *t, const char *text, int len,
 
 int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
     if (!t || !text || !out || cap <= 0) return 0;
+    /* This declared pre-type has an explicit ASCII boundary. NFC is identity
+     * on ASCII; Unicode text must use externally verified IDs until NFC lands. */
+    if(t->pre_qwen35_ascii)for(const unsigned char *p=(const unsigned char*)text;*p;p++)if(*p>=128)return 0;
     if (t->penelope) {
         int seq[8191], len = 0;
         while (text[len] && len < t->pen_max_bytes) {
@@ -659,6 +678,42 @@ int bpe_encode_raw(const bpe_tokenizer *t, const char *text, int *out, int cap) 
     return bpe_encode(&raw, text, out, cap);
 }
 
+int bpe_encode_special(const bpe_tokenizer *t,const char *text,int *out,int cap) {
+    if(!t)return 0;
+    bpe_tokenizer view=*t;
+    view.added_id=t->special_id;view.n_added=t->n_special;
+    return bpe_encode(&view,text,out,cap);
+}
+
+static int ascii_letter(char c){return (c>='a' && c<='z') || (c>='A' && c<='Z');}
+static int ascii_digit(char c){return c>='0' && c<='9';}
+static char ascii_lower(char c){return c>='A' && c<='Z'?c+'a'-'A':c;}
+/* Exact ASCII restriction of the Qwen3.5 tokenizer.json split regex, in its
+ * declared alternative order. One digit per piece, contractions before words,
+ * punctuation may absorb newlines, whitespace hands its last byte to a word. */
+static int qwen35_ascii_piece(const char *s,int n) {
+    if(s[0]=='\'' && n>1) {
+        const char *suffix[]={"s","t","re","ve","m","ll","d"};
+        for(int k=0;k<7;k++) {
+            int len=(int)strlen(suffix[k]),i=0;
+            if(n>len)for(;i<len && ascii_lower(s[i+1])==suffix[k][i];i++);
+            if(i==len)return len+1;
+        }
+    }
+    int i=0;
+    if(!ascii_letter(s[0]) && !ascii_digit(s[0]) && s[0]!='\r' && s[0]!='\n' && n>1 && ascii_letter(s[1]))i=1;
+    if(ascii_letter(s[i])){while(i<n && ascii_letter(s[i]))i++;return i;}
+    if(ascii_digit(s[0]))return 1;
+    i=s[0]==' '?1:0;int start=i;
+    while(i<n && !nt_is_ws(s[i]) && !ascii_letter(s[i]) && !ascii_digit(s[i]))i++;
+    if(i>start){while(i<n && (s[i]=='\r' || s[i]=='\n'))i++;return i;}
+    i=0;int last_nl=-1;
+    while(i<n && nt_is_ws(s[i])){if(s[i]=='\r' || s[i]=='\n')last_nl=i;i++;}
+    if(last_nl>=0)return last_nl+1;
+    if(i==n)return i;
+    return i>1?i-1:1;
+}
+
 static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int *out, int cap) {
     char *text = (char*)malloc((size_t)L + 1);
     if (!text) return 0;
@@ -680,7 +735,9 @@ static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int 
          * where the reference reads "x" + "\n\t" + "\t" + "deep", and every id after it
          * differed. Space-indented code happened to agree, which is why it went unseen. */
         int j;
-        if (t->pre_qwen2) {
+        if (t->pre_qwen35_ascii) {
+            j=i+qwen35_ascii_piece(text+i,L-i);
+        } else if (t->pre_qwen2) {
             /* Qwen's word prefix permits a tab as well as a space. A mixed whitespace
              * run must therefore give up its last character, not merge the whole run
              * into the word. Its earlier \s*[\r\n]+ alternative consumes through the
