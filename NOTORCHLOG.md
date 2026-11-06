@@ -13,6 +13,14 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 — Qwen3.5 head offsets widen before multiplication
+
+PR #187's CodeQL run reported two `cpp/integer-multiplication-cast-to-long`
+expressions: the GatedDeltaNet z-gate head offset and the full-attention K/V
+head offset. Cast the head factor to `size_t` before multiplication, so the
+whole address calculation uses the destination width. The frozen independent
+Qwen3.5 regression gate was rebuilt and passes all 1,214 checks.
+
 ## 2026-11-06 — Qwen3.5 owns its recurrent state in C
 
 Added dense Qwen3.5 text inference: gated full GQA, partial RoPE, causal
