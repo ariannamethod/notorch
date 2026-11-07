@@ -463,7 +463,7 @@ int main(int argc, char **argv) {
         if (n_tok <= 0) { fprintf(stderr, "notorch: empty prompt\n"); rc = 1; }
         else {
             s.max_seq = n_tok + max_tokens + 1;
-            s.kv = kv_new(dims.n_layers, s.max_seq, dims.kv_dim);
+            s.kv = arch->kv_new ? arch->kv_new(model, s.max_seq) : kv_new(dims.n_layers, s.max_seq, dims.kv_dim);
             fprintf(stderr, "\nprompt: \"%s\" (%d tokens, temp=%.2f)\n", prompt, n_tok, temp);
             if (repeats < 1) repeats = 1;
             for (int rep = 0; rep < repeats; rep++) {
@@ -486,11 +486,13 @@ int main(int argc, char **argv) {
         const char *ctx = getenv("NT_CTX");
         s.max_seq = ctx ? atoi(ctx) : 2048;
         if (s.max_seq < max_tokens + 2) s.max_seq = max_tokens + 2;
-        s.kv = kv_new(dims.n_layers, s.max_seq, dims.kv_dim);
+        s.kv = arch->kv_new ? arch->kv_new(model, s.max_seq) : kv_new(dims.n_layers, s.max_seq, dims.kv_dim);
         chat(&s, max_tokens, temp);
     }
 
     if (s.tok) bpe_free(s.tok);
-    free(s.logits); kv_free(s.kv); arch->free(model); gguf_close(gf);
+    free(s.logits);
+    if(arch->kv_free) arch->kv_free(model,s.kv); else kv_free(s.kv);
+    arch->free(model); gguf_close(gf);
     return rc;
 }

@@ -52,6 +52,34 @@ here and the evidence above is the manual suite, logged run by run.
 
 ---
 
+## 2026-11-06 — Qwen3.5 head offsets widen before multiplication
+
+PR #187's CodeQL run reported two `cpp/integer-multiplication-cast-to-long`
+expressions: the GatedDeltaNet z-gate head offset and the full-attention K/V
+head offset. Cast the head factor to `size_t` before multiplication, so the
+whole address calculation uses the destination width. The frozen independent
+Qwen3.5 regression gate was rebuilt and passes all 1,214 checks.
+
+## 2026-11-06 — Qwen3.5 owns its recurrent state in C
+
+Added dense Qwen3.5 text inference: gated full GQA, partial RoPE, causal
+convolution, recurrent GatedDeltaNet and SwiGLU; source-layout BF16/F32
+conversion is C. The minimal CLI now honors the architecture's cache hooks.
+The explicit ASCII tokenizer matches the source regex and opts into chat
+CONTROL tokens through a separate API. Unicode text awaits NFC; verified
+Unicode token IDs can already reach the decoder. Matrix weights expand to F32
+on CPU; vision, packed quantization and Metal remain separate next stages.
+
+Proof: all 24 residual layers and 248,320 logits on 14 original OneJev prompts
+match Transformers F32 within the pre-recorded gates. Maximum residual relative
+L2 1.784e-6, full-logit absolute error 1.812e-5, A/B probability error 1.345e-6.
+All tokenizer IDs match. Native conversion is byte-identical to the reference
+pack. The 1,214-check synthetic gate passes; disabling recurrent decay produces
+968 failures. Fifteen text checks and the full `make -j4 test` suite pass after
+rebuilding a stale non-executable local test artifact. The live JOVOVICH AML
+consumer also passes all 14 prompts through chunk-32 inference. No speed
+measurement is claimed. Full coordinates and hashes: [docs/qwen35.md](docs/qwen35.md).
+
 ## 2026-11-05 — ID mode refuses a NUL byte too: one check for the whole row
 
 The ID-mode reader of the EmbeddingGemma 2 encoder (merged in `98ca1b2`), the

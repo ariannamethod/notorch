@@ -1,0 +1,94 @@
+{
+  "pass": true,
+  "limits": {
+    "residual_relative_l2": 0.0002,
+    "logits_max_absolute": 0.002,
+    "slot_probability_absolute": 0.0002
+  },
+  "cases": [
+    {
+      "id": "accept-dependency-False",
+      "residual_relative_l2": 1.6759413394344606e-06,
+      "logits_max_absolute": 5.7220458984375e-06,
+      "slot_probability_absolute": 1.1948703571018626e-07
+    },
+    {
+      "id": "accept-dependency-True",
+      "residual_relative_l2": 1.681839926022018e-06,
+      "logits_max_absolute": 5.9604644775390625e-06,
+      "slot_probability_absolute": 5.7947670395464e-07
+    },
+    {
+      "id": "accept-boundary-False",
+      "residual_relative_l2": 1.7203080947433277e-06,
+      "logits_max_absolute": 8.58306884765625e-06,
+      "slot_probability_absolute": 1.7860495971078194e-08
+    },
+    {
+      "id": "accept-boundary-True",
+      "residual_relative_l2": 1.7839233768302967e-06,
+      "logits_max_absolute": 9.5367431640625e-06,
+      "slot_probability_absolute": 5.970040264924314e-07
+    },
+    {
+      "id": "accept-authority-False",
+      "residual_relative_l2": 1.6085586857605372e-06,
+      "logits_max_absolute": 1.049041748046875e-05,
+      "slot_probability_absolute": 1.0539592388836283e-06
+    },
+    {
+      "id": "accept-authority-True",
+      "residual_relative_l2": 1.6060182921576439e-06,
+      "logits_max_absolute": 5.7220458984375e-06,
+      "slot_probability_absolute": 1.1845466652560255e-06
+    },
+    {
+      "id": "accept-ontology-False",
+      "residual_relative_l2": 1.6289118058756372e-06,
+      "logits_max_absolute": 6.198883056640625e-06,
+      "slot_probability_absolute": 2.703897910016906e-07
+    },
+    {
+      "id": "accept-ontology-True",
+      "residual_relative_l2": 1.6285918634205173e-06,
+      "logits_max_absolute": 5.7220458984375e-06,
+      "slot_probability_absolute": 1.1812870891469984e-06
+    },
+    {
+      "id": "accept-injected-False",
+      "residual_relative_l2": 1.605295844219524e-06,
+      "logits_max_absolute": 9.5367431640625e-06,
+      "slot_probability_absolute": 7.981109951815668e-07
+    },
+    {
+      "id": "accept-injected-True",
+      "residual_relative_l2": 1.6246304938009377e-06,
+      "logits_max_absolute": 1.1444091796875e-05,
+      "slot_probability_absolute": 5.007736006978902e-07
+    },
+    {
+      "id": "accept-disabled-False",
+      "residual_relative_l2": 1.6417856865487391e-06,
+      "logits_max_absolute": 1.1444091796875e-05,
+      "slot_probability_absolute": 1.916925762568411e-08
+    },
+    {
+      "id": "accept-disabled-True",
+      "residual_relative_l2": 1.6394181652811225e-06,
+      "logits_max_absolute": 6.198883056640625e-06,
+      "slot_probability_absolute": 1.6078869513602712e-07
+    },
+    {
+      "id": "accept-scope-False",
+      "residual_relative_l2": 1.641870448899421e-06,
+      "logits_max_absolute": 1.1444091796875e-05,
+      "slot_probability_absolute": 2.2747048689097937e-10
+    },
+    {
+      "id": "accept-scope-True",
+      "residual_relative_l2": 1.655484487063137e-06,
+      "logits_max_absolute": 1.811981201171875e-05,
+      "slot_probability_absolute": 1.3450441778140032e-06
+    }
+  ]
+}
