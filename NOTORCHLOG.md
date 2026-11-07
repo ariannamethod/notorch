@@ -54,7 +54,9 @@ only), bare greedy, repeat_penalty 1.0:
 `tests/test_lfm3.c` runs the family in `make test` on a synthetic file:
 chunking invariance, the rope table against a ggml-semantics reference, two
 caches on one model, refused continuations and refused files. The parity
-script is red whenever it compared nothing. Not run here: the vision and audio
+script is OK only after at least one comparison and none differing, FAILED
+only on a real difference, and SKIPPED (rc 77) with its reason when nothing
+could be compared. Not run here: the vision and audio
 towers of the VL and Omni files, and throughput on Apple silicon.
 
 ---
