@@ -52,6 +52,7 @@ typedef struct {
     wt tok_emb;            /* token_embd, also the head when output.weight is absent */
     wt out_weight;         /* output.weight — this family ships it untied */
     float *out_norm;
+    float *rope_freqs;     /* rope_freqs.weight, n_rot/2 divisors, full-attention layers only */
 
     /* The recurrent state, one slice per convolution layer. Each channel keeps
      * the last l_cache-1 gated inputs; there is no third place a token could
@@ -70,7 +71,6 @@ typedef struct {
         wt gate_head;      /* attn_gate: [n_head, embed] — the per-head volume knob */
         wt in_proj, out_proj;                        /* convolution layers */
         float *conv_w;    /* [embed][l_cache], one window per channel */
-        float *rope_freqs;   /* full-attention layers only, head_dim/2 */
     } layers[];
 } lfm3_model;
 
@@ -161,6 +161,19 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
     m->out_norm = lfm3_f32(gf, "output_norm.weight");
 
     int missing = 0;
+    /* One table for every full-attention layer, as the converter writes it and the
+     * reference loads it (TENSOR_DUPLICATED): 1.0 on rotated pairs, 1e30 on the pairs
+     * partial RoPE leaves still. */
+    int rf = gguf_find_tensor(gf, "rope_freqs.weight");
+    if (rf >= 0) {
+        if (gf->tensors[rf].n_elements != (uint64_t)(m->n_rot / 2)) {
+            fprintf(stderr, "lfm3: rope_freqs.weight has %llu entries, n_rot/2 is %d\n",
+                    (unsigned long long)gf->tensors[rf].n_elements, m->n_rot / 2);
+            missing = 1;
+        }
+        m->rope_freqs = gguf_dequant(gf, rf);
+        if (!m->rope_freqs) missing = 1;
+    }
     if (!(m->tok_emb.q || m->tok_emb.f32) || !m->out_norm) {
         fprintf(stderr, "lfm3: missing critical weights\n");
         missing = 1;
@@ -207,13 +220,6 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
             }
             m->layers[l].recr_slot = m->n_recr++;
         } else {
-            /* The learned frequency table belongs to the full-attention layers; a
-             * file that carries none runs them on the plain base, as the reference
-             * does. The routing itself came from the pattern array, not from here. */
-            if (!m->layers[l].is_swa) {
-                snprintf(name, sizeof(name), "blk.%d.rope_freqs.weight", l);
-                m->layers[l].rope_freqs = lfm3_f32(gf, name);   /* optional */
-            }
             W(wq,        "blk.%d.attn_q.weight");
             W(wk,        "blk.%d.attn_k.weight");
             W(wv,        "blk.%d.attn_v.weight");
@@ -276,7 +282,7 @@ static void lfm3_free(void *model) {
     lfm3_model *m = (lfm3_model*)model;
     if (!m) return;
     free(m->tok_emb.f32); free(m->out_weight.f32); free(m->out_norm);
-    free(m->conv_state);
+    free(m->rope_freqs); free(m->conv_state);
     for (int l = 0; l < m->n_layers; l++) {
         free(m->layers[l].attn_norm); free(m->layers[l].ffn_norm);
         free(m->layers[l].post_attn_norm); free(m->layers[l].post_ffn_norm);
@@ -285,20 +291,20 @@ static void lfm3_free(void *model) {
         free(m->layers[l].wo.f32); free(m->layers[l].gate_head.f32);
         free(m->layers[l].wgate.f32); free(m->layers[l].wup.f32); free(m->layers[l].wdown.f32);
         free(m->layers[l].in_proj.f32); free(m->layers[l].out_proj.f32);
-        free(m->layers[l].conv_w); free(m->layers[l].rope_freqs);
+        free(m->layers[l].conv_w);
     }
     free(m);
 }
 
 static float silu(float v) { return v / (1.0f + expf(-v)); }
 
-/* NEOX rope with optional per-lane frequency factors — the same convention the
- * gemma4 family runs, rotated over n_rot lanes of the head. */
+/* NEOX rope with optional per-lane frequency divisors — ggml's freq_factors and the
+ * gemma4 family's convention, rotated over n_rot lanes of the head. */
 static void rope_lanes(float *x, int pos, int n_rot, float base, const float *factors) {
     int half = n_rot / 2;
     for (int i = 0; i < half; i++) {
         float freq = 1.0f / powf(base, 2.0f * (float)i / (float)n_rot);
-        if (factors) freq *= factors[i];
+        if (factors) freq /= factors[i];
         float angle = (float)pos * freq;
         float cs = cosf(angle), sn = sinf(angle);
         float x0 = x[i], x1 = x[i + half];
@@ -412,7 +418,7 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
             int gqa = H / KVH;
             float scale = 1.0f / sqrtf((float)HD);
             float base = m->layers[l].is_swa ? m->rope_base_swa : m->rope_base;
-            const float *factors = m->layers[l].is_swa ? NULL : m->layers[l].rope_freqs;
+            const float *factors = m->layers[l].is_swa ? NULL : m->rope_freqs;
             long cache_base = (long)m->layers[l].kv_slot * kv->max_seq * kv->kv_dim;
 
             pft = pf_mark();
