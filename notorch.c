@@ -8062,28 +8062,41 @@ static void nt_q4_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
              * The mins take the same shape: eight of them against the eight per-32
              * activation sums, one integer dot and one multiply instead of eight
              * subtractions. */
-            uint8_t ls[8], lm[8];
-            for (int j = 0; j < 8; j++) nt_get_scale_min_k4(j, sc, &ls[j], &lm[j]);
-            const __m128i mins16 = _mm_cvtepu8_epi16(_mm_loadl_epi64((const __m128i *)lm));
+            /* The eight (scale, min) pairs by ggml's word arithmetic instead of eight scalar
+             * nt_get_scale_min_k4 calls and eight GPR broadcasts: the same integers, bytes
+             * s0..s7 then m0..m7, widened once and broadcast per sub-block by shuffle. */
+            uint32_t utmp[4];
+            memcpy(utmp, sc, 12);
+            utmp[3] = ((utmp[2] >> 4) & 0x0f0f0f0fu) | (((utmp[1] >> 6) & 0x03030303u) << 4);
+            const uint32_t uaux = utmp[1] & 0x3f3f3f3fu;
+            utmp[1] = (utmp[2] & 0x0f0f0f0fu) | (((utmp[0] >> 6) & 0x03030303u) << 4);
+            utmp[2] = uaux;
+            utmp[0] &= 0x3f3f3f3fu;
+            const __m256i sm16 = _mm256_cvtepu8_epi16(_mm_set_epi32((int)utmp[3], (int)utmp[2],
+                                                                    (int)utmp[1], (int)utmp[0]));
+            const __m128i mins16 = _mm256_extracti128_si256(sm16, 1);
+            const __m256i scl = _mm256_permute2x128_si256(sm16, sm16, 0x00);
+            #define NT_Q4K_SC(j) _mm256_shuffle_epi8(scl, _mm256_set1_epi16((short)((2 * (j)) | ((2 * (j) + 1) << 8))))
             const __m256i q0 = _mm256_loadu_si256((const __m256i *)(qs));
             const __m256i q1 = _mm256_loadu_si256((const __m256i *)(qs + 32));
             const __m256i q2 = _mm256_loadu_si256((const __m256i *)(qs + 64));
             const __m256i q3 = _mm256_loadu_si256((const __m256i *)(qs + 96));
             const int8_t *ab = qa + (long)blk * 256;
-            #define NT_Q4K_LO(qv, s16, off) _mm256_madd_epi16(_mm256_set1_epi16((short)(s16)), \
+            #define NT_Q4K_LO(qv, j) _mm256_madd_epi16(NT_Q4K_SC(j),                        \
                 _mm256_maddubs_epi16(_mm256_and_si256((qv), m4),                               \
-                    _mm256_loadu_si256((const __m256i *)(ab + (off) * 32))))
-            #define NT_Q4K_HI(qv, s16, off) _mm256_madd_epi16(_mm256_set1_epi16((short)(s16)), \
+                    _mm256_loadu_si256((const __m256i *)(ab + (j) * 32))))
+            #define NT_Q4K_HI(qv, j) _mm256_madd_epi16(NT_Q4K_SC(j),                        \
                 _mm256_maddubs_epi16(_mm256_and_si256(_mm256_srli_epi16((qv), 4), m4),         \
-                    _mm256_loadu_si256((const __m256i *)(ab + (off) * 32))))
+                    _mm256_loadu_si256((const __m256i *)(ab + (j) * 32))))
             __m256i sumi = _mm256_add_epi32(
-                _mm256_add_epi32(NT_Q4K_LO(q0, ls[0], 0), NT_Q4K_HI(q0, ls[1], 1)),
-                _mm256_add_epi32(NT_Q4K_LO(q1, ls[2], 2), NT_Q4K_HI(q1, ls[3], 3)));
+                _mm256_add_epi32(NT_Q4K_LO(q0, 0), NT_Q4K_HI(q0, 1)),
+                _mm256_add_epi32(NT_Q4K_LO(q1, 2), NT_Q4K_HI(q1, 3)));
             sumi = _mm256_add_epi32(sumi, _mm256_add_epi32(
-                _mm256_add_epi32(NT_Q4K_LO(q2, ls[4], 4), NT_Q4K_HI(q2, ls[5], 5)),
-                _mm256_add_epi32(NT_Q4K_LO(q3, ls[6], 6), NT_Q4K_HI(q3, ls[7], 7))));
+                _mm256_add_epi32(NT_Q4K_LO(q2, 4), NT_Q4K_HI(q2, 5)),
+                _mm256_add_epi32(NT_Q4K_LO(q3, 6), NT_Q4K_HI(q3, 7))));
             #undef NT_Q4K_LO
             #undef NT_Q4K_HI
+            #undef NT_Q4K_SC
             float dsb = da[blk * 8];          /* one scale for the whole superblock now */
             accv = _mm256_fmadd_ps(_mm256_set1_ps(d * dsb), _mm256_cvtepi32_ps(sumi), accv);
             /* The min term in the same domain as the rest. The eight mins are 6-bit and the
