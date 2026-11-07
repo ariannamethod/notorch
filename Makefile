@@ -407,6 +407,13 @@ test_qwen35_text: tests/test_qwen35_text.c examples/bpe.c examples/bpe.h gguf.c 
 
 test: test_qwen35_text
 
+.PHONY: test_lfm3
+test_lfm3: tests/test_lfm3.c harness/arch_lfm3.c harness/runtime.c gguf.c notorch.c $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_lfm3.c harness/runtime.c gguf.c notorch.c -lm $(BLAS_LIBS)
+	./test_lfm3
+
+test: test_lfm3
+
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
