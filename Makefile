@@ -264,7 +264,7 @@ test: test_spa_runtime
 # PEN7/runtime objects. General harness consumers link both, harness first.
 HARNESS_LIB_OBJ = harness/archs.o harness/runtime.o harness/arch_llama.o harness/arch_qwen35.o \
                   harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_embeddinggemma2.o harness/arch_olmoe.o harness/arch_mamba.o \
-                  harness/arch_resonance.o harness/arch_janus.o harness/arch_penelope.o examples/bpe.o
+                  harness/arch_resonance.o harness/arch_janus.o harness/arch_penelope.o harness/arch_lfm3.o examples/bpe.o
 
 lib_harness: libnotorch_harness.a
 
@@ -407,10 +407,17 @@ test_qwen35_text: tests/test_qwen35_text.c examples/bpe.c examples/bpe.h gguf.c 
 
 test: test_qwen35_text
 
+.PHONY: test_lfm3
+test_lfm3: tests/test_lfm3.c harness/arch_lfm3.c harness/runtime.c gguf.c notorch.c $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_lfm3.c harness/runtime.c gguf.c notorch.c -lm $(BLAS_LIBS)
+	./test_lfm3
+
+test: test_lfm3
+
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
-HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_qwen35.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c harness/arch_penelope.c examples/bpe.c gguf.c notorch.c
+HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_qwen35.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c harness/arch_penelope.c harness/arch_lfm3.c examples/bpe.c gguf.c notorch.c
 
 # `harness` is phony because a directory of that name sits right there, and
 # make would otherwise call it up to date and build nothing.
@@ -446,7 +453,7 @@ bench_multi_decode: tests/bench_multi_decode.c libnotorch_harness.a libnotorch.a
 check_residual: test_residual
 	./test_residual
 
-examples/bpe.o: examples/unicode_numbers.h
+examples/bpe.o: examples/unicode_numbers.h examples/unicode_letters.h
 
 test_smollm_tokenizer: tests/test_smollm_tokenizer.c libnotorch_harness.a libnotorch.a Makefile
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)

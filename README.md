@@ -133,10 +133,18 @@ make harness
 without BLAS, use `make harness BLAS_FLAGS= BLAS_LIBS=`.
 
 The [family registry](harness/archs.c) routes **llama, mistral3, qwen2, qwen3,
-gemma3, gemma4, olmoe, qwen3moe, mamba, resonance, janus and penelope** through
-NoTorch's own decoders. Each family declares its architecture names; an unknown
-architecture is refused by name. File-level verification and reference runs live
-in the [harness record](NOTORCHLOG.md#readme-run-a-model).
+gemma3, gemma4, olmoe, qwen3moe, mamba, resonance, janus, penelope and lfm3**
+through NoTorch's own decoders. Each family declares its architecture names; an
+unknown architecture is refused by name. File-level verification and reference
+runs live in the [harness record](NOTORCHLOG.md#readme-run-a-model).
+
+**LFM3** is the registry's first hybrid: gated short convolutions and attention
+share one body, per-head sigmoid gates ride the attention output, and the
+sliding-versus-full split is read from the file's `sliding_window_pattern`
+array — the only place it lives. On LiquidAI's LFM3-1.7B, LFM3-VL-2B and
+LFM3-Omni-2B (text path), 13 of 16 bare-greedy 32-token continuations match
+llama.cpp, and six-thread decode runs at 0.93–0.97 of its speed on a 6-core
+x86: [measurements and limits](NOTORCHLOG.md#readme-run-a-model).
 
 The packed paths read quantized matrices in place. **Penelope and NanoJanus**
 use their own geometry: PEN7 F32 parameters execute directly, while Q8 matrices

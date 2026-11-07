@@ -6,6 +6,7 @@
 #include <string.h>
 #include <limits.h>
 #include "unicode_numbers.h"
+#include "unicode_letters.h"
 
 /* ── string -> int open-addressing hashmap ─────────────────────────────────── */
 typedef struct { char **keys; int *vals; int cap; int n; } smap;
@@ -101,6 +102,7 @@ struct bpe_tokenizer {
     int pre_qwen2;
     int pre_smollm;
     int pre_qwen35_ascii;
+    int pre_lfm2;          /* llama.cpp's llama3 split, with ignore_merges */
     int *special_id, n_special;
     /* Tokens the file marks USER_DEFINED. They are stored as literal text rather than in the
      * byte-level encoding — a run of four real spaces, not four 'Ġ' — so the merge path can
@@ -178,6 +180,7 @@ bpe_tokenizer *bpe_load(const char *path) {
         t->pre_qwen2 = (strcmp(pre, "qwen2") == 0);
         t->pre_smollm = (strcmp(pre, "smollm") == 0);
         t->pre_qwen35_ascii = (strcmp(pre, "qwen35-ascii") == 0);
+        t->pre_lfm2 = (strcmp(pre, "lfm2") == 0);
     }
 
     int ntt = 0;
@@ -714,6 +717,81 @@ static int qwen35_ascii_piece(const char *s,int n) {
     return i>1?i-1:1;
 }
 
+/* ── "lfm2": llama.cpp's llama3 split ─────────────────────────────────────────
+ * The pre-type LiquidAI's files declare, which llama.cpp runs through its custom
+ * llama3 splitter (unicode_regex_split_custom_llama3) for the pattern
+ *   (?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}|
+ *    ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
+ * Ported alternative by alternative over codepoints; a byte that is not valid
+ * UTF-8 is neither letter, number nor space, as the reference's replacement
+ * character is not. */
+static int range_in(const unsigned int (*r)[2], size_t n, unsigned int cp) {
+    size_t lo = 0, hi = n;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (cp < r[mid][0]) hi = mid;
+        else if (cp > r[mid][1]) lo = mid + 1;
+        else return 1;
+    }
+    return 0;
+}
+static int lfm2_letter(unsigned int cp) {
+    return range_in(bpe_letters, sizeof(bpe_letters) / sizeof(bpe_letters[0]), cp);
+}
+/* \s as the reference's unicode_set_whitespace has it. */
+static int lfm2_space(unsigned int cp) {
+    return (cp >= 0x09 && cp <= 0x0D) || cp == 0x20 || cp == 0x85 || cp == 0xA0 ||
+           cp == 0x1680 || (cp >= 0x2000 && cp <= 0x200A) || cp == 0x2028 ||
+           cp == 0x2029 || cp == 0x202F || cp == 0x205F || cp == 0x3000;
+}
+/* Codepoint at byte offset off of s[0..n); 0 bytes past the end. */
+static int lfm2_at(const char *s, int n, int off, unsigned int *cp) {
+    if (off >= n) { *cp = 0x110000; return 0; }
+    return smollm_codepoint(s + off, n - off, cp);
+}
+static unsigned int lfm2_lower(unsigned int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+
+static int lfm2_piece(const char *s, int n) {
+    unsigned int c0, c1, c2, c;
+    int l0 = lfm2_at(s, n, 0, &c0), l1 = lfm2_at(s, n, l0, &c1), p, l;
+
+    if (c0 == '\'' && l1) {                                /* contractions */
+        unsigned int a = lfm2_lower(c1);
+        if (a == 's' || a == 't' || a == 'm' || a == 'd') return l0 + l1;
+        int l2 = lfm2_at(s, n, l0 + l1, &c2);
+        unsigned int b = lfm2_lower(c2);
+        if (l2 && ((a == 'r' && b == 'e') || (a == 'v' && b == 'e') || (a == 'l' && b == 'l')))
+            return l0 + l1 + l2;
+    }
+    if (!(c0 == '\r' || c0 == '\n' || smollm_is_number(c0)) &&   /* optional prefix, letters */
+        (lfm2_letter(c0) || (l1 && lfm2_letter(c1)))) {
+        for (p = l0; (l = lfm2_at(s, n, p, &c)) && lfm2_letter(c); p += l) {}
+        return p;
+    }
+    if (smollm_is_number(c0)) {                            /* one to three numbers */
+        int k = 0;
+        for (p = 0; k < 3 && (l = lfm2_at(s, n, p, &c)) && smollm_is_number(c); p += l, k++) {}
+        return p;
+    }
+    p = (c0 == ' ') ? l0 : 0;                              /* space?, punctuation, newlines */
+    if (lfm2_at(s, n, p, &c) && !(lfm2_space(c) || lfm2_letter(c) || smollm_is_number(c))) {
+        while ((l = lfm2_at(s, n, p, &c)) && !(lfm2_space(c) || lfm2_letter(c) || smollm_is_number(c)))
+            p += l;
+        while (p < n && (s[p] == '\r' || s[p] == '\n')) p++;
+        return p;
+    }
+    if (c0 == ' ' && !l1) return l0;
+    int last_nl = 0, last_start = 0, nws = 0;              /* whitespace */
+    for (p = 0; (l = lfm2_at(s, n, p, &c)) && lfm2_space(c); p += l, nws++) {
+        if (c == '\r' || c == '\n') last_nl = p + l;
+        last_start = p;
+    }
+    if (last_nl) return last_nl;                           /* \s*[\r\n]+ */
+    if (nws > 1 && p < n) return last_start;               /* \s+(?!\S) */
+    if (nws) return p;                                     /* \s+ */
+    return l0;
+}
+
 static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int *out, int cap) {
     char *text = (char*)malloc((size_t)L + 1);
     if (!text) return 0;
@@ -737,6 +815,8 @@ static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int 
         int j;
         if (t->pre_qwen35_ascii) {
             j=i+qwen35_ascii_piece(text+i,L-i);
+        } else if (t->pre_lfm2) {
+            j = i + lfm2_piece(text + i, L - i);
         } else if (t->pre_qwen2) {
             /* Qwen's word prefix permits a tab as well as a space. A mixed whitespace
              * run must therefore give up its last character, not merge the whole run
@@ -775,6 +855,27 @@ static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int 
             int cp = t->byte_cp[(unsigned char)text[i + b]];
             int n = utf8_enc(cp, buf); buf[n] = 0;
             sym[b] = strdup(buf);
+        }
+        if (t->pre_lfm2 && nsym > 1) {
+            /* ignore_merges, as the reference sets it for this pre-type: a piece the
+             * vocabulary holds whole is that one token, whatever the merges would build. */
+            size_t tot = 0;
+            for (int b = 0; b < nsym; b++) tot += strlen(sym[b]);
+            char *whole = (char*)malloc(tot + 1);
+            int id = -1;
+            if (whole) {
+                whole[0] = 0;
+                for (int b = 0; b < nsym; b++) strcat(whole, sym[b]);
+                id = smap_get(&t->vocab, whole);
+                free(whole);
+            }
+            if (id >= 0) {
+                if (no < cap) out[no++] = id;
+                for (int b = 0; b < nsym; b++) free(sym[b]);
+                free(sym);
+                i = j;
+                continue;
+            }
         }
         int ns = nsym;
         while (ns > 1) {

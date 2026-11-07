@@ -13,6 +13,52 @@ Newest entries on top.
 
 ---
 
+## 2026-11-07 — LFM3: the first hybrid family, measured against llama.cpp
+
+`harness/arch_lfm3.c` runs LiquidAI's LFM3 text decoder: gated short
+convolutions and attention in one body, per-head sigmoid gates on the
+attention output, q/k RMS norms, sandwich post-norms, and partial RoPE on the
+full-attention layers through the file's single `rope_freqs.weight` (1.0 on
+the rotated pairs, 1e30 on the frozen ones, divided as ggml divides). The
+sliding-versus-full routing is read from `lfm3.attention.sliding_window_pattern`;
+both kinds carry the same tensors, so a file without the array is refused.
+The convolution window lives in the family's own cache beside the keys, and a
+continuation is accepted only at the position the cache last reached. Files
+the forward would read past (missing norms, shapes that disagree with the
+keys, a rank or element count the header cannot back) and non-causal d1
+checkpoints are refused at load. Shared loading gained `gguf_read_bool_array`
+and `gguf_file.path`.
+
+The first version of the family looked up `blk.N.rope_freqs.weight`, a name no
+LFM3 file carries, and multiplied by the factor where ggml divides, so the
+full-attention layers rotated every pair; its parity gate printed OK when it
+had compared nothing; the window lived in the model and was shared by every
+cache. Those are fixed in this branch, each with its own test.
+
+Measured on a 6-core i5-8500T against llama.cpp e95426f on LiquidAI's
+LFM3-1.7B (Q4_K_M, Q8_0), LFM3-VL-2B and LFM3-Omni-2B (Q4_K_M, text path
+only), bare greedy, repeat_penalty 1.0:
+
+- 32-token continuations of "The capital of France is", "1, 2, 3, 4,",
+  "Столица Франции это" and "בירת צרפת היא": 13 of 16 identical (10 of 16
+  before the rope fix). The three that differ are Hebrew on LFM3-1.7B Q4_K_M
+  and Q8_0 and the English prompt on LFM3-Omni-2B, where both sides fall into
+  loops and part within the first tokens.
+- `harness/test_lfm3.sh` against llama-server on LFM3-1.7B and LFM3-VL-2B: 8
+  comparisons, 3 failed. The reference itself answered the VL Russian prompt
+  differently through llama-server and through llama-completion.
+- Decode, 96 tokens, six threads: 24.5 vs 25.38 t/s (LFM3-1.7B Q4_K_M), 15.3 vs
+  16.54 (Q8_0), 24.3 vs 25.38 (VL-2B), 24.6 vs 25.51 (Omni-2B). One thread:
+  8.6 vs 10.13 (Q4_K_M), 5.4 vs 7.66 (Q8_0).
+
+`tests/test_lfm3.c` runs the family in `make test` on a synthetic file:
+chunking invariance, the rope table against a ggml-semantics reference, two
+caches on one model, refused continuations and refused files. The parity
+script is red whenever it compared nothing. Not run here: the vision and audio
+towers of the VL and Omni files, and throughput on Apple silicon.
+
+---
+
 ## 2026-11-06 — Qwen3.5 head offsets widen before multiplication
 
 PR #187's CodeQL run reported two `cpp/integer-multiplication-cast-to-long`

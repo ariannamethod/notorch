@@ -11,6 +11,7 @@ const nt_arch *const nt_archs[] = {
     &nt_arch_janus,
     &nt_arch_penelope,
     &nt_arch_llama,
+    &nt_arch_lfm3,
     NULL,
 };
 

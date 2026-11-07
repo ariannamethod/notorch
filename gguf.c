@@ -101,6 +101,12 @@ gguf_file* gguf_open(const char* path) {
 
     gguf_file* gf = (gguf_file*)calloc(1, sizeof(gguf_file));
     if (!gf) { fclose(f); return NULL; }
+    {
+        size_t plen = strlen(path);
+        if (plen >= sizeof(gf->path)) plen = sizeof(gf->path) - 1;
+        memcpy(gf->path, path, plen);
+        gf->path[plen] = '\0';
+    }
 
     if (!read_u32(f, &gf->version) || !read_u64(f, &gf->n_tensors) || !read_u64(f, &gf->n_kv)) {
         fprintf(stderr, "gguf: truncated header (%s)\n", path);
@@ -475,6 +481,40 @@ float* gguf_read_f32_array(const char* path, const char* key, int* out_n) {
             if (!result) break;
             uint64_t got = fread(result, sizeof(float), alen, f);
             if (out_n) *out_n = (int)got;   // actually-read count, not claimed alen
+            break;
+        }
+        if (!skip_value(f, vtype)) break;
+    }
+    fclose(f);
+    return result;
+}
+
+uint8_t* gguf_read_bool_array(const char* path, const char* key, int* out_n) {
+    if (out_n) *out_n = 0;
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    uint32_t magic;
+    if (!read_u32(f, &magic) || magic != GGUF_MAGIC) { fclose(f); return NULL; }
+    uint32_t version; uint64_t n_tensors, n_kv;
+    read_u32(f, &version); read_u64(f, &n_tensors); read_u64(f, &n_kv);
+    uint8_t* result = NULL;
+    for (uint64_t i = 0; i < n_kv; i++) {
+        char k[512] = {0};
+        uint32_t vtype;
+        if (!read_string(f, k, sizeof(k)) || !read_u32(f, &vtype)) break;
+        if (strcmp(k, key) == 0 && vtype == 9) {
+            uint32_t atype; uint64_t alen;
+            if (!read_u32(f, &atype) || !read_u64(f, &alen)) break;
+            if (atype != 7) break;                        /* BOOL */
+            if (alen > GGUF_MAX_STR_ARRAY) {
+                fprintf(stderr, "gguf: bool-array '%s' len %llu exceeds GGUF_MAX_STR_ARRAY=%u; refusing\n",
+                        key, (unsigned long long)alen, (unsigned)GGUF_MAX_STR_ARRAY);
+                break;
+            }
+            result = (uint8_t*)calloc(alen ? alen : 1, 1);
+            if (!result) break;
+            uint64_t got = fread(result, 1, alen, f);
+            if (out_n) *out_n = (int)got;
             break;
         }
         if (!skip_value(f, vtype)) break;
