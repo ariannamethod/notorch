@@ -5,14 +5,14 @@
  * mixes the two. Some layers are a gated short convolution over the channel
  * dimension — they carry a window of recent inputs per channel and no keys or
  * values at all — and the rest are ordinary attention with per-head query and
- * key norms, a learned frequency table on the layers that see everything, and
- * a plain base on the layers held to a sliding window. Which is which is not
+ * key norms, partial RoPE on the layers that see everything (one rope_freqs
+ * table for all of them, freezing the pairs the model does not rotate), and a
+ * plain base on the layers held to a sliding window. Which is which is not
  * announced by the weights: a layer with no attn_q owns a convolution, but the
  * sliding-versus-full split among attention layers lives only in the
- * lfm3.attention.sliding_window_pattern metadata array — a file whose layers
- * all ship a frequency table and a file whose layers ship none can carry the
- * same routing, so the array is read, and a file that does not carry it is
- * refused rather than routed by guesswork.
+ * lfm3.attention.sliding_window_pattern metadata array — both kinds carry the
+ * same tensors and the rope table is global — so the array is read, and a file
+ * that does not carry it is refused rather than routed by guesswork.
  *
  * The two things this family does that nothing here had done before:
  *
@@ -60,7 +60,7 @@ typedef struct {
     int emb_ti, has_output_weight;
 
     wt tok_emb;            /* token_embd, also the head when output.weight is absent */
-    wt out_weight;         /* output.weight — this family ships it untied */
+    wt out_weight;         /* output.weight — absent in LiquidAI's files, which tie it */
     float *out_norm;
     float *rope_freqs;     /* rope_freqs.weight, n_rot/2 divisors, full-attention layers only */
 
@@ -169,10 +169,9 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
     m->gf = gf;
     m->n_layers = nl;
 
-    /* Which attention layer is which is NOT derivable from the shapes: the sliding
-     * window pattern is a per-layer metadata array, and a file that ships every
-     * layer's rope_freqs looks different from one that ships none while keeping
-     * the same routing. The file decides, and a file that does not say — refuses. */
+    /* Which attention layer is which is NOT derivable from the shapes: sliding and
+     * full layers carry the same tensors and the rope table is one for all of them.
+     * The file decides, and a file that does not say — refuses. */
     int n_pat = 0;
     uint8_t *swa_pat = gguf_read_bool_array(gf->path, "lfm3.attention.sliding_window_pattern", &n_pat);
     if (!swa_pat || n_pat != nl) {
@@ -297,11 +296,10 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
         missing = 1;
     }
 
-    /* Which layer is which is read off the tensors, not off the metadata
-     * arrays the converter also writes. A layer without attn_q owns a
-     * convolution; an attention layer without rope_freqs is the sliding kind.
-     * The shapes then carry the geometry, because a shape cannot disagree
-     * with itself. */
+    /* Convolution or attention is read off the tensors: a layer without attn_q
+     * owns a convolution. Sliding or full came from the pattern array above.
+     * The shapes then carry the geometry, and each is checked against the keys
+     * before the forward may read it. */
     for (int l = 0; l < nl; l++) {
         char name[128];
         int E = m->embed, HD = m->head_dim;
