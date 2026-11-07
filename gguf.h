@@ -80,6 +80,7 @@ typedef struct {
     float rope_freq_base;
     float rms_eps;
     char arch[64];
+    char path[1024];     /* the path this was opened from — the array readers re-scan by it */
 } gguf_file;
 
 // Open and parse a GGUF file. Returns NULL on failure.
@@ -128,6 +129,11 @@ int32_t* gguf_read_i32_array(const char* path, const char* key, int* out_n);
 // Same for a type-9 FLOAT32 array (e.g. "tokenizer.ggml.scores"). Returns a
 // malloc'd float* of *out_n values, or NULL if the key is absent or not f32.
 float* gguf_read_f32_array(const char* path, const char* key, int* out_n);
+
+/* Same re-scan contract as the readers above, for a type-9 array of BOOL (type 7).
+ * Values come back 0/1, one byte each. LFM3's sliding-window pattern is the
+ * resident user: the layer routing lives there and nowhere derivable from shapes. */
+uint8_t* gguf_read_bool_array(const char* path, const char* key, int* out_n);
 
 // Print GGUF summary
 void gguf_print_info(const gguf_file* gf);

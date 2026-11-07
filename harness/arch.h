@@ -116,6 +116,7 @@ extern const nt_arch nt_arch_mamba;
 extern const nt_arch nt_arch_resonance;
 extern const nt_arch nt_arch_janus;
 extern const nt_arch nt_arch_penelope;
+extern const nt_arch nt_arch_lfm3;
 
 /* Full-sequence encoders have a different contract from causal decoders: no
  * token-logit output and no KV state carried between calls. All n positions

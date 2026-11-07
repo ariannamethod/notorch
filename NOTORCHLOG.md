@@ -13,6 +13,45 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 — LFM3: the first hybrid family, byte-identical to llama.cpp
+
+`harness/arch_lfm3.c` — LiquidAI's LFM3 (gated short convolutions and attention
+in one body) as a harness family: per-head sigmoid attention gating, learned
+rope factors on full-attention layers when the file ships them, sandwich
+post-norms optional per file, conv state kept per channel and cleared when a
+sequence starts over, the way Mamba's is. The sliding-versus-full attention
+routing is read from the file's `sliding_window_pattern` bool array — the only
+place it lives. Deriving it from tensor presence (no rope_freqs ⇒ sliding) was
+the first version of this loader, and it was wrong in a way worth recording:
+Mara and Lauren ship no rope_freqs at all, so six full-attention layers ran on
+the 1e4 base instead of 1e6, the drift looked like ~0.5 logits of mysterious
+numeric noise, and only a hand-written numpy forward of the whole graph pinned
+it to the routing. A file without the array is now refused rather than routed
+by guesswork. Shared loading gained `gguf_read_bool_array` and `gguf_file.path`
+(the array readers re-scan by path by design; the handle just did not carry
+one) — no family branches outside `arch_lfm3.c`.
+
+The calibration also had to defeat the reference's own defaults: llama-server
+applies repeat_penalty 1.1 unless a request pins it to 1.0, which silently
+turned "the moon" into "the lunar" and made two honest implementations look
+three apart. With bare greedy on both sides, byte-identical continuations
+against llama.cpp b1c902f, all prompts, both bodies, both quants:
+
+- Mara (LFM3-1.7B, Q4_K_M): "The capital of France is" ×24; "The first man on
+  the moon was" ×32 through "…on July 20, 1969. He was the first to walk on the
+  moon and say, \"One small"; "1, 2, 3, 4," ×15; "Столица Франции это" ×8.
+- Mara (Q8_0): the 15-token Armstrong prefix probe and the Paris ×24 run.
+- Lauren (lfm3-vl-2b-heretic, Q8_0): the Armstrong prefix probe ("." on both)
+  and the degenerate "France France…" Paris ×24 run — identical degeneration.
+
+`harness/test_lfm3.sh` pins the comparison (bare greedy, repeat_penalty 1.0,
+SKIPPED when `LFM3_LLAMA_BIN` does not point at a llama-server). On the machine
+this was written on there is no llama-server, so the script reports SKIPPED
+here and the evidence above is the manual suite, logged run by run.
+`make harness` builds the family; `make test` passes.
+
+---
+
 ## 2026-11-05 — ID mode refuses a NUL byte too: one check for the whole row
 
 The ID-mode reader of the EmbeddingGemma 2 encoder (merged in `98ca1b2`), the
