@@ -7644,6 +7644,12 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
     int nb = k / 256;
     const __m256i m4 = _mm256_set1_epi8(0x0F), m3 = _mm256_set1_epi8(3),
                   b32 = _mm256_set1_epi8(32), ones = _mm256_set1_epi16(1);
+    /* Group g of a 128-value half spans sub-scales 2g and 2g+1 of that half: the low lane
+     * takes int16 lane 2g, the high lane 2g+1, both by shuffle from the widened scales. */
+    __m256i smask[4];
+    for (int g = 0; g < 4; g++)
+        smask[g] = _mm256_set_m128i(_mm_set1_epi16((short)((4 * g + 2) | ((4 * g + 3) << 8))),
+                                    _mm_set1_epi16((short)((4 * g) | ((4 * g + 1) << 8))));
     for (int row = r0; row < r1; row++) {
         const uint8_t *rb = W + (long)row * nb * 210;
         __m256 accv = _mm256_setzero_ps();
@@ -7654,6 +7660,9 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
             float d = nt_f16_to_f32((uint16_t)(b[208] | (b[209] << 8)));
             const int8_t *qab = qa + (long)blk * 256;
             const float  *dab = da + (long)blk * 8;
+            const __m256i sc16 = _mm256_cvtepi8_epi16(_mm_loadu_si128((const __m128i *)sc));
+            const __m256i sch[2] = { _mm256_permute2x128_si256(sc16, sc16, 0x00),
+                                     _mm256_permute2x128_si256(sc16, sc16, 0x11) };
             /* The sub-block scale rides inside madd_epi16, the same move the Q4_K arm
              * makes and for the same reason: with one activation scale per 256 values
              * nothing has to leave the vector registers until the block is finished.
@@ -7677,9 +7686,7 @@ static void nt_q6_k_rows_i8(float *out, const uint8_t *W, const int8_t *qa,
                     __m256i hi2 = _mm256_and_si256(_mm256_srli_epi16(qhv, 2 * g), m3);
                     __m256i w   = _mm256_sub_epi8(_mm256_or_si256(lo, _mm256_slli_epi16(hi2, 4)), b32);
                     __m256i xv  = _mm256_loadu_si256((const __m256i *)(qab + n + g * 32));
-                    int j0 = n / 16 + g * 2;
-                    __m256i sv = _mm256_inserti128_si256(_mm256_set1_epi16((short)sc[j0]),
-                                                         _mm_set1_epi16((short)sc[j0 + 1]), 1);
+                    __m256i sv = _mm256_shuffle_epi8(sch[n / 128], smask[g]);
                     sumi = _mm256_add_epi32(sumi, _mm256_madd_epi16(sv,
                         _mm256_maddubs_epi16(_mm256_sign_epi8(w, w), _mm256_sign_epi8(xv, w))));
                 }
