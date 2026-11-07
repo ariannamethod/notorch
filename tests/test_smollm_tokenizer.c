@@ -14,8 +14,8 @@ static int enc(int cp, char *s) {
     s[0]=(char)(0xC0|(cp>>6));s[1]=(char)(0x80|(cp&63));s[2]=0;return 2;
 }
 static int fixture(const char *path, const char *pre) {
-    char storage[512][16], ranks[256][24], tab_word[24], tab_rank[24];
-    const char *tokens[514],*merges[258];
+    char storage[512][16], ranks[256][24], tab_word[24], tab_rank[24], tab_def[24];
+    const char *tokens[519],*merges[262];
     int n=0;
     for(int b=0;b<256;b++) {
         int printable=(b>=33&&b<=126)||(b>=161&&b<=172)||(b>=174&&b<=255);
@@ -30,11 +30,15 @@ static int fixture(const char *path, const char *pre) {
     tokens[512]="12";merges[256]="1 2";
     snprintf(tab_word,sizeof(tab_word),"%sx",storage[9]);tokens[513]=tab_word;
     snprintf(tab_rank,sizeof(tab_rank),"%s x",storage[9]);merges[257]=tab_rank;
+    /* Digit merges that cross a group of three, and a whole tab-word with no merge to it. */
+    tokens[514]="14";tokens[515]="141";tokens[516]="1415";tokens[517]="59";
+    merges[258]="1 4";merges[259]="14 1";merges[260]="141 5";merges[261]="5 9";
+    snprintf(tab_def,sizeof(tab_def),"%sdef",storage[9]);tokens[518]=tab_def;
     gguf_writer *w=gguf_write_open(path);if(!w)return -1;
     gguf_write_kv_str(w,"tokenizer.ggml.model","gpt2");
     gguf_write_kv_str(w,"tokenizer.ggml.pre",pre);
-    gguf_write_kv_str_array(w,"tokenizer.ggml.tokens",tokens,514);
-    gguf_write_kv_str_array(w,"tokenizer.ggml.merges",merges,258);
+    gguf_write_kv_str_array(w,"tokenizer.ggml.tokens",tokens,519);
+    gguf_write_kv_str_array(w,"tokenizer.ggml.merges",merges,262);
     gguf_write_kv_u32(w,"tokenizer.ggml.add_bos_token",0);
     return gguf_write_close(w);
 }
@@ -67,6 +71,20 @@ int main(void) {
             CHECK(bpe_encode_raw(t," \xB2",ids,16)==1&&ids[0]==256+0xB2,"invalid UTF-8 byte is not Unicode superscript two");
             CHECK(bpe_encode_raw(t," ٠",ids,1)==1&&ids[0]==32,"capacity bound");
         }
+        if(family==2)
+            CHECK(bpe_encode_raw(t,"14159",ids,16)==2&&ids[0]==516&&ids[1]=='9',"gpt2 path unchanged: its merges cross digit groups");
+        bpe_free(t);
+    }
+    /* lfm2 is llama.cpp's llama3 split with ignore_merges: numbers in groups of three
+     * however the merges tempt, and a piece the vocabulary holds whole is one token. */
+    CHECK(fixture(path,"lfm2")==0,"write lfm2 fixture");
+    bpe_tokenizer *t=bpe_load(path);CHECK(t!=NULL,"load lfm2 fixture");
+    if(t) {
+        int ids[16];
+        CHECK(bpe_encode_raw(t,"14159",ids,16)==2&&ids[0]==515&&ids[1]==517,"lfm2 numbers split 141|59");
+        CHECK(bpe_encode_raw(t,"\tdef",ids,16)==1&&ids[0]==518,"lfm2 emits a whole-vocabulary piece without merges");
+        CHECK(bpe_encode_raw(t," \tx",ids,16)==2&&ids[0]==32&&ids[1]==513,"lfm2 mixed whitespace hands the tab to the word");
+        CHECK(bpe_encode_raw(t,"x 12",ids,16)==3&&ids[0]=='x'&&ids[1]==32&&ids[2]==512,"lfm2 a space does not join a number");
         bpe_free(t);
     }
     unlink(path);printf("SmolLM tokenizer: %d checks, %d failures\n",checks,failed);return failed?1:0;

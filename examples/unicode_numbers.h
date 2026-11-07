@@ -1,7 +1,8 @@
 /* Unicode general category N (Nd, Nl, No), inclusive ranges extracted from
  * llama.cpp 2145525a4081d66ff1a87cf43ef809f95a85ac0c/src/unicode-data.cpp.
  * Its generated Unicode table is the tokenizer reference; no locale dependency.
- * Only SmolLM's individual-number pre-split uses this table. */
+ * SmolLM's individual-number pre-split and the "lfm2" pre-tokenizer's \p{N} use it;
+ * llama.cpp e95426f carries the same 137 ranges. */
 static const unsigned int smollm_numbers[][2] = {
     {0x30, 0x39},
     {0xB2, 0xB3},
