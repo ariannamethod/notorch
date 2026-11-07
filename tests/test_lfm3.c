@@ -126,6 +126,7 @@ static void cache_free(M *x, kv_cache *kv) {
 }
 
 static const int seq_a[N] = {3, 17, 5, 29, 11, 2, 8, 31, 14, 6};
+static const int seq_b[N] = {9, 1, 22, 4, 27, 13, 30, 7, 19, 25};
 
 static int run(M *x, const int *tok, int n, int chunk, float *logits) {
     kv_cache *kv = cache_new(x, 16);
@@ -149,6 +150,57 @@ static void rope_ref(float *x, int pos, int n_rot, float base, const float *ff) 
         x[i] = x0 * cs - x1 * sn;
         x[i + half] = x0 * sn + x1 * cs;
     }
+}
+
+/* The window state belongs to the sequence: two caches on one model must not see
+ * each other, a continuation must start where its cache stopped, and position zero
+ * must start from silence. */
+static void test_caches(M *x, const float *solo_a) {
+    float solo_b[V], la[V], lb[V], t[V], r[V];
+    CHECK(run(x, seq_b, N, 1, solo_b) == NT_OK, "sequence B alone");
+    kv_cache *ka = cache_new(x, 16), *kb = cache_new(x, 16);
+    int ok = ka && kb;
+    for (int i = 0; ok && i < N; i++)
+        ok = nt_arch_lfm3.forward(x->m, ka, &seq_a[i], 1, i, la) == NT_OK &&
+             nt_arch_lfm3.forward(x->m, kb, &seq_b[i], 1, i, lb) == NT_OK;
+    CHECK(ok, "two caches decode interleaved on one model");
+    CHECK(ok && !memcmp(la, solo_a, sizeof la), "sequence A is untouched by sequence B");
+    CHECK(ok && !memcmp(lb, solo_b, sizeof lb), "sequence B is untouched by sequence A");
+
+    for (int i = 0; i < V; i++) t[i] = 1234.0f;
+    CHECK(ok && nt_arch_lfm3.forward(x->m, ka, &seq_b[0], 1, N + 1, t) == NT_E_STATE,
+          "a gap in positions is refused");
+    CHECK(ok && nt_arch_lfm3.forward(x->m, ka, &seq_b[0], 1, 3, t) == NT_E_STATE,
+          "a rewind is refused");
+    int untouched = 1;
+    for (int i = 0; i < V; i++) if (t[i] != 1234.0f) untouched = 0;
+    CHECK(untouched, "a refused call writes no logits");
+    CHECK(ok && nt_arch_lfm3.forward(x->m, ka, &seq_b[0], 1, N, t) == NT_OK,
+          "the next position is accepted");
+
+    int rc = ok ? NT_OK : NT_E_CACHE;
+    for (int i = 0; i < N && rc == NT_OK; i++)
+        rc = nt_arch_lfm3.forward(x->m, kb, &seq_a[i], 1, i, r);
+    CHECK(rc == NT_OK && !memcmp(r, solo_a, sizeof r), "position zero on a used cache starts from silence");
+    if (ka) cache_free(x, ka);
+    if (kb) cache_free(x, kb);
+
+    kv_cache *host = kv_new(x->d.n_layers, 16, x->d.kv_dim);
+    kv_cache *half = kv_new(x->d.n_layers, 16, x->d.kv_dim / 2);
+    CHECK(host && nt_arch_lfm3.forward(x->m, host, seq_a, N, 0, t) == NT_E_CACHE,
+          "a host cache without the window state is refused");
+    CHECK(half && nt_arch_lfm3.forward(x->m, half, seq_a, N, 0, t) == NT_E_CACHE,
+          "a cache narrower than the model is refused");
+    kv_free(host);
+    kv_free(half);
+
+    M other = {0};
+    CHECK(open_model(&other, (opts){2}), "a second model loads");
+    kv_cache *foreign = other.m ? cache_new(&other, 16) : NULL;
+    CHECK(foreign && nt_arch_lfm3.forward(x->m, foreign, seq_a, N, 0, t) == NT_E_CACHE,
+          "another model's cache is refused");
+    if (foreign) cache_free(&other, foreign);
+    close_model(&other);
 }
 
 static void test_rope(void) {
@@ -180,6 +232,7 @@ int main(void) {
     CHECK(run(&x, seq_a, N, 3, ch3) == NT_OK, "chunk-3 prefill");
     CHECK(!memcmp(one, dec, sizeof one), "one-shot equals token-by-token, bit for bit");
     CHECK(!memcmp(one, ch3, sizeof one), "one-shot equals chunk-3, bit for bit");
+    test_caches(&x, dec);
     close_model(&x);
 
     test_rope();

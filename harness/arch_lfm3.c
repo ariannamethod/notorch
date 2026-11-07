@@ -26,8 +26,10 @@
  *    three copies of the input (b, c, x), the convolved signal is b * x and the
  *    answer is c * conv(b * x). No activation after the window — the gating is
  *    the nonlinearity, and out_proj takes the result straight back to width.
- *    The state is the last l_cache-1 gated inputs per channel, kept in the
- *    model like Mamba keeps its own, and cleared when a sequence starts over.
+ *    The state is the last l_cache-1 gated inputs per channel. It belongs to
+ *    the sequence, not to the weights: it lives in the family's cache next to
+ *    the keys, is cleared when a sequence starts over, and a continuation is
+ *    accepted only at the position the cache last reached.
  *
  * The arithmetic follows llama.cpp's graph for this family (src/models/lfm3.cpp
  * and the shortconv in src/models/lfm-base.cpp), which is the reference the
@@ -42,7 +44,7 @@
 #include <math.h>
 
 typedef struct {
-    int n_layers, n_recr, n_attn, embed, vocab;
+    int n_layers, n_recr, n_attn, embed, vocab, max_kv;
     int head_dim, n_rot, l_cache, swa_window;
     float rope_base, rope_base_swa, rms_eps;
 
@@ -53,11 +55,6 @@ typedef struct {
     wt out_weight;         /* output.weight — this family ships it untied */
     float *out_norm;
     float *rope_freqs;     /* rope_freqs.weight, n_rot/2 divisors, full-attention layers only */
-
-    /* The recurrent state, one slice per convolution layer. Each channel keeps
-     * the last l_cache-1 gated inputs; there is no third place a token could
-     * hide in, exactly like Mamba's window. */
-    float *conv_state;     /* [n_recr][embed][l_cache-1] */
 
     struct {
         int is_recr;       /* convolution layer: no qkv at all */
@@ -73,6 +70,18 @@ typedef struct {
         float *conv_w;    /* [embed][l_cache], one window per channel */
     } layers[];
 } lfm3_model;
+
+/* The family's cache. k/v hold the attention layers only, rows kvd wide; conv
+ * holds one window slice per convolution layer. base.kv_dim carries a sentinel
+ * so a host cache from kv_new, which has no conv slice, is refused instead of
+ * being read past its end. */
+#define LFM3_KV_SENTINEL (-3)
+typedef struct {
+    kv_cache base;
+    const lfm3_model *owner;
+    int next, kvd;
+    float *conv;           /* [n_recr][embed][l_cache-1] */
+} lfm3_cache;
 
 static float *lfm3_f32(gguf_file *gf, const char *name) {
     int ti = gguf_find_tensor(gf, name);
@@ -253,16 +262,12 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
                         "an all-convolution file means the loader misread it\n");
         missing = 1;
     }
-    if (m->n_recr > 0) {
-        m->conv_state = (float*)calloc((size_t)m->n_recr * m->embed * (m->l_cache - 1),
-                                       sizeof(float));
-        if (!m->conv_state) { lfm3_free(m); return NULL; }
-    }
 
     int max_kv = 0;
     for (int l = 0; l < nl; l++)
         if (!m->layers[l].is_recr && m->layers[l].n_kv_head * m->head_dim > max_kv)
             max_kv = m->layers[l].n_kv_head * m->head_dim;
+    m->max_kv = max_kv;
 
     fprintf(stderr, "lfm3: E=%d V=%d L=%d (attn %d, conv %d) head=%d window=%d "
                     "l_cache=%d rope %.0f/%.0f eps=%g\n",
@@ -282,7 +287,7 @@ static void lfm3_free(void *model) {
     lfm3_model *m = (lfm3_model*)model;
     if (!m) return;
     free(m->tok_emb.f32); free(m->out_weight.f32); free(m->out_norm);
-    free(m->rope_freqs); free(m->conv_state);
+    free(m->rope_freqs);
     for (int l = 0; l < m->n_layers; l++) {
         free(m->layers[l].attn_norm); free(m->layers[l].ffn_norm);
         free(m->layers[l].post_attn_norm); free(m->layers[l].post_ffn_norm);
@@ -316,17 +321,17 @@ static void rope_lanes(float *x, int pos, int n_rot, float base, const float *fa
 /* One convolution layer over a group of positions. The gated input b*x is the
  * signal; the window is the state plus the group, exactly the walk Mamba's
  * kernel takes, with no activation after it — the gating is the nonlinearity. */
-static void lfm3_conv_layer(lfm3_model *m, int l, const float *xn, float *y_out,
-                            int n) {
+static int lfm3_conv_layer(lfm3_model *m, int l, float *conv, const float *xn, float *y_out,
+                           int n) {
     int E = m->embed, LC = m->l_cache;
     int w_rows = m->layers[l].in_proj.rows;   /* 3*E */
     float *bcx = (float*)malloc((size_t)n * w_rows * sizeof(float));
     float *y   = (float*)malloc((size_t)n * E * sizeof(float));
-    if (!bcx || !y) { free(bcx); free(y); return; }
+    if (!bcx || !y) { free(bcx); free(y); return NT_E_MEMORY; }
 
     qmm(bcx, &m->layers[l].in_proj, xn, n);
 
-    float *state = m->conv_state + (size_t)m->layers[l].recr_slot * E * (LC - 1);
+    float *state = conv + (size_t)m->layers[l].recr_slot * E * (LC - 1);
     const float *w = m->layers[l].conv_w;    /* [E][LC], w[i*LC + k]; k = LC-1 is now */
 
     for (int j = 0; j < n; j++) {
@@ -347,6 +352,7 @@ static void lfm3_conv_layer(lfm3_model *m, int l, const float *xn, float *y_out,
     }
     qmm(y_out, &m->layers[l].out_proj, y, n);
     free(bcx); free(y);
+    return NT_OK;
 }
 
 static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
@@ -354,19 +360,22 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
     lfm3_model *m = (lfm3_model*)model;
     int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_attn, 0);
     if (rc != NT_OK) return rc;
+    if (kv->kv_dim != LFM3_KV_SENTINEL) return NT_E_CACHE;
+    lfm3_cache *cache = (lfm3_cache *)kv;
+    if (cache->owner != m) return NT_E_CACHE;
+    /* The window cannot be rewound, so a continuation is accepted only where the
+     * cache stopped; position zero is a new sequence and starts from silence. */
+    if (pos0 && pos0 != cache->next) return NT_E_STATE;
 
-    int E = m->embed, HD = m->head_dim, ROT = m->n_rot;
+    int E = m->embed, HD = m->head_dim, ROT = m->n_rot, KVW = cache->kvd;
     float eps = m->rms_eps;
-
-    /* A sequence starting over starts from silence — same reason Mamba resets
-     * here: a second run under -r must not answer with the first run's window. */
-    if (pos0 == 0 && m->n_recr > 0)
-        memset(m->conv_state, 0,
-               (size_t)m->n_recr * E * (m->l_cache - 1) * sizeof(float));
 
     float *x  = (float*)calloc((size_t)n * E, sizeof(float));
     float *xn = (float*)calloc((size_t)n * E, sizeof(float));
     if (!x || !xn) { free(x); free(xn); return NT_E_MEMORY; }
+    if (pos0 == 0 && m->n_recr > 0)
+        memset(cache->conv, 0, (size_t)m->n_recr * E * (m->l_cache - 1) * sizeof(float));
+    cache->next = -1;
 
     double pft = pf_mark();
     for (int j = 0; j < n; j++) {
@@ -410,8 +419,13 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
         if (m->layers[l].is_recr) {
             pft = pf_mark();
-            lfm3_conv_layer(m, l, xn, proj_out, n);
+            rc = lfm3_conv_layer(m, l, cache->conv, xn, proj_out, n);
             pf_add(PF_ATTN, pft);
+            if (rc != NT_OK) {
+                free(x); free(xn); free(q_all); free(k_new); free(v_new); free(attn_out);
+                free(proj_out); free(gate_buf); free(g_buf); free(u_buf);
+                return rc;
+            }
         } else {
             int H = m->layers[l].n_head, KVH = m->layers[l].n_kv_head;
             int Q_DIM = H * HD, KVD = KVH * HD;
@@ -419,7 +433,7 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
             float scale = 1.0f / sqrtf((float)HD);
             float base = m->layers[l].is_swa ? m->rope_base_swa : m->rope_base;
             const float *factors = m->layers[l].is_swa ? NULL : m->rope_freqs;
-            long cache_base = (long)m->layers[l].kv_slot * kv->max_seq * kv->kv_dim;
+            long cache_base = (long)m->layers[l].kv_slot * kv->max_seq * KVW;
 
             pft = pf_mark();
             qmm(q_all, &m->layers[l].wq, xn, n);
@@ -439,8 +453,8 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
                     rope_lanes(qj + h * HD, pos, ROT, base, factors);
                 for (int h = 0; h < KVH; h++)
                     rope_lanes(kj + h * HD, pos, ROT, base, factors);
-                memcpy(kv->k + cache_base + (long)pos * kv->kv_dim, kj, KVD * sizeof(float));
-                memcpy(kv->v + cache_base + (long)pos * kv->kv_dim, v_new + (size_t)j * KVD,
+                memcpy(kv->k + cache_base + (long)pos * KVW, kj, KVD * sizeof(float));
+                memcpy(kv->v + cache_base + (long)pos * KVW, v_new + (size_t)j * KVD,
                        KVD * sizeof(float));
             }
             pf_add(PF_ROPE, pft);
@@ -463,13 +477,13 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
                         free(attn_out); free(proj_out); free(gate_buf); free(g_buf); free(u_buf);
                         return NT_E_MEMORY; }
                     for (int t = 0; t < span; t++) {
-                        const float *kt = kv->k + cache_base + (long)(first + t) * kv->kv_dim + kvh * HD;
+                        const float *kt = kv->k + cache_base + (long)(first + t) * KVW + kvh * HD;
                         scores[t] = dot_f32(q, kt, HD) * scale;
                     }
                     softmax(scores, span);
                     float *out_h = attn_out + (size_t)j * Q_DIM + h * HD;
                     for (int t = 0; t < span; t++) {
-                        const float *vt = kv->v + cache_base + (long)(first + t) * kv->kv_dim + kvh * HD;
+                        const float *vt = kv->v + cache_base + (long)(first + t) * KVW + kvh * HD;
                         axpy_f32(out_h, scores[t], vt, HD);
                     }
                     free(scores);
@@ -530,14 +544,43 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
 
     free(x); free(xn); free(q_all); free(k_new); free(v_new); free(attn_out);
     free(proj_out); free(gate_buf); free(g_buf); free(u_buf);
+    cache->next = pos0 + n;
     return NT_OK;
+}
+
+static void lfm3_kv_free(void *model, kv_cache *kv) {
+    (void)model;
+    if (!kv) return;
+    lfm3_cache *c = (lfm3_cache *)kv;
+    free(c->base.k); free(c->base.v); free(c->conv); free(c);
+}
+
+static kv_cache *lfm3_kv_new(void *model, int max_seq) {
+    lfm3_model *m = (lfm3_model *)model;
+    if (!m || max_seq < 1 || m->max_kv < 1) return NULL;
+    lfm3_cache *c = (lfm3_cache *)calloc(1, sizeof(*c));
+    if (!c) return NULL;
+    c->owner = m;
+    c->kvd = m->max_kv;
+    c->base.max_seq = max_seq;
+    c->base.n_layers = m->n_attn;
+    c->base.kv_dim = LFM3_KV_SENTINEL;
+    size_t rows = (size_t)m->n_attn * (size_t)max_seq;
+    c->base.k = (float *)calloc(rows * (size_t)c->kvd, sizeof(float));
+    c->base.v = (float *)calloc(rows * (size_t)c->kvd, sizeof(float));
+    c->conv = (float *)calloc((size_t)(m->n_recr ? m->n_recr : 1) * m->embed * (m->l_cache - 1),
+                              sizeof(float));
+    if (!c->base.k || !c->base.v || !c->conv) { lfm3_kv_free(m, &c->base); return NULL; }
+    return &c->base;
 }
 
 static const char *const lfm3_names[] = { "lfm3", NULL };
 
 const nt_arch nt_arch_lfm3 = {
-    .names  = lfm3_names,
-    .load   = lfm3_load,
-    .free   = lfm3_free,
-    .forward= lfm3_forward,
+    .names   = lfm3_names,
+    .load    = lfm3_load,
+    .free    = lfm3_free,
+    .forward = lfm3_forward,
+    .kv_new  = lfm3_kv_new,
+    .kv_free = lfm3_kv_free,
 };
