@@ -70,10 +70,20 @@ for M in "$@"; do
         echo "parity(lfm3) [$NAME] SKIPPED — the reference could not load it"
         continue
     fi
-    echo "$PROMPTS" | while IFS=: read -r P N; do
+    # A plain pipeline would run the loop in a subshell and FAILS would die
+    # inside it — the gate would print OK over its own red. Read the plan into
+    # the shell instead.
+    PLAN=$(echo "$PROMPTS")
+    while IFS=: read -r P N; do
         [ -n "$P" ] || continue
         WANT=$(ref "$P" "$N")
-        GOT=$(./notorch -q "$M" "$P" "$N" 0 2>/dev/null)
+        RAW=$(./notorch -q "$M" "$P" "$N" 0 2>/dev/null)
+        # notorch stdout is the prompt echoed back with the continuation after
+        # it; the reference returns the continuation alone.
+        case "$RAW" in
+            "$P"*) GOT=${RAW#"$P"} ;;
+            *)     GOT="$RAW" ;;
+        esac
         CHECKS=$((CHECKS + 1))
         if [ "$WANT" = "$GOT" ]; then
             echo "parity(lfm3) [$NAME] PASS  ${P}"
@@ -83,7 +93,9 @@ for M in "$@"; do
             echo "    ours: ${GOT}"
             FAILS=$((FAILS + 1))
         fi
-    done
+    done <<EOF2
+$PLAN
+EOF2
     kill -9 $REF_PID 2>/dev/null || true
 done
 
