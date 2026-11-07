@@ -38,10 +38,18 @@
  *
  * Prints go to stderr: stdout belongs to the model. */
 #include "harness/arch.h"
+#include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+
+/* Bounds on the keys every shape is computed from, so 3 * embed * sizeof(float)
+ * and its kin stay inside int before any comparison is made. */
+#define LFM3_MAX_EMBED (INT_MAX / 12)
+#define LFM3_MAX_HEAD  4096
+#define LFM3_MAX_LC    4096
 
 typedef struct {
     int n_layers, n_recr, n_attn, embed, vocab, max_kv;
@@ -83,11 +91,6 @@ typedef struct {
     float *conv;           /* [n_recr][embed][l_cache-1] */
 } lfm3_cache;
 
-static float *lfm3_f32(gguf_file *gf, const char *name) {
-    int ti = gguf_find_tensor(gf, name);
-    return ti >= 0 ? gguf_dequant(gf, ti) : NULL;
-}
-
 static int lfm3_key_int(gguf_file *gf, const char *key, int fallback) {
     const gguf_kv *kv = gguf_get_kv(gf, key);
     if (!kv) return fallback;
@@ -99,6 +102,62 @@ static int lfm3_key_int(gguf_file *gf, const char *key, int fallback) {
 static float lfm3_key_f32(gguf_file *gf, const char *key, float fallback) {
     const gguf_kv *kv = gguf_get_kv(gf, key);
     return kv ? kv->val.f32 : fallback;
+}
+
+/* A tensor this family reads has the rank it expects, no empty or int-sized-out
+ * dimension, and a shape that multiplies out — without wrapping — to the element
+ * count the file states. Anything else is a crafted or broken header. */
+static int lfm3_dims(const gguf_file *gf, int ti, uint32_t ndim) {
+    const gguf_tensor_info *t = &gf->tensors[ti];
+    if (t->ndim != ndim) return 0;
+    uint64_t n = 1;
+    for (uint32_t d = 0; d < ndim; d++)
+        if (!t->shape[d] || t->shape[d] > (uint64_t)INT_MAX ||
+            __builtin_mul_overflow(n, t->shape[d], &n))
+            return 0;
+    return n == t->n_elements;
+}
+
+static int lfm3_dims_named(gguf_file *gf, const char *name, uint32_t ndim) {
+    int ti = gguf_find_tensor(gf, name);
+    if (ti >= 0 && lfm3_dims(gf, ti, ndim)) return 1;
+    fprintf(stderr, "lfm3: '%s' is not a %u-D tensor with a shape that multiplies out\n",
+            name, ndim);
+    return 0;
+}
+
+/* A vector the forward reads n values of: absent is NULL (refused when required),
+ * present with another length is refused — rmsnorm would read past it. */
+static float *lfm3_vec(gguf_file *gf, const char *name, int n, int required, int *bad) {
+    int ti = gguf_find_tensor(gf, name);
+    if (ti < 0) {
+        if (required) { fprintf(stderr, "lfm3: required tensor '%s' missing\n", name); *bad = 1; }
+        return NULL;
+    }
+    if (!lfm3_dims(gf, ti, 1)) {
+        fprintf(stderr, "lfm3: '%s' is not a 1-D tensor with a consistent shape\n", name);
+        *bad = 1;
+        return NULL;
+    }
+    if (gf->tensors[ti].n_elements != (uint64_t)n) {
+        fprintf(stderr, "lfm3: '%s' holds %llu values, %d expected\n", name,
+                (unsigned long long)gf->tensors[ti].n_elements, n);
+        *bad = 1;
+        return NULL;
+    }
+    float *v = gguf_dequant(gf, ti);
+    if (!v) { fprintf(stderr, "lfm3: '%s' unreadable\n", name); *bad = 1; }
+    return v;
+}
+
+/* Compared in 64 bits: an expected row count such as 3 * embed is formed by the
+ * caller as uint64_t, so a hostile key cannot wrap it into agreement. */
+static int lfm3_shape(const wt *w, uint64_t rows, uint64_t cols, int l, const char *what) {
+    if (w->rows > 0 && w->cols > 0 && (uint64_t)w->rows == rows && (uint64_t)w->cols == cols)
+        return 1;
+    fprintf(stderr, "lfm3: layer %d %s is %d x %d, %llu x %llu expected\n", l, what,
+            w->rows, w->cols, (unsigned long long)rows, (unsigned long long)cols);
+    return 0;
 }
 
 static void lfm3_free(void *model);
@@ -148,6 +207,13 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
         free(m);
         return NULL;
     }
+    if (m->embed > LFM3_MAX_EMBED || m->head_dim > LFM3_MAX_HEAD || m->l_cache > LFM3_MAX_LC) {
+        fprintf(stderr, "lfm3: embedding_length %d, key_length %d or shortconv.l_cache %d "
+                        "exceeds %d / %d / %d; refusing before any shape is computed from it\n",
+                m->embed, m->head_dim, m->l_cache, LFM3_MAX_EMBED, LFM3_MAX_HEAD, LFM3_MAX_LC);
+        free(m);
+        return NULL;
+    }
     if (val_dim != m->head_dim) {
         fprintf(stderr, "lfm3: key_length %d and value_length %d differ; "
                         "the reference refuses this file and so does this\n",
@@ -161,21 +227,64 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
         free(m);
         return NULL;
     }
-
-    int ti = gguf_find_tensor(gf, "token_embd.weight");
-    m->vocab = ti >= 0 ? (int)gf->tensors[ti].shape[1] : gf->vocab_size;
-    m->emb_ti = ti;
-    wt_load(&m->tok_emb, gf, "token_embd.weight");
-    m->has_output_weight = wt_load(&m->out_weight, gf, "output.weight");
-    m->out_norm = lfm3_f32(gf, "output_norm.weight");
+    if (m->n_rot <= 0 || m->n_rot > m->head_dim || m->n_rot % 2) {
+        fprintf(stderr, "lfm3: rope.dimension_count %d unusable for head %d\n",
+                m->n_rot, m->head_dim);
+        free(m);
+        return NULL;
+    }
+    /* A d1 checkpoint reads its prompt both ways on the full-attention layers and
+     * centres the convolution window. This forward is causal only, so such a file
+     * is refused rather than run the wrong way round. */
+    const gguf_kv *causal = gguf_get_kv(gf, "lfm3.attention.causal");
+    if (causal && causal->type == 7 && !causal->val.b) {
+        fprintf(stderr, "lfm3: attention.causal is false (a non-causal checkpoint); "
+                        "this forward is causal only, refusing\n");
+        free(m);
+        return NULL;
+    }
+    int any_swa = 0;
+    for (int l = 0; l < nl; l++) any_swa |= m->layers[l].is_swa;
+    if (any_swa && (m->swa_window <= 0 || !gguf_get_kv(gf, "lfm3.rope.freq_base_swa"))) {
+        fprintf(stderr, "lfm3: sliding layers without attention.sliding_window or "
+                        "rope.freq_base_swa; the reference requires both, refusing\n");
+        free(m);
+        return NULL;
+    }
 
     int missing = 0;
+    /* The vocabulary is the embedding's row count — the number of rows a token id
+     * may index — not a header field read beside it. A vocab_size key that names
+     * another count is a contradiction and is refused. */
+    int ti = gguf_find_tensor(gf, "token_embd.weight");
+    m->emb_ti = ti;
+    if (ti < 0 || !lfm3_dims_named(gf, "token_embd.weight", 2) ||
+        !wt_load(&m->tok_emb, gf, "token_embd.weight")) {
+        fprintf(stderr, "lfm3: token_embd.weight missing, unreadable or not 2-D\n");
+        free(m);
+        return NULL;
+    }
+    m->vocab = m->tok_emb.rows;
+    const gguf_kv *vs = gguf_get_kv(gf, "lfm3.vocab_size");
+    if (vs && vs->type == 4 && (uint64_t)vs->val.u32 != (uint64_t)m->vocab) {
+        fprintf(stderr, "lfm3: lfm3.vocab_size %u but token_embd has %d rows; refusing\n",
+                vs->val.u32, m->vocab);
+        missing = 1;
+    }
+    if (!lfm3_shape(&m->tok_emb, (uint64_t)m->vocab, (uint64_t)m->embed, -1, "token_embd"))
+        missing = 1;
+    m->has_output_weight = gguf_find_tensor(gf, "output.weight") >= 0;
+    if (m->has_output_weight &&
+        (!lfm3_dims_named(gf, "output.weight", 2) || !wt_load(&m->out_weight, gf, "output.weight") ||
+         !lfm3_shape(&m->out_weight, (uint64_t)m->vocab, (uint64_t)m->embed, -1, "output")))
+        missing = 1;
+    m->out_norm = lfm3_vec(gf, "output_norm.weight", m->embed, 1, &missing);
     /* One table for every full-attention layer, as the converter writes it and the
      * reference loads it (TENSOR_DUPLICATED): 1.0 on rotated pairs, 1e30 on the pairs
      * partial RoPE leaves still. */
     int rf = gguf_find_tensor(gf, "rope_freqs.weight");
     if (rf >= 0) {
-        if (gf->tensors[rf].n_elements != (uint64_t)(m->n_rot / 2)) {
+        if (!lfm3_dims(gf, rf, 1) || gf->tensors[rf].n_elements != (uint64_t)(m->n_rot / 2)) {
             fprintf(stderr, "lfm3: rope_freqs.weight has %llu entries, n_rot/2 is %d\n",
                     (unsigned long long)gf->tensors[rf].n_elements, m->n_rot / 2);
             missing = 1;
@@ -195,14 +304,15 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
      * with itself. */
     for (int l = 0; l < nl; l++) {
         char name[128];
-        #define L(field, fmt) do { \
+        int E = m->embed, HD = m->head_dim;
+        #define V(field, fmt, len, req) do { \
             snprintf(name, sizeof(name), fmt, l); \
-            m->layers[l].field = lfm3_f32(gf, name); \
+            m->layers[l].field = lfm3_vec(gf, name, len, req, &missing); \
         } while (0)
         #define W(field, fmt) do { \
             snprintf(name, sizeof(name), fmt, l); \
-            if (!wt_load(&m->layers[l].field, gf, name)) { \
-                fprintf(stderr, "lfm3: required tensor '%s' missing or unreadable\n", name); \
+            if (!lfm3_dims_named(gf, name, 2) || !wt_load(&m->layers[l].field, gf, name)) { \
+                fprintf(stderr, "lfm3: required tensor '%s' missing, malformed or unreadable\n", name); \
                 missing = 1; \
             } \
         } while (0)
@@ -211,20 +321,37 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
             wt_load(&m->layers[l].field, gf, name); \
         } while (0)
 
-        L(attn_norm,     "blk.%d.attn_norm.weight");
-        L(ffn_norm,      "blk.%d.ffn_norm.weight");
-        L(post_attn_norm,"blk.%d.post_attention_norm.weight");   /* sandwich, optional */
-        L(post_ffn_norm, "blk.%d.post_ffw_norm.weight");          /* sandwich, optional */
+        V(attn_norm,      "blk.%d.attn_norm.weight", E, 1);
+        V(ffn_norm,       "blk.%d.ffn_norm.weight", E, 1);
+        V(post_attn_norm, "blk.%d.post_attention_norm.weight", E, 0);   /* sandwich */
+        V(post_ffn_norm,  "blk.%d.post_ffw_norm.weight", E, 0);
+        {
+            char pa[128], pf[128];
+            snprintf(pa, sizeof(pa), "blk.%d.post_attention_norm.weight", l);
+            snprintf(pf, sizeof(pf), "blk.%d.post_ffw_norm.weight", l);
+            if ((gguf_find_tensor(gf, pa) < 0) != (gguf_find_tensor(gf, pf) < 0)) {
+                fprintf(stderr, "lfm3: layer %d carries one post norm without the other; "
+                                "the reference refuses this file and so does this\n", l);
+                missing = 1;
+            }
+        }
         snprintf(name, sizeof(name), "blk.%d.attn_q.weight", l);
         m->layers[l].is_recr = (gguf_find_tensor(gf, name) < 0);
 
         if (m->layers[l].is_recr) {
             W(in_proj,  "blk.%d.shortconv.in_proj.weight");
             W(out_proj, "blk.%d.shortconv.out_proj.weight");
+            if (!lfm3_shape(&m->layers[l].in_proj, 3ULL * (uint64_t)E, (uint64_t)E, l, "shortconv.in_proj") ||
+                !lfm3_shape(&m->layers[l].out_proj, (uint64_t)E, (uint64_t)E, l, "shortconv.out_proj"))
+                missing = 1;
             snprintf(name, sizeof(name), "blk.%d.shortconv.conv.weight", l);
-            m->layers[l].conv_w = lfm3_f32(gf, name);
-            if (!m->layers[l].conv_w) {
-                fprintf(stderr, "lfm3: required tensor '%s' missing or unreadable\n", name);
+            int ci = gguf_find_tensor(gf, name);
+            if (ci < 0 || !lfm3_dims(gf, ci, 2) || gf->tensors[ci].shape[0] != (uint64_t)m->l_cache ||
+                gf->tensors[ci].n_elements != (uint64_t)E * (uint64_t)m->l_cache) {
+                fprintf(stderr, "lfm3: '%s' missing or not [%d x %d]\n", name, m->l_cache, E);
+                missing = 1;
+            } else if (!(m->layers[l].conv_w = gguf_dequant(gf, ci))) {
+                fprintf(stderr, "lfm3: '%s' unreadable\n", name);
                 missing = 1;
             }
             m->layers[l].recr_slot = m->n_recr++;
@@ -234,17 +361,22 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
             W(wv,        "blk.%d.attn_v.weight");
             W(wo,        "blk.%d.attn_output.weight");
             W(gate_head, "blk.%d.attn_gate.weight");
-            L(q_norm,    "blk.%d.attn_q_norm.weight");
-            L(k_norm,    "blk.%d.attn_k_norm.weight");
+            V(q_norm,    "blk.%d.attn_q_norm.weight", HD, 1);
+            V(k_norm,    "blk.%d.attn_k_norm.weight", HD, 1);
             m->layers[l].kv_slot = m->n_attn++;
-            m->layers[l].n_head    = m->layers[l].wq.rows / m->head_dim;
-            m->layers[l].n_kv_head= m->layers[l].wk.rows / m->head_dim;
-            if (m->layers[l].n_head <= 0 || m->layers[l].n_kv_head <= 0 ||
-                m->layers[l].gate_head.rows != m->layers[l].n_head) {
-                fprintf(stderr, "lfm3: layer %d geometry unusable "
-                                "(heads=%d kv_heads=%d gate_rows=%d)\n", l,
-                        m->layers[l].n_head, m->layers[l].n_kv_head,
-                        m->layers[l].gate_head.rows);
+            int qr = m->layers[l].wq.rows, kr = m->layers[l].wk.rows;
+            m->layers[l].n_head    = qr / HD;
+            m->layers[l].n_kv_head = kr / HD;
+            int H = m->layers[l].n_head, KVH = m->layers[l].n_kv_head;
+            if (qr % HD || kr % HD || H <= 0 || KVH <= 0 || H % KVH) {
+                fprintf(stderr, "lfm3: layer %d attention geometry unusable "
+                                "(q rows %d, k rows %d, head %d)\n", l, qr, kr, HD);
+                missing = 1;
+            } else if (!lfm3_shape(&m->layers[l].wq, qr, E, l, "attn_q") ||
+                       !lfm3_shape(&m->layers[l].wk, kr, E, l, "attn_k") ||
+                       !lfm3_shape(&m->layers[l].wv, kr, E, l, "attn_v") ||
+                       !lfm3_shape(&m->layers[l].wo, E, qr, l, "attn_output") ||
+                       !lfm3_shape(&m->layers[l].gate_head, H, E, l, "attn_gate")) {
                 missing = 1;
             }
         }
@@ -252,7 +384,11 @@ static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
         W(wup,   "blk.%d.ffn_up.weight");
         W(wdown, "blk.%d.ffn_down.weight");
         m->layers[l].ffn = m->layers[l].wgate.rows;
-        #undef L
+        if (!lfm3_shape(&m->layers[l].wgate, m->layers[l].ffn, E, l, "ffn_gate") ||
+            !lfm3_shape(&m->layers[l].wup, m->layers[l].ffn, E, l, "ffn_up") ||
+            !lfm3_shape(&m->layers[l].wdown, E, m->layers[l].ffn, l, "ffn_down"))
+            missing = 1;
+        #undef V
         #undef W
         #undef OPT
     }

@@ -13,7 +13,7 @@ enum { E = 16, V = 32, HD = 8, H = 2, KVH = 1, LC = 3, F = 24, NL = 4, SWA = 4, 
 static int checks, failed;
 #define CHECK(c, s) do { checks++; if (!(c)) { fprintf(stderr, "FAIL: %s\n", s); failed++; } } while (0)
 
-typedef struct { char name[96]; uint32_t nd; uint64_t ne[2]; float *d; uint64_t n; } T;
+typedef struct { char name[96]; uint32_t nd; uint64_t ne[3]; float *d; uint64_t n; } T;
 static T ts[64];
 static int nts;
 static uint32_t rng;
@@ -32,8 +32,12 @@ static void kvu32(FILE *f, const char *k, uint32_t v) { wstr(f, k); wu32(f, 4); 
 static void kvf32(FILE *f, const char *k, float v) { wstr(f, k); wu32(f, 6); fwrite(&v, 4, 1, f); }
 static void kvstr(FILE *f, const char *k, const char *v) { wstr(f, k); wu32(f, 8); wstr(f, v); }
 
-/* rope: 0 no table, 1 partial-RoPE table [1,1,1e30,1e30], 2 table of ones */
-typedef struct { int rope; } opts;
+/* rope: 0 no table, 1 partial-RoPE table [1,1,1e30,1e30], 2 table of ones.
+ * The rest break one thing each; causal: 0 key absent, 1 true, 2 false. */
+typedef struct {
+    int rope, drop_qnorm, short_in_proj, one_post, causal, odd_rot;
+    int emb3d, vocab_key, huge_embed;
+} opts;
 
 static int write_model(const char *path, opts o) {
     nts = 0; rng = 12345;
@@ -41,13 +45,14 @@ static int write_model(const char *path, opts o) {
     const uint8_t pat[NL] = {0, 0, 0, 1};
     char nm[96];
     add("token_embd.weight", 2, E, V, 0, 1);
+    if (o.emb3d) { ts[0].nd = 3; ts[0].ne[1] = V / 2; ts[0].ne[2] = 2; }   /* same bytes, rank 3 */
     add("output_norm.weight", 1, E, 0, 1, 0.1f);
     for (int l = 0; l < NL; l++) {
 #define A(s, nd, a, b, base, sc) do { snprintf(nm, sizeof nm, "blk.%d." s, l); add(nm, nd, a, b, base, sc); } while (0)
         A("attn_norm.weight", 1, E, 0, 1, 0.1f);
         A("ffn_norm.weight", 1, E, 0, 1, 0.1f);
         A("post_attention_norm.weight", 1, E, 0, 1, 0.1f);
-        A("post_ffw_norm.weight", 1, E, 0, 1, 0.1f);
+        if (!(o.one_post && l == 0)) A("post_ffw_norm.weight", 1, E, 0, 1, 0.1f);
         A("ffn_gate.weight", 2, E, F, 0, 0.5f);
         A("ffn_up.weight", 2, E, F, 0, 0.5f);
         A("ffn_down.weight", 2, F, E, 0, 0.5f);
@@ -57,10 +62,10 @@ static int write_model(const char *path, opts o) {
             A("attn_v.weight", 2, E, KVH * HD, 0, 0.5f);
             A("attn_output.weight", 2, H * HD, E, 0, 0.5f);
             A("attn_gate.weight", 2, E, H, 0, 1);
-            A("attn_q_norm.weight", 1, HD, 0, 1, 0.1f);
+            if (!(o.drop_qnorm && l == 1)) A("attn_q_norm.weight", 1, HD, 0, 1, 0.1f);
             A("attn_k_norm.weight", 1, HD, 0, 1, 0.1f);
         } else {
-            A("shortconv.in_proj.weight", 2, E, 3 * E, 0, 0.5f);
+            A("shortconv.in_proj.weight", 2, E, (o.short_in_proj ? 2 : 3) * E, 0, 0.5f);
             A("shortconv.out_proj.weight", 2, E, E, 0, 0.5f);
             A("shortconv.conv.weight", 2, LC, E, 0, 1);
         }
@@ -72,13 +77,16 @@ static int write_model(const char *path, opts o) {
     }
     FILE *f = fopen(path, "wb");
     if (!f) return -1;
-    wu32(f, 0x46554747); wu32(f, 3); wu64(f, (uint64_t)nts); wu64(f, 12);
+    wu32(f, 0x46554747); wu32(f, 3); wu64(f, (uint64_t)nts);
+    wu64(f, 12 + (o.causal ? 1 : 0) + (o.vocab_key ? 1 : 0));
     kvstr(f, "general.architecture", "lfm3");
     kvu32(f, "lfm3.block_count", NL);
-    kvu32(f, "lfm3.embedding_length", E);
+    kvu32(f, "lfm3.embedding_length", o.huge_embed ? 715827883u : E);   /* 3 * this wraps int32 */
+    if (o.vocab_key) kvu32(f, "lfm3.vocab_size", V + 1);
     kvu32(f, "lfm3.attention.key_length", HD);
     kvu32(f, "lfm3.attention.value_length", HD);
-    kvu32(f, "lfm3.rope.dimension_count", HD);
+    kvu32(f, "lfm3.rope.dimension_count", o.odd_rot ? HD - 1 : HD);
+    if (o.causal) { wstr(f, "lfm3.attention.causal"); wu32(f, 7); fputc(o.causal == 1, f); }
     kvu32(f, "lfm3.shortconv.l_cache", LC);
     kvu32(f, "lfm3.attention.sliding_window", SWA);
     kvf32(f, "lfm3.rope.freq_base", 1e6f);
@@ -195,12 +203,30 @@ static void test_caches(M *x, const float *solo_a) {
     kv_free(half);
 
     M other = {0};
-    CHECK(open_model(&other, (opts){2}), "a second model loads");
+    CHECK(open_model(&other, (opts){.rope = 2}), "a second model loads");
     kv_cache *foreign = other.m ? cache_new(&other, 16) : NULL;
     CHECK(foreign && nt_arch_lfm3.forward(x->m, foreign, seq_a, N, 0, t) == NT_E_CACHE,
           "another model's cache is refused");
     if (foreign) cache_free(&other, foreign);
     close_model(&other);
+}
+
+/* The tensor-header guard on its own, against headers no writer here would emit. */
+static void test_dims(void) {
+    gguf_file *g = calloc(1, sizeof(*g));
+    if (!g) { CHECK(0, "allocate a tensor table"); return; }
+    gguf_tensor_info *t = &g->tensors[0];
+    t->ndim = 2; t->shape[0] = 1ULL << 33; t->shape[1] = 1ULL << 32;
+    t->n_elements = t->shape[0] * t->shape[1];                      /* wraps to 0 */
+    CHECK(!lfm3_dims(g, 0, 2), "a [2^33, 2^32] shape is refused");
+    t->shape[0] = 16; t->shape[1] = 32; t->n_elements = 512;
+    CHECK(lfm3_dims(g, 0, 2), "a consistent [16, 32] shape is accepted");
+    CHECK(!lfm3_dims(g, 0, 1), "a matrix where a vector is expected is refused");
+    t->shape[1] = 0; t->n_elements = 0;
+    CHECK(!lfm3_dims(g, 0, 2), "a [16, 0] shape is refused");
+    t->shape[1] = 32; t->n_elements = 513;
+    CHECK(!lfm3_dims(g, 0, 2), "an element count the shape does not give is refused");
+    free(g);
 }
 
 static void test_rope(void) {
@@ -223,7 +249,7 @@ static void test_rope(void) {
 
 int main(void) {
     M x;
-    CHECK(open_model(&x, (opts){0}), "synthetic lfm3 file loads");
+    CHECK(open_model(&x, (opts){.rope = 0}), "synthetic lfm3 file loads");
     if (!x.m) { printf("LFM3: %d checks, %d failures\n", checks, failed); return 1; }
 
     float one[V], dec[V], ch3[V];
@@ -236,10 +262,12 @@ int main(void) {
     close_model(&x);
 
     test_rope();
+    test_dims();
 
     M ones = {0}, part = {0};
     float l_ones[V], l_part[V];
-    CHECK(open_model(&ones, (opts){2}) && open_model(&part, (opts){1}), "files with rope_freqs.weight load");
+    CHECK(open_model(&ones, (opts){.rope = 2}) && open_model(&part, (opts){.rope = 1}),
+          "files with rope_freqs.weight load");
     if (ones.m && part.m) {
         run(&ones, seq_a, N, N, l_ones);
         run(&part, seq_a, N, N, l_part);
@@ -248,6 +276,26 @@ int main(void) {
     }
     close_model(&ones);
     close_model(&part);
+
+    /* Each of these breaks one thing the forward depends on or the reference refuses. */
+    const struct { opts o; const char *what; } bad[] = {
+        {{.drop_qnorm = 1},    "a file without attn_q_norm is refused"},
+        {{.short_in_proj = 1}, "an in_proj of 2E rows is refused"},
+        {{.one_post = 1},      "one post norm without the other is refused"},
+        {{.causal = 2},        "a non-causal file is refused"},
+        {{.odd_rot = 1},       "an odd rope.dimension_count is refused"},
+        {{.emb3d = 1},         "a 3-D token_embd is refused"},
+        {{.vocab_key = 1},     "a vocab_size that disagrees with token_embd is refused"},
+        {{.huge_embed = 1},    "an embedding_length whose triple wraps int32 is refused"},
+    };
+    for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        M b = {0};
+        CHECK(!open_model(&b, bad[i].o), bad[i].what);
+        close_model(&b);
+    }
+    M c = {0};
+    CHECK(open_model(&c, (opts){.causal = 1}), "a file that says causal loads");
+    close_model(&c);
 
     printf("LFM3: %d checks, %d failures\n", checks, failed);
     return failed ? 1 : 0;
