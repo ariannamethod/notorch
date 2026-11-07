@@ -289,8 +289,18 @@ static void chat(session *s, int max_tokens, float temp) {
         line[strcspn(line, "\n")] = '\0';
         if (strcmp(line, "/exit") == 0 || strcmp(line, "/quit") == 0) break;
         if (strcmp(line, "/reset") == 0) {
-            memset(s->kv->k, 0, (size_t)s->kv->n_layers * s->kv->max_seq * s->kv->kv_dim * sizeof(float));
-            memset(s->kv->v, 0, (size_t)s->kv->n_layers * s->kv->max_seq * s->kv->kv_dim * sizeof(float));
+            /* A family that owns its cache owns its layout too: its kv_dim can be a
+             * sentinel and its state lives beside k and v, so it is dropped and made
+             * again through the family's own hooks. A host cache is the plain
+             * [n_layers][max_seq][kv_dim] pair and is zeroed in place. */
+            if (s->arch->kv_new) {
+                if (s->arch->kv_free) s->arch->kv_free(s->model, s->kv); else kv_free(s->kv);
+                s->kv = s->arch->kv_new(s->model, s->max_seq);
+                if (!s->kv) { fprintf(stderr, "  (could not make a new cache; leaving)\n"); break; }
+            } else {
+                memset(s->kv->k, 0, (size_t)s->kv->n_layers * s->kv->max_seq * s->kv->kv_dim * sizeof(float));
+                memset(s->kv->v, 0, (size_t)s->kv->n_layers * s->kv->max_seq * s->kv->kv_dim * sizeof(float));
+            }
             pos = 0;
             fprintf(stderr, "  (context cleared)\n");
             continue;
