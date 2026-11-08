@@ -7,6 +7,8 @@
 #include <limits.h>
 #include "unicode_numbers.h"
 #include "unicode_letters.h"
+#include "unicode_marks.h"
+#include "unicode_qwen35.h"
 
 /* ── string -> int open-addressing hashmap ─────────────────────────────────── */
 typedef struct { char **keys; int *vals; int cap; int n; } smap;
@@ -102,6 +104,7 @@ struct bpe_tokenizer {
     int pre_qwen2;
     int pre_smollm;
     int pre_qwen35_ascii;
+    int pre_qwen35;        /* the official split over NFC text; 2 once normalized */
     int pre_lfm2;          /* llama.cpp's llama3 split, with ignore_merges */
     int *special_id, n_special;
     /* Tokens the file marks USER_DEFINED. They are stored as literal text rather than in the
@@ -180,6 +183,7 @@ bpe_tokenizer *bpe_load(const char *path) {
         t->pre_qwen2 = (strcmp(pre, "qwen2") == 0);
         t->pre_smollm = (strcmp(pre, "smollm") == 0);
         t->pre_qwen35_ascii = (strcmp(pre, "qwen35-ascii") == 0);
+        t->pre_qwen35 = (strcmp(pre, "qwen35") == 0);
         t->pre_lfm2 = (strcmp(pre, "lfm2") == 0);
     }
 
@@ -616,11 +620,25 @@ static int scheme_encode_span(const bpe_tokenizer *t, const char *text, int len,
     return n;
 }
 
+/* The NFC form of text for the "qwen35" pre-type, malloc'd; NULL when refused. */
+static char *qwen35_nfc(const char *text);
+
 int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
     if (!t || !text || !out || cap <= 0) return 0;
     /* This declared pre-type has an explicit ASCII boundary. NFC is identity
      * on ASCII; Unicode text must use externally verified IDs until NFC lands. */
     if(t->pre_qwen35_ascii)for(const unsigned char *p=(const unsigned char*)text;*p;p++)if(*p>=128)return 0;
+    /* The source normalizer is NFC. Text this cannot normalize exactly is refused
+     * the same way, before anything is written. */
+    if (t->pre_qwen35 == 1) {
+        char *nfc = qwen35_nfc(text);
+        if (!nfc) return 0;
+        bpe_tokenizer view = *t;
+        view.pre_qwen35 = 2;
+        int n = bpe_encode(&view, nfc, out, cap);
+        free(nfc);
+        return n;
+    }
     if (t->penelope) {
         int seq[8191], len = 0;
         while (text[len] && len < t->pen_max_bytes) {
@@ -792,6 +810,112 @@ static int lfm2_piece(const char *s, int n) {
     return l0;
 }
 
+/* ── "qwen35": the official Qwen3.5 split ─────────────────────────────────────
+ *   (?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}|
+ *    ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
+ * Ported alternative by alternative over codepoints, leftmost-first as the
+ * reference (tokenizers, Oniguruma) runs it. A word is letters and marks; a mark
+ * may also be its one-character prefix. The reference's (?i) folds 'ſ (U+017F)
+ * to 's, which llama.cpp's [sS] does not. Only valid UTF-8 reaches this. */
+static int qwen35_word(unsigned int cp) {
+    return lfm2_letter(cp) || range_in(bpe_marks, sizeof(bpe_marks) / sizeof(bpe_marks[0]), cp);
+}
+static int qwen35_other(unsigned int cp) {
+    return !(lfm2_space(cp) || qwen35_word(cp) || smollm_is_number(cp));
+}
+static int qwen35_piece(const char *s, int n) {
+    unsigned int c0, c1, c2, c;
+    int l0 = lfm2_at(s, n, 0, &c0), l1 = lfm2_at(s, n, l0, &c1), p, l;
+
+    if (c0 == '\'' && l1) {                                /* contractions */
+        unsigned int a = c1 == 0x17F ? 's' : lfm2_lower(c1);
+        if (a == 's' || a == 't' || a == 'm' || a == 'd') return l0 + l1;
+        int l2 = lfm2_at(s, n, l0 + l1, &c2);
+        unsigned int b = lfm2_lower(c2);
+        if (l2 && ((a == 'r' && b == 'e') || (a == 'v' && b == 'e') || (a == 'l' && b == 'l')))
+            return l0 + l1 + l2;
+    }
+    if (qwen35_word(c0) || (l1 && qwen35_word(c1) &&      /* optional prefix, word */
+        !(c0 == '\r' || c0 == '\n' || lfm2_letter(c0) || smollm_is_number(c0)))) {
+        for (p = l0; (l = lfm2_at(s, n, p, &c)) && qwen35_word(c); p += l) {}
+        return p;
+    }
+    if (smollm_is_number(c0)) return l0;                   /* one number */
+    p = (c0 == ' ') ? l0 : 0;                              /* space?, punctuation, newlines */
+    if (lfm2_at(s, n, p, &c) && qwen35_other(c)) {
+        while ((l = lfm2_at(s, n, p, &c)) && qwen35_other(c)) p += l;
+        while (p < n && (s[p] == '\r' || s[p] == '\n')) p++;
+        return p;
+    }
+    int last_nl = 0, last_start = 0, nws = 0;              /* whitespace */
+    for (p = 0; (l = lfm2_at(s, n, p, &c)) && lfm2_space(c); p += l, nws++) {
+        if (c == '\r' || c == '\n') last_nl = p + l;
+        last_start = p;
+    }
+    if (last_nl) return last_nl;                           /* \s*[\r\n]+ */
+    if (nws > 1 && p < n) return last_start;               /* \s+(?!\S) */
+    return nws ? p : l0;                                   /* \s+ */
+}
+
+static unsigned int qwen35_ccc(unsigned int cp) {
+    size_t lo = 0, hi = sizeof(nfc_ccc) / sizeof(nfc_ccc[0]);
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (cp < nfc_ccc[mid][0]) hi = mid;
+        else if (cp > nfc_ccc[mid][1]) lo = mid + 1;
+        else return nfc_ccc[mid][2];
+    }
+    return 0;
+}
+typedef struct { unsigned int ccc; int len; size_t off; } qwen35_mark;
+static int qwen35_mark_cmp(const void *a, const void *b) {
+    const qwen35_mark *x = (const qwen35_mark*)a, *y = (const qwen35_mark*)b;
+    if (x->ccc != y->ccc) return x->ccc < y->ccc ? -1 : 1;
+    return x->off < y->off ? -1 : x->off > y->off;
+}
+/* UAX #15 quick check. Text with no codepoint in qwen35_refuse is NFC once each run
+ * of non-starters is stably sorted by combining class, and that sort is the whole
+ * normalization; anything else is refused, invalid UTF-8 included. */
+static char *qwen35_nfc(const char *text) {
+    size_t n = strlen(text), k = 0, kcap = 0;
+    char *out = (char*)malloc(n + 1);
+    qwen35_mark *run = NULL;
+    if (!out) return NULL;
+    memcpy(out, text, n + 1);
+    for (size_t i = 0; i <= n; ) {
+        unsigned int cp = 0, ccc = 0;
+        int l = 1;
+        if (i < n) {
+            l = smollm_codepoint(text + i, n - i < 4 ? (int)(n - i) : 4, &cp);
+            if (cp > 0x10FFFF ||
+                range_in(qwen35_refuse, sizeof(qwen35_refuse) / sizeof(qwen35_refuse[0]), cp)) {
+                free(out); free(run); return NULL;
+            }
+            ccc = qwen35_ccc(cp);
+        }
+        if (ccc) {
+            if (k == kcap) {
+                kcap = kcap ? 2 * kcap : 16;
+                qwen35_mark *grown = (qwen35_mark*)realloc(run, kcap * sizeof(*run));
+                if (!grown) { free(out); free(run); return NULL; }
+                run = grown;
+            }
+            run[k].ccc = ccc; run[k].len = l; run[k].off = i; k++;
+        } else if (k) {
+            size_t at = run[0].off;
+            qsort(run, k, sizeof(*run), qwen35_mark_cmp);
+            for (size_t m = 0; m < k; m++) {
+                memcpy(out + at, text + run[m].off, (size_t)run[m].len);
+                at += (size_t)run[m].len;
+            }
+            k = 0;
+        }
+        i += (size_t)l;
+    }
+    free(run);
+    return out;
+}
+
 static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int *out, int cap) {
     char *text = (char*)malloc((size_t)L + 1);
     if (!text) return 0;
@@ -815,6 +939,8 @@ static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int 
         int j;
         if (t->pre_qwen35_ascii) {
             j=i+qwen35_ascii_piece(text+i,L-i);
+        } else if (t->pre_qwen35) {
+            j = i + qwen35_piece(text + i, L - i);
         } else if (t->pre_lfm2) {
             j = i + lfm2_piece(text + i, L - i);
         } else if (t->pre_qwen2) {
