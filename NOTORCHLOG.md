@@ -13,6 +13,42 @@ Newest entries on top.
 
 ---
 
+## 2026-11-09 — LFM3 text on Apple silicon, and the multimodal plan before its C
+
+The 11-07 entry left throughput on Apple silicon unmeasured. Measured on an M4
+Pro (macOS 26.6.2, Accelerate) against llama.cpp `7d7f028` on LiquidAI's
+official GGUFs, each checked against its published SHA-256, NoTorch at
+`eb9af85`, bare greedy, repeat_penalty 1.0:
+
+- 32-token continuations of the four prompts of 11-07: 10 of 16 identical.
+  English and "1, 2, 3, 4," 8 of 8, Russian 2 of 4, Hebrew 1 of 4 (13 of 16 on
+  x86). The prompt ids are identical on both sides for the Russian and Hebrew
+  prompts, checked on 1.7B and VL-2B, so the six that part do so in the
+  arithmetic; two of them part at the first generated token.
+- pp64 and tg64, t/s, llama.cpp on ten CPU threads against NoTorch: 1.7B
+  Q4_K_M 496.1 / 241.0 and 138.5 / 98.2; 1.7B Q8_0 656.8 / 266.6 and 103.9 /
+  90.2; VL-2B Q4_K_M 492.1 / 238.6 and 138.5 / 97.2; Omni-2B Q4_K_M 494.3 /
+  235.1 and 139.0 / 97.6. llama.cpp on the Metal GPU: 1474.5 / 158.2 (Q4_K_M
+  1.7B) and 1514.9 / 114.9 (Q8_0). On this machine NoTorch decodes at 0.71 of
+  llama.cpp's CPU path on Q4_K_M and 0.87 on Q8_0, and prefills at 0.41 to 0.49
+  of it.
+
+[docs/lfm3-multimodal.md](docs/lfm3-multimodal.md) fixes the vision and audio
+work for LFM3-VL-2B and LFM3-Omni-2B before any of it is written. The official
+Omni mmproj GGUF holds all 458 tensors of the parts beside the text decoder:
+vision tower and projector, audio downsampler, encoder and projector, depth
+decoder and codec. The VL-2B tower has the Omni tower's configuration, so one
+implementation serves both. The order is the embedding-row interface (a
+change to `harness/arch.h`, decided first), vision, audio, quantized towers,
+speech out, speed. End-to-end references are recorded with llama.cpp's
+`llama-mtmd-cli` on the official files and its own test inputs: an image and a
+transcription on Omni, an image on VL-2B, with every input and output hash.
+Per-layer dumps of the upstream PyTorch modules are not made yet: their remote
+code imports `masking_utils.create_recurrent_attention_mask`, which
+Transformers 5.8.0 does not have.
+
+---
+
 ## 2026-11-07 — LFM3: the first hybrid family, measured against llama.cpp
 
 `harness/arch_lfm3.c` runs LiquidAI's LFM3 text decoder: gated short
