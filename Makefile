@@ -395,7 +395,7 @@ qwen35_to_gguf: tools/qwen35_to_gguf.c tools/narrow_json.h gguf.c sha256.c notor
 qwen35_tokenize: tools/qwen35_tokenize.c tools/narrow_json.h examples/bpe.c examples/bpe.h gguf.c notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) -o $@ tools/qwen35_tokenize.c examples/bpe.c gguf.c notorch.c -lm
 
-test_qwen35: tests/test_qwen35.c tests/qwen35_fixture.h $(QWEN35_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
+test_qwen35: tests/test_qwen35.c tests/qwen35_fixture.h tests/qwen35_gqa_fixture.h $(QWEN35_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_qwen35.c $(QWEN35_SRC) -lm $(BLAS_LIBS)
 	./test_qwen35
 

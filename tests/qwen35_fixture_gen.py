@@ -9,8 +9,12 @@ key head and one KV head, so head grouping is never exercised. "gqa" has two
 of each and two full-attention layers, so a head read from the wrong group or
 a full-attention slot read at the wrong layer offset changes the numbers.
 Weights are a fixed arithmetic pattern over the order Transformers registers
-parameters in; only the reference forward is Transformers.
+parameters in; only the reference forward is Transformers. "base" lists every
+weight, as the frozen header does; "gqa" lists each tensor's parameter index
+and lets the C writer compute the pattern, after checking here that the C
+arithmetic gives every weight bit for bit.
 """
+import struct
 import sys
 
 import torch
@@ -51,6 +55,7 @@ def main():
     torch.manual_seed(0)
     model = Qwen3_5ForCausalLM(cfg).float().eval()
 
+    index = {}
     with torch.no_grad():
         for idx, (name, param) in enumerate(model.named_parameters()):
             n = param.numel()
@@ -58,8 +63,10 @@ def main():
             if name.endswith("linear_attn.norm.weight"):
                 v = v + 1
             param.copy_(v.reshape(param.shape))
+            index[param.data_ptr()] = idx
     state = {k.removeprefix("model."): t.detach().float().contiguous()
              for k, t in model.state_dict().items()}
+    param_of = {k.removeprefix("model."): index[t.data_ptr()] for k, t in model.state_dict().items()}
 
     residual = []
     def keep(_m, _i, o):
@@ -71,12 +78,38 @@ def main():
 
     names = ["lm_head.weight"] + sorted(k for k in state if k != "lm_head.weight")
     full = [t == "full_attention" for t in s["layers"]]
+    first_conv = next(f"layers.{l}.linear_attn.conv1d.weight" for l, f in enumerate(full) if not f)
+    if kind != "base":
+        # What the C writer computes, (float)k*0.0175f then +1.0f in single
+        # precision, has to be every weight Transformers was given.
+        f32 = lambda x: struct.unpack("<f", struct.pack("<f", x))[0]
+        for k in names:
+            plus = k.endswith("linear_attn.norm.weight")
+            for i, got in enumerate(state[k].flatten().tolist()):
+                want = f32(f32(float((i * 7 + param_of[k] * 3) % 23 - 11)) * f32(0.0175))
+                if plus:
+                    want = f32(want + 1.0)
+                if struct.pack("<f", want) != struct.pack("<f", got):
+                    sys.exit(f"{k}[{i}]: C pattern {want!r} != parameter {got!r}")
     L = [f"/* Frozen independent Transformers {transformers.__version__} F32/eager reference.",
          f" * {s['summary']}",
          " * Parameters: ((arange(n)*7 + parameter_index*3)%23-11)*0.0175f;",
          f" * linear_attn.norm adds 1. Tokens: {','.join(map(str, TOKENS))}. */"]
-    for i, k in enumerate(names):
-        L.append(f"static const float {p}weight_{i}[]={{{','.join(hexf(x) for x in state[k].flatten().tolist())}}};")
+    if kind != "base":
+        L[0] = (f"/* Frozen independent Transformers {transformers.__version__} F32/eager reference, "
+                f"written by tests/qwen35_fixture_gen.py {kind}.")
+        L[-1] = (f" * linear_attn.norm adds 1; the writer computes them, only the outputs are listed."
+                 f" Tokens: {','.join(map(str, TOKENS))}. */")
+        L.append(f"typedef struct {{const char *name;uint32_t ndim;uint64_t dims[3];int param,plus_one,drop;}} {p}tensor;")
+        L.append(f"static const {p}tensor {p}tensors[]={{")
+        for k in names:
+            dims = ",".join(str(d) for d in reversed(state[k].shape))
+            L.append(f'{{"{k}",{state[k].dim()},{{{dims}}},{param_of[k]},'
+                     f'{int(k.endswith("linear_attn.norm.weight"))},{int(k == first_conv)}}},')
+        L.append("};")
+    else:
+        for i, k in enumerate(names):
+            L.append(f"static const float {p}weight_{i}[]={{{','.join(hexf(x) for x in state[k].flatten().tolist())}}};")
     L.append(f"static int {p}fixture(const char *path,int mode){{")
     L.append(" gguf_writer *w=gguf_write_open(path);if(!w)return -1;")
     L.append(' gguf_write_kv_str(w,"general.architecture","qwen35");')
@@ -92,14 +125,25 @@ def main():
         L.append(f' gguf_write_kv_u32(w,"qwen35.{key}",{val});')
     L.append(' gguf_write_kv_f32(w,"qwen35.rms_epsilon",1e-06);')
     L.append(' gguf_write_kv_f32(w,"qwen35.rope.freq_base",10000.0);')
-    first_conv = next(f"layers.{l}.linear_attn.conv1d.weight" for l, f in enumerate(full) if not f)
-    for k in names:
-        dims = ",".join(str(d) for d in reversed(state[k].shape))
-        guard = "if(mode!=1) " if k == first_conv else ""
-        L.append(f' {guard}gguf_write_tensor_decl(w,"{k}",{state[k].dim()},(uint64_t[]){{{dims}}},GGUF_TYPE_F32);')
-    for i, k in enumerate(names):
-        guard = "if(mode!=1) " if k == first_conv else ""
-        L.append(f' {guard}gguf_write_tensor_f32(w,"{k}",{p}weight_{i},{state[k].numel()});')
+    if kind != "base":
+        T = f"{p}tensors"
+        L.append(f" int count=(int)(sizeof({T})/sizeof({T}[0]));")
+        L.append(f" for(int t=0;t<count;t++)if(mode!=1 || !{T}[t].drop)")
+        L.append(f"  gguf_write_tensor_decl(w,{T}[t].name,{T}[t].ndim,{T}[t].dims,GGUF_TYPE_F32);")
+        L.append(f" for(int t=0;t<count;t++)if(mode!=1 || !{T}[t].drop){{")
+        L.append(f"  const {p}tensor *g=&{T}[t];uint64_t n=1;for(uint32_t d=0;d<g->ndim;d++)n*=g->dims[d];")
+        L.append("  float *v=malloc(n*sizeof(float));if(!v){gguf_write_abort(w);return -1;}")
+        L.append("  for(uint64_t i=0;i<n;i++){v[i]=(float)((int)((i*7+(uint64_t)g->param*3)%23)-11)*0.0175f;if(g->plus_one)v[i]+=1.0f;}")
+        L.append("  int rc=gguf_write_tensor_f32(w,g->name,v,n);free(v);if(rc){gguf_write_abort(w);return -1;}")
+        L.append(" }")
+    else:
+        for k in names:
+            dims = ",".join(str(d) for d in reversed(state[k].shape))
+            guard = "if(mode!=1) " if k == first_conv else ""
+            L.append(f' {guard}gguf_write_tensor_decl(w,"{k}",{state[k].dim()},(uint64_t[]){{{dims}}},GGUF_TYPE_F32);')
+        for i, k in enumerate(names):
+            guard = "if(mode!=1) " if k == first_conv else ""
+            L.append(f' {guard}gguf_write_tensor_f32(w,"{k}",{p}weight_{i},{state[k].numel()});')
     L.append(" return gguf_write_close(w);")
     L.append("}")
     L.append(f"static const float {p}golden_residual[{len(full)}][{len(TOKENS) * E}]={{")
