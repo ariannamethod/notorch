@@ -13,6 +13,92 @@ Newest entries on top.
 
 ---
 
+## 2026-11-09 — SmolLM2 remembers a parliament across processes
+
+The dense llama-family CPU path exposes the post-attention residual before FFN
+normalization. With `--experts`, one parliament at zero-based layer
+`n_layers / 2` reads each token there. NoTorch owns election, weighted LoRA
+injection and Oja. Four founders start at rank 4, with six seats, at least two
+elected and injection strength 0.1. Host inference with no expert flags takes
+the existing forward path. The experimental body was SmolLM2-135M-Instruct
+Q4_K_M, width 576, 30 blocks, parliament on block 15.
+
+The reference implementation is [DOE](https://github.com/ariannamethod/doe/blob/103b7b1/doe.c).
+Yent carried a [vendored DOE](https://github.com/ariannamethod/yent/tree/1320a8d/DoE).
+[Arianna's nano](https://github.com/ariannamethod/arianna.c/blob/d44ddd5/golib/doe.go)
+keeps the parliament awake across dreams in a persistent process. LoraGrad's
+[training parliament](https://github.com/ariannamethod/loragrad/blob/57c5553/README.md)
+votes on gradient updates. This Harness port uses the DOE inference lineage.
+Its choices for this first body are one block, a harmonic vote bias from sixteen
+bounded residual RMS samples, and a vitality clock in completed turns. Age
+saturates at the mitosis threshold. Elections use the native consensus EMA.
+Enabled learning reads the mean post-attention input and mean post-block output,
+and the mean DOE prophecy-debt signal from the chosen raw logits. The Oja
+window advances two rank components per elected expert. Learning inputs have
+their RMS capped at one. The unchanged inference residual feeds the next block.
+
+The first implementation used raw turn means. It changed the first greedy
+token after one exposure and hit the weight quarantine on turn 2 of the
+five-prompt cycle below. Capping the RMS of the learning inputs made all 30
+turns complete. Each turn opened with an empty KV.
+
+**One exposure.** The source named Miro and a copper key. The probe in a new
+process was `The lighthouse keeper carries a`. Across 28 elections all four
+founders spoke. Relative to a vote-only run on the same source, each founder
+changed 1,152 of 2,304 A entries and 1,152 of 2,304 B entries. Both spare seats
+retained identical matrices. The first greedy token was ` small` (ID 1165)
+in all five conditions. The eight emitted tokens described a leather-bound book.
+
+| Initial state for the probe | First-token logit |
+|---|---:|
+| Ordinary Harness | 16.9650497 |
+| Fresh parliament | 17.1073456 |
+| Spore after voting on Miro / copper key | 16.9667625 |
+| Spore after learning on Miro / copper key | 17.1633549 |
+| Spore after learning on Nela / silver bell | 16.9799232 |
+
+**Thirty turns.** Five prompts repeated six times, four generated tokens per
+turn, greedy. The learned spore recorded 282 elections. Slot 4 was born from
+slot 0 at turn 21, slot 5 from slot 1 at turn 22. All six lived at turn 30.
+The snapshot was 125,504 bytes, SHA-256
+`73aa31a3581c520db5b5ee50b7b11d1c7b41876595cb53fb4b50a73b189ca682`.
+Restoring the learned and vote-only spores into separate processes produced
+these continuations of the keeper probe:
+
+| Restored parliament | Four token IDs | Continuation |
+|---|---|---|
+| Vote-only history | 1165, 28, 15601, 29 | ` small, leather-` |
+| Learned history | 1165, 10091, 8349, 4412 | ` small wooden chest filled` |
+
+The learned process that stayed alive through turn 31 and the process that
+restored after turn 30 produced identical votes, token IDs, logits as printed
+and byte-identical child spores (SHA-256
+`3cff4c6eb96e4b2b81b030df599d9c9b095a6723e4ee615c4469d92fa35af752`).
+The host hash before and after was
+`2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d`.
+
+Reproduce with GCC 14.2, Linux x86-64, Xeon Platinum 8573C, AVX2/FMA, CPU
+build without BLAS, one allowed CPU. The checkpoint is
+[SmolLM2-135M-Instruct-Q4_K_M.gguf at 09816ac](https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/blob/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q4_K_M.gguf).
+
+```sh
+make harness BLAS_FLAGS= BLAS_LIBS=
+taskset -c 1 python3 experiments/doe_spores/replay.py SmolLM2-135M-Instruct-Q4_K_M.gguf replay
+```
+
+`make check_expert_spores` exercises real CLI processes on a packed Qwen2
+fixture. It checks selective writes, a live-versus-restarted child, birth,
+seeded apoptosis, host binding, wrong-family refusal, truncated and NaN spores,
+partial turns, and create-only publication. Discarding the Oja A write turns
+the test red. The full CPU suite passed (`make -j4 test BLAS_FLAGS= BLAS_LIBS=`).
+The installed-archive consumer passed all three checks.
+On this SmolLM2, `make test_harness` with the legacy `infer_llama` comparison
+failed all three 24-token prompts. The disabled branch and the pre-change
+Harness at `becbe94` produced byte-identical stdout on all three; the original
+Harness had the same three disagreements with the example.
+
+---
+
 ## 2026-11-07 — LFM3: the first hybrid family, measured against llama.cpp
 
 `harness/arch_lfm3.c` runs LiquidAI's LFM3 text decoder: gated short

@@ -14,7 +14,9 @@
  * arch_llama.c and one line to nt_archs. */
 #include "harness/archs.h"
 #include "harness/logo.h"
+#include "harness/experts.h"
 #include "examples/bpe.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +29,9 @@ typedef struct {
     bpe_tokenizer *tok;
     int eos, vocab, max_seq;
     float *logits;
+    nt_experts *experts;
+    float *sampling_copy; /* sampling at T>0 consumes its input */
+    int learn, trace;
 } session;
 
 /* GGUF-embedded BPE where the file has one; bytes where it does not, which is
@@ -215,6 +220,13 @@ static void residency(const char *when) {
     fputc('\n', stderr);
 }
 
+static int session_forward(session *s, const int *tokens, int n, int pos, float *logits) {
+    if (s->experts)
+        return nt_llama_forward_hooks(s->model, s->kv, tokens, n, pos, logits,
+                                      nt_experts_attend, nt_experts_observe, s->experts);
+    return s->arch->forward(s->model, s->kv, tokens, n, pos, logits);
+}
+
 /* Prompt in, text out, cache advanced. Returns the position after the last
  * token written, so a chat turn can hand it to the next one.
  *
@@ -228,7 +240,7 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
     double gen0 = now_ms();
     for (int i = 0; i < n_tok; i += NT_PREFILL_CHUNK) {
         int cn = n_tok - i; if (cn > NT_PREFILL_CHUNK) cn = NT_PREFILL_CHUNK;
-        int rc = s->arch->forward(s->model, s->kv, tokens + i, cn, pos0 + i,
+        int rc = session_forward(s, tokens + i, cn, pos0 + i,
                                   (i + cn == n_tok) ? s->logits : NULL);
         if (rc != NT_OK) {
             fprintf(stderr, "\nprefill refused at position %d: %s\n", pos0 + i, nt_strerror(rc));
@@ -242,25 +254,35 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
 
     int pos = pos0 + n_tok, gen = 0;
     for (int step = 0; step < max_tokens; step++) {
-        int next = sample(s->logits, s->vocab, temp);
+        float *sampling = s->logits;
+        if (s->sampling_copy) {
+            memcpy(s->sampling_copy, s->logits, (size_t)s->vocab*sizeof(float));
+            sampling = s->sampling_copy;
+        }
+        int next = sample(sampling, s->vocab, temp);
+        if (s->experts || s->trace) {
+            int best = sample(s->logits, s->vocab, 0);
+            if (s->experts) nt_experts_choice(s->experts, s->logits[best], s->logits[next]);
+            if (s->trace) fprintf(stderr, "doe choice step=%d id=%d logit=%.9g best=%d best_logit=%.9g\n",
+                                  step, next, s->logits[next], best, s->logits[best]);
+        }
         if (getenv("NT_ECHO_IDS")) fprintf(stderr, "[id %d]", next);
         if (chat_is_stop(next)) break;
         if (s->tok ? (next == s->eos || bpe_is_eog(s->tok, next)) : (!g_chat.active && next <= 2)) break;
         if (!emit(s, next)) {
             fprintf(stderr, "\ndecode stopped: could not emit complete token %d\n", next);
-            break;
+            return 0;
         }
         gen++;
         if (pos >= s->max_seq - 1) break;
-        int rc = s->arch->forward(s->model, s->kv, &next, 1, pos, s->logits);
+        int rc = session_forward(s, &next, 1, pos, s->logits);
         if (rc != NT_OK) {
             fprintf(stderr, "\ndecode stopped at position %d: %s\n", pos, nt_strerror(rc));
-            break;
+            return 0;
         }
         pos++;
     }
-    putchar('\n');
-    fflush(stdout);
+    if (putchar('\n') == EOF || fflush(stdout)) return 0;
 
     double total_ms = now_ms() - gen0;
     if (show_stats)
@@ -269,6 +291,10 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
                 gen, total_ms - prefill_ms,
                 gen > 0 ? gen * 1000.0 / (total_ms - prefill_ms) : 0);
     pf_report("decode", total_ms - prefill_ms);
+    if (s->experts && nt_experts_finish(s->experts, s->learn)) {
+        fprintf(stderr, "notorch: expert turn could not be committed\n");
+        return 0;
+    }
     return pos;
 }
 
@@ -276,9 +302,9 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
  * sees everything said so far without re-reading a transcript. /reset drops
  * it, /exit and end-of-input leave. When the context fills, say so rather than
  * silently answering from a truncated past. */
-static void chat(session *s, int max_tokens, float temp) {
+static int chat(session *s, int max_tokens, float temp) {
     int *tokens = (int*)malloc((size_t)s->max_seq * sizeof(int));
-    if (!tokens) return;
+    if (!tokens || !s->kv) { free(tokens); return 1; }
     char line[4096];
     int pos = 0;
     fprintf(stderr, "chat — /reset clears the context, /exit leaves (ctx %d)\n\n", s->max_seq);
@@ -305,14 +331,21 @@ static void chat(session *s, int max_tokens, float temp) {
         int n = encode_prompt(s, line, tokens, room);
         if (n <= 0) continue;
         pos = run_turn(s, tokens, n, pos, max_tokens, temp, 0);
+        if (!pos) { free(tokens); return 1; }
     }
     free(tokens);
+    return ferror(stdin) != 0;
 }
 
 static void usage(const char *self) {
     fprintf(stderr,
         "usage: %s [-q] [-n tokens] [-t temp] [-r runs] <model.gguf> [prompt] [max_tokens] [temp]\n"
         "  no prompt        chat in the terminal\n"
+        "  --experts        seat a native parliament on the dense llama-family decoder\n"
+        "  --learn-experts  update elected experts after each turn (requires --experts)\n"
+        "  --spore-in FILE  restore a parliament for this host (requires --experts)\n"
+        "  --spore-out FILE write a new GGUF spore on success (requires --experts)\n"
+        "  --expert-trace   print elections and chosen token logits on stderr\n"
         "  -q               no banner\n"
         "  -n, -t           tokens and temperature, for chat as well as one shot\n"
         "  NT_CTX=N         context length for chat (default 2048)\n"
@@ -346,7 +379,20 @@ int main(int argc, char **argv) {
      * parity gate drives; the flags are for chat, which has no prompt to hang
      * positional arguments behind. */
     int tokenize_only = 0, arch_only = 0, repeats = 1;
-    while (ai < argc && argv[ai][0] == '-' && argv[ai][1] && !argv[ai][2]) {
+    int experts = 0, learn = 0, trace = 0;
+    const char *spore_in = NULL, *spore_out = NULL;
+    while (ai < argc && argv[ai][0] == '-' && argv[ai][1]) {
+        const char *arg = argv[ai];
+        if (!strcmp(arg, "--experts")) { experts = 1; ai++; continue; }
+        if (!strcmp(arg, "--learn-experts")) { learn = 1; ai++; continue; }
+        if (!strcmp(arg, "--expert-trace")) { trace = 1; ai++; continue; }
+        if (!strcmp(arg, "--spore-in") || !strcmp(arg, "--spore-out")) {
+            if (++ai >= argc) { usage(argv[0]); return 1; }
+            if (!strcmp(arg, "--spore-in")) spore_in = argv[ai++];
+            else spore_out = argv[ai++];
+            continue;
+        }
+        if (arg[2]) break;
         char f = argv[ai][1];
         if (f == 'q') { quiet = 1; ai++; continue; }
         /* -r runs the same prompt N times in one process. The load happens once, so what is
@@ -383,6 +429,14 @@ int main(int argc, char **argv) {
     }
     if (ai >= argc) { nt_logo(quiet); usage(argv[0]); return 1; }
 
+    if ((learn || spore_in || spore_out) && !experts) {
+        fprintf(stderr, "notorch: expert learning and spore I/O require --experts\n");
+        return 1;
+    }
+    if (experts && (tokenize_only || arch_only || repeats != 1)) {
+        fprintf(stderr, "notorch: --experts needs one inference session\n");
+        return 1;
+    }
     nt_logo(quiet);
     const char *path = argv[ai];
 
@@ -426,12 +480,17 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    if (experts && arch != &nt_arch_llama) {
+        fprintf(stderr, "notorch: --experts is unavailable on %s\n", gf->arch);
+        gguf_close(gf);
+        return 1;
+    }
     nt_dims dims = {0};
     void *model = arch->load(gf, &dims);
     if (!model) { gguf_close(gf); return 1; }
     fprintf(stderr, "loaded in %.0f ms\n", now_ms() - t0);
 
-    session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1 };
+    session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1, .learn = learn, .trace = trace };
     chat_wrap_init(&g_chat, dims.vocab, path);
     s.tok = bpe_load(path);
     if (s.tok) {
@@ -451,8 +510,25 @@ int main(int argc, char **argv) {
 
     pf_on = getenv("NT_PROFILE") != NULL;
     s.logits = (float*)calloc(dims.vocab, sizeof(float));
-    int rc = 0;
-
+    int rc = 1;
+    if (!s.logits) goto done;
+    if (experts) {
+        s.experts = nt_experts_open(gf, spore_in, trace ? stderr : NULL);
+        if (!s.experts) {
+            fprintf(stderr, "notorch: could not open expert state%s%s\n",
+                    spore_in ? " from " : "", spore_in ? spore_in : "");
+            goto done;
+        }
+    }
+    if ((experts || trace) && !isfinite(temp)) {
+        fprintf(stderr, "notorch: expert sampling requires a finite temperature\n");
+        goto done;
+    }
+    if ((experts || trace) && temp > 0) {
+        s.sampling_copy = malloc((size_t)dims.vocab * sizeof(float));
+        if (!s.sampling_copy) goto done;
+    }
+    rc = 0;
     if (prompt) {
         /* Size the cache to the job. The reference example carried a fixed 256
          * and clamped the prompt into what was left, which turns a long prompt
@@ -478,7 +554,10 @@ int main(int argc, char **argv) {
                  * being measured. */
                 fputs(prompt, stdout);
                 fflush(stdout);
-                run_turn(&s, tokens, n_tok, 0, max_tokens, temp, 1);
+                if (!s.kv || !run_turn(&s, tokens, n_tok, 0, max_tokens, temp, 1)) {
+                    rc = 1;
+                    break;
+                }
             }
         }
         free(tokens);
@@ -487,12 +566,22 @@ int main(int argc, char **argv) {
         s.max_seq = ctx ? atoi(ctx) : 2048;
         if (s.max_seq < max_tokens + 2) s.max_seq = max_tokens + 2;
         s.kv = arch->kv_new ? arch->kv_new(model, s.max_seq) : kv_new(dims.n_layers, s.max_seq, dims.kv_dim);
-        chat(&s, max_tokens, temp);
+        rc = chat(&s, max_tokens, temp);
     }
 
+    if (!rc && spore_out && nt_experts_save(s.experts, spore_out)) {
+        fprintf(stderr, "notorch: could not publish a new spore at %s\n", spore_out);
+        rc = 1;
+    }
+done:
+    nt_experts_free(s.experts);
+    free(s.sampling_copy);
     if (s.tok) bpe_free(s.tok);
     free(s.logits);
-    if(arch->kv_free) arch->kv_free(model,s.kv); else kv_free(s.kv);
+    if (s.kv) {
+        if (arch->kv_free) arch->kv_free(model, s.kv);
+        else kv_free(s.kv);
+    }
     arch->free(model); gguf_close(gf);
     return rc;
 }

@@ -109,6 +109,13 @@ int nt_check_call(const kv_cache *kv, const int *tokens, int n, int pos0,
                   int vocab, int n_layers, int kv_dim);
 
 extern const nt_arch nt_arch_llama;
+/* The dense llama-family decoder also exposes the DOE boundary between the
+ * attention residual and the FFN. Both hooks follow nt_residual_fn's contract.
+ * model must come from nt_arch_llama.load. */
+int nt_llama_forward_hooks(void *model, kv_cache *kv, const int *tokens, int n,
+                           int pos0, float *logits, nt_residual_fn post_attention,
+                           nt_residual_fn post_block, void *user);
+
 extern const nt_arch nt_arch_qwen35;
 extern const nt_arch nt_arch_gemma3;
 extern const nt_arch nt_arch_gemma4;
