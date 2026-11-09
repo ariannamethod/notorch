@@ -13,6 +13,83 @@ Newest entries on top.
 
 ---
 
+## 2026-11-09 — Asynchronous consolidation and single-expert transplants
+
+`--experts --learn-experts --async-consolidation` hands the completed turn's
+residual sums, election counts and choice signal to a joinable C worker. The
+worker holds the sole parliament, applies Oja and the vitality/birth/death
+step, and returns the next generation. The foreground can prompt, read input,
+reset the KV and tokenize in the meantime. It joins before the next forward,
+or before final spore publication on orderly exit. A failed update destroys
+the pending generation. The synchronous path and the new worker share the
+same numerical function. The unit of consolidation here is a completed DOE
+turn. Arianna's inner world runs its own timed memory-promotion loop. [DOE
+turn accumulator](https://github.com/ariannamethod/doe/blob/103b7b1/doe.c#L3064)
+and [Arianna's background process](https://github.com/ariannamethod/arianna.c/blob/d44ddd5/golib/memory_consolidation.go#L91).
+
+**Body and exposure.** SmolLM2-360M-Instruct Q4_K_M, SHA-256
+`2fa3f013dcdd7b99f9b237717fa0b12d75bbb89984cc1274be1471a465bac9c2`,
+width 960, 32 blocks, parliament on block 16. Linux x86-64, Xeon Platinum
+8573C, GCC 14.2, packed CPU Harness, one pinned core, no BLAS. Two fresh
+parliaments read the same 23-token raw prefix with exactly one substitution:
+“Miro is the lighthouse keeper. Every night Miro carries a {key|bell}. At
+sunrise the lighthouse keeper returns home.” Both generated one greedy newline
+(ID 198), completed 24 elections, and received the same mean signal of +0.1.
+For each exposure the async and sync parent GGUFs were byte-identical.
+[Host GGUF](https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/blob/7be6f65f1db715fe5dc5a4634c0d459b4eed42ec/SmolLM2-360M-Instruct-Q4_K_M.gguf).
+
+**Intervention.** A new child spore takes the A/B factors for the named seat
+from the same seat in the other parent. Recipient routing, consensus, history,
+RNG, Oja cursors, lifecycle and all other factors carry through. AML tested
+all four founders in both directions, self-copies, and all four seats together.
+Controls included the plain host and a vote-only parent after each exposure.
+Every probe opened a fresh KV and parliament. The helper checked that appending
+` key` or ` bell` preserved the complete probe tokenization and added exactly
+one token (IDs 1646 and 13095). AML read all 49,152 logits, computed the two
+probabilities and their log odds, and compared every hybrid's election trace
+with its recipient. All ten hybrid traces matched across the five probes.
+
+On “Every night the lighthouse keeper carries a”, the key parent gave
+log odds of −0.915470 for key over bell. The bell parent gave −1.403236.
+The table gives the change from the recipient after moving one seat.
+
+| Donor → recipient | Seat 0 | Seat 1 | Seat 2 | Seat 3 |
+| --- | ---: | ---: | ---: | ---: |
+| Key → bell | +0.545005 | +0.331146 | +0.435167 | +0.287450 |
+| Bell → key | −0.160896 | −0.276185 | −0.114052 | −0.251829 |
+
+The direction tracked the donor in all eight swaps on that wording. On “At the
+lighthouse, Miro reaches for his”, seat 2 had zero change in both directions.
+On the neutral “On the desk there is a”, moving seat 0 gave −0.090275 from
+key to bell and +0.105343 from bell to key. The observable effect depends on
+both the seat and the probe. The [75 measurements](experiments/doe_spores/smollm2-360m.tsv)
+include each parent and the vote-only controls.
+
+**Reproduce.** Run from the NoTorch root with the pinned
+[AML](https://github.com/ariannamethod/ariannamethod.ai/tree/6c6fafb69fc239a3b4085c4683a0a0a08cfbc0f8)
+checkout and host file. Each run claims a new output directory. It keeps the
+GGUFs, train/election traces, target IDs, full AML logit checkpoints and TSV.
+
+```sh
+AML_ROOT=/absolute/path/to/ariannamethod.ai
+MODEL=/absolute/path/to/SmolLM2-360M-Instruct-Q4_K_M.gguf
+make -C "$AML_ROOT" runner
+make notorch doe_probe AML_ROOT="$AML_ROOT" BLAS_FLAGS= BLAS_LIBS=
+printf '%s\n' "$PWD" "$MODEL" "$PWD/run-360" | taskset -c 2 "$AML_ROOT/runner/aml" experiments/doe_spores/transplant.aml
+```
+
+**Checks.** `make check_expert_consolidation` holds the trace stream across
+handoff, receives a commit from the worker while idle, injects a nonfinite
+choice signal, and checks all four single-seat files against independently
+constructed byte ranges. It covers immediate chat input, reset, restart,
+EOF, explicit exit, and host identity. Running finish inline trips the
+blocked-stream gate. Omitting the donor B copy trips the byte comparison.
+The CPU `make test BLAS_FLAGS= BLAS_LIBS=` suite passed. In a separate live
+360M chat with its input FIFO held open, the first commit arrived before the
+second prompt was sent. After both turns (8 and 16 cumulative elections),
+the async and sync output text and final spore matched with spore SHA-256
+`b94f1b6fcb57afae79fbecec93cfb34da3e59b55baa35bd34ba7cad9b6f2b751`.
+
 ## 2026-11-09 — SmolLM2 remembers a parliament across processes
 
 The dense llama-family CPU path exposes the post-attention residual before FFN

@@ -31,7 +31,8 @@ typedef struct {
     float *logits;
     nt_experts *experts;
     float *sampling_copy; /* sampling at T>0 consumes its input */
-    int learn, trace;
+    nt_consolidation *pending;
+    int learn, trace, async;
 } session;
 
 /* GGUF-embedded BPE where the file has one; bytes where it does not, which is
@@ -237,6 +238,10 @@ static int session_forward(session *s, const int *tokens, int n, int pos, float 
  * exactly as a single pass would. */
 static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
                     int max_tokens, float temp, int show_stats) {
+    if (s->pending && nt_experts_await(&s->experts, &s->pending)) {
+        fprintf(stderr, "notorch: previous expert consolidation failed\n");
+        return 0;
+    }
     double gen0 = now_ms();
     for (int i = 0; i < n_tok; i += NT_PREFILL_CHUNK) {
         int cn = n_tok - i; if (cn > NT_PREFILL_CHUNK) cn = NT_PREFILL_CHUNK;
@@ -291,7 +296,10 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
                 gen, total_ms - prefill_ms,
                 gen > 0 ? gen * 1000.0 / (total_ms - prefill_ms) : 0);
     pf_report("decode", total_ms - prefill_ms);
-    if (s->experts && nt_experts_finish(s->experts, s->learn)) {
+    int rc = NT_OK;
+    if (s->async) rc = nt_experts_submit(&s->experts, &s->pending);
+    else if (s->experts) rc = nt_experts_finish(s->experts, s->learn);
+    if (rc != NT_OK) {
         fprintf(stderr, "notorch: expert turn could not be committed\n");
         return 0;
     }
@@ -343,6 +351,7 @@ static void usage(const char *self) {
         "  no prompt        chat in the terminal\n"
         "  --experts        seat a native parliament on the dense llama-family decoder\n"
         "  --learn-experts  update elected experts after each turn (requires --experts)\n"
+        "  --async-consolidation  consolidate in the background (requires --learn-experts)\n"
         "  --spore-in FILE  restore a parliament for this host (requires --experts)\n"
         "  --spore-out FILE write a new GGUF spore on success (requires --experts)\n"
         "  --expert-trace   print elections and chosen token logits on stderr\n"
@@ -379,12 +388,13 @@ int main(int argc, char **argv) {
      * parity gate drives; the flags are for chat, which has no prompt to hang
      * positional arguments behind. */
     int tokenize_only = 0, arch_only = 0, repeats = 1;
-    int experts = 0, learn = 0, trace = 0;
+    int experts = 0, learn = 0, trace = 0, async = 0;
     const char *spore_in = NULL, *spore_out = NULL;
     while (ai < argc && argv[ai][0] == '-' && argv[ai][1]) {
         const char *arg = argv[ai];
         if (!strcmp(arg, "--experts")) { experts = 1; ai++; continue; }
         if (!strcmp(arg, "--learn-experts")) { learn = 1; ai++; continue; }
+        if (!strcmp(arg, "--async-consolidation")) { async = 1; ai++; continue; }
         if (!strcmp(arg, "--expert-trace")) { trace = 1; ai++; continue; }
         if (!strcmp(arg, "--spore-in") || !strcmp(arg, "--spore-out")) {
             if (++ai >= argc) { usage(argv[0]); return 1; }
@@ -429,6 +439,10 @@ int main(int argc, char **argv) {
     }
     if (ai >= argc) { nt_logo(quiet); usage(argv[0]); return 1; }
 
+    if (async && !learn) {
+        fprintf(stderr, "notorch: --async-consolidation requires --learn-experts\n");
+        return 1;
+    }
     if ((learn || spore_in || spore_out) && !experts) {
         fprintf(stderr, "notorch: expert learning and spore I/O require --experts\n");
         return 1;
@@ -490,7 +504,7 @@ int main(int argc, char **argv) {
     if (!model) { gguf_close(gf); return 1; }
     fprintf(stderr, "loaded in %.0f ms\n", now_ms() - t0);
 
-    session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1, .learn = learn, .trace = trace };
+    session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1, .learn = learn, .trace = trace, .async = async };
     chat_wrap_init(&g_chat, dims.vocab, path);
     s.tok = bpe_load(path);
     if (s.tok) {
@@ -569,11 +583,15 @@ int main(int argc, char **argv) {
         rc = chat(&s, max_tokens, temp);
     }
 
+done:
+    if (s.pending && nt_experts_await(&s.experts, &s.pending)) {
+        fprintf(stderr, "notorch: final expert consolidation failed\n");
+        rc = 1;
+    }
     if (!rc && spore_out && nt_experts_save(s.experts, spore_out)) {
         fprintf(stderr, "notorch: could not publish a new spore at %s\n", spore_out);
         rc = 1;
     }
-done:
     nt_experts_free(s.experts);
     free(s.sampling_copy);
     if (s.tok) bpe_free(s.tok);
