@@ -1,0 +1,211 @@
+{"id": "ru-01", "prompt": "Привет, мир!"}
+{"id": "ru-02", "prompt": "Съешь же ещё этих мягких французских булок, да выпей чаю."}
+{"id": "ru-03", "prompt": "В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"}
+{"id": "ru-04", "prompt": "Ёжик в тумане — мультфильм Юрия Норштейна 1975 года."}
+{"id": "ru-05", "prompt": "«Война и мир» — роман Льва Николаевича Толстого."}
+{"id": "ru-06", "prompt": "Он сказал: „Я приду завтра“… и не пришёл."}
+{"id": "ru-07", "prompt": "Москва, ул. Тверская, д. 7, кв. 12"}
+{"id": "ru-08", "prompt": "Температура: −15 °C, ветер 7 м/с."}
+{"id": "ru-09", "prompt": "ЗАГЛАВНЫЕ БУКВЫ И строчные буквы"}
+{"id": "ru-10", "prompt": "КоРоВа МоЛоКо"}
+{"id": "ru-11", "prompt": "  два пробела впереди"}
+{"id": "ru-12", "prompt": "пробелы в конце   "}
+{"id": "ru-13", "prompt": "строка\nвторая строка\n\nтретья"}
+{"id": "ru-14", "prompt": "\tтабуляция и\tещё одна"}
+{"id": "ru-15", "prompt": "Чем больше знаешь, тем меньше понимаешь?!"}
+{"id": "ru-16", "prompt": "e-mail: ivan.petrov@example.ru, тел. +7 (495) 123-45-67"}
+{"id": "ru-17", "prompt": "Нейросеть на C: notorch."}
+{"id": "ru-18", "prompt": "Это — тест; проверка: раз, два, три..."}
+{"id": "ru-19", "prompt": "Щука, ящерица, объявление, подъезд"}
+{"id": "ru-20", "prompt": "Ѣ, і, ѳ, ѵ — дореформенная орфография"}
+{"id": "ru-21", "prompt": "Українська мова: Київ, ґанок, їжак, єнот"}
+{"id": "ru-22", "prompt": "Беларуская мова: ўсё, і"}
+{"id": "ru-23", "prompt": "Привет 👋 как дела?"}
+{"id": "ru-24", "prompt": "1-й, 2-я, 3-е, 10-е годы"}
+{"id": "ru-25", "prompt": "Ответ: 42."}
+{"id": "ru-26", "prompt": "слово-слово, слово—слово, слово–слово"}
+{"id": "ru-27", "prompt": "Ну и ну!!! Что??? Да..."}
+{"id": "ru-28", "prompt": "Код: for (int i = 0; i < n; i++) { сумма += a[i]; }"}
+{"id": "ru-29", "prompt": "Пётр's book, Анна'll come"}
+{"id": "ru-30", "prompt": "ПРИВЕТ'S мир'RE"}
+{"id": "he-01", "prompt": "שלום עולם"}
+{"id": "he-02", "prompt": "עברית היא שפה שמית"}
+{"id": "he-03", "prompt": "ירושלים, תל אביב-יפו, באר שבע"}
+{"id": "he-04", "prompt": "בְּרֵאשִׁית"}
+{"id": "he-05", "prompt": "בְּרֵאשִׁית"}
+{"id": "he-06", "prompt": "שָׁלוֹם"}
+{"id": "he-07", "prompt": "שָׁלוֹם"}
+{"id": "he-08", "prompt": "בְּרֵאשִׁ֖ית בָּרָ֣א"}
+{"id": "he-09", "prompt": "אֱלֹהִים"}
+{"id": "he-10", "prompt": "עִבְרִית with English words and 123"}
+{"id": "he-11", "prompt": "מה שלומך? טוב, תודה!"}
+{"id": "he-12", "prompt": "הספר \"חדש\" יצא ב-2026"}
+{"id": "he-13", "prompt": "בית־ספר"}
+{"id": "he-14", "prompt": "צה״ל, ג׳ירפה"}
+{"id": "he-15", "prompt": "ש״ח 100 ₪"}
+{"id": "he-16", "prompt": "שׁלום"}
+{"id": "he-17", "prompt": "בּית"}
+{"id": "he-18", "prompt": "ייִדיש ײַ"}
+{"id": "he-19", "prompt": "‏שלום‏ world"}
+{"id": "he-20", "prompt": "תשפ״ז\n\tשורה שנייה"}
+{"id": "he-21", "prompt": "  שלום  "}
+{"id": "he-22", "prompt": "אבגדהוזחטיכלמנסעפצקרשת"}
+{"id": "he-23", "prompt": "ךםןףץ"}
+{"id": "he-24", "prompt": "בַּיִת"}
+{"id": "he-25", "prompt": "בַּיִת"}
+{"id": "he-26", "prompt": "חָכְמָה וֹוְ"}
+{"id": "he-27", "prompt": "כֿתֿ"}
+{"id": "he-28", "prompt": "אָֽדָם"}
+{"id": "en-01", "prompt": "Hello, world!"}
+{"id": "en-02", "prompt": "It's a test, isn't it? We're sure they'll come, I'd say you've seen it, I'm in."}
+{"id": "en-03", "prompt": "SHE'S HERE, THEY'RE GONE, WE'LL SEE, I'M OK, YOU'VE WON, HE'D GO, DON'T"}
+{"id": "en-04", "prompt": "'s 't 're 've 'm 'll 'd"}
+{"id": "en-05", "prompt": "'S 'T 'RE 'VE 'M 'LL 'D 'Re 'rE 'lL"}
+{"id": "en-06", "prompt": "rock'n'roll, O'Neill, y'all, ma'am"}
+{"id": "en-07", "prompt": "The long s: Congreſs, 'ſ and 'ſa and ſ's"}
+{"id": "en-08", "prompt": "C'est la vie, l'homme, aujourd'hui"}
+{"id": "en-09", "prompt": "curly: it’s, ‘tis, we’re"}
+{"id": "en-10", "prompt": "https://example.com/path?query=1&x=y#frag"}
+{"id": "en-11", "prompt": "def f(x):\n    return x * 2\n"}
+{"id": "en-12", "prompt": "if (a && b) { return -1; } else { return +1; }"}
+{"id": "en-13", "prompt": "!!!???...,,,;;;:::"}
+{"id": "en-14", "prompt": "a!!!b???c...d"}
+{"id": "en-15", "prompt": " leading space"}
+{"id": "en-16", "prompt": "trailing space "}
+{"id": "en-17", "prompt": "   "}
+{"id": "en-18", "prompt": "\n\n\n"}
+{"id": "en-19", "prompt": "\r\n\r\nwindows\r\nline"}
+{"id": "en-20", "prompt": "tab\tseparated\tvalues\n1\t2\t3"}
+{"id": "en-21", "prompt": "MiXeD CaSe WoRdS"}
+{"id": "en-22", "prompt": "e.g. i.e. etc. Mr. Dr. U.S.A."}
+{"id": "en-23", "prompt": "Price: $1,234.56 (€1.000,50) £99 ¥500"}
+{"id": "en-24", "prompt": "100% sure — 50/50 — 3×4=12 — 2^10=1024"}
+{"id": "en-25", "prompt": "naïve café résumé façade jalapeño"}
+{"id": "en-26", "prompt": "Ångström Øresund Œuvre ß Æsir þorn ðæt"}
+{"id": "en-27", "prompt": "x y  z"}
+{"id": "en-28", "prompt": "word　word"}
+{"id": "en-29", "prompt": "line separator paragraph"}
+{"id": "en-30", "prompt": "a\u000bb\u000cc"}
+{"id": "en-31", "prompt": "\u0085next line"}
+{"id": "en-32", "prompt": "zero​width‌joiner‍test"}
+{"id": "en-33", "prompt": "soft­hyphen"}
+{"id": "en-34", "prompt": "Kelvin K and 'K"}
+{"id": "en-35", "prompt": "\t\tdeep\n\t\t\tdeeper\n"}
+{"id": "en-36", "prompt": " \t \n \t "}
+{"id": "d-01", "prompt": "0123456789"}
+{"id": "d-02", "prompt": "١٢٣٤٥٦٧٨٩٠"}
+{"id": "d-03", "prompt": "۱۲۳۴۵۶۷۸۹۰"}
+{"id": "d-04", "prompt": "०१२३४५६७८९"}
+{"id": "d-05", "prompt": "０１２３４５６７８９"}
+{"id": "d-06", "prompt": "x² + y³ = z¹"}
+{"id": "d-07", "prompt": "½ ¼ ¾ ⅓"}
+{"id": "d-08", "prompt": "Ⅰ Ⅱ Ⅻ ⅰ ⅻ"}
+{"id": "d-09", "prompt": "① ② ⑩ ⑳"}
+{"id": "d-10", "prompt": "3.14159265358979"}
+{"id": "d-11", "prompt": "1,000,000 and 1 000 000 and 1'000'000"}
+{"id": "d-12", "prompt": "2026-11-09T12:34:56Z"}
+{"id": "d-13", "prompt": "abc123def456"}
+{"id": "d-14", "prompt": "০১২৩ ๐๑๒๓ ༠༡༢"}
+{"id": "d-15", "prompt": "𝟘𝟙𝟚 𝟎𝟏𝟐"}
+{"id": "d-16", "prompt": "Год 2026, ٢٠٢٦ هـ, ५६"}
+{"id": "d-17", "prompt": "Ｑｗｅｎ３．５"}
+{"id": "e-01", "prompt": "😀😃😄😁"}
+{"id": "e-02", "prompt": "👍 👍🏻 👍🏽 👍🏿"}
+{"id": "e-03", "prompt": "👨‍👩‍👧‍👦 family"}
+{"id": "e-04", "prompt": "🇮🇱 🇷🇺 🇺🇸"}
+{"id": "e-05", "prompt": "❤️ ♥ ❤"}
+{"id": "e-06", "prompt": "1️⃣ 2️⃣ #️⃣"}
+{"id": "e-07", "prompt": "🏳️‍🌈 🏴‍☠️"}
+{"id": "e-08", "prompt": "I ❤️ NY"}
+{"id": "e-09", "prompt": "Отлично! 🔥🔥🔥"}
+{"id": "e-10", "prompt": "מזל טוב 🎉"}
+{"id": "e-11", "prompt": "☺️☹️"}
+{"id": "e-12", "prompt": "🙂\n🙃\t😉"}
+{"id": "e-13", "prompt": "a😀b😀c"}
+{"id": "e-14", "prompt": "👩🏽‍💻 coding"}
+{"id": "e-15", "prompt": "😀!!!"}
+{"id": "c-01", "prompt": "你好，世界！"}
+{"id": "c-02", "prompt": "我爱自然语言处理。"}
+{"id": "c-03", "prompt": "日本語のテキストです。"}
+{"id": "c-04", "prompt": "カタカナとひらがな、漢字"}
+{"id": "c-05", "prompt": "한국어 텍스트입니다"}
+{"id": "c-06", "prompt": "安全第一 2026年11月9日"}
+{"id": "c-07", "prompt": "中文English混合mixed"}
+{"id": "c-08", "prompt": "「引用」と『二重引用』"}
+{"id": "c-09", "prompt": "ｶﾀｶﾅ ﾃｽﾄ"}
+{"id": "c-10", "prompt": "がき"}
+{"id": "c-11", "prompt": "한글"}
+{"id": "c-12", "prompt": "豈更"}
+{"id": "c-13", "prompt": "繁體中文與簡体中文"}
+{"id": "c-14", "prompt": "ㄅㄆㄇㄈ"}
+{"id": "m-01", "prompt": "é"}
+{"id": "m-02", "prompt": "ño"}
+{"id": "m-03", "prompt": "Ångström"}
+{"id": "m-04", "prompt": "Å"}
+{"id": "m-05", "prompt": "Ω ohm"}
+{"id": "m-06", "prompt": "a̲b̲"}
+{"id": "m-07", "prompt": "x⃝"}
+{"id": "m-08", "prompt": "a̵̶"}
+{"id": "m-09", "prompt": "Z̶̷a͓͒l̕̚g͇o"}
+{"id": "m-10", "prompt": "q̖͆"}
+{"id": "m-11", "prompt": "Tiếng Việt có dấu"}
+{"id": "m-12", "prompt": "Tiếng"}
+{"id": "m-13", "prompt": "नमस्ते दुनिया"}
+{"id": "m-14", "prompt": "हिन्दी भाषा"}
+{"id": "m-15", "prompt": "مَرْحَبًا"}
+{"id": "m-16", "prompt": "شَّد"}
+{"id": "m-17", "prompt": "شَّد"}
+{"id": "m-18", "prompt": "ภาษาไทย สวัสดีครับ"}
+{"id": "m-19", "prompt": "தமிழ் மொழி"}
+{"id": "m-20", "prompt": "Å precomposed"}
+{"id": "m-21", "prompt": "a͏b"}
+{"id": "m-22", "prompt": "ﬁ ﬀ ligatures"}
+{"id": "m-23", "prompt": "ÉCOLE"}
+{"id": "m-24", "prompt": "aַ"}
+{"id": "m-25", "prompt": "ַabc ̲x"}
+{"id": "m-26", "prompt": " ̲x"}
+{"id": "m-27", "prompt": "1̲ 2"}
+{"id": "m-28", "prompt": "!̲ ?͆a"}
+{"id": "m-29", "prompt": "\n̲a"}
+{"id": "m-30", "prompt": "a⃣"}
+{"id": "m-31", "prompt": "أ"}
+{"id": "m-32", "prompt": "̲"}
+{"id": "s-01", "prompt": "<|im_start|>user\nПривет!<|im_end|>\n<|im_start|>assistant\n"}
+{"id": "s-02", "prompt": "<|im_start|>system\nאתה עוזר.<|im_end|>\n"}
+{"id": "s-03", "prompt": "<think>\n\n</think>\n\nОтвет"}
+{"id": "s-04", "prompt": "<|endoftext|>text after"}
+{"id": "x-01", "prompt": "Hello, мир! שלום! 你好!"}
+{"id": "x-02", "prompt": "Python и C — лучшие друзья"}
+{"id": "x-03", "prompt": "Цена: 100$ / ₪370 / €95"}
+{"id": "x-04", "prompt": "קוד: printf(\"Привет\\n\");"}
+{"id": "x-05", "prompt": "Москва→Тель-Авив ✈️ 4ч"}
+{"id": "x-06", "prompt": "notorch — нейросети на C, ללא PyTorch"}
+{"id": "x-07", "prompt": "abcабвאבג123١٢٣"}
+{"id": "x-08", "prompt": "AаAаBВ"}
+{"id": "x-09", "prompt": "русский\tעברית\nenglish\r\n中文"}
+{"id": "x-10", "prompt": "  \t\n  mixed whitespace  \t"}
+{"id": "x-11", "prompt": "'s'S'ſ'Ʃ"}
+{"id": "x-12", "prompt": "ﬆ ﬅ 'ﬆ"}
+{"id": "x-13", "prompt": "ΑΒΓ αβγ Ελληνικά"}
+{"id": "x-14", "prompt": "Ἀθῆναι"}
+{"id": "x-15", "prompt": "Ⴀ ქართული"}
+{"id": "x-16", "prompt": "Հայերեն"}
+{"id": "x-17", "prompt": "ᚠᚢᚦ ᚨᚱ"}
+{"id": "x-18", "prompt": "𝔘𝔫𝔦𝔠𝔬𝔡𝔢 𝕄𝕒𝕥𝕙"}
+{"id": "x-19", "prompt": "Smile :-) ;-) :D <3 </3"}
+{"id": "x-20", "prompt": "ru:да he:כן en:yes zh:是"}
+{"id": "long-01", "prompt": "Однажды весною, в час небывало жаркого заката, в Москве, на Патриарших прудах, появились два гражданина. Первый из них, одетый в летнюю серенькую пару, был маленького роста, упитан, лыс, свою приличную шляпу пирожком нёс в руке, а на хорошо выбритом лице его помещались сверхъестественных размеров очки в чёрной роговой оправе. Второй — плечистый, рыжеватый, вихрастый молодой человек в заломленной на затылок клетчатой кепке — был в ковбойке, жёваных белых брюках и в чёрных тапочках."}
+{"id": "long-02", "prompt": "בְּרֵאשִׁית בָּרָא אֱלֹהִים אֵת הַשָּמַיִם וְאֵת הָאָרֶץ׃ וְהָאָרֶץ הָיְתָה תֹהוּ וָבֹהוּ"}
+{"id": "long-03", "prompt": "It's not that we're unable; it's that they'd rather we didn't. You'll see: I'm sure he's right, and she'll agree once they've read it. Don't worry -- we'll manage, won't we?"}
+{"id": "long-04", "prompt": "int main(void) {\n\tint x = 0;\n\tfor (int i = 0; i < 10; i++) {\n\t\tx += i; /* сумма */\n\t}\n\tprintf(\"%d\\n\", x); // שלום\n\treturn 0;\n}\n"}
+{"id": "limit-01", "prompt": "за́мок и замо́к"}
+{"id": "limit-02", "prompt": "приве́т"}
+{"id": "limit-03", "prompt": "বাংলা ভাষা"}
+{"id": "limit-04", "prompt": "தமிழா"}
+{"id": "limit-05", "prompt": "q́"}
+{"id": "limit-06", "prompt": "i̇"}
+{"id": "limit-07", "prompt": "क़"}
+{"id": "limit-08", "prompt": "സ഻"}
+{"id": "limit-09", "prompt": "بࢗ"}
+{"id": "limit-10", "prompt": "ᅡ"}
+{"id": "limit-11", "prompt": "മലയാളം"}

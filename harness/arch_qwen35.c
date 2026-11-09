@@ -83,7 +83,12 @@ static void *q35_load(gguf_file *g,nt_dims *dims) {
     q35_model *m=calloc(1,sizeof(*m));if(!m)return NULL;m->gf=g;
     int version;
     #define I(key,field) if(!mi(g,key,&m->field))goto bad
-    if(!mi(g,"source_layout_version",&version) || version!=1)goto bad;
+    if(!mi(g,"source_layout_version",&version)) {
+        fprintf(stderr,"qwen35: no qwen35.source_layout_version; this family reads what tools/qwen35_to_gguf "
+                       "writes from the original checkpoint, not the llama.cpp qwen35 layout\n");
+        q35_free(m);return NULL;
+    }
+    if(version!=1)goto bad;
     I("block_count",L);I("embedding_length",E);I("feed_forward_length",F);
     I("vocab_size",V);I("attention.head_count",H);I("attention.head_count_kv",KV);
     I("attention.head_dim",HD);I("rope.dimension_count",R);I("context_length",ctx);

@@ -11,18 +11,33 @@ The minimal CLI now honors the existing family-specific cache callbacks.
 
 This first path reads the explicit `qwen35.source_layout_version = 1` format
 produced by the native converter below. BF16/F32 tensor payloads are copied
-unchanged from a single `model.safetensors`. The loader expands matrix weights
-to F32 for CPU arithmetic; embedding rows remain mapped. Vision tensors stay in
-the original checkpoint and are excluded from this text pack. Packed quantized
-GGUFs, MoE, Metal and the vision forward path are future work.
+unchanged from `model.safetensors`, or from the shards
+`model.safetensors.index.json` names when there is no such file: Qwen's own
+0.8B and 2B ship one shard named `-00001-of-00001`, 4B two. The loader expands
+matrix weights to F32 for CPU arithmetic; embedding rows remain mapped. Vision
+and MTP tensors stay in the original checkpoint and are excluded from this text
+pack. A GGUF written by llama.cpp also says `qwen35`; it is refused by name
+(`no qwen35.source_layout_version`). Packed quantized GGUFs, MoE, Metal and the
+vision forward path are future work.
 
 ```sh
-make qwen35_to_gguf qwen35_tokenize qwen35_eval
+make qwen35_to_gguf qwen35_tokenize qwen35_eval notorch
 ./qwen35_to_gguf /path/to/snapshot model.gguf
 ./qwen35_to_gguf --tokenizer /path/to/snapshot/tokenizer.json tokenizer.gguf
 ./qwen35_tokenize tokenizer.gguf < prompts.jsonl > inputs.tsv
 ./qwen35_eval model.gguf --chunk 32 < inputs.tsv > answers.jsonl
+NT_BLAS_THREADS=6 ./notorch --tokenizer tokenizer.gguf -n 64 -t 0 model.gguf "The capital of France is"
 ```
+
+The model file carries no vocabulary, so the CLI takes it with
+`--tokenizer`, also for `-T`; a tokenizer for another architecture, one with
+more tokens than the model has rows, or a missing file is refused. Without
+one the CLI refuses to read text as byte ids, which a 248,320-id model would
+take as garbage; `NT_TOKENS` still passes ids straight to the forward. A run
+ends on `<|im_end|>` or `<|endoftext|>`. Every matrix here goes through
+`cblas_sgemm` in F32, so on an OpenBLAS build `NT_BLAS_THREADS=N` gives it N
+threads; the default for every family stays one, and Accelerate threads
+itself.
 
 `prompts.jsonl` contains `{ "id": "example", "prompt": "..." }` rows. The
 resulting TSV is `id<TAB>space-separated token IDs`. `qwen35_eval` returns the
@@ -37,6 +52,35 @@ text encoding explicitly refuses non-ASCII bytes. The decoder accepts verified
 token IDs throughout the vocabulary. `bpe_encode_special` explicitly opts into
 literal CONTROL/USER_DEFINED tokens for complete chat prompts; ordinary
 `bpe_encode` retains its previous CONTROL behavior.
+
+`qwen35` is the official checkpoint's regex, which keeps marks inside words
+(`\p{M}` from `examples/unicode_marks.h`). It is ported over codepoints in the
+reference's leftmost-first order, and its `(?i)` folds `'ſ` to `'s` as the
+reference does; llama.cpp's `[sS]` does not. The converter writes `qwen35` for
+the official tokenizer.json and `qwen35-ascii`, byte for byte as before, for
+the older regex; merges are read as pairs or as `"a b"` strings. NFC is a
+UAX #15 quick check: invalid UTF-8, or a codepoint in `qwen35_refuse`
+(`examples/unicode_qwen35.h`: NFC_QC No or Maybe, 108 marks the reference's
+Unicode 9.0 ccc table orders as starters, 4,433 Unicode 16 codepoints its regex
+reads as letters, marks or numbers), encodes to nothing. Any other text is NFC
+after a stable sort of each run of non-starters by ccc. The check also refuses
+some text NFC leaves alone, a Maybe mark that composes with nothing before it:
+Russian stress marks (а + U+0301), the Bengali, Tamil and Malayalam vowel sign
+AA. So Russian text written with stress marks, and most Bengali, gets no ids
+at all: it is refused, not tokenized. Accepting it needs NFC's composition
+step, which this tokenizer does not have. `tools/gen_unicode_tables.py`
+regenerates both headers.
+
+Against tokenizers 0.22.2 on the official tokenizer.json (sha256
+`5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42`,
+Qwen/Qwen3.5-0.8B `2fc06364715b967f1860aea9cf38778875588b17`),
+`tests/qwen35_tokenizer_parity.py` ran the 211 rows of
+`tests/qwen35_unicode_corpus.jsonl` and 300 seeded random rows: all 456
+accepted rows had the reference's ids, all 44 refusals were text the
+reference's NFC changes, and the 11 limit rows were refused. llama.cpp
+e95426f differed from the reference on 95 of the 511 rows, each one text NFC
+changes: its BPE path does not normalize. The official tokenizer GGUF is
+`2f38049769a7fb0d2b70b5ed329563d932cc366899379f35476419021260a4f4`.
 
 ## Verification, 2026-11-06
 
@@ -86,5 +130,49 @@ execute permission; rebuilding that executable resolved the interruption.
 JOVOVICH also ran all 14 prompts through AML + native tokenization + chunk-32
 NoTorch inference, preserving all choices and meeting the same 2e-4 probability
 gate. The task score remains 12/14: the original index-boundary and disabled
-writer misses remain present. No throughput comparison has been run; memory
-packing and a matched llama.cpp speed comparison are subsequent stages.
+writer misses remain present.
+
+## Official checkpoints against llama.cpp, 2026-11-09
+
+The stock checkpoints Qwen/Qwen3.5-0.8B (`2fc06364715b`), -2B (`15852e8c16360`)
+and -4B (`851bf6e806efd8d`), every shard checked against its LFS SHA-256, were
+converted here and, for the reference, by llama.cpp `7d7f0287530bc8981690f361d8c1627dbae1c99a`'s
+own `convert_hf_to_gguf.py` to BF16. On 2026-11-09 that commit was still the
+head of llama.cpp master, and a second run of its benchmark on the same
+machine reproduced the first within 2.1%. Greedy, repeat penalty 1.0, through
+`--tokenizer`:
+
+- 32-token continuations of "The capital of France is", "1, 2, 3, 4," and
+  "def fibonacci(n):" are llama.cpp's text in 9 of 9 cases on x86_64 (0.8B, 2B,
+  4B) and 6 of 6 on an M4 Pro (0.8B, 2B).
+- A chat prompt ends where llama.cpp's does, on `<|im_end|>`, with the same
+  answer, on 0.8B and 2B.
+- "Столица Франции это" and "בירת צרפת היא" encode to llama.cpp's ids. On 2B
+  the continuations match. On 0.8B both differ from llama.cpp's BF16 run and
+  both equal Transformers 5.8.0 in F32, id for id: the F32 path here sides with
+  the F32 reference where BF16 arithmetic parts from it.
+
+Throughput, 64-token prompt and 64 generated tokens, t/s, prefill / decode:
+
+| Machine | Model | NoTorch | llama.cpp BF16, CPU |
+| --- | --- | ---: | ---: |
+| i5-8500T, 6 threads | 0.8B | 83.6 / 6.1 | 209.4 / 17.6 |
+| | 2B | 44.7 / 2.4 | 95.4 / 7.8 |
+| | 4B | 19.3 / 1.2 | 37.7 / 3.5 |
+| i5-8500T, 1 thread | 0.8B | 41.6 / 2.3 | 47.3 / 8.3 |
+| | 2B | 18.0 / 0.9 | 19.6 / 3.7 |
+| | 4B | 7.5 / 0.4 | 7.6 / 1.5 |
+| M4 Pro, Accelerate / 10 threads | 0.8B | ≈450 / 38.4 | 166.2 / 18.8 |
+| | 2B | ≈248 / 19.6 | 122.1 / 7.6 |
+
+NoTorch's six-thread x86 numbers are with `NT_BLAS_THREADS=6`, its one-thread
+numbers the default. On the M4 Pro, llama.cpp's Metal GPU path reaches 2761.7 /
+123.3 (0.8B) and 1413.0 / 59.3 (2B); NoTorch has no GPU path for this family.
+On x86 decode runs at a third of llama.cpp's; the F32 weights it streams are
+twice the bytes of BF16.
+
+`make test_qwen35` now also runs a second frozen fixture,
+`tests/qwen35_gqa_fixture.h` from `tests/qwen35_fixture_gen.py gqa`: two KV
+heads, two key heads and two full-attention layers, 1124 checks. Reading the
+wrong KV head, the wrong key head or every full layer at slot 0 fails 832, 1056
+and 408 of them; the first fixture passes all three.

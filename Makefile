@@ -396,7 +396,7 @@ qwen35_to_gguf: tools/qwen35_to_gguf.c tools/narrow_json.h gguf.c sha256.c notor
 qwen35_tokenize: tools/qwen35_tokenize.c tools/narrow_json.h examples/bpe.c examples/bpe.h gguf.c notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) -o $@ tools/qwen35_tokenize.c examples/bpe.c gguf.c notorch.c -lm
 
-test_qwen35: tests/test_qwen35.c tests/qwen35_fixture.h $(QWEN35_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
+test_qwen35: tests/test_qwen35.c tests/qwen35_fixture.h tests/qwen35_gqa_fixture.h $(QWEN35_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_qwen35.c $(QWEN35_SRC) -lm $(BLAS_LIBS)
 	./test_qwen35
 
@@ -454,7 +454,7 @@ bench_multi_decode: tests/bench_multi_decode.c libnotorch_harness.a libnotorch.a
 check_residual: test_residual
 	./test_residual
 
-examples/bpe.o: examples/unicode_numbers.h examples/unicode_letters.h
+examples/bpe.o: examples/unicode_numbers.h examples/unicode_letters.h examples/unicode_marks.h examples/unicode_qwen35.h
 
 test_smollm_tokenizer: tests/test_smollm_tokenizer.c libnotorch_harness.a libnotorch.a Makefile
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
@@ -511,6 +511,12 @@ test_harness_emit: tests/test_harness_emit.c harness/main.c tools/pen7_bpe.h lib
 
 check_harness_emit: test_harness_emit
 	./test_harness_emit $(MODEL)
+
+test_harness_tokenizer: tests/test_harness_tokenizer.c tests/qwen35_fixture.h harness/main.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
+	./test_harness_tokenizer
+
+test: test_harness_tokenizer
 
 .PHONY: check_penelope check_harness_emit
 
@@ -1184,7 +1190,7 @@ clean:
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
 	rm -f test_sampling
-	rm -f doe_probe test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_parliament_values test_tanh_sgd
+	rm -f doe_probe test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o
