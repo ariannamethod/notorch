@@ -27,6 +27,7 @@
  *
  * Prints go to stderr: stdout belongs to the model. */
 #include "harness/arch.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,12 +68,46 @@ typedef struct {
     } layers[];
 } olmoe_model;
 
-static float *load_f32(gguf_file *gf, const char *name) {
+static float *load_norm(gguf_file *gf, const char *name, int width) {
     int ti = gguf_find_tensor(gf, name);
-    return ti < 0 ? NULL : gguf_dequant(gf, ti);
+    if (ti < 0 || gf->tensors[ti].ndim != 1 || gf->tensors[ti].shape[0] != (unsigned)width) return NULL;
+    return gguf_dequant(gf, ti);
 }
 
+/* Check the shape before wt_load probes the first packed row. Older expert
+ * stacks can be flattened to one matrix; a 3-D stack has an explicit expert axis. */
+static int load_matrix(gguf_file *gf, const char *name, wt *w, int cols, int rows, int slices) {
+    int ti = gguf_find_tensor(gf, name);
+    if (ti < 0 || cols < 1 || rows < 1 || slices < 1) return 0;
+    const gguf_tensor_info *t = &gf->tensors[ti];
+    if (t->shape[0] != (unsigned)cols) return 0;
+    if (t->ndim == 2) {
+        if (t->shape[1] != (uint64_t)rows * slices) return 0;
+    } else if (t->ndim != 3 || t->shape[1] != (unsigned)rows ||
+               t->shape[2] != (unsigned)slices) return 0;
+    uint64_t row_bytes = gguf_type_size(t->dtype, (unsigned)cols);
+    if (!row_bytes || t->offset > gf->data_size ||
+        (uint64_t)rows * slices > (gf->data_size - t->offset) / row_bytes) return 0;
+    return wt_load(w, gf, name);
+}
+
+/* The generic metadata scan matches suffixes. If the family's own geometry
+ * is present, a later unrelated key must not move the middle block or its axes. */
+static int matches_dimension(const gguf_file *gf, const char *suffix, int value) {
+    char key[96];
+    snprintf(key, sizeof(key), "%s.%s", gf->arch, suffix);
+    const gguf_kv *kv = gguf_get_kv(gf, key);
+    return !kv || (kv->type == 4 && kv->val.u32 == (unsigned)value);
+}
+
+static void olmoe_free(void *model);
+
 static void *olmoe_load(gguf_file *gf, nt_dims *dims) {
+    if (!gf || !dims || gf->n_layers < 1 || gf->n_layers > GGUF_MAX_TENSORS ||
+        gf->embed_dim < 1 || gf->n_heads < 1 || gf->n_kv_heads < 1 ||
+        gf->n_heads % gf->n_kv_heads ||
+        !matches_dimension(gf, "embedding_length", gf->embed_dim) ||
+        !matches_dimension(gf, "block_count", gf->n_layers)) return NULL;
     int nl = gf->n_layers;
     olmoe_model *m = (olmoe_model*)calloc(1, sizeof(olmoe_model) + nl * sizeof(m->layers[0]));
     if (!m) return NULL;
@@ -121,13 +156,11 @@ static void *olmoe_load(gguf_file *gf, nt_dims *dims) {
     }
 
     int ti = gguf_find_tensor(gf, "blk.0.attn_q.weight");
-    if (ti >= 0) {
-        m->q_dim = (int)gf->tensors[ti].shape[1];
-        m->head_dim = m->q_dim / m->n_heads;
-    } else {
-        m->q_dim = m->embed;
-        m->head_dim = m->embed / m->n_heads;
-    }
+    if (ti < 0 || gf->tensors[ti].ndim != 2 || gf->tensors[ti].shape[1] > INT_MAX) goto bad;
+    m->q_dim = (int)gf->tensors[ti].shape[1];
+    m->head_dim = m->q_dim / m->n_heads;
+    if (m->head_dim <= 0 || (m->head_dim & 1) || m->q_dim % m->n_heads ||
+        m->ffn < 1 || m->ffn > INT_MAX/m->n_expert || m->embed > INT_MAX/m->n_expert) goto bad;
     m->kv_dim = m->n_kv_heads * m->head_dim;
 
     /* Whether the QK norm is one weight for the projection or one for each head is a
@@ -148,55 +181,46 @@ static void *olmoe_load(gguf_file *gf, nt_dims *dims) {
     }
 
     m->emb_ti = gguf_find_tensor(gf, "token_embd.weight");
-    if (!wt_load(&m->tok_emb, gf, "token_embd.weight") || m->emb_ti < 0) {
+    if (m->emb_ti < 0 || gf->tensors[m->emb_ti].ndim != 2 ||
+        gf->tensors[m->emb_ti].shape[0] != (unsigned)m->embed ||
+        gf->tensors[m->emb_ti].shape[1] > INT_MAX ||
+        !load_matrix(gf, "token_embd.weight", &m->tok_emb, m->embed,
+                     (int)gf->tensors[m->emb_ti].shape[1], 1)) {
         fprintf(stderr, "olmoe: no token_embd\n");
-        free(m);
-        return NULL;
+        goto bad;
     }
     m->vocab = m->tok_emb.rows;
-    m->out_norm = load_f32(gf, "output_norm.weight");
+    m->out_norm = load_norm(gf, "output_norm.weight", m->embed);
     /* Not tied: this family ships a separate head, and in this checkpoint at a different
      * quantisation from the embedding table. */
-    if (!wt_load(&m->out_weight, gf, "output.weight")) {
+    if (!load_matrix(gf, "output.weight", &m->out_weight, m->embed, m->vocab, 1)) {
         fprintf(stderr, "olmoe: no output.weight\n");
-        free(m);
-        return NULL;
+        goto bad;
     }
 
     int ok = m->out_norm != NULL;
     for (int l = 0; l < nl && ok; l++) {
         char nm[128];
-        #define T(dst, fmt) (snprintf(nm, sizeof(nm), fmt, l), wt_load(&m->layers[l].dst, gf, nm))
-        #define F(dst, fmt) (snprintf(nm, sizeof(nm), fmt, l), m->layers[l].dst = load_f32(gf, nm), \
+        #define T(dst, fmt, c, r, s) (snprintf(nm, sizeof(nm), fmt, l), \
+                                      load_matrix(gf, nm, &m->layers[l].dst, c, r, s))
+        #define F(dst, fmt, w) (snprintf(nm, sizeof(nm), fmt, l), m->layers[l].dst = load_norm(gf, nm, w), \
                              m->layers[l].dst != NULL)
-        ok = F(attn_norm, "blk.%d.attn_norm.weight")
-          && T(wq, "blk.%d.attn_q.weight")   && T(wk, "blk.%d.attn_k.weight")
-          && T(wv, "blk.%d.attn_v.weight")   && T(wo, "blk.%d.attn_output.weight")
-          && F(q_norm, "blk.%d.attn_q_norm.weight")
-          && F(k_norm, "blk.%d.attn_k_norm.weight")
-          && F(ffn_norm, "blk.%d.ffn_norm.weight")
-          && T(gate_inp, "blk.%d.ffn_gate_inp.weight")
-          && T(gate_exps, "blk.%d.ffn_gate_exps.weight")
-          && T(up_exps, "blk.%d.ffn_up_exps.weight")
-          && T(down_exps, "blk.%d.ffn_down_exps.weight");
+        ok = F(attn_norm, "blk.%d.attn_norm.weight", m->embed)
+          && T(wq, "blk.%d.attn_q.weight", m->embed, m->q_dim, 1)
+          && T(wk, "blk.%d.attn_k.weight", m->embed, m->kv_dim, 1)
+          && T(wv, "blk.%d.attn_v.weight", m->embed, m->kv_dim, 1)
+          && T(wo, "blk.%d.attn_output.weight", m->q_dim, m->embed, 1)
+          && F(q_norm, "blk.%d.attn_q_norm.weight", m->qk_norm_per_head ? m->head_dim : m->q_dim)
+          && F(k_norm, "blk.%d.attn_k_norm.weight", m->qk_norm_per_head ? m->head_dim : m->kv_dim)
+          && F(ffn_norm, "blk.%d.ffn_norm.weight", m->embed)
+          && T(gate_inp, "blk.%d.ffn_gate_inp.weight", m->embed, m->n_expert, 1)
+          && T(gate_exps, "blk.%d.ffn_gate_exps.weight", m->embed, m->ffn, m->n_expert)
+          && T(up_exps, "blk.%d.ffn_up_exps.weight", m->embed, m->ffn, m->n_expert)
+          && T(down_exps, "blk.%d.ffn_down_exps.weight", m->ffn, m->embed, m->n_expert);
         #undef T
         #undef F
-        /* The stacked tensors must divide into the experts the metadata promised, or a slice
-         * would silently start mid-expert and the model would answer with somebody else's
-         * arithmetic. */
-        if (ok && (m->layers[l].gate_exps.rows != m->ffn * m->n_expert ||
-                   m->layers[l].up_exps.rows   != m->ffn * m->n_expert ||
-                   m->layers[l].down_exps.rows != m->embed * m->n_expert)) {
-            fprintf(stderr, "olmoe: layer %d expert stack does not match %d experts\n",
-                    l, m->n_expert);
-            ok = 0;
-        }
     }
-    if (!ok) {
-        fprintf(stderr, "olmoe: missing or mismatched weights\n");
-        free(m);
-        return NULL;
-    }
+    if (!ok) goto bad;
 
     fprintf(stderr, "olmoe: E=%d H=%d KV=%d HD=%d FFN=%d V=%d L=%d experts=%d/%d\n",
             m->embed, m->n_heads, m->n_kv_heads, m->head_dim, m->ffn, m->vocab,
@@ -206,6 +230,10 @@ static void *olmoe_load(gguf_file *gf, nt_dims *dims) {
     dims->kv_dim = m->kv_dim;
     dims->vocab = m->vocab;
     return m;
+bad:
+    fprintf(stderr, "olmoe: missing or mismatched weights\n");
+    olmoe_free(m);
+    return NULL;
 }
 
 static void olmoe_free(void *model) {
@@ -300,9 +328,24 @@ static void top_k(const float *p, int n, int k, int *idx) {
     }
 }
 
-static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                         int pos0, float *logits) {
+static void select_route(const olmoe_model *m, float *scores, int *ids, float *weights) {
+    int k = m->n_expert_used;
+    softmax(scores, m->n_expert);
+    top_k(scores, m->n_expert, k, ids);
+    for (int e = 0; e < k; e++) weights[e] = scores[ids[e]];
+    if (m->renorm_topk) {
+        float sum = 0;
+        for (int e = 0; e < k; e++) sum += weights[e];
+        if (sum > 0) for (int e = 0; e < k; e++) weights[e] /= sum;
+    }
+}
+
+static int olmoe_forward_routes(void *model, kv_cache *kv, const int *tokens, int n,
+                            int pos0, float *logits, nt_residual_fn post_attention,
+                            nt_residual_fn post_block, void *user,
+                            nt_moe_route_fn route, void *route_user) {
     olmoe_model *m = (olmoe_model*)model;
+    if (!m) return NT_E_ARG;
     int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_layers, m->kv_dim);
     if (rc != NT_OK) return rc;
 
@@ -356,6 +399,12 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
     float *grp_da = NULL, *grp_cda = NULL, *grp_dda = NULL;
     int32_t *grp_as = NULL, *grp_cas = NULL, *grp_das = NULL;
     int *grp_idx = NULL, *grp_pos = NULL, *grp_slot = NULL;
+    int grouped = 0;
+    if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_out || !router ||
+        !eg || !eu || !eo || !scratch_scores) {
+        rc = NT_E_MEMORY;
+        goto done;
+    }
     if (n > 1) {
         long nsubE = E / 32, nsubF = FFN / 32;
         grp_part = (float*)malloc((size_t)n * NU * E * sizeof(float));
@@ -384,16 +433,7 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
             free(grp_qa); free(grp_cqa); free(grp_dqa); free(grp_da); free(grp_cda);
             free(grp_dda); free(grp_as); free(grp_cas); free(grp_das);
             free(grp_idx); free(grp_pos); free(grp_slot);
-            grp_part = NULL;
-        }
-    }
-
-    if (!xn || !q_all || !k_new || !v_new || !attn_out || !ffn_out || !router ||
-        !eg || !eu || !eo || !scratch_scores) {
-        free(x); free(xn); free(q_all); free(k_new); free(v_new);
-        free(attn_out); free(ffn_out); free(router); free(eg); free(eu); free(eo);
-    free(scratch_scores);
-        return NT_E_MEMORY;
+        } else grouped = 1;
     }
 
     for (int l = 0; l < m->n_layers; l++) {
@@ -458,6 +498,7 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
         pft = pf_mark();
         for (long i = 0; i < (long)n * E; i++) x[i] += ffn_out[i];
         pf_add(PF_RESID, pft);
+        if (post_attention && (rc = post_attention(user, l, pos0, n, E, x)) != NT_OK) goto done;
 
         pft = pf_mark();
         for (int j = 0; j < n; j++)
@@ -499,7 +540,6 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
          *
          * Routing is done for the whole chunk first because the grouping needs to see every
          * position's choice before it can read any expert. */
-        int grouped = (n > 1 && grp_part != NULL);
         if (grouped) {
             long nsubE = E / 32;
             for (int j = 0; j < n; j++) {
@@ -507,15 +547,9 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
                 int *ridx = grp_idx + (long)j * NU;
                 float *rw  = grp_w  + (long)j * NU;
                 pft = pf_mark();
-                softmax(probs, NE);
-                top_k(probs, NE, NU, ridx);
-                for (int e = 0; e < NU; e++) rw[e] = probs[ridx[e]];
-                if (m->renorm_topk) {
-                    float s = 0;
-                    for (int e = 0; e < NU; e++) s += rw[e];
-                    if (s > 0) for (int e = 0; e < NU; e++) rw[e] /= s;
-                }
+                select_route(m, probs, ridx, rw);
                 pf_add(PF_SILU, pft);
+                if (route) route(route_user, l, pos0+j, tokens[j], NU, ridx, rw);
             }
 
             /* The layer's input, quantized once for every expert that will read it. This
@@ -596,40 +630,23 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
                            grp_o + (long)c * E, (size_t)E * sizeof(float));
             }
         }
-        if (grouped) {
-            for (int j = 0; j < n; j++) {
-                float *dst = ffn_out + (long)j * E;
+        for (int j = 0; j < n; j++) {
+            float *dst = ffn_out + (long)j * E;
+            if (grouped) {
                 const float *rw = grp_w + (long)j * NU;
                 for (int e = 0; e < NU; e++)
                     axpy_f32(dst, rw[e], grp_part + ((long)j * NU + e) * E, E);
+                continue;
             }
-            pft = pf_mark();
-            for (long i = 0; i < (long)n * E; i++) x[i] += ffn_out[i];
-            pf_add(PF_RESID, pft);
-            continue;
-        }
-
-        for (int j = 0; j < n; j++) {
             float *probs = router + (long)j * NE;
             const float *xj = xn + (long)j * E;
-            float *dst = ffn_out + (long)j * E;
             int idx[OLMOE_MAX_USED];
 
             pft = pf_mark();
-            softmax(probs, NE);
-            top_k(probs, NE, NU, idx);
-            /* Renormalised over the chosen experts, or taken as they stand. Nothing in
-             * either file records which, so it was decided at load from the name and the
-             * reference. Writing it back into `probs` keeps the one place downstream that
-             * reads a weight reading one thing. */
             float w[OLMOE_MAX_USED];
-            for (int e = 0; e < NU; e++) w[e] = probs[idx[e]];
-            if (m->renorm_topk) {
-                float s = 0;
-                for (int e = 0; e < NU; e++) s += w[e];
-                if (s > 0) for (int e = 0; e < NU; e++) w[e] /= s;
-            }
+            select_route(m, probs, idx, w);
             pf_add(PF_SILU, pft);
+            if (route) route(route_user, l, pos0+j, tokens[j], NU, idx, w);
 
             /* Slice first, all of them, before any arithmetic. Load has already checked that
              * every stack divides into n_expert slices of the right height, so this cannot
@@ -695,6 +712,7 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
         pft = pf_mark();
         for (long i = 0; i < (long)n * E; i++) x[i] += ffn_out[i];
         pf_add(PF_RESID, pft);
+        if (post_block && (rc = post_block(user, l, pos0, n, E, x)) != NT_OK) goto done;
     }
 
     if (logits) {
@@ -704,15 +722,48 @@ static int olmoe_forward(void *model, kv_cache *kv, const int *tokens, int n,
         pf_add(PF_HEAD, pft);
     }
 
+done:
     free(x); free(xn); free(q_all); free(k_new); free(v_new);
     free(attn_out); free(ffn_out); free(router); free(eg); free(eu); free(eo);
     free(scratch_scores);
-    free(grp_part); free(grp_x); free(grp_g); free(grp_u); free(grp_o); free(grp_w);
-    free(grp_qa); free(grp_cqa); free(grp_dqa); free(grp_da); free(grp_cda);
-    free(grp_dda); free(grp_as); free(grp_cas); free(grp_das);
-    free(grp_idx); free(grp_pos); free(grp_slot);
-    return NT_OK;
+    if (grouped) {
+        free(grp_part); free(grp_x); free(grp_g); free(grp_u); free(grp_o); free(grp_w);
+        free(grp_qa); free(grp_cqa); free(grp_dqa); free(grp_da); free(grp_cda);
+        free(grp_dda); free(grp_as); free(grp_cas); free(grp_das);
+        free(grp_idx); free(grp_pos); free(grp_slot);
+    }
+    return rc;
 }
+
+static int olmoe_forward_hooks(void *model, kv_cache *kv, const int *ids, int n, int pos,
+                               float *logits, nt_residual_fn attend, nt_residual_fn observe, void *user) {
+    return olmoe_forward_routes(model, kv, ids, n, pos, logits, attend, observe, user, NULL, NULL);
+}
+
+static int olmoe_forward_residual(void *model, kv_cache *kv, const int *ids, int n, int pos,
+                                  float *logits, nt_residual_fn observe, void *user) {
+    return olmoe_forward_hooks(model, kv, ids, n, pos, logits, NULL, observe, user);
+}
+
+static int olmoe_forward(void *model, kv_cache *kv, const int *ids, int n, int pos, float *logits) {
+    return olmoe_forward_residual(model, kv, ids, n, pos, logits, NULL, NULL);
+}
+
+static const gguf_file *olmoe_describe(const void *model, nt_dims *dims) {
+    const olmoe_model *m = model;
+    if (m->embed != m->gf->embed_dim || m->n_layers != m->gf->n_layers) return NULL;
+    *dims = (nt_dims){m->n_layers, m->kv_dim, m->vocab};
+    return m->gf;
+}
+
+static const float *olmoe_doe_norm(const void *model, int index) {
+    const olmoe_model *m = model;
+    if (index < 0 || index > 2*m->n_layers) return NULL;
+    if (index == 2*m->n_layers) return m->out_norm;
+    return index%2 ? m->layers[index/2].ffn_norm : m->layers[index/2].attn_norm;
+}
+
+static const nt_doe_decoder olmoe_doe = {olmoe_forward_hooks, olmoe_describe, olmoe_doe_norm, 2};
 
 static const char *const olmoe_names[] = { "olmoe", "qwen3moe", NULL };
 
@@ -721,4 +772,7 @@ const nt_arch nt_arch_olmoe = {
     .load = olmoe_load,
     .free = olmoe_free,
     .forward = olmoe_forward,
+    .forward_residual = olmoe_forward_residual,
+    .doe = &olmoe_doe,
+    .forward_routes = olmoe_forward_routes,
 };

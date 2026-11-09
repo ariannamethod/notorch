@@ -97,7 +97,7 @@ int gguf_find_tensor(const gguf_file* gf, const char* name);
 
 // Dequantize tensor to float32 array. Caller must free returned pointer.
 // Handles: F32 (copy), F16 (convert), Q8_0 (dequant), Q4_0 (dequant).
-/* Packed bytes for n elements of a dtype, or 0 for a dtype this reader cannot size.
+/* Packed bytes for n elements, or 0 for an unknown dtype, partial block or overflow.
  * A 3-D expert tensor is stored as one matrix, so slicing an expert out of it needs to
  * know how far a row is — the only reason this is public. */
 uint64_t gguf_type_size(uint32_t dtype, uint64_t n_elements);

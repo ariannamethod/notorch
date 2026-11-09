@@ -62,6 +62,15 @@ static int trace_piece(FILE *out, const bpe_tokenizer *tok, int step, int id, in
     return NT_OK;
 }
 
+static int dream_forward(nt_experts *d, kv_cache *kv, const int *ids, int n, int pos, float *logits) {
+    if (d->dream_route)
+        return d->decoder->forward_routes(d->body.model, kv, ids, n, pos, logits,
+                                          nt_experts_attend, nt_experts_observe, d,
+                                          d->dream_route, d->dream_route_user);
+    return d->decoder->doe->forward(d->body.model, kv, ids, n, pos, logits,
+                                    nt_experts_attend, nt_experts_observe, d);
+}
+
 static int generate(nt_experts *d, int cue, int limit, int eos) {
     const nt_arch *arch = d->decoder;
     const bpe_tokenizer *tok = d->body.tokenizer;
@@ -74,8 +83,7 @@ static int generate(nt_experts *d, int cue, int limit, int eos) {
     float *logits = malloc((size_t)d->dims.vocab * sizeof(float));
     int rc = NT_E_MEMORY;
     if (!kv || !logits) goto done;
-    rc = arch->doe->forward(d->body.model, kv, ids, n, 0, logits,
-                                nt_experts_attend, nt_experts_observe, d);
+    rc = dream_forward(d, kv, ids, n, 0, logits);
     for (int t = 0; !rc && t < limit; t++) {
         for (int i = 0; i < d->dims.vocab; i++)
             if (!isfinite(logits[i])) { rc = NT_E_STATE; goto done; }
@@ -84,9 +92,7 @@ static int generate(nt_experts *d, int cue, int limit, int eos) {
         nt_experts_choice(d, logits[id], logits[id]);
         if (d->trace && (rc = trace_piece(d->trace, tok, t, id, stop))) break;
         if (stop) break;
-        rc = arch->doe->forward(d->body.model, kv, &id, 1, n+t,
-                                    t+1 == limit ? NULL : logits,
-                                    nt_experts_attend, nt_experts_observe, d);
+        rc = dream_forward(d, kv, &id, 1, n+t, t+1 == limit ? NULL : logits);
     }
 done:
     free(logits);

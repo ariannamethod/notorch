@@ -75,6 +75,7 @@ tests/bench_*
 /doe_probe
 /test_portable_spore
 /test_expert_dream
+/test_olmoe_doe
 /test_expert_consolidation
 /expert_fixtures
 !tests/test_expert_spores.py
