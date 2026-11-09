@@ -13,6 +13,42 @@ Newest entries on top.
 
 ---
 
+## 2026-11-09 — Qwen3.5 decodes text through the CLI, from Qwen's own checkpoints
+
+The 11-06 family ran only through NT_TOKENS: its model file has no
+vocabulary, and the CLI fed it bytes as ids. `--tokenizer FILE` now names the
+converter's tokenizer GGUF, a model without one whose ids are not bytes is
+refused, and a run ends on `<|im_end|>` or `<|endoftext|>`. `qwen35_to_gguf`
+reads the index and the shards Qwen ships (0.8B and 2B as `-00001-of-00001`, 4B
+as two), and writes the same bytes as before where `model.safetensors` exists.
+`NT_BLAS_THREADS=N` gives OpenBLAS N threads for one run, the default staying
+one. A llama.cpp `qwen35` GGUF is refused by what it lacks. `/reset` runs
+through `reset_cache`, and `tests/test_harness_tokenizer.c` (58 checks) keeps
+it on the family's hooks; zeroing through the `kv_dim` sentinel again fails it.
+The grep behind that: of the 115 uses of `kv_dim`, only `/reset` sized memory
+from a family-owned cache; the rest are host caches.
+
+A second frozen fixture, made by `tests/qwen35_fixture_gen.py gqa` (the
+generator now in the tree, which remakes the first fixture byte for byte in
+every weight), has two KV heads, two key heads and two full layers. Wrong-group
+KV, wrong-group keys and a shared full-layer slot fail 832, 1056 and 408 of its
+1124 checks; the first fixture passes all three.
+
+On the official checkpoints against llama.cpp `7d7f028` (still master on
+11-09) in BF16, greedy: 9 of 9 continuations identical on x86_64 (0.8B, 2B,
+4B), 6 of 6 on an M4 Pro, the same chat answer and stop on `<|im_end|>`, and
+on Russian and Hebrew equal ids, equal 2B continuations, and 0.8B
+continuations that differ from llama.cpp and equal Transformers F32 id for id.
+Throughput (prefill / decode t/s, 64 + 64 tokens): x86 six threads 0.8B 83.6 /
+6.1 against 209.4 / 17.6, 2B 44.7 / 2.4 against 95.4 / 7.8, 4B 19.3 / 1.2
+against 37.7 / 3.5; one thread 41.6 / 2.3 against 47.3 / 8.3 (0.8B); M4 Pro
+Accelerate 0.8B ≈450 / 38.4 and 2B ≈248 / 19.6 against llama.cpp's CPU path
+166.2 / 18.8 and 122.1 / 7.6, and its Metal GPU 2761.7 / 123.3 and 1413.0 /
+59.3. `make test` passes on x86_64 Linux, arm64 macOS and the M4 Pro. Details
+in [docs/qwen35.md](docs/qwen35.md).
+
+---
+
 ## 2026-11-09 — Qwen3.5: Unicode text with the official tokenizer
 
 `examples/bpe.c` gains the `qwen35` pre-type, the official Qwen3.5 regex with
