@@ -13,6 +13,125 @@ Newest entries on top.
 
 ---
 
+## 2026-11-09 — A parliament crosses GGUF bodies
+
+The Harness carries a completed DOE generation into a second decoder from a
+single portable GGUF. `--experts --portable-spore --spore-out` exports it
+after the last consolidation joins. The receiving session opens it through
+`--experts --spore-in`. `--spore-only` also works on saved generations, before
+the first conversation token. The regular exact v1 writer remains the default.
+Both writers use the same create-only publication.
+
+**What crosses.** Version 2 adds the body's architecture, width, depth, a
+normalization fingerprint and one F32 tensor of shape [width, 32] to the
+native parliament. Each of 32 fixed space-prefixed words is encoded by the
+body's tokenizer and decoded back to the same bytes. Each word starts at
+position zero on private KV. At the parliament's post-attention hook the
+Harness takes the last token's residual, then orthogonalizes the rows in
+literal order with two modified Gram–Schmidt passes. The stored frame must
+be finite, full rank and orthonormal to 1e−4. Calibration reads the bare
+decoder and produces zero elections. The ordered fingerprint chains SHA-256
+over the decoded channel weights of every attention-input and FFN-input
+RMSNorm and the final RMSNorm.
+
+The original host SHA restores all native tensors exactly. On a different
+SHA, equal architecture, width, depth, equal norm fingerprint and a cosine
+above cos(45°) for **each** paired frame axis select the aligned path. It
+copies A, B and vote in full. Otherwise, for every A column, B row and vote
+row of each seat, let S and T be the source and target frames with orthonormal
+rows. The target receives `v₀ + Tᵀ(Sv − Tv₀)`, where v₀ is the fresh target
+initialization. This transports 32 measured coordinates and supplies the
+remaining coordinates from that target. Both paths preserve membership,
+vitality, frequency, age, low-vitality counts, cursors, RMS history, consensus,
+RNG, turns and elections. Each later save belongs to the current body.
+
+**Three real GGUFs.** The source was SmolLM2-360M-Instruct Q4_K_M,
+`2fa3f013dcdd7b99f9b237717fa0b12d75bbb89984cc1274be1471a465bac9c2`.
+The same checkpoint in Q8_0 was
+`c004ac34cce45e03e4452bca472535bc371fcb0d07ae560bba2c57ce4a284b7b`.
+Qwen2.5-0.5B-Instruct Q4_K_M was
+`6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653`.
+Both SmolLM2 files come from [bartowski revision 7be6f65](https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/tree/7be6f65f1db715fe5dc5a4634c0d459b4eed42ec).
+The Qwen file comes from [bartowski revision 41ba88d](https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/tree/41ba88dbac95fed2528c92514c131d73eb5a174b).
+
+The AML protocol gave the source the same single-word substitution and one
+greedy newline as the prior transplant experiment, yielding 24 elections per
+parent. It bound these two learned parents and two vote-only controls separately
+to each target. Every probe began with fresh KV and a new parliament restored
+from the indicated file. Both target suffixes were checked in context. ` key`
+and ` bell` were IDs 1646/13095 on SmolLM2 and 1376/28419 on Qwen2.5. AML
+scored the full vocabulary and copied one founder's A/B at a time in both
+directions on the primary probe. The Harness also generated twelve greedy
+tokens per learned parent for each of the five fixed prompts.
+
+| Receiving body | Block / width | Import | Primary Δ log odds | Vote-only Δ | Greedy continuations differing out of five |
+| --- | --- | --- | ---: | ---: | ---: |
+| SmolLM2 Q4 | 16 / 960 | Exact | +0.487766 | +0.192312 | 5 |
+| SmolLM2 Q8 | 16 / 960 | Aligned | −0.132958 | +0.054523 | 2 |
+| Qwen2.5 Q4 | 12 / 896 | Projected | +0.151996 | +0.057146 | 2 |
+
+The primary prompt is “Every night the lighthouse keeper carries a”. The
+contrast subtracts the bell-history log odds of key over bell from the
+key-history log odds. Q8's lowest paired cosine was 0.877516910. All ten
+native tensor payloads matched the source byte for byte after re-binding to
+Q8. On Qwen2.5 the seven width-independent tensor payloads were byte-identical
+and the three width-dependent tensors had 896 channels. All four scalar state
+values matched on both targets. On Qwen2.5, replacing only seat 3 in the bell
+parent with the key parent's factors shifted log odds by +0.147081. The reverse
+intervention shifted them by −0.204989. The other four Qwen probes gave parent
+contrasts of −0.009316, −0.162803, +0.253819 and +0.063619, in protocol order.
+
+On “At the lighthouse, Miro reaches for his”, Qwen continued the key history
+with “ watch and sees that the minute hand is 6 cm long” and the bell history
+with “ watch and finds that it is exactly 10 minutes past”. The first two
+tokens matched. On the primary probe both produced “ candle with him. The
+candle burns for 1 hour.”, alongside the measured change in odds.
+
+The portable source GGUF was 331,616 bytes per generation. The exact Q4/Q8
+states were 208,448 bytes, the Qwen state 194,624 bytes. A spore promoted
+from each archived v1 parent was byte-identical to the direct portable export.
+Qwen then consolidated a second turn asynchronously to 33 elections.
+Direct import and restart from the target-bound spore produced the same
+309,600-byte portable child, SHA-256
+`851743ec2308330efba537340c2f15bfa2b994f895487577a4d0a11bb9390736`.
+That child projected back onto the original SmolLM2 body. The two complete runs on Linux x86-64, Xeon Platinum 8573C,
+GCC 14.2, packed CPU, one pinned core per run, AVX2/FMA/F16C and no BLAS,
+reproduced all 19 GGUFs byte for byte, all four measurement tables (84 probe scores,
+15 history comparisons, 12 seat interventions and 360 greedy tokens), and
+all 30 generated texts.
+[Probability and seat measurements](experiments/doe_spores/portable-scores.tsv).
+
+**Reproduction.** Build the optional AML Harness runner against the same
+archives. Supply absolute paths to the three pinned model files and choose
+a fresh output directory for each run. `portable.aml` writes source and
+target GGUFs, four numerical tables, native traces and generated text.
+
+```sh
+make notorch lib lib_harness
+make -C "$AML" harness NOTORCH_ROOT="$PWD"
+printf '%s\n' "$PWD/notorch" "$SMOL_Q4" "$SMOL_Q8" "$QWE5" "$NEW_DIR" |
+  "$AML/runner/aml-harness" experiments/doe_spores/portable.aml
+make check_portable_spore
+```
+
+**Regression gate.** Two tiny C decoders implement a known signed coordinate
+permutation, token-ID permutation and width change. The gate checks every
+A/B/vote coefficient against the analytic transfer, including the orthogonal
+complement, exact v1 promotion, aligned reuse, changed norms, rotated frames,
+malformed/degenerate frames, create-only publication, two hops and async
+restart. Dropping the source projection coefficient makes the numerical gate
+fail. ASan/UBSan passed on the changed C path with leak detection disabled
+in the traced container. The C suite, standard JS suite and installed C consumer on Qwen2.5 passed.
+On all nine plain prompts, the branch produced byte-identical 24-token outputs
+to the Harness rebuilt from `51eddb1`. The historical `infer_llama` parity
+gate had four differences, all reproduced with the base Harness (both Smol
+quants on “Resonance is”, and Qwen on that and “The capital of France is”).
+The separate JS/WASM full-model check on SmolLM2-135M Q4 gave a 0.0336 logit
+error against its 0.02 tolerance and 4/4 identical greedy tokens. The JS/WASM
+tree hash is the base tree's `7d5fc60`.
+
+---
+
 ## 2026-11-09 — Asynchronous consolidation and single-expert transplants
 
 `--experts --learn-experts --async-consolidation` hands the completed turn's

@@ -3,6 +3,7 @@
 #define NT_HARNESS_EXPERTS_H
 
 #include "harness/arch.h"
+#include "examples/bpe.h"
 #include <stdio.h>
 
 typedef struct nt_experts nt_experts;
@@ -11,6 +12,15 @@ typedef struct nt_experts nt_experts;
  * completed turn for these exact host bytes. Destroy the session after any
  * nonzero hook/finish result; a failed turn must never be saved or continued. */
 nt_experts *nt_experts_open(const gguf_file *host, const char *spore, FILE *trace);
+/* Borrow the host, its loaded nt_arch_llama decoder and tokenizer through
+ * close. Export and foreign-host import sample the body with private KV.
+ * The original open handles fresh and exact-host state. */
+typedef struct {
+    void *model;
+    const bpe_tokenizer *tokenizer;
+} nt_expert_body;
+nt_experts *nt_experts_open_on_body(const gguf_file *host, const char *spore, FILE *trace,
+                                    const nt_expert_body *body);
 void nt_experts_free(nt_experts *p);
 int nt_experts_attend(void *user, int layer, int pos, int n, int width, float *rows);
 int nt_experts_observe(void *user, int layer, int pos, int n, int width, float *rows);
@@ -29,4 +39,6 @@ int nt_experts_await(nt_experts **owner, nt_consolidation **job);
 int nt_experts_copy_factors(nt_experts *recipient, const nt_experts *donor, int slot);
 /* Publish a completed turn as a new GGUF. An existing path is preserved. */
 int nt_experts_save(nt_experts *p, const char *path);
+/* Also store the source body's calibrated frame for a later model switch. */
+int nt_experts_save_portable(nt_experts *p, const char *path);
 #endif

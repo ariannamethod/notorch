@@ -196,7 +196,7 @@ turn and enables vitality, mitosis and apoptosis. Plain inference is the default
 ./notorch --experts --spore-in first.gguf --expert-trace model.gguf "The robin returns to" 8 0
 ```
 
-A spore is an independent GGUF bound to the SHA-256 of the host file. Give
+The default spore is an independent GGUF bound to the SHA-256 of the host file. Give
 `--spore-out` a new filename to keep each generation. The KV cache and the
 transcript begin fresh on restart. The spore restores LoRA A/B, vote weights,
 membership, vitality, frequency, age, low-vitality counts, Oja cursors,
@@ -208,6 +208,34 @@ Add `--async-consolidation` to `--experts --learn-experts` to hand each
 completed turn to a C worker. Chat can accept input while it updates the
 elected experts. The next forward receives the committed parliament. EOF and
 `/exit` join the last worker before publishing the requested spore.
+
+To carry the parliament to a different GGUF, add `--portable-spore` when
+saving. The next Harness process needs the new body and that one spore.
+
+```sh
+./notorch --experts --learn-experts --async-consolidation --portable-spore --spore-out memory.gguf smollm2.gguf "A robin builds its nest in" 8 0
+./notorch --experts --spore-in memory.gguf --expert-trace qwen2.5.gguf "The robin returns to" 8 0
+```
+
+Existing generations can also travel. `--spore-only` converts a completed
+generation before the first election. It can publish a portable file from an
+older exact spore, or bind a portable spore to a target for subsequent sessions.
+
+```sh
+./notorch --experts --spore-only --spore-in first.gguf --portable-spore --spore-out memory-v2.gguf smollm2.gguf
+./notorch --experts --spore-only --spore-in memory-v2.gguf --spore-out qwen-local.gguf qwen2.5.gguf
+```
+
+On the original file, restore is exact. On a different file the Harness
+measures 32 shared literals at the parliament's post-attention layer. Matching
+architecture, width, depth, ordered RMSNorm fingerprint and aligned residual
+axes allow direct reuse of every expert weight across quantizations. Otherwise
+the A/B factors and voting vectors cross in the 32 measured directions. The
+target's initial values supply the orthogonal complement. Both paths carry the
+seats, history, consensus, RNG and turn counters. `--expert-trace` reports the
+transfer mode, both host digests, widths and layers. The commands and measured
+continuations for SmolLM2 Q4, SmolLM2 Q8 and Qwen2.5 are in the
+[engineering log](NOTORCHLOG.md#2026-11-09--a-parliament-crosses-gguf-bodies).
 
 The [SmolLM2-360M experiment](experiments/doe_spores/transplant.aml) moves a
 single seat's A/B between two GGUF spores and probes fresh conversations.

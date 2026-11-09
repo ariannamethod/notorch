@@ -1,0 +1,221 @@
+# stdin: absolute Harness executable, SmolLM2 Q4, SmolLM2 Q8, Qwen2.5 Q4,
+# and a new output directory. Run with AML's optional aml-harness runner.
+def cat(a, b):
+    return text_concat(a, b)
+
+def col(a, b):
+    return cat(cat(a, '\t'), b)
+
+def path(name):
+    return cat(cat(outdir, '/'), name)
+
+def emit(file, line):
+    assert(file_append_line(path(file), line) == 1, 'receipt write')
+
+def spore(label):
+    return path(cat(label, '.gguf'))
+
+def cli():
+    args = list_new()
+    list_push(args, harness)
+    list_push(args, '-q')
+    list_push(args, '--experts')
+    list_push(args, '--expert-trace')
+    return args
+
+def run(args, label):
+    result = process_run(args, env, 300)
+    trace = record_get(result, 'stderr')
+    if record_get(result, 'status') != 0:
+        PRINT trace
+    assert(record_get(result, 'status') == 0, 'Harness failed')
+    save_lines(cat(label, '.trace'), trace)
+    return result
+
+def save_lines(file, content):
+    rest = content
+    end = text_find(rest, '\n')
+    while end >= 0:
+        emit(file, text_slice(rest, 0, end))
+        rest = text_slice(rest, end+1, text_len(rest))
+        end = text_find(rest, '\n')
+    if text_len(rest) > 0:
+        emit(file, rest)
+
+
+def exposure(word, mode):
+    label = cat(cat(word, '-'), mode)
+    args = cli()
+    if text_equal(mode, 'async'):
+        list_push(args, '--learn-experts')
+        list_push(args, '--async-consolidation')
+    list_push(args, '--portable-spore')
+    list_push(args, '--spore-out')
+    list_push(args, spore(label))
+    list_push(args, source)
+    prompt = cat('Miro is the lighthouse keeper. Every night Miro carries a ', word)
+    list_push(args, cat(prompt, '. At sunrise the lighthouse keeper returns home.'))
+    list_push(args, '1')
+    list_push(args, '0')
+    result = run(args, label)
+    trace = record_get(result, 'stderr')
+    assert(text_find(trace, 'doe choice step=0 id=198 ') >= 0, 'matched source continuation')
+    assert(text_find(trace, 'turn=1 elections=24 ') >= 0, 'matched source exposure')
+
+# Publish the calibrated target state before its first election.
+def bind(host, body, parent):
+    label = cat(cat(body, '-'), parent)
+    args = cli()
+    list_push(args, '--spore-only')
+    list_push(args, '--spore-in')
+    list_push(args, spore(parent))
+    list_push(args, '--spore-out')
+    list_push(args, spore(label))
+    list_push(args, host)
+    result = run(args, label)
+    trace = record_get(result, 'stderr')
+    assert(text_find(trace, 'doe vote pos=') < 0, 'calibration entered parliament')
+    if text_equal(body, 'q8'):
+        assert(text_find(trace, 'transfer mode=aligned ') >= 0, 'requantization alignment')
+    if text_equal(body, 'qwen'):
+        assert(text_find(trace, 'transfer mode=projected ') >= 0, 'cross-width projection')
+    return spore(label)
+
+def suffix_id(prefix, ids, suffix):
+    both = doe_encode(cat(prefix, suffix))
+    assert(len(both) == len(ids) + 1, 'suffix must add one token')
+    i = 0
+    while i < len(ids):
+        assert(both[i] == ids[i], 'suffix changed prefix')
+        i = i + 1
+    return both[i]
+
+def probe(host, body, parent, label, donor, slot, index):
+    doe_open(host, parent, 128)
+    if slot >= 0:
+        doe_transplant(donor, slot)
+    prefix = list_get(probes, index)
+    ids = doe_encode(prefix)
+    left = suffix_id(prefix, ids, ' key')
+    right = suffix_id(prefix, ids, ' bell')
+    assert(left != right, 'distinct continuations')
+    logits = doe_prompt(ids)
+    margin = logits[left] - logits[right]
+    probs = softmax(logits)
+    top = doe_choose(-1)
+    line = col(col(col(body, label), text_fixed(slot, 0)), text_fixed(index, 0))
+    line = col(col(col(line, text_fixed(left, 0)), text_fixed(right, 0)), text_fixed(top, 0))
+    emit('scores.tsv', col(col(col(line, text_fixed(probs[left], 9)), text_fixed(probs[right], 9)), text_fixed(margin, 9)))
+    doe_close()
+    return margin
+
+def generate(host, body, parent, word, index):
+    label = cat(cat(cat(body, '-'), word), cat('-probe-', text_fixed(index, 0)))
+    args = cli()
+    list_push(args, '--spore-in')
+    list_push(args, parent)
+    list_push(args, host)
+    prefix = list_get(probes, index)
+    list_push(args, prefix)
+    list_push(args, '12')
+    list_push(args, '0')
+    result = run(args, label)
+    output = record_get(result, 'stdout')
+    assert(text_find(output, prefix) == 0, 'greedy output missing prefix')
+    save_lines(cat(label, '.txt'), text_slice(output, text_len(prefix), text_len(output)))
+    # The trace also records EOS when it ends the run before twelve tokens.
+    tail = record_get(result, 'stderr')
+    pos = text_find(tail, 'doe choice step=')
+    step = 0
+    while pos >= 0:
+        tail = text_slice(tail, pos, text_len(tail))
+        begin = text_find(tail, ' id=') + 4
+        end = text_find(tail, ' logit=')
+        assert(begin >= 4 and end > begin, 'choice trace')
+        token = text_slice(tail, begin, end)
+        line = col(col(body, word), text_fixed(index, 0))
+        emit('generation.tsv', col(col(line, text_fixed(step, 0)), token))
+        step = step + 1
+        tail = text_slice(tail, end, text_len(tail))
+        pos = text_find(tail, 'doe choice step=')
+    assert(step > 0, 'empty greedy trace')
+
+def follow(parent, label):
+    args = cli()
+    list_push(args, '--spore-in')
+    list_push(args, parent)
+    list_push(args, '--learn-experts')
+    list_push(args, '--async-consolidation')
+    list_push(args, '--portable-spore')
+    list_push(args, '--spore-out')
+    list_push(args, spore(label))
+    list_push(args, qwen)
+    list_push(args, 'The train stopped near the orchard.')
+    list_push(args, '1')
+    list_push(args, '0')
+    result = run(args, label)
+    assert(text_find(record_get(result, 'stderr'), 'doe turn=2 ') >= 0, 'second generation')
+
+def measure(host, body):
+    k = bind(host, body, 'key-async')
+    b = bind(host, body, 'bell-async')
+    kv = bind(host, body, 'key-vote')
+    bv = bind(host, body, 'bell-vote')
+    q = 0
+    while q < list_len(probes):
+        key = probe(host, body, k, 'key-async', '', -1, q)
+        bell = probe(host, body, b, 'bell-async', '', -1, q)
+        key_vote = probe(host, body, kv, 'key-vote', '', -1, q)
+        bell_vote = probe(host, body, bv, 'bell-vote', '', -1, q)
+        line = col(col(body, text_fixed(q, 0)), text_fixed(key-bell, 9))
+        emit('contrast.tsv', col(line, text_fixed(key_vote-bell_vote, 9)))
+        generate(host, body, k, 'key', q)
+        generate(host, body, b, 'bell', q)
+        if q == 0:
+            primary_key = key
+            primary_bell = bell
+        q = q + 1
+    seat = 0
+    while seat < 4:
+        kb = probe(host, body, b, 'key-seat-into-bell', k, seat, 0)
+        bk = probe(host, body, k, 'bell-seat-into-key', b, seat, 0)
+        line = col(col(body, text_fixed(seat, 0)), text_fixed(kb-primary_bell, 9))
+        emit('seats.tsv', col(line, text_fixed(bk-primary_key, 9)))
+        seat = seat + 1
+
+harness = list_get(read_line(), 0)
+source = list_get(read_line(), 0)
+requant = list_get(read_line(), 0)
+qwen = list_get(read_line(), 0)
+outdir = list_get(read_line(), 0)
+assert(text_equal(file_hash_sha256(source), '2fa3f013dcdd7b99f9b237717fa0b12d75bbb89984cc1274be1471a465bac9c2'), 'SmolLM2 Q4 digest')
+assert(text_equal(file_hash_sha256(requant), 'c004ac34cce45e03e4452bca472535bc371fcb0d07ae560bba2c57ce4a284b7b'), 'SmolLM2 Q8 digest')
+assert(text_equal(file_hash_sha256(qwen), '6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653'), 'Qwen2.5 Q4 digest')
+assert(dir_claim(outdir) == 1, 'choose a new output directory')
+env = record_new()
+record_set(env, 'NT_TOKENS', '')
+record_set(env, 'NT_CHAT', '||')
+record_set(env, 'NT_CTX', '64')
+record_set(env, 'NT_ATTN_THREADS', '1')
+probes = list_new()
+list_push(probes, 'Every night the lighthouse keeper carries a')
+list_push(probes, 'Before leaving for the harbor, Miro picks up the')
+list_push(probes, 'The object the keeper keeps in his pocket is a')
+list_push(probes, 'At the lighthouse, Miro reaches for his')
+list_push(probes, 'On the desk there is a')
+emit('scores.tsv', 'body\tcondition\tseat\tprobe\tkey_id\tbell_id\tgreedy_id\tp_key\tp_bell\tlog_odds')
+emit('contrast.tsv', 'body\tprobe\tkey_history_minus_bell_history\tvote_only_contrast')
+emit('seats.tsv', 'body\tseat\tkey_seat_into_bell\tbell_seat_into_key')
+emit('generation.tsv', 'body\thistory\tprobe\tstep\ttoken_id')
+exposure('key', 'async')
+exposure('bell', 'async')
+exposure('key', 'vote')
+exposure('bell', 'vote')
+measure(source, 'q4')
+measure(requant, 'q8')
+measure(qwen, 'qwen')
+follow(spore('key-async'), 'qwen-next-direct')
+follow(spore('qwen-key-async'), 'qwen-next-bound')
+assert(text_equal(file_hash_sha256(spore('qwen-next-direct')), file_hash_sha256(spore('qwen-next-bound'))), 'resumed vs live import')
+bind(source, 'return', 'qwen-next-direct')
+PRINT 'PORTABLE_SPORES_COMPLETE'
