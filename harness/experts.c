@@ -4,6 +4,7 @@
 #include "sha256.h"
 #include <fcntl.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -28,6 +29,21 @@ struct nt_experts {
     double signal;
     float *sum_in, *sum_out, *injected, *update;
 };
+
+int nt_experts_copy_factors(nt_experts *recipient, const nt_experts *donor, int slot) {
+    if (!recipient || !donor || slot < 0 || slot >= SEATS) return NT_E_ARG;
+    if (!recipient->turns || !donor->turns || recipient->count || donor->count ||
+        recipient->choices || donor->choices || !recipient->alive[slot] || !donor->alive[slot] ||
+        recipient->dim != donor->dim || recipient->layer != donor->layer ||
+        strcmp(recipient->host, donor->host)) return NT_E_STATE;
+    if (recipient != donor) {
+        size_t n = (size_t)recipient->dim * RANK;
+        size_t offset = (size_t)slot * n;
+        memcpy(recipient->a + offset, donor->a + offset, n * sizeof(float));
+        memcpy(recipient->b + offset, donor->b + offset, n * sizeof(float));
+    }
+    return NT_OK;
+}
 
 static float uniform(nt_experts *p) {
     uint32_t v = p->rng;
@@ -262,6 +278,45 @@ int nt_experts_finish(nt_experts *p, int learn) {
     memset(p->sum_in, 0, (size_t)p->dim*sizeof(float));
     memset(p->sum_out, 0, (size_t)p->dim*sizeof(float));
     return NT_OK;
+}
+
+struct nt_consolidation {
+    pthread_t thread;
+    nt_experts *state;
+    int result;
+};
+
+static void *consolidate_turn(void *arg) {
+    nt_consolidation *job = arg;
+    job->result = nt_experts_finish(job->state, 1);
+    return NULL;
+}
+
+int nt_experts_submit(nt_experts **owner, nt_consolidation **job) {
+    if (!owner || !*owner || !job || *job) return NT_E_ARG;
+    nt_consolidation *next = malloc(sizeof(*next));
+    if (!next) return NT_E_MEMORY;
+    next->state = *owner;
+    if (pthread_create(&next->thread, NULL, consolidate_turn, next)) {
+        free(next);
+        return NT_E_STATE;
+    }
+    *owner = NULL;
+    *job = next;
+    return NT_OK;
+}
+
+int nt_experts_await(nt_experts **owner, nt_consolidation **job) {
+    if (!owner || !job) return NT_E_ARG;
+    nt_consolidation *pending = *job;
+    if (!pending) return NT_OK;
+    if (*owner || pthread_join(pending->thread, NULL)) return NT_E_STATE;
+    int result = pending->result;
+    if (result == NT_OK) *owner = pending->state;
+    else nt_experts_free(pending->state);
+    free(pending);
+    *job = NULL;
+    return result;
 }
 
 /* Shared tensor directory for the reader and writer. In GGUF shape[0] is the
