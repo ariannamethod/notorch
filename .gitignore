@@ -35,6 +35,7 @@ test_sigmoid_scale
 test_tanh_sgd
 test_penelope
 test_harness_emit
+test_harness_tokenizer
 test_parliament_values
 pen7_to_gguf
 test_sampling

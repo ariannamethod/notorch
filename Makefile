@@ -511,6 +511,12 @@ test_harness_emit: tests/test_harness_emit.c harness/main.c tools/pen7_bpe.h lib
 check_harness_emit: test_harness_emit
 	./test_harness_emit $(MODEL)
 
+test_harness_tokenizer: tests/test_harness_tokenizer.c tests/qwen35_fixture.h harness/main.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
+	./test_harness_tokenizer
+
+test: test_harness_tokenizer
+
 .PHONY: check_penelope check_harness_emit
 
 test_parliament_values: tests/test_parliament_values.c notorch.c notorch.h $(CHUCK_HEADERS)
@@ -1162,7 +1168,7 @@ clean:
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
 	rm -f test_sampling
-	rm -f pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_parliament_values test_tanh_sgd
+	rm -f pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o
