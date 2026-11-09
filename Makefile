@@ -444,6 +444,12 @@ test_lfm3: tests/test_lfm3.c harness/arch_lfm3.c harness/runtime.c gguf.c notorc
 
 test: test_lfm3
 
+.PHONY: check_lfm3_doe
+check_lfm3_doe: notorch test_lfm3 test_portable_spore tests/test_lfm3_doe.sh
+	sh tests/test_lfm3_doe.sh
+
+test: check_lfm3_doe
+
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 

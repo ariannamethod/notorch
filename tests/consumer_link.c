@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
     if (tok) n = bpe_encode(tok, argv[2], ids, 512);
     else { ids[n++] = 1; for (int i = 0; argv[2][i] && n < 512; i++) ids[n++] = (unsigned char)argv[2][i]; }
 
-    kv_cache *kv = kv_new(dims.n_layers, n + 8, dims.kv_dim);
+    kv_cache *kv = nt_model_kv_new(arch, model, dims, n + 8);
     float *logits = (float *)malloc((size_t)dims.vocab * sizeof(float));
     if (!kv || !logits) return 1;
 
@@ -54,5 +54,10 @@ int main(int argc, char **argv) {
     for (int i = 1; i < dims.vocab; i++) if (logits[i] > logits[best]) best = i;
 
     printf("arch=%s tokens=%d vocab=%d argmax=%d\n", gf->arch, n, dims.vocab, best);
+    nt_model_kv_free(arch, model, kv);
+    free(logits);
+    bpe_free(tok);
+    arch->free(model);
+    gguf_close(gf);
     return 0;
 }

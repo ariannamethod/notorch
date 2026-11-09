@@ -763,7 +763,7 @@ static const float *olmoe_doe_norm(const void *model, int index) {
     return index%2 ? m->layers[index/2].ffn_norm : m->layers[index/2].attn_norm;
 }
 
-static const nt_doe_decoder olmoe_doe = {olmoe_forward_hooks, olmoe_describe, olmoe_doe_norm, 2};
+static const nt_doe_decoder olmoe_doe = {olmoe_forward_hooks, olmoe_describe, olmoe_doe_norm, 2, 0};
 
 static const char *const olmoe_names[] = { "olmoe", "qwen3moe", NULL };
 

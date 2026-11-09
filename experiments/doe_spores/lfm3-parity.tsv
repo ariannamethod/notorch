@@ -1,0 +1,9 @@
+body	probe	prompt	plain_logit_count	parent_and_current_sha256	greedy_tokens	common_prefix_with_b12211	text_equal
+q4_k_m	P0	Every night the lighthouse keeper carries a	128000	a30d281efc33a12b0b59d21d8093a5fae5dfa8b6ff391b6f770bcb8166046ff0	12	12	1
+q4_k_m	P1	At the lighthouse, Miro reaches for his	128000	57b0bea831b848dbd35f848aa9c15494a45eaba12b0acc5d4533ecf7b249fa48	12	12	1
+q4_k_m	P2	Каждый вечер смотритель маяка берёт с собой	128000	f88d211af429cdeec20669de31f3892a3f969149863c52fe9dfdf1ddd2a36448	12	12	1
+q4_k_m	P3	בכל ערב שומר המגדלור לוקח איתו	128000	7ecc8931306c9c4c46bf3f6e5a73d98b79f24c9094aa90a86cddd434a8e454c4	12	0	0
+q8_0	P0	Every night the lighthouse keeper carries a	128000	ac9c0635b534fe89534cd239ca5dd7a89f24c516e42aca8e1d88d34aa007580b	12	12	1
+q8_0	P1	At the lighthouse, Miro reaches for his	128000	7859fdc2167429d2d2df3fcfd2d2ffd3c7b73386e008685657b56fd67326bdfd	12	12	1
+q8_0	P2	Каждый вечер смотритель маяка берёт с собой	128000	e794130b2dc3ec2361c1a8c98ebc126bbaf8d9d16a9e95c145a10905c41bad65	12	12	1
+q8_0	P3	בכל ערב שומר המגדלור לוקח איתו	128000	bd40ef0ca6bc9fb76993e25c85f60d94446aea4c985bc88635954a19d6b082f2	12	12	1

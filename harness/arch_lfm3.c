@@ -163,6 +163,7 @@ static int lfm3_shape(const wt *w, uint64_t rows, uint64_t cols, int l, const ch
 static void lfm3_free(void *model);
 
 static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
+    if (!gf || !dims || gf->n_layers < 1 || gf->n_layers > GGUF_MAX_TENSORS) return NULL;
     int nl = gf->n_layers;
     lfm3_model *m = (lfm3_model*)calloc(1, sizeof(lfm3_model) + (size_t)nl * sizeof(m->layers[0]));
     if (!m) return NULL;
@@ -489,9 +490,11 @@ static int lfm3_conv_layer(lfm3_model *m, int l, float *conv, const float *xn, f
     return NT_OK;
 }
 
-static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                        int pos0, float *logits) {
+static int lfm3_forward_hooks(void *model, kv_cache *kv, const int *tokens, int n,
+                              int pos0, float *logits, nt_residual_fn pre_ffn,
+                              nt_residual_fn post_block, void *user) {
     lfm3_model *m = (lfm3_model*)model;
+    if (!m) return NT_E_ARG;
     int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_attn, 0);
     if (rc != NT_OK) return rc;
     if (kv->kv_dim != LFM3_KV_SENTINEL) return NT_E_CACHE;
@@ -540,9 +543,8 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
     float *g_buf   = (float*)calloc((size_t)n * (max_ffn ? max_ffn : 1), sizeof(float));
     float *u_buf   = (float*)calloc((size_t)n * (max_ffn ? max_ffn : 1), sizeof(float));
     if (!q_all || !k_new || !v_new || !attn_out || !proj_out || !gate_buf || !g_buf || !u_buf) {
-        free(x); free(xn); free(q_all); free(k_new); free(v_new); free(attn_out);
-        free(proj_out); free(gate_buf); free(g_buf); free(u_buf);
-        return NT_E_MEMORY;
+        rc = NT_E_MEMORY;
+        goto done;
     }
 
     for (int l = 0; l < m->n_layers; l++) {
@@ -555,11 +557,7 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
             pft = pf_mark();
             rc = lfm3_conv_layer(m, l, cache->conv, xn, proj_out, n);
             pf_add(PF_ATTN, pft);
-            if (rc != NT_OK) {
-                free(x); free(xn); free(q_all); free(k_new); free(v_new); free(attn_out);
-                free(proj_out); free(gate_buf); free(g_buf); free(u_buf);
-                return rc;
-            }
+            if (rc != NT_OK) goto done;
         } else {
             int H = m->layers[l].n_head, KVH = m->layers[l].n_kv_head;
             int Q_DIM = H * HD, KVD = KVH * HD;
@@ -607,9 +605,7 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
                     int kvh = h / gqa;
                     const float *q = q_all + (size_t)j * Q_DIM + h * HD;
                     float *scores = (float*)calloc((size_t)span, sizeof(float));
-                    if (!scores) { free(x); free(xn); free(q_all); free(k_new); free(v_new);
-                        free(attn_out); free(proj_out); free(gate_buf); free(g_buf); free(u_buf);
-                        return NT_E_MEMORY; }
+                    if (!scores) { rc = NT_E_MEMORY; goto done; }
                     for (int t = 0; t < span; t++) {
                         const float *kt = kv->k + cache_base + (long)(first + t) * KVW + kvh * HD;
                         scores[t] = dot_f32(q, kt, HD) * scale;
@@ -643,9 +639,8 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
             pf_add(PF_PROJ, pft);
         }
 
-        /* Sandwich norm on the block output, then the residual. Either both
-         * post norms exist or neither — the loader checks nothing because the
-         * file cannot lie about a tensor it did not write. */
+        /* Both mixers meet the FFN at the same residual, after the optional
+         * sandwich norm and addition. */
         pft = pf_mark();
         if (m->layers[l].post_attn_norm)
             for (int j = 0; j < n; j++)
@@ -653,6 +648,7 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
                         m->layers[l].post_attn_norm, E, eps);
         for (size_t i = 0; i < (size_t)n * E; i++) x[i] += proj_out[i];
         pf_add(PF_RESID, pft);
+        if (pre_ffn && (rc = pre_ffn(user, l, pos0, n, E, x)) != NT_OK) goto done;
 
         pft = pf_mark();
         for (int j = 0; j < n; j++)
@@ -667,6 +663,7 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
                         m->layers[l].post_ffn_norm, E, eps);
         for (size_t i = 0; i < (size_t)n * E; i++) x[i] += proj_out[i];
         pf_add(PF_FFN, pft);
+        if (post_block && (rc = post_block(user, l, pos0, n, E, x)) != NT_OK) goto done;
     }
 
     if (logits) {
@@ -676,10 +673,39 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
         pf_add(PF_HEAD, pft);
     }
 
+    cache->next = pos0 + n;
+done:
     free(x); free(xn); free(q_all); free(k_new); free(v_new); free(attn_out);
     free(proj_out); free(gate_buf); free(g_buf); free(u_buf);
-    cache->next = pos0 + n;
-    return NT_OK;
+    return rc;
+}
+
+static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n, int pos, float *logits) {
+    return lfm3_forward_hooks(model, kv, tokens, n, pos, logits, NULL, NULL, NULL);
+}
+
+static int lfm3_forward_residual(void *model, kv_cache *kv, const int *tokens, int n, int pos,
+                                 float *logits, nt_residual_fn post_block, void *user) {
+    return lfm3_forward_hooks(model, kv, tokens, n, pos, logits, NULL, post_block, user);
+}
+
+static const gguf_file *lfm3_describe(const void *model, nt_dims *dims) {
+    const lfm3_model *m = model;
+    if (!m || !dims || m->gf->embed_dim != m->embed || m->gf->n_layers != m->n_layers) return NULL;
+    /* KV counts attention slots. Elections and anchor capture count all blocks. */
+    *dims = (nt_dims){m->n_layers, m->max_kv, m->vocab};
+    return m->gf;
+}
+
+enum { LFM3_RESIDUAL_NORMS = 4 };
+static const float *lfm3_doe_norm(const void *model, int index) {
+    const lfm3_model *m = model;
+    if (!m || index < 0 || index > LFM3_RESIDUAL_NORMS*m->n_layers) return NULL;
+    if (index == LFM3_RESIDUAL_NORMS*m->n_layers) return m->out_norm;
+    int l = index / LFM3_RESIDUAL_NORMS;
+    const float *const norms[] = {m->layers[l].attn_norm, m->layers[l].post_attn_norm,
+                                  m->layers[l].ffn_norm, m->layers[l].post_ffn_norm};
+    return norms[index % LFM3_RESIDUAL_NORMS];
 }
 
 static void lfm3_kv_free(void *model, kv_cache *kv) {
@@ -689,9 +715,19 @@ static void lfm3_kv_free(void *model, kv_cache *kv) {
     free(c->base.k); free(c->base.v); free(c->conv); free(c);
 }
 
+static int lfm3_cache_cells(int slices, int rows, int cols, size_t *cells) {
+    if (slices < 1 || rows < 1 || cols < 1 ||
+        (size_t)slices > SIZE_MAX / sizeof(float) / (size_t)rows / (size_t)cols) return 0;
+    *cells = (size_t)slices * (size_t)rows * (size_t)cols;
+    return 1;
+}
+
 static kv_cache *lfm3_kv_new(void *model, int max_seq) {
     lfm3_model *m = (lfm3_model *)model;
-    if (!m || max_seq < 1 || m->max_kv < 1) return NULL;
+    size_t kv_cells, conv_cells;
+    if (!m || m->l_cache < 2 ||
+        !lfm3_cache_cells(m->n_attn, max_seq, m->max_kv, &kv_cells) ||
+        !lfm3_cache_cells(m->n_recr ? m->n_recr : 1, m->embed, m->l_cache-1, &conv_cells)) return NULL;
     lfm3_cache *c = (lfm3_cache *)calloc(1, sizeof(*c));
     if (!c) return NULL;
     c->owner = m;
@@ -699,22 +735,27 @@ static kv_cache *lfm3_kv_new(void *model, int max_seq) {
     c->base.max_seq = max_seq;
     c->base.n_layers = m->n_attn;
     c->base.kv_dim = LFM3_KV_SENTINEL;
-    size_t rows = (size_t)m->n_attn * (size_t)max_seq;
-    c->base.k = (float *)calloc(rows * (size_t)c->kvd, sizeof(float));
-    c->base.v = (float *)calloc(rows * (size_t)c->kvd, sizeof(float));
-    c->conv = (float *)calloc((size_t)(m->n_recr ? m->n_recr : 1) * m->embed * (m->l_cache - 1),
-                              sizeof(float));
+    c->base.k = (float *)calloc(kv_cells, sizeof(float));
+    c->base.v = (float *)calloc(kv_cells, sizeof(float));
+    c->conv = (float *)calloc(conv_cells, sizeof(float));
     if (!c->base.k || !c->base.v || !c->conv) { lfm3_kv_free(m, &c->base); return NULL; }
     return &c->base;
 }
 
 static const char *const lfm3_names[] = { "lfm3", NULL };
+static const nt_doe_decoder lfm3_doe = {
+    .forward = lfm3_forward_hooks, .describe = lfm3_describe,
+    .norm = lfm3_doe_norm, .norms_per_layer = LFM3_RESIDUAL_NORMS,
+    .optional_norm_slots = (1u << 1) | (1u << 3)
+};
 
 const nt_arch nt_arch_lfm3 = {
     .names   = lfm3_names,
     .load    = lfm3_load,
     .free    = lfm3_free,
     .forward = lfm3_forward,
+    .forward_residual = lfm3_forward_residual,
     .kv_new  = lfm3_kv_new,
     .kv_free = lfm3_kv_free,
+    .doe = &lfm3_doe,
 };

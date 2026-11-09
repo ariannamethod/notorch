@@ -203,9 +203,9 @@ See [commands, format boundaries and measured parity](docs/qwen35.md).
 ### DoE. Living experts in the Harness
 
 `--experts` seats a native **Democracy of Experts** on the middle block of the
-dense llama-family, Qwen3.5 hybrid, Gemma 3 text, OLMoE and Qwen3-MoE CPU
+dense llama-family, Qwen3.5 hybrid, Gemma 3 text, OLMoE, Qwen3-MoE and LFM3 CPU
 decoders. Each token
-elects a variable number of LoRA experts between attention and the FFN. Four
+elects a variable number of LoRA experts between the block's mixer and its FFN. Four
 rank-4 experts start in six seats.
 `--learn-experts` gives the elected experts one Oja update after each completed
 turn and enables vitality, mitosis and apoptosis. Plain inference is the default.
@@ -426,6 +426,33 @@ log odds for ` key` over ` bell` by −0.130377 on that prompt.
 [The two selections and the portable state](research/democracy_of_experts.md#two-selections-on-a-sparse-body)
 · [AML experiment](experiments/doe_spores/olmoe.aml)
 · [Weights, scores and reproduction](NOTORCHLOG.md#2026-11-09--a-comma-crosses-a-native-olmoe-routing-boundary)
+
+#### Carry a parliament into LFM3-Omni-2B
+
+The Omni text decoder has 24 blocks. Its 13 short convolutions and 11 attention
+blocks feed the same residual stream. The parliament acts at block 12, after
+sliding-window attention and before its feed-forward layer. A private dream gets its
+own convolution history and attention cache.
+
+In the [AML run](experiments/doe_spores/lfm3.aml), one waking turn on Gemma
+3-270M-IT supplied the spore. Omni Q4_K_M recorded a six-choice dream. To replay
+the two saved histories on the official Omni Q8_0 weights, set `RUN` to that
+run's directory and `OMNI_Q8` to its Q8_0 GGUF.
+
+```sh
+export NT_CHAT='||' NT_CTX=64 NT_ATTN_THREADS=1
+for state in omni-awake omni-dream; do
+  ./notorch -q --experts --expert-trace --spore-in "$RUN/$state.gguf" \
+    "$OMNI_Q8" 'Every night the lighthouse keeper carries a' 8 0
+done
+```
+
+On the same Q8_0 file the awake spore selected ` lighthouse` first, and the
+post-dream spore selected ` a`. On Q4_K_M they both selected ` lighthouse`.
+Transplanting the four founders' dreamed A/B into the awake Q4_K_M archive
+reproduced both full 128,000-entry logit vectors byte for byte.
+[Hybrid memory and sleep](research/democracy_of_experts.md#a-parliament-on-a-hybrid-decoder)
+· [Measurements and commands](NOTORCHLOG.md#2026-11-10--a-parliament-on-the-lfm3-omni-2b-text-decoder)
 
 The [SmolLM2-360M experiment](experiments/doe_spores/transplant.aml) moves a
 single seat's A/B between two GGUF spores and probes fresh conversations.

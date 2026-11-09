@@ -146,6 +146,20 @@ static void set_first(const char *path, const char *tensor) {
     assert(!fclose(file));
 }
 
+/* A late norm change must force projection even when the anchor rows are
+ * byte-identical. Compare the two independently exported portable spores. */
+static void check_norm_change(const char *left, const char *right) {
+    gguf_file *a = gguf_open(left), *b = gguf_open(right);
+    assert(a && b);
+    const gguf_kv *ah = gguf_get_kv(a, "doe.norm_sha256"), *bh = gguf_get_kv(b, "doe.norm_sha256");
+    assert(ah && bh && strcmp(ah->val.str,bh->val.str));
+    int ai = gguf_find_tensor(a,"doe.anchor_frame"), bi = gguf_find_tensor(b,"doe.anchor_frame");
+    assert(ai >= 0 && bi >= 0 && a->tensors[ai].n_elements == b->tensors[bi].n_elements);
+    float *af = gguf_dequant(a,ai), *bf = gguf_dequant(b,bi);
+    assert(af && bf && !memcmp(af,bf,a->tensors[ai].n_elements*sizeof(*af)));
+    free(af); free(bf); gguf_close(a); gguf_close(b);
+}
+
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "fixtures")) {
         body("source", "llama", 64, 0, 0, 0, 0);
@@ -159,7 +173,17 @@ int main(int argc, char **argv) {
         body("gemma-aligned", "gemma3", 64, 0, 0, 0, 0);
         body("forged-wide", "gemma3", 64, 0, 0, 0, 4096);
         body("sparse", "olmoe", 96, 7, 0, 0, 0);
+    } else if (argc == 3 && !strcmp(argv[1], "tokenizer")) {
+        int32_t types[V];
+        for (int i = 0; i < V; i++) types[i] = 4;
+        gguf_writer *w = gguf_write_open("tokenizer.gguf");
+        assert(w);
+        gguf_write_kv_str(w, "general.architecture", argv[2]);
+        gguf_write_kv_str_array(w, "tokenizer.ggml.tokens", words, V);
+        gguf_write_kv_i32_array(w, "tokenizer.ggml.token_type", types, V);
+        assert(!gguf_write_close(w));
     } else if (argc == 5 && !strcmp(argv[1], "check")) check(argv[2], argv[3], argv[4]);
+    else if (argc == 4 && !strcmp(argv[1], "check-norm-change")) check_norm_change(argv[2],argv[3]);
     else if (argc == 3 && !strcmp(argv[1], "break-frame")) set_first(argv[2], "doe.anchor_frame");
     else if (argc == 4 && !strcmp(argv[1], "set-first")) set_first(argv[2], argv[3]);
     else return 1;

@@ -75,6 +75,9 @@ typedef struct {
     const gguf_file *(*describe)(const void *model, nt_dims *dims);
     const float *(*norm)(const void *model, int index);
     int norms_per_layer;
+    /* A NULL at one of these within-block slots denotes an absent optional
+     * normalization. The final output norm is always required. */
+    uint32_t optional_norm_slots;
 } nt_doe_decoder;
 
 typedef struct {

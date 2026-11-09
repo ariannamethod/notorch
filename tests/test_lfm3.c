@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <unistd.h>
 
-enum { E = 16, V = 32, HD = 8, H = 2, KVH = 1, LC = 3, F = 24, NL = 4, SWA = 4, N = 10 };
+enum { E = 64, V = 34, HD = 8, H = 2, KVH = 1, LC = 3, F = 24, NL = 4, SWA = 4, N = 10 };
 
 static int checks, failed;
 #define CHECK(c, s) do { checks++; if (!(c)) { fprintf(stderr, "FAIL: %s\n", s); failed++; } } while (0)
@@ -36,7 +36,7 @@ static void kvstr(FILE *f, const char *k, const char *v) { wstr(f, k); wu32(f, 8
  * The rest break one thing each; causal: 0 key absent, 1 true, 2 false. */
 typedef struct {
     int rope, drop_qnorm, short_in_proj, one_post, causal, odd_rot;
-    int emb3d, vocab_key, huge_embed;
+    int emb3d, vocab_key, huge_embed, unit_post, omit_post_mask;
 } opts;
 
 static int write_model(const char *path, opts o) {
@@ -51,8 +51,12 @@ static int write_model(const char *path, opts o) {
 #define A(s, nd, a, b, base, sc) do { snprintf(nm, sizeof nm, "blk.%d." s, l); add(nm, nd, a, b, base, sc); } while (0)
         A("attn_norm.weight", 1, E, 0, 1, 0.1f);
         A("ffn_norm.weight", 1, E, 0, 1, 0.1f);
-        A("post_attention_norm.weight", 1, E, 0, 1, 0.1f);
-        if (!(o.one_post && l == 0)) A("post_ffw_norm.weight", 1, E, 0, 1, 0.1f);
+        A("post_attention_norm.weight", 1, E, 0, 1, o.unit_post ? 0 : 0.1f);
+        if (!(o.one_post && l == 0)) A("post_ffw_norm.weight", 1, E, 0, 1, o.unit_post ? 0 : 0.1f);
+        if (o.omit_post_mask & (1 << l)) {
+            /* Advance the RNG identically so every other tensor stays fixed. */
+            free(ts[--nts].d); free(ts[--nts].d);
+        }
         A("ffn_gate.weight", 2, E, F, 0, 0.5f);
         A("ffn_up.weight", 2, E, F, 0, 0.5f);
         A("ffn_down.weight", 2, F, E, 0, 0.5f);
@@ -213,6 +217,10 @@ static void test_caches(M *x, const float *solo_a) {
 
 /* The tensor-header guard on its own, against headers no writer here would emit. */
 static void test_dims(void) {
+    lfm3_model huge = {.n_attn=128, .max_kv=1<<27, .n_recr=1, .embed=16, .l_cache=3};
+    CHECK(!nt_arch_lfm3.kv_new(&huge,1<<30), "2^64 KV cells cannot wrap into an empty cache");
+    huge.n_attn=1; huge.max_kv=1; huge.n_recr=128; huge.embed=1<<27; huge.l_cache=(1<<30)+1;
+    CHECK(!nt_arch_lfm3.kv_new(&huge,1), "2^64 convolution cells cannot wrap into an empty window");
     gguf_file *g = calloc(1, sizeof(*g));
     if (!g) { CHECK(0, "allocate a tensor table"); return; }
     gguf_tensor_info *t = &g->tensors[0];
@@ -247,7 +255,114 @@ static void test_rope(void) {
     }
 }
 
-int main(void) {
+/* Evaluate the dense FFN from the residual handed to the first hook. Its
+ * result is the independent oracle for the second hook on both mixer types. */
+typedef struct {
+    lfm3_model *m;
+    int pos, n, intervening_layer, stop, events;
+    double expected[N][E];
+} probe;
+
+static double row_dot(const wt *w, int row, const double *v) {
+    const float *f = w->f32 ? w->f32 : (const float *)(const void *)w->q;
+    double sum = 0;
+    for (int i = 0; i < w->cols; i++) sum += f[row*w->cols+i] * v[i];
+    return sum;
+}
+
+static int before_ffn(void *user, int l, int pos, int n, int e, float *rows) {
+    probe *p = user;
+    if (pos != p->pos || n != p->n || e != E || p->events++ != 2*l) return 73;
+    if (p->stop == 1 && l == p->intervening_layer) return 71;
+    for (int j = 0; j < n; j++) {
+        float *x = rows + (size_t)j*E;
+        if (l == p->intervening_layer) x[0] += 2.5f;
+        double v[E], inner[F], delta[E], ss = 0;
+        for (int i = 0; i < E; i++) ss += (double)x[i]*x[i];
+        for (int i = 0; i < E; i++) v[i] = x[i]*p->m->layers[l].ffn_norm[i]/sqrt(ss/E+p->m->rms_eps);
+        for (int k = 0; k < F; k++) {
+            double g = row_dot(&p->m->layers[l].wgate, k, v);
+            inner[k] = g/(1+exp(-g))*row_dot(&p->m->layers[l].wup, k, v);
+        }
+        ss = 0;
+        for (int i = 0; i < E; i++) {
+            delta[i] = row_dot(&p->m->layers[l].wdown, i, inner);
+            ss += delta[i]*delta[i];
+        }
+        const float *post = p->m->layers[l].post_ffn_norm;
+        for (int i = 0; i < E; i++)
+            p->expected[j][i] = x[i] + (post ? delta[i]*post[i]/sqrt(ss/E+p->m->rms_eps) : delta[i]);
+    }
+    return NT_OK;
+}
+
+static int after_ffn(void *user, int l, int pos, int n, int e, float *rows) {
+    probe *p = user;
+    if (pos != p->pos || n != p->n || e != E || p->events++ != 2*l+1) return 73;
+    if (p->stop == 2 && l == p->intervening_layer) return 72;
+    for (int j = 0; j < n; j++) for (int i = 0; i < E; i++)
+        if (!(fabs(rows[j*E+i] - p->expected[j][i]) < 2e-5)) return 74;
+    return NT_OK;
+}
+
+static void test_doe(M *x) {
+    const nt_doe_decoder *d = nt_arch_lfm3.doe;
+    nt_dims geometry = {0};
+    CHECK(d && d->describe(x->m, &geometry) == x->gf && geometry.n_layers == NL &&
+          geometry.kv_dim == x->d.kv_dim && geometry.vocab == V && x->d.n_layers == 2,
+          "calibrate at logical depth, allocate KV for the two attention slots");
+    if (!d) return;
+    ++x->gf->embed_dim;
+    CHECK(!d->describe(x->m, &geometry), "inconsistent generic width cannot enter the frame");
+    --x->gf->embed_dim;
+    lfm3_model *m = x->m;
+    for (int l = 0; l < NL; l++)
+        CHECK(d->norm(m,4*l)==m->layers[l].attn_norm && d->norm(m,4*l+1)==m->layers[l].post_attn_norm &&
+              d->norm(m,4*l+2)==m->layers[l].ffn_norm && d->norm(m,4*l+3)==m->layers[l].post_ffn_norm,
+              "each block exposes its full-width RMS norms in forward order");
+    CHECK(d->norm(m,4*NL)==m->out_norm && !d->norm(m,-1) && !d->norm(m,4*NL+1), "norm bounds and final norm");
+    kv_cache *kv = cache_new(x,16);
+    CHECK(kv, "allocate a hybrid cache for the hooks");
+    if (!kv) return;
+    float plain[V], logits[V], sentinel[V], active[V];
+    CHECK(run(x,seq_a,N,N,plain)==NT_OK,"independent plain cache");
+    for (int target=-1; target<=2; target++) {
+        for (int chunk=1; chunk<=N; chunk+=N-1) {
+            probe p = {.m=m, .intervening_layer=target};
+            for (int pos=0; pos<N; pos+=chunk) {
+                p.pos=pos; p.n=chunk; p.events=0;
+                CHECK(d->forward(m,kv,seq_a+pos,chunk,pos,logits,before_ffn,after_ffn,&p)==NT_OK &&
+                      p.events==2*NL, "hybrid hooks enclose the exact FFN, in layer and position order");
+            }
+            CHECK((memcmp(plain,logits,sizeof plain)!=0)==(target>=0),"passive logits match; an intervention changes them");
+            if (chunk==1) memcpy(active,logits,sizeof active);
+            else CHECK(!memcmp(active,logits,sizeof active),"active grouped and scalar paths agree");
+        }
+    }
+    for (int stop=1; stop<=2; stop++) for (int target=1; target<=2; target++) {
+        probe p = {.m=m, .pos=1, .n=2, .intervening_layer=target, .stop=stop};
+        CHECK(nt_arch_lfm3.forward(m,kv,seq_a,1,0,NULL)==NT_OK,"init prefix before interruption");
+        for (int i=0; i<V; i++) sentinel[i]=logits[i]=-1234;
+        CHECK(d->forward(m,kv,seq_a+1,2,1,logits,before_ffn,after_ffn,&p)==70+stop &&
+              !memcmp(sentinel,logits,sizeof logits), "callback error preserves exact status and all logits");
+        CHECK(nt_arch_lfm3.forward(m,kv,seq_a+1,1,1,NULL)==NT_E_STATE &&
+              nt_arch_lfm3.forward(m,kv,seq_a+3,1,3,NULL)==NT_E_STATE,
+              "a partial conv/KV cache refuses continuation at either end of the failed chunk");
+        CHECK(nt_arch_lfm3.forward(m,kv,seq_a,N-1,0,NULL)==NT_OK &&
+              nt_arch_lfm3.forward(m,kv,seq_a+N-1,1,N-1,logits)==NT_OK && !memcmp(plain,logits,sizeof plain),
+              "restart at zero and subsequent decode reproduce fresh-cache logits");
+    }
+    cache_free(x,kv);
+}
+
+int main(int argc, char **argv) {
+    if (argc == 2 && !strcmp(argv[1],"fixtures")) {
+        return write_model("lfm-unit",(opts){.unit_post=1}) ||
+               write_model("lfm-mixed",(opts){.unit_post=1,.omit_post_mask=1<<(NL-1)}) ||
+               write_model("lfm-aligned",(opts){.unit_post=1,.omit_post_mask=1<<(NL-1),.rope=2}) ||
+               write_model("lfm-bare",(opts){.unit_post=1,.omit_post_mask=(1<<NL)-1});
+    }
+    if (argc != 1) return 1;
     M x;
     CHECK(open_model(&x, (opts){.rope = 0}), "synthetic lfm3 file loads");
     if (!x.m) { printf("LFM3: %d checks, %d failures\n", checks, failed); return 1; }
@@ -259,7 +374,12 @@ int main(void) {
     CHECK(!memcmp(one, dec, sizeof one), "one-shot equals token-by-token, bit for bit");
     CHECK(!memcmp(one, ch3, sizeof one), "one-shot equals chunk-3, bit for bit");
     test_caches(&x, dec);
+    test_doe(&x);
     close_model(&x);
+    M mixed = {0};
+    CHECK(open_model(&mixed,(opts){.omit_post_mask=1<<2}), "mixed sandwich and pre-norm blocks load");
+    if (mixed.m) test_doe(&mixed);
+    close_model(&mixed);
 
     test_rope();
     test_dims();
