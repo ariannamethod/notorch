@@ -14,19 +14,20 @@ static void check(bpe_tokenizer *t,const char *s,const int *expected,int count) 
 static void refused(bpe_tokenizer *t,const char *s) {
     int ids[4]={1234};CHECK(bpe_encode(t,s,ids,4)==0 && ids[0]==1234,s);
 }
-/* Byte tokens 0..255, one token per merge from 256, then <|im_start|> as CONTROL. */
+/* Byte tokens 0..255, one token per merge from 256, then <|im_start|>,
+ * <|im_end|> and <|endoftext|> as CONTROL. */
 static bpe_tokenizer *fixture(const char *pre,char merges[][16],int nm) {
     char path[]="/tmp/notorch-qwen35-text-XXXXXX";int fd=mkstemp(path);if(fd<0)return NULL;close(fd);
     static char words[512][16];const char *tokens[512],*list[256];int32_t types[512];
     for(int b=0;b<256;b++)strcpy(words[b],sym[b]);
     for(int i=0;i<nm;i++){char *o=words[256+i];for(const char *m=merges[i];*m;m++)if(*m!=' ')*o++=*m;*o=0;list[i]=merges[i];}
-    strcpy(words[256+nm],"<|im_start|>");
-    for(int i=0;i<=256+nm;i++){tokens[i]=words[i];types[i]=i==256+nm?3:1;}
+    strcpy(words[256+nm],"<|im_start|>");strcpy(words[257+nm],"<|im_end|>");strcpy(words[258+nm],"<|endoftext|>");
+    for(int i=0;i<=258+nm;i++){tokens[i]=words[i];types[i]=i>=256+nm?3:1;}
     gguf_writer *w=gguf_write_open(path);if(!w){unlink(path);return NULL;}
     gguf_write_kv_str(w,"tokenizer.ggml.pre",pre);
-    gguf_write_kv_str_array(w,"tokenizer.ggml.tokens",tokens,257+nm);
+    gguf_write_kv_str_array(w,"tokenizer.ggml.tokens",tokens,259+nm);
     gguf_write_kv_str_array(w,"tokenizer.ggml.merges",list,nm);
-    gguf_write_kv_i32_array(w,"tokenizer.ggml.token_type",types,257+nm);
+    gguf_write_kv_i32_array(w,"tokenizer.ggml.token_type",types,259+nm);
     CHECK(!gguf_write_close(w),"fixture write");bpe_tokenizer *t=bpe_load(path);CHECK(t!=NULL,"load");
     unlink(path);return t;
 }
@@ -38,6 +39,8 @@ static void ascii_cases(bpe_tokenizer *t) {
     check(t," \n",(int[]){264},1);check(t,"!\n\n",(int[]){33,265},2);
     int ids[100];CHECK(bpe_encode_special(t,"<|im_start|>",ids,100)==1 && ids[0]==bpe_token_id(t,"<|im_start|>"),"explicit control token");
     CHECK(bpe_encode(t,"<|im_start|>",ids,100)>1,"ordinary path stays literal");
+    CHECK(bpe_is_eog(t,bpe_token_id(t,"<|im_end|>")) && bpe_is_eog(t,bpe_token_id(t,"<|endoftext|>")) &&
+          !bpe_is_eog(t,bpe_token_id(t,"<|im_start|>")) && !bpe_is_eog(t,97),"end of turn and of text, nothing else");
 }
 int main(void) {
     for(int b=0,next=0;b<256;b++) {

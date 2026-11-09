@@ -1154,8 +1154,12 @@ int main(int argc, char **argv) {
  * from the file is the whole answer. */
 int bpe_is_eog(const bpe_tokenizer *t, int id) {
     if (!t || id < 0 || id >= t->n_tokens || !t->tokens[id]) return 0;
-    if (!t->spm_bpe) return 0;
     const char *s = t->tokens[id];
+    /* Qwen3.5 closes a chat turn with <|im_end|> and a document with <|endoftext|>,
+     * and its converted tokenizer carries no eos id; llama.cpp stops on both. */
+    if (t->pre_qwen35 || t->pre_qwen35_ascii)
+        return strcmp(s, "<|im_end|>") == 0 || strcmp(s, "<|endoftext|>") == 0;
+    if (!t->spm_bpe) return 0;
     return strcmp(s, "<eos>") == 0 || strcmp(s, "<turn|>") == 0 ||
            strcmp(s, "<|tool_response>") == 0;
 }
