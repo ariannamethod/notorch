@@ -289,20 +289,6 @@ gguf_file* gguf_open_metadata(const char* path) {
     return open_gguf(path, 1);
 }
 
-uint64_t gguf_type_size(uint32_t dtype, uint64_t n) {
-    switch (dtype) {
-    case GGUF_TYPE_F32:  return n * 4;
-    case GGUF_TYPE_F16:  return n * 2;
-    case GGUF_TYPE_BF16: return n * 2;
-    case GGUF_TYPE_Q4_0: return n / 32 * 18;
-    case GGUF_TYPE_Q5_0: return n / 32 * 22;
-    case GGUF_TYPE_Q8_0: return n / 32 * 34;
-    case GGUF_TYPE_Q4_K: return n / 256 * 144;
-    case GGUF_TYPE_Q6_K: return n / 256 * 210;
-    default:             return 0;
-    }
-}
-
 void gguf_close(gguf_file* gf) {
     if (!gf) return;
 #if NOTORCH_GGUF_MMAP
@@ -690,6 +676,11 @@ static uint64_t gguf_dtype_nbytes(uint32_t dtype, uint64_t n) {
     }
     if (blocks == 0 || blocks > UINT64_MAX / per) return 0;  // empty or overflow
     return blocks * per;
+}
+
+uint64_t gguf_type_size(uint32_t dtype, uint64_t n) {
+    if (n % gguf_dtype_block(dtype)) return 0;
+    return gguf_dtype_nbytes(dtype, n);
 }
 
 float* gguf_dequant(const gguf_file* gf, int tensor_idx) {

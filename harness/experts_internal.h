@@ -15,6 +15,8 @@ struct nt_experts {
     nt_dims dims;
     float *frame;
     FILE *trace;
+    nt_moe_route_fn dream_route;
+    void *dream_route_user;
     uint32_t rng;
     uint64_t turns, elections;
     struct {

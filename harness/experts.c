@@ -131,6 +131,14 @@ void nt_experts_free(nt_experts *p) {
     free(p);
 }
 
+int nt_experts_set_dream_route(nt_experts *p, nt_moe_route_fn route, void *user) {
+    if (!p) return NT_E_ARG;
+    if (route && (!p->body.model || !p->decoder->forward_routes)) return NT_E_STATE;
+    p->dream_route = route;
+    p->dream_route_user = route ? user : NULL;
+    return NT_OK;
+}
+
 /* DOE's Fourier amplitudes and frequency-distance vote bias. Here the history
  * is the bounded RMS of this layer's last sixteen input residuals. */
 static void resonate(nt_experts *p, const float *x, float bias[SEATS]) {

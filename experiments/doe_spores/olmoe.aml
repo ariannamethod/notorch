@@ -1,0 +1,429 @@
+# Send one Gemma waking spore through OLMoE sleep, a second quantization and home.
+# stdin: CLI, doe_probe, Gemma 270M Q8_0, OLMoE Q4_0, OLMoE Q4_K_M, reducer.awk, new directory.
+def cat(a, b):
+    return text_concat(a, b)
+
+def path(name):
+    return cat(cat(outdir, '/'), name)
+
+def spore(name):
+    return path(cat(name, '.gguf'))
+
+def col(a, b):
+    return cat(cat(a, '\t'), b)
+
+def lines(file, content):
+    rest = content
+    end = text_find(rest, '\n')
+    while end >= 0:
+        assert(file_append_line(path(file), text_slice(rest, 0, end)) == 1, file)
+        rest = text_slice(rest, end+1, text_len(rest))
+        end = text_find(rest, '\n')
+    if text_len(rest) > 0:
+        assert(file_append_line(path(file), rest) == 1, file)
+
+def run(args, label):
+    result = process_run(args, env, 300)
+    status = record_get(result, 'status')
+    trace = record_get(result, 'stderr')
+    if status != 0:
+        PRINT cat(cat(label, ' exit '), text_fixed(status, 0))
+        PRINT trace
+    assert(status == 0, label)
+    if text_len(trace) > 0:
+        lines(cat(label, '.trace'), trace)
+    return result
+
+def command(binary):
+    args = list_new()
+    list_push(args, binary)
+    return args
+
+def wake():
+    args = command(cli)
+    list_push(args, '-q')
+    list_push(args, '--experts')
+    list_push(args, '--expert-trace')
+    list_push(args, '--learn-experts')
+    list_push(args, '--async-consolidation')
+    list_push(args, '--portable-spore')
+    list_push(args, '--spore-out')
+    list_push(args, spore('gemma-key'))
+    list_push(args, gemma)
+    list_push(args, 'Miro is the lighthouse keeper. Every night Miro carries a key. At sunrise the lighthouse keeper returns home.')
+    list_push(args, '1')
+    list_push(args, '0')
+    output = record_get(run(args, 'gemma-key'), 'stdout')
+    assert(text_len(output) > 0, 'missing waking output')
+
+def offline(host, parent, label, mode):
+    args = command(cli)
+    list_push(args, '-q')
+    list_push(args, '--experts')
+    list_push(args, '--expert-trace')
+    list_push(args, '--spore-in')
+    list_push(args, spore(parent))
+    if text_equal(mode, 'exact') == 0:
+        list_push(args, '--portable-spore')
+    list_push(args, '--spore-out')
+    list_push(args, spore(label))
+    if text_equal(mode, 'bind') or text_equal(mode, 'exact'):
+        list_push(args, '--spore-only')
+    else:
+        list_push(args, '--dream-only')
+        list_push(args, '6')
+        list_push(args, '--moe-trace')
+        if text_equal(mode, 'preview') == 0:
+            list_push(args, '--learn-experts')
+        if text_equal(mode, 'worker'):
+            list_push(args, '--async-consolidation')
+    list_push(args, host)
+    result = run(args, label)
+    output = record_get(result, 'stdout')
+    assert(text_len(output) == 0, 'private or offline output')
+    trace = record_get(result, 'stderr')
+    assert(text_find(trace, 'doe turn=') < 0, 'offline waking turn')
+    if text_equal(mode, 'exact'):
+        return ''
+    if text_equal(mode, 'bind'):
+        start = text_find(trace, 'doe transfer mode=')
+        assert(start >= 0 and text_find(trace, ' anchors=32 ') > start, 'missing transport record')
+        transfer = text_slice(trace, start, text_len(trace))
+        lines('transfers.tsv', col(label, text_slice(transfer, 0, text_find(transfer, '\n'))))
+        record_set(binding_source, label, parent)
+        return ''
+    begin = text_find(trace, 'doe dream-start ')
+    end = text_find(trace, 'doe dream-end ')
+    assert(begin >= 0 and end > begin, 'incomplete private episode')
+    ending = text_slice(trace, end, text_len(trace))
+    learn = text_find(ending, ' learn=')
+    assert(learn > 0, 'missing dream commit status')
+    status = text_slice(ending, learn, text_find(ending, '\n'))
+    if text_equal(mode, 'preview'):
+        assert(text_equal(status, ' learn=0'), 'preview committed')
+    else:
+        assert(text_equal(status, ' learn=1'), 'dream did not commit')
+    return text_slice(trace, begin, end+learn)
+
+def tokenize(host, literal, label):
+    args = command(cli)
+    list_push(args, '-T')
+    list_push(args, host)
+    list_push(args, literal)
+    output = record_get(run(args, cat(label, '-tokenizer')), 'stdout')
+    end = text_find(output, '\n')
+    assert(end > 0 and end == text_len(output)-1, 'tokenizer CSV')
+    return text_slice(output, 0, end)
+
+def token_ids(host, tag, i):
+    key = cat(cat(tag, '-P'), text_fixed(i, 0))
+    ids = tokenize(host, list_get(prompts, i), key)
+    record_set(tokens, key, ids)
+    lines('tokens.tsv', col(key, ids))
+
+def dream_routes(episode):
+    start = text_find(episode, ' literal="')
+    end = text_find(episode, '" seat=')
+    assert(start >= 0 and end > start+10, 'missing dream cue literal')
+    cue = text_slice(episode, start+10, end)
+    ids = tokenize(q0, cue, 'q0-dream-cue')
+    args = command('awk')
+    list_push(args, '-v')
+    list_push(args, 'scope=dream')
+    list_push(args, '-v')
+    list_push(args, cat('expected=', ids))
+    list_push(args, '-f')
+    list_push(args, reducer)
+    list_push(args, path('q0-dream.trace'))
+    lines('dream-routes.tsv', record_get(run(args, 'q0-private-routes'), 'stdout'))
+
+# doe_probe opens a fresh KV and parliament per prompt, checks both suffixes
+# against the entire prefix and writes both full-vocabulary arrays to one checkpoint.
+def score(host, label, parent):
+    args = command(helper)
+    list_push(args, 'score')
+    list_push(args, host)
+    if text_len(parent) > 0:
+        list_push(args, spore(parent))
+    else:
+        list_push(args, '-')
+    ck = path(cat(label, '.amlck'))
+    list_push(args, ck)
+    list_push(args, ' key')
+    list_push(args, ' bell')
+    list_push(args, list_get(prompts, 0))
+    list_push(args, list_get(prompts, 1))
+    run(args, cat(label, '-score'))
+    return checkpoint_load(ck)
+
+def generate(host, tag, label, parent):
+    i = 0
+    while i < 2:
+        index = text_fixed(i, 0)
+        args = command(cli)
+        list_push(args, '-q')
+        list_push(args, '--expert-trace')
+        if text_equal(tag, 'gemma') == 0:
+            list_push(args, '--moe-trace')
+        if text_len(parent) > 0:
+            list_push(args, '--experts')
+            list_push(args, '--spore-in')
+            list_push(args, spore(parent))
+        list_push(args, host)
+        prompt = list_get(prompts, i)
+        list_push(args, prompt)
+        list_push(args, '12')
+        list_push(args, '0')
+        generation = cat(cat(label, '-P'), index)
+        output = record_get(run(args, generation), 'stdout')
+        assert(text_find(output, prompt) == 0, 'greedy prefix')
+        lines(cat(generation, '.txt'), text_slice(output, text_len(prompt), text_len(output)))
+        i = i + 1
+
+def measure(host, tag, label, parent):
+    scores = score(host, label, parent)
+    left = record_get(scores, 'left_id')
+    right = record_get(scores, 'right_id')
+    i = 0
+    while i < 2:
+        index = text_fixed(i, 0)
+        logits = record_get(scores, cat('probe', index))
+        probs = softmax(logits)
+        row = col(col(col(label, index), text_fixed(left, 0)), text_fixed(right, 0))
+        row = col(col(row, text_fixed(probs[left], 9)), text_fixed(probs[right], 9))
+        lines('scores.tsv', col(row, text_fixed(logits[left]-logits[right], 9)))
+        i = i + 1
+    generate(host, tag, label, parent)
+
+def compare(tag, before, after, scope):
+    table = 'routes.tsv'
+    source_hash = '-'
+    check_votes = text_equal(scope, 'factor-replay') or (text_equal(scope, 'parliament') and text_equal(before, 'q0-plain') == 0)
+    if text_equal(scope, 'quantization'):
+        table = 'quantization.tsv'
+        if text_equal(before, 'q0-plain'):
+            assert(text_equal(after, 'km-plain'), 'plain hosts must be paired')
+        else:
+            assert(text_equal(record_get(binding_source, after), before), 'hosts must share the same archive')
+            source_hash = file_hash_sha256(spore(before))
+    if text_equal(scope, 'factor-replay'):
+        table = 'factor-replay.tsv'
+    i = 0
+    while i < 2:
+        index = cat('P', text_fixed(i, 0))
+        pair = cat(cat(before, '/'), after)
+        args = command('awk')
+        list_push(args, '-v')
+        list_push(args, cat('pair=', pair))
+        list_push(args, '-v')
+        list_push(args, cat('probe=', index))
+        list_push(args, '-v')
+        list_push(args, cat('expected=', record_get(tokens, cat(cat(tag, '-'), index))))
+        list_push(args, '-v')
+        list_push(args, cat('scope=', scope))
+        list_push(args, '-v')
+        list_push(args, cat('vote_check=', text_fixed(check_votes, 0)))
+        list_push(args, '-v')
+        list_push(args, cat('source_sha=', source_hash))
+        list_push(args, '-f')
+        list_push(args, reducer)
+        tail = cat(cat('-', index), '.trace')
+        list_push(args, path(cat(before, tail)))
+        list_push(args, path(cat(after, tail)))
+        summary = record_get(run(args, cat(cat(after, '-compare-'), index)), 'stdout')
+        if text_equal(scope, 'factor-replay'):
+            count = text_slice(summary, 0, text_find(summary, '\n'))
+            lines(table, col(col(index, count), file_hash_sha256(path(cat(after, '.amlck')))))
+        else:
+            lines(table, summary)
+        i = i + 1
+
+# Exact-host experimental spores. Only the indicated living founders' A/B
+# tensors come from the dream. The recipient supplies every other field.
+def transplant(label, seat):
+    args = command(helper)
+    list_push(args, 'transplant')
+    list_push(args, q0)
+    list_push(args, spore('q0-awake'))
+    list_push(args, spore('q0-dream'))
+    list_push(args, spore(label))
+    if seat < 0:
+        i = 0
+        while i < 4:
+            list_push(args, text_fixed(i, 0))
+            i = i + 1
+    else:
+        list_push(args, text_fixed(seat, 0))
+    run(args, cat(label, '-transplant'))
+
+def seat_scores(label, copied, readings, awake):
+    left = record_get(awake, 'left_id')
+    right = record_get(awake, 'right_id')
+    assert(left == record_get(readings, 'left_id') and right == record_get(readings, 'right_id'), 'seat target IDs')
+    i = 0
+    while i < 2:
+        index = text_fixed(i, 0)
+        key = cat('probe', index)
+        logits = record_get(readings, key)
+        control = record_get(awake, key)
+        margin = logits[left] - logits[right]
+        delta = margin - (control[left] - control[right])
+        row = col(col(label, copied), cat('P', index))
+        lines('seats.tsv', col(col(row, text_fixed(margin, 9)), text_fixed(delta, 9)))
+        i = i + 1
+
+def factor_write(label, copied, baseline_hash):
+    digest = file_hash_sha256(spore(label))
+    changed = text_equal(digest, baseline_hash) == 0
+    lines('factor-writes.tsv', col(col(col(label, copied), text_fixed(changed, 0)), digest))
+
+def founders():
+    awake = checkpoint_load(path('q0-awake.amlck'))
+    dream = checkpoint_load(path('q0-dream.amlck'))
+    offline(q0, 'q0-awake', 'q0-awake-exact', 'exact')
+    baseline_hash = file_hash_sha256(spore('q0-awake-exact'))
+    factor_write('q0-awake-exact', '-', baseline_hash)
+    seat_scores('q0-awake', '-', awake, awake)
+    seat_scores('q0-dream', '-', dream, awake)
+    i = 0
+    while i < 4:
+        seat = text_fixed(i, 0)
+        label = cat('q0-seat', seat)
+        transplant(label, i)
+        factor_write(label, seat, baseline_hash)
+        seat_scores(label, seat, score(q0, label, label), awake)
+        i = i + 1
+    transplant('q0-factors', -1)
+    factor_write('q0-factors', '0,1,2,3', baseline_hash)
+    all_four = score(q0, 'q0-factors', 'q0-factors')
+    seat_scores('q0-factors', '0,1,2,3', all_four, awake)
+    assert(text_equal(file_hash_sha256(path('q0-factors.amlck')), file_hash_sha256(path('q0-dream.amlck'))), 'all-founder logits differ from dream')
+    generate(q0, 'q0', 'q0-factors', 'q0-factors')
+    compare('q0', 'q0-dream', 'q0-factors', 'factor-replay')
+
+def series_cue(night, episode, seen):
+    start = cat(cat('doe dream-start cycle=', night), ' cue=')
+    end = cat(cat('doe dream-end cycle=', night), ' choices=')
+    a = text_find(episode, start)
+    b = text_find(episode, ' literal="')
+    c = text_find(episode, '" seat=')
+    d = text_find(episode, end)
+    assert(a >= 0 and b > a+text_len(start) and c > b+10 and d > c, 'sleep series cycle')
+    cue = text_slice(episode, a+text_len(start), b)
+    literal = text_slice(episode, b+10, c)
+    assert(record_has(seen, cue) == 0, 'repeated dream cue')
+    record_set(seen, cue, 1)
+    ending = text_slice(episode, d+text_len(end), text_len(episode))
+    choices = text_slice(ending, 0, text_find(ending, ' elections='))
+    lines('sleep-cues.tsv', col(col(col(night, cue), literal), choices))
+    return cue
+
+def sleep_scores(night, cue, readings, awake):
+    left = record_get(awake, 'left_id')
+    right = record_get(awake, 'right_id')
+    assert(left == record_get(readings, 'left_id') and right == record_get(readings, 'right_id'), 'sleep series target IDs')
+    i = 0
+    while i < 2:
+        index = text_fixed(i, 0)
+        key = cat('probe', index)
+        logits = record_get(readings, key)
+        control = record_get(awake, key)
+        margin = logits[left] - logits[right]
+        delta = margin - (control[left] - control[right])
+        row = col(col(night, cue), cat('P', index))
+        lines('sleep-series.tsv', col(col(row, text_fixed(margin, 9)), text_fixed(delta, 9)))
+        i = i + 1
+
+# Every worker reopens the preceding spore. Frozen scoring runs in its own
+# process at the prespecified nights and never writes the next worker's input.
+def series():
+    lines('sleep-series.tsv', 'night\tcue_id\tprobe\tlog_odds_key_over_bell\tdelta_from_awake')
+    lines('sleep-cues.tsv', 'night\tcue_id\tliteral\tchoices')
+    seen = record_new()
+    awake = checkpoint_load(path('q0-awake.amlck'))
+    sleep_scores('0', '-', awake, awake)
+    previous = 'q0-dream'
+    first = path('q0-dream.trace')
+    cue = series_cue('1', file_read_slice(first, 0, file_size(first)), seen)
+    sleep_scores('1', cue, checkpoint_load(path('q0-dream.amlck')), awake)
+    n = 2
+    while n <= 8:
+        night = text_fixed(n, 0)
+        label = cat('q0-night', night)
+        episode = offline(q0, previous, label, 'worker')
+        cue = series_cue(night, episode, seen)
+        if n == 2 or n == 4 or n == 8:
+            sleep_scores(night, cue, score(q0, label, label), awake)
+        previous = label
+        n = n + 1
+
+cli = list_get(read_line(), 0)
+helper = list_get(read_line(), 0)
+gemma = list_get(read_line(), 0)
+q0 = list_get(read_line(), 0)
+km = list_get(read_line(), 0)
+reducer = list_get(read_line(), 0)
+outdir = list_get(read_line(), 0)
+assert(text_equal(file_hash_sha256(gemma), '0ef57d2c838458a1952664260dcba38e5bdda37494f3af732f06e4add24068e3'), 'Gemma weights')
+assert(text_equal(file_hash_sha256(q0), '361e8d83f0820e50d0ed1a13b10586ed9f476d99dcaf6aafd14f07e11840b22b'), 'OLMoE Q4_0 weights')
+assert(text_equal(file_hash_sha256(km), '8c310f1435a1222338fd2d3d974975be9cd908180b644bab0c2a94da1ac32f3f'), 'OLMoE Q4_K_M weights')
+assert(dir_claim(outdir) == 1, 'choose a new output directory')
+env = record_new()
+record_set(env, 'LC_ALL', 'C')
+record_set(env, 'NT_TOKENS', '')
+record_set(env, 'NT_CHAT', '||')
+record_set(env, 'NT_ATTN_THREADS', '1')
+record_set(env, 'NT_CTX', '64')
+prompts = list_new()
+list_push(prompts, 'Every night the lighthouse keeper carries a')
+list_push(prompts, 'At the lighthouse, Miro reaches for his')
+tokens = record_new()
+binding_source = record_new()
+lines('tokens.tsv', 'host_probe\tinput_ids')
+lines('transfers.tsv', 'state\ttransfer')
+lines('scores.tsv', 'state\tprobe\tkey_id\tbell_id\tp_key\tp_bell\tlog_odds_key_over_bell')
+route_header = 'comparison\tprobe\tlayer\trows\tset_changed\trank_only\treplaced_ids\ttop1_changed\tmean_selected_l1\tmax_selected_l1\tmean_mass_before\tmean_mass_after\tfirst_set_pos'
+lines('routes.tsv', route_header)
+lines('quantization.tsv', col(route_header, 'source_archive_sha256'))
+lines('seats.tsv', 'state\tcopied_seats\tprobe\tlog_odds_key_over_bell\tdelta_from_awake')
+lines('factor-replay.tsv', 'probe\tidentical_prompt_routes\tcheckpoint_sha256')
+lines('factor-writes.tsv', 'state\tcopied_seats\tfactors_changed_vs_awake\texact_spore_sha256')
+lines('dream-routes.tsv', 'pos\tinput_kind\ttoken\tlayer\tdoe_k\tdoe_consensus\tdoe_gates\tmoe_ids\tmoe_weights')
+i = 0
+while i < 2:
+    token_ids(q0, 'q0', i)
+    token_ids(km, 'km', i)
+    idx = cat('-P', text_fixed(i, 0))
+    assert(text_equal(record_get(tokens, cat('q0', idx)), record_get(tokens, cat('km', idx))), 'quantization tokenizer parity')
+    i = i + 1
+wake()
+offline(q0, 'gemma-key', 'q0-awake', 'bind')
+preview = offline(q0, 'q0-awake', 'q0-preview', 'preview')
+sync = offline(q0, 'q0-awake', 'q0-sync', 'sync')
+worker = offline(q0, 'q0-awake', 'q0-dream', 'worker')
+assert(text_equal(preview, sync) and text_equal(sync, worker), 'dream trajectory')
+dream_routes(worker)
+assert(text_equal(file_hash_sha256(spore('q0-awake')), file_hash_sha256(spore('q0-preview'))), 'preview wrote state')
+assert(text_equal(file_hash_sha256(spore('q0-sync')), file_hash_sha256(spore('q0-dream'))), 'worker spore differs')
+assert(text_equal(file_hash_sha256(spore('q0-awake')), file_hash_sha256(spore('q0-dream'))) == 0, 'dream update missing')
+measure(q0, 'q0', 'q0-plain', '')
+measure(q0, 'q0', 'q0-awake', 'q0-awake')
+measure(q0, 'q0', 'q0-dream', 'q0-dream')
+compare('q0', 'q0-plain', 'q0-awake', 'parliament')
+compare('q0', 'q0-awake', 'q0-dream', 'parliament')
+offline(km, 'q0-awake', 'km-awake', 'bind')
+offline(km, 'q0-dream', 'km-dream', 'bind')
+measure(km, 'km', 'km-plain', '')
+measure(km, 'km', 'km-awake', 'km-awake')
+measure(km, 'km', 'km-dream', 'km-dream')
+compare('km', 'km-awake', 'km-dream', 'parliament')
+compare('q0', 'q0-plain', 'km-plain', 'quantization')
+compare('q0', 'q0-awake', 'km-awake', 'quantization')
+compare('q0', 'q0-dream', 'km-dream', 'quantization')
+offline(gemma, 'q0-awake', 'return-awake', 'bind')
+offline(gemma, 'q0-dream', 'return-dream', 'bind')
+measure(gemma, 'gemma', 'return-awake', 'return-awake')
+measure(gemma, 'gemma', 'return-dream', 'return-dream')
+founders()
+series()
+PRINT 'OLMOE_SPORE_ROUTES_OK'

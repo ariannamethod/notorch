@@ -499,6 +499,10 @@ test_gemma3: tests/test_gemma3.c libnotorch_harness.a libnotorch.a Makefile
 check_gemma3: test_gemma3
 	./test_gemma3
 
+test_olmoe_doe: tests/test_olmoe_doe.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
+
+test: test_olmoe_doe
 
 test_pen7: tests/test_pen7.c pen7.h libnotorch.a Makefile
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch.a -lm $(BLAS_LIBS)
@@ -1171,6 +1175,7 @@ test: notorch_test test_spa_agent test_spa_agent_state test_spa_agent_durability
 	./test_residual
 	./test_multi_decode
 	./test_gemma3
+	./test_olmoe_doe
 	./test_smollm_tokenizer
 	./test_qgather
 	NT_QMV_CHUNKS=1 ./test_qgather
@@ -1239,7 +1244,7 @@ clean:
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o
 	rm -f test_chuck_architect test_chuck_actions_edge test_chuck_architect_state test_chuck_architect_scenarios test_chuck_architect_future test_chuck_architect_conditioned test_chuck_architect_durability test_chuck_lived tests/chuck_durability_notorch.o chuck_architect_train chuck_architect_future
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
-		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual test_gemma3 test_smollm_tokenizer \
+		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual test_gemma3 test_olmoe_doe test_smollm_tokenizer \
 		notorch_test notorch_test_gpu notorch.o gguf.o pen7.o libnotorch.a notorch_cuda.o \
 		infer_janus_nt infer_llama \
 		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \

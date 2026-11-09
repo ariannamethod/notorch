@@ -11,6 +11,137 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-09 — A comma crosses a native OLMoE routing boundary
+
+One Gemma 3-270M-IT Q8_0 waking turn (“Miro is the lighthouse keeper. Every
+night Miro carries a key. At sunrise the lighthouse keeper returns home.”)
+produced a 221,536-byte portable spore with 24 waking elections. The Harness
+projected it from Gemma layer 9, width 640, into OLMoE layer 8, width 2048.
+OLMoE-1B-7B-0924-Instruct has 16 blocks and selects 8 of 64 native FFN
+experts per block. Each of the two fixed prefixes started with a fresh KV and
+a freshly restored parliament. P0 is “Every night the lighthouse keeper
+carries a” (8 OLMoE tokens) and P1 is “At the lighthouse, Miro reaches for
+his” (10). In the sparse vocabulary ` key` is 2234 and ` bell` is 17487.
+The C scorer verified that appending each literal extends the entire prefix by
+exactly that one ID. Every checkpoint contains two full logit arrays. The AML
+experiment computes the softmax and the log-odds margin from those arrays.
+
+**Sleep and writes.** The Q4_0 parliament selected cue 7, ` sleep`, with
+seat 1 contributing the most response energy. Its six greedy choices decoded
+to ` Byrne, a first-`. At the cue, living seats 1 and 3 voted and block 8
+summed banks 22, 7, 29, 60, 32, 1, 33 and 59. Across the seven private inputs
+the four founders won 6, 6, 1 and 1 elections each. Independent GGUF reads
+found changed A, B and cursor in all four, with every other state tensor
+byte-identical. Preview preserved the 705,888-byte awake GGUF
+(`386523dccd67cbf9b15cab40c0bedc98be0e8a149438ba51bc69508f0339fc1b`).
+The foreground and worker produced the same 706,048-byte learned GGUF
+(`c6e63b13b96629d52b73d2f23d92de6e104a623ffc8385455ba1f597358647c8`).
+[All 112 private native mixtures and living ballots](experiments/doe_spores/olmoe-dream-routes.tsv).
+
+**A/B intervention.** Holding every field of the Q4_0 waking archive fixed,
+transplanting only seat 0's post-dream A/B shifted P0's key/bell log odds by
++0.038973. Seat 3 alone shifted them by −0.017140. All four founders together
+gave +0.020664 and exactly reproduced both 50,304-entry dreamed logit arrays
+and all 288 prefix routes, including the applied weights and living ballots.
+The hash of the two-probe AML checkpoint was
+`f7d4d9bc812e204ac48eb561aef3c7a62551721e22eb93c0eb97fe804a108ebe`.
+[All single-seat interventions](experiments/doe_spores/olmoe-seats.tsv).
+
+**Successive private episodes.** A branch of the Q4_0 parliament slept eight
+times from the same waking history. The cues, in order, were sleep, circle,
+winter, river, walk, quiet, small and bread. Each episode made six choices and
+held seven private elections. The last GGUF still held one waking turn and
+24 waking elections, alongside 8 dreams, 48 private choices and 56 private
+elections. On P0 the log-odds shift from awake at nights 1, 2, 4 and 8 was
++0.020664, −0.086269, +0.030560 and −0.045143. On P1 it was −0.003660,
+−0.038589, +0.065842 and +0.020678. The final spore's SHA-256 was
+`8fc669397de87b92c41afd0d770bc2e548cd1807e0af6ae21fb5f6f5b1591edc`.
+[Scores](experiments/doe_spores/olmoe-sleep-series.tsv) ·
+[Cues](experiments/doe_spores/olmoe-sleep-cues.tsv).
+
+**The same history in three bodies.** For each target these are the post-dream
+minus pre-dream changes in the log odds of ` key` over ` bell`. Both histories
+originated in the same Gemma turn. Only the Q4_0 body performed the dream.
+The `P1` column on the right gives the literal first greedy continuation token.
+
+| Receiving body | P0 log-odds shift | P1 log-odds shift | P1 awake → post-dream |
+| --- | ---: | ---: | --- |
+| OLMoE Q4_0 | +0.020664 | −0.003660 | ` bag` → ` bag` |
+| OLMoE Q4_K_M | −0.092199 | +0.030678 | ` bag` → ` phone` |
+| Gemma 3-270M-IT Q8_0, return | +0.140171 | −0.130377 | ` hand` → ` hand` |
+
+The receiving Q4_K_M GGUF aligned the two portable histories over 32 anchors
+(minimum cosine 0.806842588). In each pair all ten non-frame state tensors
+matched byte for byte, including all 49,152 values in each A/B tensor and
+12,288 voting weights. Only the anchor-frame tensor differed. Both published
+quantizations store identical F32 router matrices in all 16 blocks, 8,388,608
+bytes. Run the comparisons on the host weights and the two bound spores with
+`doe_probe compare-f32`. The table gives each tensor name, size and outcome.
+[Full scores](experiments/doe_spores/olmoe-scores.tsv) ·
+[Tensor comparison](experiments/doe_spores/olmoe-tensors.tsv).
+
+With no parliament, changing quantization changed top-eight membership at
+132 of the 288 fixed-prefix block/position pairs. With a common awake spore
+it changed 135, and with a common post-dream spore it changed 133. On Q4_0,
+seating the Gemma spore changed one top-eight set and recording the dream
+changed one. Both occurred on P1's comma (ID 13, position 4) at block 12.
+Bank 38 gave way to 28, then returned. On Q4_K_M the two histories changed
+membership at two positions. All 144 routes below the parliament were equal
+in every within-body contrast, including order and applied weights.
+[History comparisons](experiments/doe_spores/olmoe-routes.tsv) ·
+[Matched weight swaps](experiments/doe_spores/olmoe-quantization.tsv) ·
+[Figure](research/olmoe-routing.svg).
+
+**Weights and reproduction.** The published [AllenAI GGUF revision](https://huggingface.co/allenai/OLMoE-1B-7B-0924-Instruct-GGUF/tree/02ab6ea6894a8418eb14f6d8ee1bfb08bd298080)
+supplied Q4_0 (3,928,037,856 bytes, SHA-256
+`361e8d83f0820e50d0ed1a13b10586ed9f476d99dcaf6aafd14f07e11840b22b`)
+and Q4_K_M (4,213,512,672 bytes,
+`8c310f1435a1222338fd2d3d974975be9cd908180b644bab0c2a94da1ac32f3f`).
+The [Gemma GGUF revision](https://huggingface.co/ggml-org/gemma-3-270m-it-GGUF/tree/e7647be17ae1108f2f605ed061ca0608b171afff)
+supplied Q8_0 (`0ef57d2c838458a1952664260dcba38e5bdda37494f3af732f06e4add24068e3`).
+The run used x86-64 AMD EPYC 9V74, GCC 14.2, the in-tree CPU kernels,
+greedy sampling, raw prompts, context 64 and one attention thread. AML was
+built from [e5d5f1f](https://github.com/ariannamethod/ariannamethod.ai/commit/e5d5f1faed84ef332228fff36dee2ec31964816f).
+From the NoTorch checkout, set absolute paths for `AML`, `G270`, `OLMO_Q4` and
+`OLMO_K`. `RUN` names a new output directory.
+
+```sh
+make -C "$AML" runner
+make notorch doe_probe AML_ROOT="$AML" BLAS_FLAGS= BLAS_LIBS=
+printf '%s\n' "$PWD/notorch" "$PWD/doe_probe" "$G270" "$OLMO_Q4" "$OLMO_K" \
+  "$PWD/experiments/doe_spores/olmoe_routes.awk" "$RUN" |
+  taskset -c 2 "$AML/runner/aml" experiments/doe_spores/olmoe.aml
+# Inspect the on-disk F32 routers and the tensors that crossed to Q4_K_M.
+set --
+for layer in $(seq 0 15); do set -- "$@" "blk.$layer.ffn_gate_inp.weight"; done
+NT_GGUF_MMAP=lazy ./doe_probe compare-f32 "$OLMO_Q4" "$OLMO_K" "$@"
+set -- doe.lora_a doe.lora_b doe.vote doe.alive doe.vitality doe.frequency \
+  doe.cursor doe.age doe.low_vitality doe.rms_history doe.anchor_frame
+for history in awake dream; do
+  ./doe_probe compare-f32 "$RUN/q0-$history.gguf" "$RUN/km-$history.gguf" "$@"
+done
+gnuplot -c experiments/doe_spores/olmoe-figure.gp "$RUN" olmoe-routing.svg
+```
+
+Two independent end-to-end AML runs each printed `OLMOE_SPORE_ROUTES_OK`.
+All 22 GGUF spores, 16 full-logit checkpoints, 18 continuations and 11 TSV
+tables matched byte for byte, as did the waking and private events in the
+56 trace files. A separate GGUF read verified the four written seats and their
+cursors against the private ballots. Switching the fixture count back to signed
+32-bit multiplication triggered UBSan on 65,536 × 65,536.
+
+The Q4_0 and Q4_K_M plain CPU forwards matched `e38a2ea` on all 201,216
+F32 logits (two prefixes and two files). Both real quantizations also matched
+the parent's 12 greedy IDs and chosen logits on each prefix through the CLI,
+including with route tracing enabled. The native Qwen3-MoE checks use a
+deterministic GGUF fixture for its normalized top-k. The installed archive
+consumer gate passed with both OLMoE and Gemma. `make test` passed, including
+1,332 sparse checks. The optional original Haiku corpus requires an
+external SentencePiece model and was skipped. The sparse numerical gate also
+passed in a separate ASan/UBSan build.
+
+---
+
 ## 2026-11-09 — Qwen3-Embedding, the second encoder: built and gated, two references open
 
 The SUBLITERATUS EG line gets its control encoder, by Oleg's mandate of
@@ -85,6 +216,77 @@ Quote: "the meaning of a word is its use in the language" — Ludwig Wittgenstei
 Method: the Method logs the second encoder with what it measured and what it still needs from outside the tree.
 
 By Arianna Method (Co-authored by Claude, neo) <talkto@ariannamethod.com>, Coordinated with maintainer @iamolegataeff
+
+## 2026-11-09 — Sparse fixture dimensions stay 64-bit
+
+[CodeQL alert 74](https://github.com/ariannamethod/notorch/security/code-scanning/74)
+identified an `int` product in the sparse test fixture before its conversion to
+the GGUF writer's element count. The fixture now multiplies the declared dimensions
+in `uint64_t` and checks the limit before each multiplication. Two direct tests
+cover a 65,536 × 65,536 × 2 shape (8,589,934,592 elements) and rejection of
+`UINT64_MAX × 2`. Both run without allocating a tensor of that size.
+
+---
+
+## 2026-11-09 — Native FFN routes inside private sleep
+
+A sparse parliament can attach a private route observer. The dream calls the
+same native router on its own KV. `--moe-trace` emits `moe dream-route` records
+for cue and generated inputs during preview, blocking learning and worker
+learning. `--expert-trace` supplies the matching living gates and greedy choices.
+Calibration emits no routes. The observer and cookie belong to the individual
+parliament and a worker retains them until its owner joins.
+
+On the four-block OLMoE fixture six choices gave 28 private route records.
+Preview, synchronous and background recording agreed on every ID and applied
+weight. A restart with tracing disabled produced the same learned GGUF. The
+cue's route matched plain inference below the parliament. At the parliament's
+own block the applied weight changed from 0.921860695 to 0.921803594. Moving
+the intervention after the router failed this gate. Two workers on one loaded
+model with separate observation cookies emitted 12 and 24 records to their
+respective observers. Clearing the first observer silenced its next episode.
+
+The AML experiment checks every living ballot on matched histories and joins
+private choices, living gates and native mixtures by input and layer. Exact-v1
+single-founder transfers isolate changes in that founder's A/B tensors under
+an otherwise identical header. A transfer of all four founders must reproduce
+both full output distributions and every prefix route of the dreamed state.
+
+---
+
+## 2026-11-09 — The living parliament enters a sparse decoder
+
+The OLMoE and Qwen3-MoE CPU decoder exposes its attention residual before the
+FFN norm and router, and the completed block after the weighted expert outputs
+rejoin the skip. Both the grouped prefill and scalar decode report the actual
+selected FFN IDs and applied weights through a per-call observer. The public
+`--moe-trace` follows waking forwards with or without a parliament. The two
+normalization policies and the original accumulation order are preserved.
+
+Each block supplies its two full-width RMSNorm vectors for portable calibration.
+The loader checks declared and tensor geometry, packed row boundaries and the
+bounds of each matrix before probing its storage. A partial group allocation
+now releases its scratch exactly once and falls back to scalar execution.
+The [research article](research/democracy_of_experts.md) describes the two
+selections, voting, sleep ownership and which parts of a spore cross a body.
+
+The C oracle constructs a sparse GGUF for each family. A known intervention
+changes the ordered top-k, the FFN contribution and the logits for grouped and
+single-token calls. Moving the intervention just after the router matmul in an
+isolated build failed 80 numerical checks (32 selected-ID, 32 post-block and
+16 head checks). Fault injection tested each of the 18 optional allocations
+individually and together on both families. The fallback reproduced the
+routes, weights, KV and logits. All 48 mandatory-allocation failures in the
+four fixture conditions preserved the outputs and allowed an exact retry.
+
+`make test` exercises the numeric oracle and both public CLI traces. The
+32-anchor fixtures now project separate Gemma and Llama spores into OLMoE.
+A private preview returns unchanged bytes. The blocking update, worker update
+and update after restart return the same new spore. The real-weight AML
+[protocol](experiments/doe_spores/olmoe.aml) also holds the input IDs fixed and
+compares sleep, quantization and transfers of individual founders' A/B.
+
+---
 
 ## 2026-11-09 — The pre-harness Gemma example retires; the harness is the only Gemma-3 door
 

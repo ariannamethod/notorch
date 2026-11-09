@@ -54,6 +54,16 @@ const char *nt_strerror(int rc);
 typedef int (*nt_residual_fn)(void *user, int layer, int pos0, int n,
                               int width, float *residual);
 
+/* A pretrained mixture's actual FFN choices for one input token. The k
+ * borrowed, read-only IDs and applied weights are in accumulation order.
+ * Observation is synchronous and scoped to this forward call. */
+typedef void (*nt_moe_route_fn)(void *user, int layer, int pos, int token,
+                                int k, const int *ids, const float *weights);
+typedef int nt_moe_forward(void *model, kv_cache *kv, const int *tokens, int n,
+                           int pos0, float *logits, nt_residual_fn post_attention,
+                           nt_residual_fn post_block, void *user,
+                           nt_moe_route_fn route, void *route_user);
+
 #define NT_DOE_DECODER_API 1
 
 /* CPU decoders offering DOE expose both sides of the FFN. Calibration hashes
@@ -109,6 +119,7 @@ typedef struct {
     kv_cache *(*kv_new)(void *model, int max_seq);
     void      (*kv_free)(void *model, kv_cache *kv);
     const nt_doe_decoder *doe; /* NULL for a decoder without native expert hooks. */
+    nt_moe_forward *forward_routes; /* Optional observation of the native sparse FFN. */
 } nt_arch;
 
 static inline kv_cache *nt_model_kv_new(const nt_arch *arch, void *model, nt_dims dims, int capacity) {

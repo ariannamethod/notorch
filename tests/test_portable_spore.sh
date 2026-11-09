@@ -76,4 +76,14 @@ for norm in attn_norm post_attention_norm ffn_norm post_ffw_norm; do
     bind --spore-in gemma-spore --spore-out "gemma-$norm" gemma-edited
     grep -q 'transfer mode=projected ' trace
 done
-echo 'Portable spore: exact, aligned, projected, two-hop, async restart and refusals passed'
+
+# Both dense donors have the same known anchor axes. Check the projected
+# parliament tensors and counters against the four-layer sparse recipient.
+run --spore-out sparse-fresh sparse ' exposure'
+for donor in portable gemma-spore; do
+    bind --spore-in "$donor" --spore-out "sparse-$donor" sparse
+    grep -q '^doe transfer mode=projected anchors=32 width=64->96 layer=1->2 ' trace
+    if grep -Eq '^(moe route|doe (choice|vote|dream-choice)) ' trace; then exit 1; fi
+    "$root/test_portable_spore" check "$donor" sparse-fresh "sparse-$donor"
+done
+echo 'Portable spore: exact, aligned, projected, two-hop, sparse recipient, async restart and refusals passed'
