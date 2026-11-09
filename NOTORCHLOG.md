@@ -11,6 +11,17 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-09 — Sparse fixture dimensions stay 64-bit
+
+[CodeQL alert 74](https://github.com/ariannamethod/notorch/security/code-scanning/74)
+identified an `int` product in the sparse test fixture before its conversion to
+the GGUF writer's element count. The fixture now multiplies the declared dimensions
+in `uint64_t` and checks the limit before each multiplication. Two direct tests
+cover a 65,536 × 65,536 × 2 shape (8,589,934,592 elements) and rejection of
+`UINT64_MAX × 2`. Both run without allocating a tensor of that size.
+
+---
+
 ## 2026-11-09 — Native FFN routes inside private sleep
 
 A sparse parliament can attach a private route observer. The dream calls the

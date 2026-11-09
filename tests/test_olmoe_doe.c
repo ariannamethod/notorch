@@ -21,18 +21,28 @@ static int sign_of(int token) { return (token & 1) ? -1 : 1; }
 
 typedef struct {
     const char *name;
-    int cols, rows, slices;
+    uint64_t cols, rows, slices;
     const float *values;
 } weight;
+
+static uint64_t element_count(const uint64_t *shape, uint32_t rank) {
+    uint64_t count = 1;
+    for (uint32_t i = 0; i < rank; i++) {
+        if (!shape[i] || shape[i] > UINT64_MAX / count) return 0;
+        count *= shape[i];
+    }
+    return count;
+}
 
 static int write_weight(gguf_writer *w, int pass, int layer, const weight *a) {
     char name[96];
     if (layer < 0) snprintf(name,sizeof(name),"%s.weight",a->name);
     else snprintf(name,sizeof(name),"blk.%d.%s.weight",layer,a->name);
     uint64_t shape[] = {a->cols,a->rows,a->slices};
-    int rank = a->slices ? 3 : a->rows ? 2 : 1;
+    uint32_t rank = a->slices ? 3 : a->rows ? 2 : 1;
+    uint64_t count = element_count(shape, rank);
+    if (!count) return -1;
     if (pass == 0) return gguf_write_tensor_decl(w,name,rank,shape,GGUF_TYPE_F32);
-    size_t count = a->cols * (a->rows ? a->rows : 1) * (a->slices ? a->slices : 1);
     return gguf_write_tensor_f32(w,name,a->values,count);
 }
 
@@ -308,6 +318,10 @@ static void family_test(const char *path, const char *family) {
 }
 
 int main(void) {
+    CHECK(element_count((uint64_t[]){65536,65536,2},3) == (UINT64_C(1) << 33),
+          "large fixture counts use all 64 bits");
+    CHECK(element_count((uint64_t[]){UINT64_MAX,2},2) == 0,
+          "fixture rejects an unrepresentable element count");
     char path[] = "/tmp/nt_olmoe_doe_XXXXXX";
     int fd = mkstemp(path);
     if (fd<0) return 1;
