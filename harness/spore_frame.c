@@ -49,9 +49,15 @@ static int orthogonalize(float *frame, int index, int width) {
     return 0;
 }
 
-static int literal_ids(const bpe_tokenizer *tok, const char *literal, int *ids, int cap) {
-    int n = bpe_encode_raw(tok, literal, ids, cap);
-    if (n < 1 || n >= cap) return 0;
+const char *nt_spore_cue_text(int index) {
+    return index >= 0 && index < NT_SPORE_ANCHORS ? anchors[index] : NULL;
+}
+
+int nt_spore_cue_ids(const bpe_tokenizer *tok, int index, int ids[NT_SPORE_CUE_CAP]) {
+    const char *literal = nt_spore_cue_text(index);
+    if (!literal || !tok || !ids) return 0;
+    int n = bpe_encode_raw(tok, literal, ids, NT_SPORE_CUE_CAP);
+    if (n < 1 || n >= NT_SPORE_CUE_CAP) return 0;
     char bytes[64];
     int used = 0;
     for (int i = 0; i < n; i++) {
@@ -91,22 +97,22 @@ static int norm_fingerprint(const llama_model *m, char out[65]) {
 
 int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host, float *frame,
                          char norm_sha[65]) {
-    enum { TOKEN_CAP = 16 };
     if (!host || !body || !body->model || !body->tokenizer) return -1;
     const llama_model *m = body->model;
     int width = host->embed_dim, layer = host->n_layers / 2;
     if (m->gf != host || width < NT_SPORE_ANCHORS ||
         bpe_n_vocab(body->tokenizer) > m->vocab || norm_fingerprint(m, norm_sha))
         return -1;
-    kv_cache *kv = kv_new(m->n_layers, TOKEN_CAP, m->kv_dim);
+    kv_cache *kv = kv_new(m->n_layers, NT_SPORE_CUE_CAP, m->kv_dim);
     if (!kv) return -1;
     int rc = -1;
     for (int k = 0; k < NT_SPORE_ANCHORS; k++) {
-        int ids[TOKEN_CAP];
-        int n = literal_ids(body->tokenizer, anchors[k], ids, TOKEN_CAP);
+        int ids[NT_SPORE_CUE_CAP];
+        int n = nt_spore_cue_ids(body->tokenizer, k, ids);
         capture c = {layer, width, frame + (size_t)k * width};
-        if (!n || nt_llama_forward_hooks(body->model, kv, ids, n, 0, NULL,
-                                         capture_last, NULL, &c) != CAPTURED ||
+        if (!n || (host->ctx_len > 0 && n > host->ctx_len) ||
+            nt_llama_forward_hooks(body->model, kv, ids, n, 0, NULL,
+                                   capture_last, NULL, &c) != CAPTURED ||
             orthogonalize(frame, k, width)) goto done;
     }
     rc = nt_spore_frame_valid(frame, width) ? 0 : -1;

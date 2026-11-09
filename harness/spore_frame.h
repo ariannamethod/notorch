@@ -4,7 +4,9 @@
 
 #include "harness/experts.h"
 
-enum { NT_SPORE_ANCHORS = 32 };
+enum { NT_SPORE_ANCHORS = 32, NT_SPORE_CUE_CAP = 16 };
+const char *nt_spore_cue_text(int index);
+int nt_spore_cue_ids(const bpe_tokenizer *tok, int index, int ids[NT_SPORE_CUE_CAP]);
 #define NT_SPORE_FRAME_ID "mid-attention-literals-qr-v1"
 
 int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host, float *frame,

@@ -13,6 +13,154 @@ Newest entries on top.
 
 ---
 
+## 2026-11-09 — Private dreams across Qwen3 and Llama 3.2
+
+A waking turn can now hand the resident dense decoder to the DOE consolidation
+worker for a bounded private episode. `--dream N` schedules one episode after
+each learned turn. `--dream-only N` resumes a saved generation without human
+input. Preview and learning use the same trajectory. The CLI sends the optional
+trace to stderr and saves a new GGUF only after the last worker succeeds.
+Every public entry point remains opt-in.
+
+**How the cue and update work.** For each unused axis q in the body's existing
+32-literal QR frame, score the living seats by the sum of
+`vitality[e] × ‖A[e] B[e] q‖²`. Take the largest score, resolving ties in
+frame order. The trace identifies the literal and its largest contributing
+seat. The receiving tokenizer encodes the literal as a fresh raw sequence.
+Private KV has room for the cue and the requested 1–32 tokens. Its scratch
+parliament starts with the waking history and consensus. Native elections
+inject into the real post-attention stream and the native head chooses greedy
+tokens. A stop token counts as a choice and ends the episode before another
+forward. The final emitted token contributes its residual to the private mean.
+
+One Oja step on the dream's paired mean residuals updates only elected seats.
+The learning rate is 0.0025, versus 0.01 awake, with the same greedy choice
+signal of +0.1. A successful commit advances the participating seats' Oja
+cursors and RNG, increments the separate dream clocks and marks the cue used.
+All 32 cues are eligible again after one full round. A private episode never
+appends tokens to the dialogue KV. The waking clocks, RMS history, votes, seat
+membership, age, frequency, vitality and consensus stay at their pre-sleep
+values. Preview discards the episode. A failed numerical update discards all
+staged factors.
+
+The exact and portable dream schemas (v3/v4) add `doe.dream.cycles`,
+`doe.dream.choices`, `doe.dream.elections` and `doe.dream.seen`. Existing
+v1/v2 spores can start dreaming directly. An unslept export still uses its
+original format. The portable projection carries the cue mask and all three
+clocks to the new body. There is no dependency on a second model or runtime.
+The design draws on the cue-driven [subconscious worker in arianna.c](https://github.com/ariannamethod/arianna.c/blob/d44ddd5f9bb66c1cd323923cb4eb491ce97232bd/golib/nano.go#L197),
+its [memory selection](https://github.com/ariannamethod/arianna.c/blob/d44ddd5f9bb66c1cd323923cb4eb491ce97232bd/golib/memory_consolidation.go#L255)
+and the native [DOE Oja update](https://github.com/ariannamethod/doe/blob/103b7b12fa51ede1da8ff86cbf75314f3adc4550/doe.c#L3064).
+
+**Two new receiving bodies.** The AML protocol regenerated the original
+one-turn SmolLM2-360M parents from the preceding experiment. The key parent
+was `497cf77cb9c05dfdff462f6e673c83a69b31eaf7157b59ceb6170ad7f11ce952`,
+the bell parent `8576a8422d964b096af95ea51b95f19fd496167bdc5174fe849eef06ee63b673`.
+Both were projected from block 16, width 960 to block 14 of the following
+28-layer Q4_K_M checkpoints.
+
+| Body | Width | Vocabulary | GGUF SHA-256 |
+| --- | ---: | ---: | --- |
+| [Qwen3-1.7B](https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/tree/dcb19155b962dbb6389f4691a982043a8e651022) | 2048 | 151936 | `72c5c3cb38fa32d5256e2fe30d03e7a64c6c79e668ad84057e3bd66e250b24fb` |
+| [Llama-3.2-3B-Instruct](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/tree/5ab33fa94d1d04e903623ae72c95d1696f09f9e8) | 3072 | 128256 | `6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff` |
+
+Both first episodes chose axis 5 (` music`), led by seat 0. The six greedy
+IDs on Qwen3 were `25 330 785 14594 315 68088` and decoded to
+`: "The Sound of Silence`. Llama chose `14924 198 262 482 220 16` and
+produced `Question\n    - 1` (escaped newline). Preview reproduced every gate
+and ID and matched the untouched recipient file byte for byte. Both second
+episodes chose axis 0 (` river`), led by seat 3. The two-token and six-token
+Qwen3 dreams started from the same key spore. In either body, spending six
+tokens twice produced 2 dream cycles, 12 choices and 14 elections alongside
+the source's 1 waking turn and 24 elections.
+
+**Awake behaviour.** Each AML readout opens the indicated spore with fresh KV.
+The score is the raw logit difference for the two verified one-token suffixes
+` key` and ` bell`, equal to their log probability ratio. On Qwen3 their IDs
+are 1376 and 28419. On Llama they are 1401 and 29519. Probe A is “Every night
+the lighthouse keeper carries a”. Probe B is “At the lighthouse, Miro reaches
+for his”. Each row begins from the source's key history unless otherwise noted.
+
+| Recipient / history | A before | A after | Δ A | B before | B after | Δ B |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen3, two-token local dream | 0.036106 | 0.385639 | +0.349533 | | | |
+| Qwen3, six-token local dream | 0.036106 | 0.701704 | +0.665598 | 5.416550 | 5.190802 | −0.225748 |
+| Llama, six-token local dream | 1.166410 | 1.144632 | −0.021778 | 3.474946 | 3.464248 | −0.010698 |
+| Llama, received Qwen3 awake vs after six dream tokens | 1.093015 | 1.159224 | +0.066209 | 3.418202 | 3.495424 | +0.077222 |
+
+Qwen3's second six-token dream brought A to 0.200522. Llama's second local
+dream brought A to 1.051023. On probe B the awake Qwen3 key parent continued
+“flashlight, which is on the table. He has a” and the dreamed key parent
+continued “bag of marbles, which contains 100 mar” at the twelve-token cutoff.
+This latter continuation also occurred with the awake bell parent. Llama
+produced “trusty notebook and begins to sketch the scene before him.” for
+all three direct states. The awake bell parent scored 0.308133 on probe A
+in Qwen3 and 1.063245 in Llama.
+[Full probabilities and greedy IDs](experiments/doe_spores/dream-scores.tsv).
+
+**A second change of weights.** Both arms travelled from SmolLM2 (960) to
+Qwen3 (2048), then from Qwen3 to Llama (3072). One arm slept for six choices
+on Qwen3, the other exported the same Qwen3 state awake. Llama received
+both generations without a user turn. The dreamed arm arrived with cue 5
+already used, 1 cycle, 6 choices and 7 dream elections. Llama then selected
+cue 0 for its own next episode. Its new A score was 1.104210. The portable
+Qwen3 child was 706,048 bytes and Llama's onward portable child 1,058,304.
+The direct controls and the two-hop arms use different projection paths.
+On the five fixed prompts all 60 Llama greedy IDs matched between the two-hop
+arms. The two full-logit readouts above measured where their distributions
+differed. At the first dream on both larger bodies, seats 0, 1 and 3 changed
+A/B and Oja cursor. Every other tensor payload, including the 32-axis frame,
+matched its awake parent byte for byte. On transport the sleeping Qwen3 and
+Llama states had identical dream clocks and mask, waking scalars and all seven
+width-independent seat/history tensor payloads.
+
+**In a live Qwen3 chat**, two more waking turns with three greedy choices each
+and `/reset` between them yielded “flashlight, which” and “light that can”.
+Queued input and EOF committed two six-choice dreams on the worker. Running
+the first wake, its dream and the second wake/dream in separate foreground
+processes produced the same two replies and the same final portable SHA-256
+`74fcb6fb7993adcee06dfc7fa9d456caa3a5237972841eabe8bac5f4bae9e45c`.
+Its clocks read 3 waking turns / 48 elections and 2 dreams / 14 elections.
+
+**Reproduce.** The previous entry identifies the source SmolLM2 Q4. Build
+the optional AML runner at revision `559b7e1` against these NoTorch libraries.
+Supply absolute paths and a fresh result directory. AML regenerates both
+parents, runs the private episodes and reads the full vocabulary for each
+probe. The target binaries and all weights can be local.
+
+```sh
+make -j4 notorch lib lib_harness BLAS_FLAGS= BLAS_LIBS=
+make -C "$AML" harness NOTORCH_ROOT="$PWD" NOTORCH_LDFLAGS=
+printf '%s\n' "$PWD/notorch" "$SMOL_Q4" "$QWEN3" "$LLAMA3" "$NEW_DIR" |
+  NT_ATTN_THREADS=1 "$AML/runner/aml-harness" experiments/doe_spores/dream.aml
+make check_expert_dream
+```
+
+Two independent runs on Linux x86-64, Xeon Platinum 8573C, GCC 14.2,
+AVX2/FMA/F16C, packed CPU without BLAS, one pinned core and
+`NT_ATTN_THREADS=1` reproduced all 16 GGUFs byte for byte, 20 numerical
+readouts, 16 texts, 192 greedy token IDs and every DOE line from 32 native
+traces. The first portable dream hashes were
+`3586375249c9f59f4929805dfba30f1e944c3a56cbbb8079f32f83b145c7fba1`
+on Qwen3 and
+`fd88a16c8918506cac45ccded66a205d421fa58b1f9931d2287dda9ec911d54f`
+on Llama. Llama's onward portable spore after both bodies had dreamed was
+`708bd3df74416ca6364edceeb3e46a4bc679f1a3d0f6d812572775db709e98cf`.
+
+The native fixture checks cue selection against a known residual basis and
+checks every factor, cursor and waking tensor against recorded elections. Gates
+also cover EOS, preview, save/reopen, failures before and after calibration,
+invalid clocks, all 32 distinct cues and the 33rd after restart, async chat,
+reset and EOF. Removing the staged A write failed the seat-by-seat oracle.
+The changed C paths passed ASan/UBSan with leak detection disabled in the
+traced container. `make test` passed, with the optional original Haiku
+SentencePiece corpus absent and its 106 embedded oracle cases passing. The
+installed C consumer passed on Qwen3. With dreaming disabled both new hosts
+reproduced upstream `26ea479` for a twelve-token plain continuation and a
+two-token learned continuation, including the new waking spore's bytes.
+
+---
+
 ## 2026-11-09 — A parliament crosses GGUF bodies
 
 The Harness carries a completed DOE generation into a second decoder from a

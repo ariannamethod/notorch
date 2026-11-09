@@ -1,6 +1,7 @@
 /* Native DOE for a single dense decoder block. Tensor layout is shared with
  * nt_parliament_*_values. Each turn collects residuals; Oja runs at its end. */
 #include "harness/spore_frame.h"
+#include "harness/experts_internal.h"
 #include "harness/archs.h"
 #include "sha256.h"
 #include <fcntl.h>
@@ -11,28 +12,6 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
-enum { SEATS = 6, FOUNDERS = 4, RANK = 4, WINDOW = 2, HISTORY = 16 };
-#define TAU 6.28318530718f
-
-struct nt_experts {
-    int dim, layer, depth;
-    char host[65], arch[64], norm_sha[65];
-    nt_expert_body body;
-    const gguf_file *frame_host;
-    float *frame;
-    FILE *trace;
-    uint32_t rng;
-    uint64_t turns, elections;
-    float consensus;
-    float *a, *b, *vote;
-    float alive[SEATS], vitality[SEATS], frequency[SEATS], cursor[SEATS];
-    float age[SEATS], low[SEATS], history[HISTORY];
-    /* The history is oldest first and zero-padded at birth. */
-    int count, observed, choices, hits[SEATS];
-    double signal;
-    float *sum_in, *sum_out, *injected, *update;
-};
 
 int nt_experts_copy_factors(nt_experts *recipient, const nt_experts *donor, int slot) {
     if (!recipient || !donor || slot < 0 || slot >= SEATS) return NT_E_ARG;
@@ -188,13 +167,16 @@ int nt_experts_attend(void *user, int layer, int pos, int n, int width, float *r
         p->consensus = result[SEATS];
         p->elections++;
         p->count++;
-        if (p->trace) fprintf(p->trace, "doe vote pos=%d k=%.0f consensus=%.9g gates=",
-                              pos+j, result[SEATS+1], p->consensus);
+        if (p->trace) {
+            flockfile(p->trace);
+            fprintf(p->trace, "doe %svote pos=%d k=%.0f consensus=%.9g gates=",
+                    p->dreaming ? "dream-" : "", pos+j, result[SEATS+1], p->consensus);
+        }
         for (int e = 0; e < SEATS; e++) {
             p->hits[e] += result[e] > 0;
             if (p->trace) fprintf(p->trace, "%s%.9g", e ? "," : "", result[e]);
         }
-        if (p->trace) fputc('\n', p->trace);
+        if (p->trace) { fputc('\n', p->trace); funlockfile(p->trace); }
         for (int i = 0; i < width; i++) p->sum_in[i] += x[i];
         memcpy(x, p->injected, (size_t)width * sizeof(float));
     }
@@ -270,26 +252,31 @@ static void turn_mean(float *v, int dim, int count) {
     for (int i = 0; i < dim; i++) v[i] = (float)(v[i] / scale);
 }
 
-int nt_experts_finish(nt_experts *p, int learn) {
-    if (p->count == 0 || p->observed != p->count || p->choices < 1 ||
-        p->turns == UINT64_MAX) return NT_E_STATE;
+int nt_experts_update_factors(nt_experts *p, float learning_rate, float signal) {
     size_t dr = (size_t)p->dim * RANK;
-    float signal = (float)(p->signal / p->choices);
     turn_mean(p->sum_in, p->dim, p->count);
     turn_mean(p->sum_out, p->dim, p->count);
     for (int e = 0; e < SEATS; e++) {
-        if (!learn || !p->hits[e]) continue;
+        if (!p->hits[e]) continue;
         float *a = p->a + e*dr, *b = p->b + e*dr;
         float noise[WINDOW];
         for (int i = 0; i < WINDOW; i++) noise[i] = normal(p);
         if (nt_oja_values(a, b, p->sum_in, p->sum_out, noise, p->dim, RANK,
-                          (int)p->cursor[e], WINDOW, 0.01f, signal, p->update)) return NT_E_STATE;
+                          (int)p->cursor[e], WINDOW, learning_rate, signal, p->update)) return NT_E_STATE;
         for (size_t i = 0; i < 2*dr; i++)
             if (fabsf(p->update[i]) > 1e4f) return NT_E_STATE;
         memcpy(a, p->update, dr*sizeof(float));
         memcpy(b, p->update + dr, dr*sizeof(float));
         p->cursor[e] = p->update[2*dr];
     }
+    return NT_OK;
+}
+
+int nt_experts_finish(nt_experts *p, int learn) {
+    if (p->count == 0 || p->observed != p->count || p->choices < 1 ||
+        p->turns == UINT64_MAX) return NT_E_STATE;
+    float signal = (float)(p->signal / p->choices);
+    if (learn && nt_experts_update_factors(p, 0.01f, signal)) return NT_E_STATE;
     if (learn) lifecycle(p);
     p->turns++;
     if (p->trace) fprintf(p->trace, "doe turn=%llu elections=%llu signal=%.9g\n",
@@ -305,20 +292,25 @@ int nt_experts_finish(nt_experts *p, int learn) {
 struct nt_consolidation {
     pthread_t thread;
     nt_experts *state;
-    int result;
+    int finish_turn, dream_tokens, eos, result;
 };
 
 static void *consolidate_turn(void *arg) {
     nt_consolidation *job = arg;
-    job->result = nt_experts_finish(job->state, 1);
+    job->result = job->finish_turn ? nt_experts_finish(job->state, 1) : NT_OK;
+    if (job->result == NT_OK && job->dream_tokens)
+        job->result = nt_experts_dream(job->state, job->dream_tokens, job->eos, 1);
     return NULL;
 }
 
-int nt_experts_submit(nt_experts **owner, nt_consolidation **job) {
+static int submit(nt_experts **owner, nt_consolidation **job, int tokens, int eos) {
     if (!owner || !*owner || !job || *job) return NT_E_ARG;
     nt_consolidation *next = malloc(sizeof(*next));
     if (!next) return NT_E_MEMORY;
     next->state = *owner;
+    next->finish_turn = !tokens || next->state->count != 0;
+    next->dream_tokens = tokens;
+    next->eos = eos;
     if (pthread_create(&next->thread, NULL, consolidate_turn, next)) {
         free(next);
         return NT_E_STATE;
@@ -326,6 +318,15 @@ int nt_experts_submit(nt_experts **owner, nt_consolidation **job) {
     *owner = NULL;
     *job = next;
     return NT_OK;
+}
+
+int nt_experts_submit(nt_experts **owner, nt_consolidation **job) {
+    return submit(owner, job, 0, -1);
+}
+
+int nt_experts_submit_dream(nt_experts **owner, nt_consolidation **job, int tokens, int eos) {
+    if (tokens < 1 || tokens > NT_DREAM_MAX_TOKENS || eos < -1) return NT_E_ARG;
+    return submit(owner, job, tokens, eos);
 }
 
 int nt_experts_await(nt_experts **owner, nt_consolidation **job) {
@@ -373,7 +374,7 @@ static uint64_t elements(const spore_tensor *t) {
     return n;
 }
 
-static int calibrate(nt_experts *p) {
+int nt_experts_calibrate(nt_experts *p) {
     if (p->frame) return 0;
     if (nt_pick_arch(p->arch) != &nt_arch_llama || p->dim < NT_SPORE_ANCHORS ||
         p->dim > NT_MAX_ELEMENTS / NT_SPORE_ANCHORS || !p->frame_host)
@@ -391,7 +392,7 @@ static spore_tensor frame_tensor(float *frame, int width) {
 
 static int save_spore(nt_experts *p, const char *path, int portable) {
     if (!p || !path || !*path || p->count || !p->turns) return -1;
-    if (portable && calibrate(p)) return -1;
+    if (portable && nt_experts_calibrate(p)) return -1;
     char *tmp = malloc(strlen(path) + sizeof(".XXXXXX"));
     if (!tmp) return -1;
     sprintf(tmp, "%s.XXXXXX", path);
@@ -401,12 +402,19 @@ static int save_spore(nt_experts *p, const char *path, int portable) {
     if (!w) goto done;
     gguf_write_kv_str(w, "general.architecture", "notorch-doe-spore");
     gguf_write_kv_str(w, "doe.host_sha256", p->host);
-    gguf_write_kv_u32(w, "doe.version", portable ? 2 : 1);
+    unsigned version = portable ? 2 : 1;
+    gguf_write_kv_u32(w, "doe.version", p->sleep.cycles ? version + 2 : version);
     gguf_write_kv_u32(w, "doe.layer", (uint32_t)p->layer);
     gguf_write_kv_u32(w, "doe.rng", p->rng);
     gguf_write_kv_u64(w, "doe.turns", p->turns);
     gguf_write_kv_u64(w, "doe.elections", p->elections);
     gguf_write_kv_f32(w, "doe.consensus", p->consensus);
+    if (p->sleep.cycles) {
+        gguf_write_kv_u64(w, "doe.dream.cycles", p->sleep.cycles);
+        gguf_write_kv_u64(w, "doe.dream.choices", p->sleep.choices);
+        gguf_write_kv_u64(w, "doe.dream.elections", p->sleep.elections);
+        gguf_write_kv_u32(w, "doe.dream.seen", p->sleep.seen);
+    }
     spore_tensor t[TENSORS+1];
     directory(p, p->dim, t);
     if (portable) {
@@ -500,6 +508,31 @@ static const gguf_kv *field(const gguf_file *g, const char *name, unsigned type)
     return kv && kv->type == type ? kv : NULL;
 }
 
+static int restore_sleep(nt_experts *p, const gguf_file *g, int present) {
+    const gguf_kv *cycles = gguf_get_kv(g, "doe.dream.cycles");
+    const gguf_kv *choices = gguf_get_kv(g, "doe.dream.choices");
+    const gguf_kv *elections = gguf_get_kv(g, "doe.dream.elections");
+    const gguf_kv *seen = gguf_get_kv(g, "doe.dream.seen");
+    if (!present) return cycles || choices || elections || seen ? -1 : 0;
+    if (!cycles || cycles->type != 10 || !choices || choices->type != 10 ||
+        !elections || elections->type != 10 || !seen || seen->type != 4) return -1;
+    uint64_t n = cycles->val.u64, c = choices->val.u64, e = elections->val.u64;
+    uint32_t mask = seen->val.u32;
+    unsigned used = 0;
+    for (uint32_t m = mask; m; m &= m-1) used++;
+    /* Each cycle has 1..32 choices; its last choice may be a stop.
+     * Elections add at most one short raw cue per cycle. Division avoids
+     * overflowing when a saved clock is close to UINT64_MAX. */
+    if (!n || c < n || (c-1) / NT_DREAM_MAX_TOKENS >= n || e < c ||
+        (e > c && (e-c-1) / (NT_SPORE_CUE_CAP-1) >= n) ||
+        used != 1+(n-1)%NT_SPORE_ANCHORS) return -1;
+    p->sleep.cycles = n;
+    p->sleep.choices = c;
+    p->sleep.elections = e;
+    p->sleep.seen = mask;
+    return 0;
+}
+
 static int is_digest(const gguf_kv *v) {
     return v && strlen(v->val.str) == 64 && strspn(v->val.str, "0123456789abcdef") == 64;
 }
@@ -518,14 +551,15 @@ static int restore(nt_experts *p, const char *path) {
     const gguf_kv *elections = field(g, "doe.elections", 10);
     const gguf_kv *consensus = field(g, "doe.consensus", 6);
     if (strcmp(g->arch, "notorch-doe-spore") || g->version != 3 ||
-        !version || (version->val.u32 != 1 && version->val.u32 != 2) ||
+        !version || version->val.u32 < 1 || version->val.u32 > 4 ||
         !is_digest(host) ||
         !layer || !rng || !rng->val.u32 || !turns || !turns->val.u64 ||
         !elections || elections->val.u64 < turns->val.u64 ||
         !consensus || !isfinite(consensus->val.f32) ||
         consensus->val.f32 < 0 || consensus->val.f32 > 1 ||
         g->data_offset > (uint64_t)st.st_size) goto done;
-    int portable = version->val.u32 == 2;
+    if (restore_sleep(p, g, version->val.u32 >= 3)) goto done;
+    int portable = version->val.u32 == 2 || version->val.u32 == 4;
     int same_host = !strcmp(host->val.str, p->host);
     if (g->n_tensors != (uint64_t)(TENSORS + portable) ||
         (!same_host && !portable) || (same_host && layer->val.u32 != (unsigned)p->layer))
@@ -558,7 +592,7 @@ static int restore(nt_experts *p, const char *path) {
     if (!valid_lifecycle(p)) goto done;
     int copy_weights = 1;
     if (!same_host) {
-        if (calibrate(p)) goto done;
+        if (nt_experts_calibrate(p)) goto done;
         const float *frame = values[TENSORS];
         double minimum = same_shape ? nt_spore_frame_min_cos(frame, p->frame, width) : 0;
         /* Each measured axis must stay closer to its original direction than
