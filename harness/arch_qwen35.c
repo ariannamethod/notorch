@@ -294,7 +294,9 @@ static int q35_forward_residual(void *m,kv_cache *kv,const int *tokens,int n,int
 static const gguf_file *q35_describe(const void *model,nt_dims *dims) {
     const q35_model *m=model;
     *dims=(nt_dims){m->L,0,m->V};
-    return m->gf;
+    /* The generic header scan may disagree with the family keys on a crafted
+     * file; DOE sizes norm reads by the header, so a mismatch is refused. */
+    return m->E==m->gf->embed_dim && m->L==m->gf->n_layers ? m->gf : NULL;
 }
 static const float *q35_doe_norm(const void *model,int index) {
     const q35_model *m=model;

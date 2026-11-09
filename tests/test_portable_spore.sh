@@ -66,6 +66,10 @@ test ! -e rejected
 learn --portable-spore --spore-out gemma-spore gemma ' exposure'
 bind --spore-in gemma-spore --spore-out gemma-copy gemma-aligned
 grep -q 'transfer mode=aligned ' trace
+# A crafted host whose generic .embedding_length outruns the family width must be
+# refused at the DOE door; otherwise spore_frame reads the per-layer norm OOB.
+reject --spore-in gemma-spore --spore-out rejected forged-wide
+test ! -e rejected
 for norm in attn_norm post_attention_norm ffn_norm post_ffw_norm; do
     cp gemma-aligned gemma-edited
     "$root/test_portable_spore" set-first gemma-edited "blk.1.$norm.weight"

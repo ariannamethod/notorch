@@ -264,7 +264,9 @@ static int gemma3_forward_multi(void *ptr, kv_cache *const *kvs, const int *ids,
 static const gguf_file *gemma3_describe(const void *model, nt_dims *dims) {
     const gemma3_model *m = model;
     *dims = (nt_dims){m->L, m->KD, m->V};
-    return m->gf;
+    /* The generic header scan may disagree with the family keys on a crafted
+     * file; DOE sizes norm reads by the header, so a mismatch is refused. */
+    return m->E == m->gf->embed_dim && m->L == m->gf->n_layers ? m->gf : NULL;
 }
 
 enum { GEMMA3_RESIDUAL_NORMS = 4 };

@@ -17,7 +17,7 @@ static const char *const words[V] = {
     " exposure"," probe"
 };
 
-static void body(const char *path, const char *arch, int width, int shift, int flat, int norm_salt) {
+static void body(const char *path, const char *arch, int width, int shift, int flat, int norm_salt, int lie) {
     int depth = width == 64 ? 2 : 4;
     const char *vocab[V];
     int32_t types[V];
@@ -36,6 +36,8 @@ static void body(const char *path, const char *arch, int width, int shift, int f
     }
     snprintf(key, sizeof(key), "%s.attention.layer_norm_rms_epsilon", arch);
     gguf_write_kv_f32(w, key, 1e-5f);
+    /* A later key containing ".embedding_length" wins the generic header scan. */
+    if (lie) gguf_write_kv_u32(w, "forged.embedding_length", lie);
     gguf_write_kv_str_array(w, "tokenizer.ggml.tokens", vocab, V);
     gguf_write_kv_i32_array(w, "tokenizer.ggml.token_type", types, V);
     float *matrix = calloc((size_t)width*width, sizeof(float));
@@ -127,15 +129,16 @@ static void set_first(const char *path, const char *tensor) {
 
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "fixtures")) {
-        body("source", "llama", 64, 0, 0, 0);
-        body("aligned", "llama", 64, 0, 0, 0);
-        body("rotated", "llama", 64, 7, 0, 0);
-        body("norm-change", "llama", 64, 0, 0, 1);
-        body("wider", "llama", 96, 7, 0, 0);
-        body("flat", "llama", 64, 0, 1, 0);
-        body("short-norm", "llama", 64, 0, 0, -1);
-        body("gemma", "gemma3", 64, 0, 0, 0);
-        body("gemma-aligned", "gemma3", 64, 0, 0, 0);
+        body("source", "llama", 64, 0, 0, 0, 0);
+        body("aligned", "llama", 64, 0, 0, 0, 0);
+        body("rotated", "llama", 64, 7, 0, 0, 0);
+        body("norm-change", "llama", 64, 0, 0, 1, 0);
+        body("wider", "llama", 96, 7, 0, 0, 0);
+        body("flat", "llama", 64, 0, 1, 0, 0);
+        body("short-norm", "llama", 64, 0, 0, -1, 0);
+        body("gemma", "gemma3", 64, 0, 0, 0, 0);
+        body("gemma-aligned", "gemma3", 64, 0, 0, 0, 0);
+        body("forged-wide", "gemma3", 64, 0, 0, 0, 4096);
     } else if (argc == 5 && !strcmp(argv[1], "check")) check(argv[2], argv[3], argv[4]);
     else if (argc == 3 && !strcmp(argv[1], "break-frame")) set_first(argv[2], "doe.anchor_frame");
     else if (argc == 4 && !strcmp(argv[1], "set-first")) set_first(argv[2], argv[3]);
