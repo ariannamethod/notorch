@@ -11,6 +11,18 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-09 — The pre-harness Gemma example retires; the harness is the only Gemma-3 door
+
+`examples/infer_gemma.c` removed, with its `gemma` Makefile target, its clean-list
+entry and the README BLAS note (`README.md:584`), by Oleg's word on the verdict of
+the 2026-11-09 legacy-inference analysis. `harness/arch_gemma3.c` covers Gemma-3
+and is gated by `test_gemma3` under `make test`; the example had diverged from the
+model it claimed — SiLU in its FFN (`infer_gemma.c:305` at the removed revision)
+where Gemma-3 takes GELU-tanh (`harness/arch_gemma3.c:204`), interleaved RoPE, and
+a `tokenizer.json` scrape. Proof: `grep -rn infer_gemma` over Makefile, README.md,
+examples/, harness/, tests/, docs/ → 0 hits; `make gemma` → no rule; `make -n infer`
+→ exit 0. Older dated entries below keep naming the file — history stays.
+
 ## 2026-11-09 — v5.0.0 "Democracy of Experts" cut
 
 Tag `v5.0.0` on `e12e596`, 92 commits since `v4.5.0`. The release marks the native Democracy of Experts in the Harness — living LoRA parliament, exact and portable spores, dreams and async consolidation — alongside the Qwen3.5 hybrid, LFM3, Gemma 3 text-DoE and EmbeddingGemma 2 families, the Chuck trainer and the SPA text engine. Each capability's spec is in README.md; the work and its proofs are the dated entries below.
