@@ -302,7 +302,7 @@ static const float *q35_doe_norm(const void *model,int index) {
     if(index==2*m->L)return m->norm;
     return index%2 ? m->layers[index/2].ffn_norm : m->layers[index/2].in_norm;
 }
-static const nt_doe_decoder q35_doe={q35_forward_hooks,q35_describe,q35_doe_norm};
+static const nt_doe_decoder q35_doe={q35_forward_hooks,q35_describe,q35_doe_norm,2};
 static int q35_forward(void *m,kv_cache *kv,const int *tokens,int n,int pos,float *logits) {
     return q35_forward_residual(m,kv,tokens,n,pos,logits,NULL,NULL);
 }

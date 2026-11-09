@@ -140,7 +140,7 @@ static void gemma3_rope(float *x, int pos, int hd, float base, float scale) {
  * row's position and user. Callers have validated every row. */
 static int gemma3_rows(gemma3_model *m, int n, const int *ids, kv_cache *const *kvs,
                        const int *pos, float *logits, int head_rows,
-                       nt_residual_fn hook, void *user, void *const *users) {
+                       nt_residual_fn post_attention, nt_residual_fn hook, void *user, void *const *users) {
     int rc=NT_OK;
     int E=m->E, QD=m->QD, KD=m->KD, HD=m->HD, FF=m->FF;
     int stride=0;
@@ -197,6 +197,9 @@ static int gemma3_rows(gemma3_model *m, int n, const int *ids, kv_cache *const *
         qmm(out,&l->o,att,n);
         for (int j=0;j<n;j++) rmsnorm(out+(size_t)j*E,out+(size_t)j*E,l->post_attn_norm,E,m->eps);
         for (size_t i=0;i<(size_t)n*E;i++) x[i]+=out[i];
+        /* Gemma normalizes the attention branch before adding it to the skip.
+         * DOE acts on that sum, which is also the input to the FFN norm. */
+        if (post_attention && (rc=post_attention(user,b,pos[0],n,E,x))!=NT_OK) goto done;
         for (int j=0;j<n;j++) rmsnorm(norm+(size_t)j*E,x+(size_t)j*E,l->ffn_norm,E,m->eps);
         qmm(gate,&l->gate,norm,n); qmm(up,&l->up,norm,n);
         for (size_t i=0;i<(size_t)n*FF;i++) {
@@ -223,8 +226,9 @@ done:
     free(x);free(norm);free(q);free(k);free(v);free(att);free(out);free(gate);free(up);free(scores);
     return rc;
 }
-static int gemma3_forward_residual(void *ptr, kv_cache *kv, const int *ids, int n,
-                                   int pos0, float *logits, nt_residual_fn hook, void *user) {
+static int gemma3_forward_hooks(void *ptr, kv_cache *kv, const int *ids, int n,
+                                int pos0, float *logits, nt_residual_fn post_attention,
+                                nt_residual_fn post_block, void *user) {
     gemma3_model *m = ptr;
     if (!m) return NT_E_ARG;
     int rc = nt_check_call(kv, ids, n, pos0, m->V, m->L, m->KD);
@@ -232,10 +236,15 @@ static int gemma3_forward_residual(void *ptr, kv_cache *kv, const int *ids, int 
     int *pos=malloc((size_t)n*sizeof(int)); kv_cache **kvs=malloc((size_t)n*sizeof(kv_cache*));
     if (!pos||!kvs) { free(pos); free(kvs); return NT_E_MEMORY; }
     for (int j=0;j<n;j++) { pos[j]=pos0+j; kvs[j]=kv; }
-    rc=gemma3_rows(m,n,ids,kvs,pos,logits,1,hook,user,NULL);
+    rc=gemma3_rows(m,n,ids,kvs,pos,logits,1,post_attention,post_block,user,NULL);
     free(pos); free(kvs);
     return rc;
 }
+static int gemma3_forward_residual(void *m, kv_cache *kv, const int *ids, int n,
+                                   int pos, float *logits, nt_residual_fn hook, void *user) {
+    return gemma3_forward_hooks(m,kv,ids,n,pos,logits,NULL,hook,user);
+}
+
 static int gemma3_forward(void *m,kv_cache *kv,const int *ids,int n,int pos,float *logits) {
     return gemma3_forward_residual(m,kv,ids,n,pos,logits,NULL,NULL);
 }
@@ -250,9 +259,27 @@ static int gemma3_forward_multi(void *ptr, kv_cache *const *kvs, const int *ids,
         int rc=nt_check_call(kvs[j],&ids[j],1,pos[j],m->V,m->L,m->KD);
         if (rc) return rc;
     }
-    return gemma3_rows(m,n,ids,kvs,pos,logits,n,hook,NULL,users);
+    return gemma3_rows(m,n,ids,kvs,pos,logits,n,NULL,hook,NULL,users);
 }
+static const gguf_file *gemma3_describe(const void *model, nt_dims *dims) {
+    const gemma3_model *m = model;
+    *dims = (nt_dims){m->L, m->KD, m->V};
+    return m->gf;
+}
+
+enum { GEMMA3_RESIDUAL_NORMS = 4 };
+static const float *gemma3_doe_norm(const void *model, int index) {
+    const gemma3_model *m = model;
+    if (index < 0 || index > GEMMA3_RESIDUAL_NORMS*m->L) return NULL;
+    if (index == GEMMA3_RESIDUAL_NORMS*m->L) return m->norm;
+    const gemma3_layer *l = &m->layers[index/GEMMA3_RESIDUAL_NORMS];
+    const float *const norms[] = {l->attn_norm, l->post_attn_norm, l->ffn_norm, l->post_ffw_norm};
+    return norms[index%GEMMA3_RESIDUAL_NORMS];
+}
+static const nt_doe_decoder gemma3_doe = {
+    gemma3_forward_hooks, gemma3_describe, gemma3_doe_norm, GEMMA3_RESIDUAL_NORMS
+};
 static const char *const names[]={"gemma3",NULL};
 const nt_arch nt_arch_gemma3={.names=names,.load=gemma3_load,.free=gemma3_free,
     .forward=gemma3_forward,.forward_residual=gemma3_forward_residual,
-    .forward_multi=gemma3_forward_multi};
+    .forward_multi=gemma3_forward_multi,.doe=&gemma3_doe};

@@ -13,6 +13,109 @@ Newest entries on top.
 
 ---
 
+## 2026-11-09 — Gemma 3 experts and a Qwen3.5 round trip
+
+The Gemma 3 text decoder implements the native DOE interface from #197.
+It exposes the sum of the residual and normalized attention output before
+the FFN on both sliding and global layers. The second hook observes the
+completed block. Portable calibration hashes Gemma's four full-width norms
+in execution order within every block, followed by the head's input norm.
+The dense and Qwen3.5 decoders keep their previous two-norm fingerprints.
+
+**Weights.** The [270M Q8_0](https://huggingface.co/ggml-org/gemma-3-270m-it-GGUF/tree/e7647be17ae1108f2f605ed061ca0608b171afff)
+and [1B Q4_K_M](https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/tree/f9c28bcd85737ffc5aef028638d3341d49869c27)
+are Gemma 3 instruction weights with embedded SentencePiece. Public
+[Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B/tree/2fc06364715b967f1860aea9cf38778875588b17)
+uses the native source-layout converter and a separate BPE.
+
+| Host | Residual width / parliament layer (zero-based) | Model GGUF SHA-256 |
+| --- | --- | --- |
+| Gemma 3-270M-IT | 640 / 9 | `0ef57d2c838458a1952664260dcba38e5bdda37494f3af732f06e4add24068e3` |
+| Gemma 3-1B-IT | 1152 / 13 | `8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135` |
+| Qwen3.5-0.8B, BF16 on disk | 1024 / 12 | `f277970417e643a86ccd426e16f8a567c99d8f0ee367e4613485c4ea96847923` |
+
+**Exposure and controls.** Gemma 270M read “Miro is the lighthouse keeper.
+Every night Miro carries a key. At sunrise the lighthouse keeper returns
+home.” A sibling read the same text with `bell`. Each learned one waking turn
+with 24 elections. The key spore occupied 221,536 bytes. From that same file,
+preview, synchronous sleep and worker sleep chose the same six tokens. Preview
+preserved every byte. The worker and synchronous runs wrote identical
+221,696-byte portable spores. We then imported both the waking and dreamed
+generations separately on 1B and Qwen. Each foreign import used all 32 anchors
+without a waking turn.
+
+| Host of the six-choice dream | Cue / largest contributing seat | Generated pieces | Seats with changed A, B and Oja cursors |
+| --- | --- | --- | --- |
+| Gemma 270M | ` sleep` / 1 | ` sleep` six times | 1, 3 |
+| Gemma 1B, after 270M | ` river` / 2 | ` river` six times | 1, 3 |
+| Qwen3.5, after 270M | ` river` / 2 | ` of the world, the river` | 0, 1, 2 |
+
+The rightmost column matched the seats elected during the episode. The
+post-dream GGUFs on 1B and Qwen occupied 397,824 and 353,792 bytes. Both
+kept the waking clock at 1 turn / 24 elections and advanced the sleep clock
+to 2 cycles / 12 choices / 14 elections. Each host reproduced its learned
+spore byte for byte with synchronous and background consolidation.
+
+**Matched readouts.** Each row compares two restored parliaments on the same
+receiving weights, with fresh KV. P0 is “Every night the lighthouse keeper
+carries a”. P1 is “At the lighthouse, Miro reaches for his”. Each suffix
+(` key`, ` bell`) added exactly one token in context. AML computed
+logit(key) − logit(bell) from the full native vocabulary. The TSV includes
+the two token IDs, both probabilities and the original margins.
+
+| Changed history | Receiving weights | Δ log odds on P0 | Δ log odds on P1 |
+| --- | --- | ---: | ---: |
+| First Gemma dream | Gemma 270M | +0.123249 | −0.191568 |
+| Imported Gemma dream | Gemma 1B | −0.080956 | −0.103431 |
+| Next dream on 1B | Gemma 1B | +0.408905 | +0.265727 |
+| Imported Gemma dream | Qwen3.5 | 0.000000 | −0.000009 |
+| Next dream on Qwen3.5 | Qwen3.5 | −0.000002 | +0.000012 |
+| That Qwen3.5 dream, carried back | Gemma 270M | +0.035727 | −0.078754 |
+
+On P1 both Qwen generations continued “flashlight. He pulls it out of the box
+and then pulls” over 12 greedy choices. Back on the starting Gemma weights
+the first ten choices matched. Choice 11 was 39622 (` glowing`) or 496
+(` a`), and the 32-token read included “glowing with a soft, warm light” or
+“a bright, warm yellow. He then looks at the sea”. Both returns took the same
+270M → Qwen → 270M route, including the same first Gemma dream. The only
+intervention between them was recording Qwen's private episode. The final
+portable SHA-256 digests were
+`546b3d21498fbe7b0cea468d5fc69fbc166744dee065cbf7c9709f0ac8786f90`
+and `8f95c77832f5f02223180efb8e86b856e66050c36799ba94a19951a3b88004fd`.
+The direct 270M → 1B switch changed the twelfth choice on P1 from a period
+(236761) to ` below` (3426).
+
+**Reproduction.** Use the three pinned downloads above and the
+[Qwen3.5 conversion commands](docs/qwen35.md). The tokenizer GGUF SHA-256 is
+`2f38049769a7fb0d2b70b5ed329563d932cc366899379f35476419021260a4f4`.
+The experiment uses the ordinary AML runner with the optional C probe. AML
+revision `559b7e1`, GCC 14.2, Linux x86-64, Xeon Platinum 8573C, AVX2/FMA/F16C,
+one pinned core, CPU without BLAS, context 64, literal prompts and greedy decoding.
+
+```sh
+make -C "$AML" runner
+make notorch doe_probe AML_ROOT="$AML" BLAS_FLAGS= BLAS_LIBS=
+printf '%s\n' "$PWD/notorch" "$PWD/doe_probe" "$G270" "$G1B" "$Q35" "$Q35_TOK" "$NEW_DIR" |
+  taskset -c 2 "$AML/runner/aml" experiments/doe_spores/gemma3.aml
+```
+
+Independent runs reproduced all 18 GGUFs, 11 full-vocabulary score
+checkpoints, 13 continuation texts and 42 numerical event traces. An extra
+run stopped during synchronous Qwen sleep while two Qwen processes overlapped.
+Resuming that run from its saved `qwen-inherited.gguf` reproduced the same
+files. The 12 unflagged IDs and printed
+logits on P1 matched `c8c57ac` for both Gemma weights. The previous
+SmolLM2-360M key spore reproduced its original SHA-256
+`497cf77cb9c05dfdff462f6e673c83a69b31eaf7157b59ceb6170ad7f11ce952`.
+The CPU suite passed, including the 52 Gemma checks. The optional external
+Haiku corpus was absent. The installed consumer decoded the real 270M GGUF.
+ASan/UBSan covered the Gemma forward, portable transfer and dream gates.
+Moving the new hook past the FFN failed both the local and global boundary
+oracles. Truncating the Gemma fingerprint to the old length failed the
+changed-post-attention-norm case with otherwise identical frames.
+
+[AML protocol](experiments/doe_spores/gemma3.aml) · [All 22 scores](experiments/doe_spores/gemma3-scores.tsv).
+
 ## 2026-11-09 — the Qwen3.5 hybrid hosts the DOE parliament
 
 Qwen3.5 now dispatches the two DOE hooks on its own decoder and keeps its

@@ -17,22 +17,25 @@ static const char *const words[V] = {
     " exposure"," probe"
 };
 
-static void body(const char *path, int width, int shift, int flat, int norm_salt) {
+static void body(const char *path, const char *arch, int width, int shift, int flat, int norm_salt) {
     int depth = width == 64 ? 2 : 4;
     const char *vocab[V];
     int32_t types[V];
     for (int i = 0; i < V; i++) { vocab[(i+shift)%V] = words[i]; types[i] = 4; }
     gguf_writer *w = gguf_write_open(path);
     assert(w);
-    gguf_write_kv_str(w, "general.architecture", "llama");
+    gguf_write_kv_str(w, "general.architecture", arch);
     gguf_write_kv_str(w, "general.name", path);
-    gguf_write_kv_u32(w, "llama.embedding_length", width);
-    gguf_write_kv_u32(w, "llama.block_count", depth);
-    gguf_write_kv_u32(w, "llama.feed_forward_length", width);
-    gguf_write_kv_u32(w, "llama.attention.head_count", 1);
-    gguf_write_kv_u32(w, "llama.attention.head_count_kv", 1);
-    gguf_write_kv_u32(w, "llama.context_length", 64);
-    gguf_write_kv_f32(w, "llama.attention.layer_norm_rms_epsilon", 1e-5f);
+    const char *keys[] = {"embedding_length","block_count","feed_forward_length",
+                          "attention.head_count","attention.head_count_kv","context_length"};
+    int values[] = {width,depth,width,1,1,64};
+    char key[80];
+    for (size_t i = 0; i < sizeof(keys)/sizeof(*keys); i++) {
+        snprintf(key, sizeof(key), "%s.%s", arch, keys[i]);
+        gguf_write_kv_u32(w, key, values[i]);
+    }
+    snprintf(key, sizeof(key), "%s.attention.layer_norm_rms_epsilon", arch);
+    gguf_write_kv_f32(w, key, 1e-5f);
     gguf_write_kv_str_array(w, "tokenizer.ggml.tokens", vocab, V);
     gguf_write_kv_i32_array(w, "tokenizer.ggml.token_type", types, V);
     float *matrix = calloc((size_t)width*width, sizeof(float));
@@ -45,7 +48,9 @@ static void body(const char *path, int width, int shift, int flat, int norm_salt
         embedding[(size_t)((i+shift)%V)*width+axis] = shift && i%2 ? -1 : 1;
     }
     const char *names[] = {"attn_norm","attn_q","attn_k","attn_v","attn_output",
-                           "ffn_norm","ffn_gate","ffn_up","ffn_down"};
+                           "ffn_norm","ffn_gate","ffn_up","ffn_down",
+                           "attn_q_norm","attn_k_norm","post_attention_norm","post_ffw_norm"};
+    int fields = !strcmp(arch, "gemma3") ? 13 : 9;
     uint64_t output_width = norm_salt == -1 ? width-1 : width;
     uint64_t shape[] = {(unsigned)width, (unsigned)width};
     for (int pass = 0; pass < 2; pass++) {
@@ -56,7 +61,7 @@ static void body(const char *path, int width, int shift, int flat, int norm_salt
             gguf_write_tensor_f32(w, "token_embd.weight", embedding, (uint64_t)width*V);
             gguf_write_tensor_f32(w, "output_norm.weight", norm, output_width);
         }
-        for (int l = 0; l < depth; l++) for (int k = 0; k < 9; k++) {
+        for (int l = 0; l < depth; l++) for (int k = 0; k < fields; k++) {
             char name[64];
             snprintf(name, sizeof(name), "blk.%d.%s.weight", l, names[k]);
             int vector = strstr(names[k], "norm") != NULL;
@@ -107,10 +112,10 @@ static void check(const char *src, const char *fresh, const char *dst) {
     gguf_close(d); gguf_close(f); gguf_close(s);
 }
 
-static void break_frame(const char *path) {
+static void set_first(const char *path, const char *tensor) {
     gguf_file *g = gguf_open(path);
     assert(g);
-    int ti = gguf_find_tensor(g, "doe.anchor_frame");
+    int ti = gguf_find_tensor(g, tensor);
     assert(ti >= 0);
     long pos = (long)(g->data_offset + g->tensors[ti].offset);
     gguf_close(g);
@@ -122,15 +127,18 @@ static void break_frame(const char *path) {
 
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "fixtures")) {
-        body("source", 64, 0, 0, 0);
-        body("aligned", 64, 0, 0, 0);
-        body("rotated", 64, 7, 0, 0);
-        body("norm-change", 64, 0, 0, 1);
-        body("wider", 96, 7, 0, 0);
-        body("flat", 64, 0, 1, 0);
-        body("short-norm", 64, 0, 0, -1);
+        body("source", "llama", 64, 0, 0, 0);
+        body("aligned", "llama", 64, 0, 0, 0);
+        body("rotated", "llama", 64, 7, 0, 0);
+        body("norm-change", "llama", 64, 0, 0, 1);
+        body("wider", "llama", 96, 7, 0, 0);
+        body("flat", "llama", 64, 0, 1, 0);
+        body("short-norm", "llama", 64, 0, 0, -1);
+        body("gemma", "gemma3", 64, 0, 0, 0);
+        body("gemma-aligned", "gemma3", 64, 0, 0, 0);
     } else if (argc == 5 && !strcmp(argv[1], "check")) check(argv[2], argv[3], argv[4]);
-    else if (argc == 3 && !strcmp(argv[1], "break-frame")) break_frame(argv[2]);
+    else if (argc == 3 && !strcmp(argv[1], "break-frame")) set_first(argv[2], "doe.anchor_frame");
+    else if (argc == 4 && !strcmp(argv[1], "set-first")) set_first(argv[2], argv[3]);
     else return 1;
     return 0;
 }

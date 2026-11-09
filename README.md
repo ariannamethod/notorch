@@ -188,8 +188,9 @@ See [commands, format boundaries and measured parity](docs/qwen35.md).
 ### Living experts in the Harness
 
 `--experts` seats a native Democracy of Experts on the middle block of the
-dense llama-family or Qwen3.5 hybrid CPU decoder. Each token elects a variable number of LoRA
-experts between attention and the FFN. Four rank-4 experts start in six seats.
+dense llama-family, Qwen3.5 hybrid and Gemma 3 text CPU decoders. Each token
+elects a variable number of LoRA experts between attention and the FFN. Four
+rank-4 experts start in six seats.
 `--learn-experts` gives the elected experts one Oja update after each completed
 turn and enables vitality, mitosis and apoptosis. Plain inference is the default.
 
@@ -325,6 +326,43 @@ dream the corresponding schemas are v3 and v4.
 [AML protocol](experiments/doe_spores/dream.aml) ·
 [Full scores](experiments/doe_spores/dream-scores.tsv) ·
 [Two-hop measurements and model revisions](NOTORCHLOG.md#2026-11-09--private-dreams-across-qwen3-and-llama-32).
+
+#### Gemma 3 → Qwen3.5 → Gemma 3
+
+Gemma's experts vote after the normalized attention output rejoins the residual
+stream. We ran the same waking turn on Gemma 3-270M-IT, let its parliament
+dream for six choices, then took that portable spore into Qwen3.5-0.8B.
+Qwen chose the cue ` river` and generated ` of the world, the river`.
+Seats 0, 1 and 2 wrote their A/B factors. Its two generations gave the same
+12 greedy tokens on “At the lighthouse, Miro reaches for his”.
+
+Back on **the original Gemma weights**, those two spores first chose different
+tokens at choice 11. With Qwen's pre-dream spore, the lamp was “glowing with
+a soft, warm light”. With its post-dream spore it was “a bright, warm yellow”,
+and the keeper then looked at the sea. Both carried one waking turn and 24
+waking elections. The returned post-dream spore also carried two dreams, 12
+private choices and 14 private elections.
+
+The following commands replay both continuations from the
+[AML experiment's](experiments/doe_spores/gemma3.aml) `gemma-dream.gguf`.
+
+```sh
+export NT_CHAT='||' NT_CTX=64 NT_ATTN_THREADS=1
+./notorch -q --experts --tokenizer "$Q35_TOK" --spore-only --spore-in gemma-dream.gguf \
+  --portable-spore --spore-out qwen-before.gguf "$Q35"
+./notorch -q --experts --tokenizer "$Q35_TOK" --learn-experts --async-consolidation --dream-only 6 \
+  --spore-in qwen-before.gguf --portable-spore --spore-out qwen-after.gguf "$Q35"
+for state in qwen-before.gguf qwen-after.gguf; do
+  ./notorch -q --experts --spore-in "$state" "$G270" 'At the lighthouse, Miro reaches for his' 32 0
+done
+```
+
+The same 270M spore also ran on **Gemma 3-1B-IT**. Its own six-choice dream
+shifted the log odds of ` key` over ` bell` by **+0.408905** on “Every night
+the lighthouse keeper carries a”. Preview left each host's spore byte-identical.
+Synchronous and background learning wrote identical GGUFs on all three hosts.
+[Full scores](experiments/doe_spores/gemma3-scores.tsv) ·
+[Weights, commands and controls](NOTORCHLOG.md#2026-11-09--gemma-3-experts-and-a-qwen35-round-trip).
 
 The [SmolLM2-360M experiment](experiments/doe_spores/transplant.aml) moves a
 single seat's A/B between two GGUF spores and probes fresh conversations.
