@@ -630,8 +630,11 @@ int lfm3_omni_image_size(const lfm3_omni *o, int h, int w, int *out_h, int *out_
     return 0;
 }
 
-/* Antialiased bicubic (a = -0.5) on bytes, separable, rounding back to bytes after each
- * pass — the uint8 path torchvision's resize takes, which is PIL's. */
+/* Antialiased bicubic (a = -0.5) on bytes, one axis at a time, width first — the native
+ * uint8 kernel torch runs for torchvision's BICUBIC resize on every CPU (PIL's algorithm):
+ * normalized double weights per output, then the whole table rounded to int16 at the
+ * largest precision its biggest weight allows, then integer sums rounded and shifted back
+ * to bytes after each pass. */
 static double cubic(double x) {
     const double a = -0.5;
     x = fabs(x);
@@ -641,25 +644,42 @@ static double cubic(double x) {
 }
 static int resample_axis(const uint8_t *src, uint8_t *dst, int n_in, int n_out, int lines, int stride_in,
                          int stride_line_in, int stride_out, int stride_line_out) {
-    double scale = (double)n_in / n_out, support = 2.0 * (scale > 1 ? scale : 1), fs = scale > 1 ? scale : 1;
+    double scale = (double)n_in / n_out, support = 2.0 * (scale >= 1 ? scale : 1), inv = scale >= 1 ? 1.0 / scale : 1.0;
     int ksize = (int)ceil(support) * 2 + 1;
-    double *k = malloc((size_t)ksize * sizeof(double));
-    if (!k) return -1;
+    double *k = malloc((size_t)n_out * ksize * sizeof(double));
+    int16_t *k16 = malloc((size_t)n_out * ksize * sizeof(int16_t));
+    int *lo = malloc((size_t)n_out * sizeof(int)), *len = malloc((size_t)n_out * sizeof(int));
+    if (!k || !k16 || !lo || !len) { free(k); free(k16); free(lo); free(len); return -1; }
+    double wmax = 0;
     for (int i = 0; i < n_out; i++) {
-        double center = (i + 0.5) * scale;
-        int lo = (int)(center - support + 0.5); if (lo < 0) lo = 0;
-        int hi = (int)(center + support + 0.5); if (hi > n_in) hi = n_in;
-        double ws = 0;
-        for (int x = lo; x < hi; x++) { k[x - lo] = cubic((x - center + 0.5) / fs); ws += k[x - lo]; }
-        for (int x = lo; x < hi; x++) k[x - lo] = ws != 0 ? k[x - lo] / ws : 0;
+        double center = scale * (i + 0.5);
+        long a = (long)(center - support + 0.5); if (a < 0) a = 0;
+        long b = (long)(center + support + 0.5); if (b > n_in) b = n_in;
+        lo[i] = (int)a; len[i] = (int)(b - a);
+        if (len[i] > ksize) len[i] = ksize;
+        double *w = k + (size_t)i * ksize, total = 0;
+        for (int j = 0; j < len[i]; j++) { w[j] = cubic((j + a - center + 0.5) * inv); total += w[j]; }
+        for (int j = 0; j < len[i]; j++) { if (total != 0) w[j] /= total; if (w[j] > wmax) wmax = w[j]; }
+    }
+    int prec = 0;
+    for (prec = 0; prec < 22; prec++)
+        if ((int)(0.5 + wmax * (1 << (prec + 1))) >= (1 << 15)) break;
+    for (int i = 0; i < n_out; i++)
+        for (int j = 0; j < len[i]; j++) {
+            double v = k[(size_t)i * ksize + j] * (1 << prec);
+            k16[(size_t)i * ksize + j] = (int16_t)(v < 0 ? v - 0.5 : v + 0.5);
+        }
+    for (int i = 0; i < n_out; i++) {
+        const int16_t *w = k16 + (size_t)i * ksize;
         for (int l = 0; l < lines; l++) {
-            double acc = 0;
-            for (int x = lo; x < hi; x++) acc += k[x - lo] * src[(size_t)l * stride_line_in + (size_t)x * stride_in];
-            long v = lround(acc);
+            long long t = prec ? 1LL << (prec - 1) : 0;
+            const uint8_t *s = src + (size_t)l * stride_line_in + (size_t)lo[i] * stride_in;
+            for (int j = 0; j < len[i]; j++) t += (long long)s[(size_t)j * stride_in] * w[j];
+            long long v = t >> prec;
             dst[(size_t)l * stride_line_out + (size_t)i * stride_out] = (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
         }
     }
-    free(k);
+    free(k); free(k16); free(lo); free(len);
     return 0;
 }
 
