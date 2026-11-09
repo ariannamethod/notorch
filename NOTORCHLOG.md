@@ -11,6 +11,17 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-09 — Model-directory tokenizer resolution in the CPU Harness
+
+The CLI, tokenize-only mode and native consumers share one loader. An explicit
+vocabulary takes priority over embedded tokens, then the loader checks the
+model directory for `tokenizer.gguf`. A separate vocabulary can be smaller
+than the decoder head. The native tests exercise IDs, EOS, source precedence,
+raw IDs and rejection of mismatched vocabularies. Tokenize-only reads the
+host metadata without loading tensor weights. A hybrid fixture with 8 tokens
+and 40 output rows exposed a greedy choice of padding row 16. Native waking
+and dream generation now draw text tokens from the loaded vocabulary.
+
 ---
 
 ## 2026-11-09 — the Qwen3.5 hybrid hosts the DOE parliament
