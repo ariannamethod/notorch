@@ -480,6 +480,12 @@ notorch: $(HARNESS_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch $(HARNESS_SRC) -lm $(BLAS_LIBS)
 	@echo "Compiled: notorch (harness — GGUF in, text out, $(BLAS_NAME))"
 
+# LFM3-Omni with every modality: the harness families plus the omni towers, its own door.
+OMNI_SRC = $(filter-out harness/main.c,$(HARNESS_SRC)) harness/omni_main.c harness/lfm3_omni.c harness/lfm3_omni_io.c
+notorch_omni: $(OMNI_SRC) $(HARNESS_HDR) harness/lfm3_omni.h harness/lfm3_omni_io.h stb_image.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch_omni $(OMNI_SRC) -lm $(BLAS_LIBS)
+	@echo "Compiled: notorch_omni (LFM3-Omni: text, image, video, audio in; text and speech out, $(BLAS_NAME))"
+
 # Parity against the reference example, which is what says the move changed
 # nothing. MODEL= to point it at one file, otherwise it looks for its defaults.
 test_harness: notorch llama

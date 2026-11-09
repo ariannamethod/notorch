@@ -9,6 +9,8 @@
 /lfm3_omni_probe
 /lfm3_omni_compare
 /gguf_tensor_diff
+/notorch_omni
+/test_lfm3_omni
 notorch
 embeddinggemma2_encode
 embeddinggemma2_to_gguf
