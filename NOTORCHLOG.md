@@ -11,6 +11,32 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-09 — DOE refuses a body whose family width disagrees with the header
+
+A crafted GGUF can carry a later metadata key ending in `.embedding_length`
+that the generic header scan (`gguf.c:181`) picks over the family key. The DOE
+spore builder sizes its per-layer norm reads by `host->embed_dim`
+(`spore_frame.c:82`), while `arch_qwen35.c` and `arch_gemma3.c` read the real
+width from the exact family key and never reconcile the two. Importing a
+portable spore into a forged wider host then read the per-layer norm out of
+bounds. Found in the Opus audit of #197, confirmed independently by the push
+security review on the Gemma 3 path.
+
+Fix (merged as e1cfc98 / PR #200): `q35_describe` and `gemma3_describe` return
+the host only when the family width and depth match the header, so `experts.c`
+refuses the body before any norm is read. Honest bodies are unchanged.
+
+Proof — regression on the import path (`tests/test_portable_spore.sh`), a gemma
+spore imported into a forged-wide gemma3 host: without the guard, ASan reports
+`heap-buffer-overflow` at `spore_frame.c:82`, rc=134; with the guard, rc=1
+`could not open expert state`, no overflow, no output file. Full
+`tests/test_portable_spore.sh` passes, rc=0; the honest exact/aligned/projected
+and gemma paths are untouched. The squash merge of #200 kept only the subject
+line, so this entry carries the engineering record AGENTS.md requires, with the
+quote and method that the squashed body dropped:
+Quote: "Be conservative in what you do, be liberal in what you accept from others" — Jon Postel, RFC 761.
+Method: the Method accepts a neighbor's weights liberally and its header claims not at all.
+
 ## 2026-11-09 — Model-directory tokenizer resolution in the CPU Harness
 
 The CLI, tokenize-only mode and native consumers share one loader. An explicit
