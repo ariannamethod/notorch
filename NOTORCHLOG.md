@@ -11,6 +11,18 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-09 — The pre-harness Gemma example retires; the harness is the only Gemma-3 door
+
+`examples/infer_gemma.c` removed, with its `gemma` Makefile target, its clean-list
+entry and the README BLAS note (`README.md:584`), by Oleg's word on the verdict of
+the 2026-11-09 legacy-inference analysis. `harness/arch_gemma3.c` covers Gemma-3
+and is gated by `test_gemma3` under `make test`; the example had diverged from the
+model it claimed — SiLU in its FFN (`infer_gemma.c:305` at the removed revision)
+where Gemma-3 takes GELU-tanh (`harness/arch_gemma3.c:204`), interleaved RoPE, and
+a `tokenizer.json` scrape. Proof: `grep -rn infer_gemma` over Makefile, README.md,
+examples/, harness/, tests/, docs/ → 0 hits; `make gemma` → no rule; `make -n infer`
+→ exit 0. Older dated entries below keep naming the file — history stays.
+
 ## 2026-11-09 — DOE refuses a body whose family width disagrees with the header
 
 A crafted GGUF can carry a later metadata key ending in `.embedding_length`
