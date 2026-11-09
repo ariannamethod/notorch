@@ -209,6 +209,57 @@ transcription on Omni, an image on VL-2B, with every input and output hash.
 Per-layer dumps of the upstream PyTorch modules are not made yet: their remote
 code imports `masking_utils.create_recurrent_attention_mask`, which
 Transformers 5.8.0 does not have.
+## 2026-11-09 — Qwen3.5 decodes text through the CLI, from Qwen's own checkpoints
+
+The 11-06 family ran only through NT_TOKENS: its model file has no
+vocabulary, and the CLI fed it bytes as ids. `--tokenizer FILE` now names the
+converter's tokenizer GGUF, a model without one whose ids are not bytes is
+refused, and a run ends on `<|im_end|>` or `<|endoftext|>`. `qwen35_to_gguf`
+reads the index and the shards Qwen ships (0.8B and 2B as `-00001-of-00001`, 4B
+as two), and writes the same bytes as before where `model.safetensors` exists.
+`NT_BLAS_THREADS=N` gives OpenBLAS N threads for one run, the default staying
+one. A llama.cpp `qwen35` GGUF is refused by what it lacks. `/reset` runs
+through `reset_cache`, and `tests/test_harness_tokenizer.c` (58 checks) keeps
+it on the family's hooks; zeroing through the `kv_dim` sentinel again fails it.
+The grep behind that: of the 115 uses of `kv_dim`, only `/reset` sized memory
+from a family-owned cache; the rest are host caches.
+
+A second frozen fixture, made by `tests/qwen35_fixture_gen.py gqa` (the
+generator now in the tree, which remakes the first fixture byte for byte in
+every weight), has two KV heads, two key heads and two full layers. Wrong-group
+KV, wrong-group keys and a shared full-layer slot fail 832, 1056 and 408 of its
+1124 checks; the first fixture passes all three.
+
+On the official checkpoints against llama.cpp `7d7f028` (still master on
+11-09) in BF16, greedy: 9 of 9 continuations identical on x86_64 (0.8B, 2B,
+4B), 6 of 6 on an M4 Pro, the same chat answer and stop on `<|im_end|>`, and
+on Russian and Hebrew equal ids, equal 2B continuations, and 0.8B
+continuations that differ from llama.cpp and equal Transformers F32 id for id.
+Throughput (prefill / decode t/s, 64 + 64 tokens): x86 six threads 0.8B 83.6 /
+6.1 against 209.4 / 17.6, 2B 44.7 / 2.4 against 95.4 / 7.8, 4B 19.3 / 1.2
+against 37.7 / 3.5; one thread 41.6 / 2.3 against 47.3 / 8.3 (0.8B); M4 Pro
+Accelerate 0.8B ≈450 / 38.4 and 2B ≈248 / 19.6 against llama.cpp's CPU path
+166.2 / 18.8 and 122.1 / 7.6, and its Metal GPU 2761.7 / 123.3 and 1413.0 /
+59.3. `make test` passes on x86_64 Linux, arm64 macOS and the M4 Pro. Details
+in [docs/qwen35.md](docs/qwen35.md).
+
+---
+
+## 2026-11-09 — Qwen3.5: Unicode text with the official tokenizer
+
+`examples/bpe.c` gains the `qwen35` pre-type, the official Qwen3.5 regex with
+`\p{M}` inside words, and an NFC quick check in front of it: invalid UTF-8 and
+codepoints in `qwen35_refuse` encode to nothing, everything else is stably
+sorted by ccc. `tools/qwen35_to_gguf --tokenizer` writes `qwen35` for the
+official tokenizer.json and reads `"a b"` merges; the OneJev tokenizer GGUF is
+byte-identical (`9bad2a5c…5b8e`). `tools/gen_unicode_tables.py` builds
+`examples/unicode_marks.h` (llama.cpp e95426f ACCENT_MARK) and
+`examples/unicode_qwen35.h` (unicodedata 15.0.0 plus the codepoints
+tokenizers 0.22.2 reads otherwise); the refusal set matches Perl's UCD NFC_QC
+plus those, 5,772 of 5,772. Against tokenizers on the official file: 456 of
+456 accepted rows identical, 44 refusals all NFC-changing, 11 limit rows
+refused. `make test_qwen35_text`: 60 checks; removing `\p{M}` fails 3. Details
+in `docs/qwen35.md`.
 
 ---
 
@@ -253,7 +304,9 @@ only), bare greedy, repeat_penalty 1.0:
 `tests/test_lfm3.c` runs the family in `make test` on a synthetic file:
 chunking invariance, the rope table against a ggml-semantics reference, two
 caches on one model, refused continuations and refused files. The parity
-script is red whenever it compared nothing. Not run here: the vision and audio
+script is OK only after at least one comparison and none differing, FAILED
+only on a real difference, and SKIPPED (rc 77) with its reason when nothing
+could be compared. Not run here: the vision and audio
 towers of the VL and Omni files, and throughput on Apple silicon.
 
 ---

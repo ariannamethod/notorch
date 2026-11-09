@@ -306,6 +306,21 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
     return pos;
 }
 
+/* /reset. A family that owns its cache owns its layout too: its kv_dim can be a
+ * sentinel and its state lives beside k and v, so it is dropped and made again
+ * through the family's own hooks. A host cache is the plain
+ * [n_layers][max_seq][kv_dim] pair and is zeroed in place. */
+static int reset_cache(session *s) {
+    if (s->arch->kv_new) {
+        if (s->arch->kv_free) s->arch->kv_free(s->model, s->kv); else kv_free(s->kv);
+        s->kv = s->arch->kv_new(s->model, s->max_seq);
+        return s->kv ? 0 : 1;
+    }
+    memset(s->kv->k, 0, (size_t)s->kv->n_layers * s->kv->max_seq * s->kv->kv_dim * sizeof(float));
+    memset(s->kv->v, 0, (size_t)s->kv->n_layers * s->kv->max_seq * s->kv->kv_dim * sizeof(float));
+    return 0;
+}
+
 /* Chat: the cache is the conversation. Each turn appends to it, so the model
  * sees everything said so far without re-reading a transcript. /reset drops
  * it, /exit and end-of-input leave. When the context fills, say so rather than
@@ -323,8 +338,7 @@ static int chat(session *s, int max_tokens, float temp) {
         line[strcspn(line, "\n")] = '\0';
         if (strcmp(line, "/exit") == 0 || strcmp(line, "/quit") == 0) break;
         if (strcmp(line, "/reset") == 0) {
-            memset(s->kv->k, 0, (size_t)s->kv->n_layers * s->kv->max_seq * s->kv->kv_dim * sizeof(float));
-            memset(s->kv->v, 0, (size_t)s->kv->n_layers * s->kv->max_seq * s->kv->kv_dim * sizeof(float));
+            if (reset_cache(s)) { fprintf(stderr, "  (could not make a new cache; leaving)\n"); break; }
             pos = 0;
             fprintf(stderr, "  (context cleared)\n");
             continue;
@@ -347,7 +361,7 @@ static int chat(session *s, int max_tokens, float temp) {
 
 static void usage(const char *self) {
     fprintf(stderr,
-        "usage: %s [-q] [-n tokens] [-t temp] [-r runs] <model.gguf> [prompt] [max_tokens] [temp]\n"
+        "usage: %s [-q] [-n tokens] [-t temp] [-r runs] [--tokenizer file] <model.gguf> [prompt] [max_tokens] [temp]\n"
         "  no prompt        chat in the terminal\n"
         "  --experts        seat a native parliament on the dense llama-family decoder\n"
         "  --learn-experts  update elected experts after each turn (requires --experts)\n"
@@ -357,8 +371,51 @@ static void usage(const char *self) {
         "  --expert-trace   print elections and chosen token logits on stderr\n"
         "  -q               no banner\n"
         "  -n, -t           tokens and temperature, for chat as well as one shot\n"
+        "  --tokenizer F    the vocabulary from F, for a model file that carries none\n"
         "  NT_CTX=N         context length for chat (default 2048)\n"
+        "  NT_BLAS_THREADS=N  OpenBLAS threads for this run (default 1)\n"
         "  NT_PROFILE=1     per-section timings\n", self);
+}
+
+/* The text side of a run: the vocabulary the model file carries, or one named with
+ * --tokenizer for a family whose converter writes it to a file of its own (Qwen3.5),
+ * or bytes as ids. Bytes are only an answer for a model whose ids are bytes: a
+ * 248,320-row Qwen3.5 file without a tokenizer took "x" as id 120 and looped on "\n:"
+ * without a word about it. A named tokenizer has to be for the same architecture and
+ * must not hold ids the model has no row for. NT_TOKENS reaches the forward without
+ * any of this, which is what it is for. */
+static int open_tokenizer(session *s, const gguf_file *gf, const char *model_path, const char *tok_path) {
+    s->tok = bpe_load(tok_path ? tok_path : model_path);
+    if (tok_path) {
+        char arch[64] = {0};
+        if (!s->tok) { fprintf(stderr, "notorch: no tokenizer in %s\n", tok_path); return 1; }
+        if (gguf_read_str_kv(tok_path, "general.architecture", arch, sizeof(arch)) == 0 && strcmp(arch, gf->arch)) {
+            fprintf(stderr, "notorch: %s is a tokenizer for '%s', the model is '%s'\n", tok_path, arch, gf->arch);
+            return 1;
+        }
+        if (bpe_n_vocab(s->tok) > s->vocab) {
+            fprintf(stderr, "notorch: %s has %d tokens, the model has rows for %d\n",
+                    tok_path, bpe_n_vocab(s->tok), s->vocab);
+            return 1;
+        }
+    }
+    if (s->tok) {
+        const gguf_kv *e = gguf_get_kv(gf, "tokenizer.ggml.eos_token_id");
+        uint64_t v;
+        if (tok_path && gguf_read_uint_kv(tok_path, "tokenizer.ggml.eos_token_id", &v) == 0) s->eos = (int)v;
+        else if (e) s->eos = (int)e->val.u32;
+        fprintf(stderr, "tokenizer: GGUF BPE (vocab=%d eos=%d)%s%s\n", bpe_n_vocab(s->tok), s->eos,
+                tok_path ? " from " : "", tok_path ? tok_path : "");
+        return 0;
+    }
+    const char *raw = getenv("NT_TOKENS");
+    if (s->vocab > 256 && !(raw && *raw)) {
+        fprintf(stderr, "notorch: %s carries no tokenizer and its %d ids are not bytes; "
+                        "pass --tokenizer TOKENIZER.gguf, or ids through NT_TOKENS\n", model_path, s->vocab);
+        return 1;
+    }
+    fprintf(stderr, "tokenizer: byte-level fallback (no GGUF BPE vocab)\n");
+    return 0;
 }
 
 /* BLAS gets one thread, and the reason is that it has its own pool.
@@ -380,8 +437,33 @@ static void blas_single_thread(void) {
 #endif
 }
 
+/* NT_BLAS_THREADS=N gives OpenBLAS N threads for this run, and only when asked: the
+ * one thread above stays the default for every family. It is for a family whose
+ * matrices are plain f32 through cblas_sgemm with no matvec pool beside them, which
+ * is how Qwen3.5 decodes. Accelerate schedules its own threads and has no such call. */
+static int blas_threads_from_env(void) {
+    const char *env = getenv("NT_BLAS_THREADS");
+    if (!env || !*env) return 0;
+    char *end;
+    long n = strtol(env, &end, 10);
+    if (*end || n < 1 || n > 256) {
+        fprintf(stderr, "notorch: NT_BLAS_THREADS wants 1..256, not '%s'\n", env);
+        return 1;
+    }
+#if defined(USE_BLAS) && !defined(ACCELERATE)
+    if (openblas_set_num_threads) {
+        openblas_set_num_threads((int)n);
+        fprintf(stderr, "blas: %ld threads (NT_BLAS_THREADS)\n", n);
+        return 0;
+    }
+#endif
+    fprintf(stderr, "blas: NT_BLAS_THREADS ignored, this build has no OpenBLAS thread control\n");
+    return 0;
+}
+
 int main(int argc, char **argv) {
     blas_single_thread();
+    if (blas_threads_from_env()) return 1;
     int quiet = 0, ai = 1;
     int flag_n = -1; float flag_t = -1.0f;
     /* The positional form is what examples/infer_llama.c takes and what the
@@ -389,7 +471,7 @@ int main(int argc, char **argv) {
      * positional arguments behind. */
     int tokenize_only = 0, arch_only = 0, repeats = 1;
     int experts = 0, learn = 0, trace = 0, async = 0;
-    const char *spore_in = NULL, *spore_out = NULL;
+    const char *spore_in = NULL, *spore_out = NULL, *tok_path = NULL;
     while (ai < argc && argv[ai][0] == '-' && argv[ai][1]) {
         const char *arg = argv[ai];
         if (!strcmp(arg, "--experts")) { experts = 1; ai++; continue; }
@@ -401,6 +483,15 @@ int main(int argc, char **argv) {
             if (!strcmp(arg, "--spore-in")) spore_in = argv[ai++];
             else spore_out = argv[ai++];
             continue;
+        }
+        if (!strcmp(arg, "--tokenizer")) {
+            if (ai + 1 >= argc) {
+                fprintf(stderr, "notorch: --tokenizer needs a file\n");
+                usage(argv[0]);
+                return 1;
+            }
+            tok_path = argv[ai + 1];
+            ai += 2; continue;
         }
         if (arg[2]) break;
         char f = argv[ai][1];
@@ -463,8 +554,8 @@ int main(int argc, char **argv) {
     }
 
     if (tokenize_only) {
-        bpe_tokenizer *tok = bpe_load(path);
-        if (!tok) { fprintf(stderr, "notorch: no tokenizer in %s\n", path); return 1; }
+        bpe_tokenizer *tok = bpe_load(tok_path ? tok_path : path);
+        if (!tok) { fprintf(stderr, "notorch: no tokenizer in %s\n", tok_path ? tok_path : path); return 1; }
         const char *text = (ai + 1 < argc) ? argv[ai + 1] : "";
         int ids[8192];
         int n = bpe_encode(tok, text, ids, (int)(sizeof(ids) / sizeof(ids[0])));
@@ -506,14 +597,7 @@ int main(int argc, char **argv) {
 
     session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1, .learn = learn, .trace = trace, .async = async };
     chat_wrap_init(&g_chat, dims.vocab, path);
-    s.tok = bpe_load(path);
-    if (s.tok) {
-        const gguf_kv *e = gguf_get_kv(gf, "tokenizer.ggml.eos_token_id");
-        if (e) s.eos = (int)e->val.u32;
-        fprintf(stderr, "tokenizer: GGUF BPE (vocab=%d eos=%d)\n", bpe_n_vocab(s.tok), s.eos);
-    } else {
-        fprintf(stderr, "tokenizer: byte-level fallback (no GGUF BPE vocab)\n");
-    }
+    if (open_tokenizer(&s, gf, path, tok_path)) { arch->free(model); gguf_close(gf); return 1; }
 
     const char *prompt = (ai + 1 < argc) ? argv[ai + 1] : NULL;
     int max_tokens = (ai + 2 < argc) ? atoi(argv[ai + 2]) : 50;
@@ -550,10 +634,13 @@ int main(int argc, char **argv) {
         int cap = 8192;
         int *tokens = (int*)malloc((size_t)cap * sizeof(int));
         int n_tok = tokens ? encode_prompt(&s, prompt, tokens, cap - max_tokens - 1) : 0;
-        if (n_tok <= 0) { fprintf(stderr, "notorch: empty prompt\n"); rc = 1; }
+        if (n_tok <= 0) { fprintf(stderr, "notorch: no ids for this prompt (empty, or refused by the tokenizer)\n"); rc = 1; }
         else {
             s.max_seq = n_tok + max_tokens + 1;
             s.kv = arch->kv_new ? arch->kv_new(model, s.max_seq) : kv_new(dims.n_layers, s.max_seq, dims.kv_dim);
+            if (!s.kv) { fprintf(stderr, "notorch: could not make a cache for %d positions\n", s.max_seq); rc = 1; }
+        }
+        if (s.kv) {
             fprintf(stderr, "\nprompt: \"%s\" (%d tokens, temp=%.2f)\n", prompt, n_tok, temp);
             if (repeats < 1) repeats = 1;
             for (int rep = 0; rep < repeats; rep++) {
@@ -580,7 +667,8 @@ int main(int argc, char **argv) {
         s.max_seq = ctx ? atoi(ctx) : 2048;
         if (s.max_seq < max_tokens + 2) s.max_seq = max_tokens + 2;
         s.kv = arch->kv_new ? arch->kv_new(model, s.max_seq) : kv_new(dims.n_layers, s.max_seq, dims.kv_dim);
-        rc = chat(&s, max_tokens, temp);
+        if (!s.kv) { fprintf(stderr, "notorch: could not make a cache for %d positions\n", s.max_seq); rc = 1; }
+        else rc = chat(&s, max_tokens, temp);
     }
 
 done:

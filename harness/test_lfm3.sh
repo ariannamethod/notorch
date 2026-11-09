@@ -9,22 +9,25 @@
 # here pins repeat_penalty to 1.0.
 #
 # The llama-server binary is not part of this repository and has no default
-# path: point LFM3_LLAMA_BIN at one. A run that compares nothing — no binary,
-# no models, every model skipped — is red, not green: a gate that checked
-# nothing has said nothing. notorch must be built (make harness).
+# path: point LFM3_LLAMA_BIN at one. notorch must be built (make harness).
+#
+# Three outcomes, told apart by rc: OK (0) only when at least one comparison
+# ran and none differed; FAILED (1) only when a comparison differed; SKIPPED
+# (77) with the reason when no comparison could run — no reference binary, no
+# model, every model unloadable. A gate that could not run says neither green
+# nor red.
 #
 #   LFM3_LLAMA_BIN=/path/to/llama-server ./harness/test_lfm3.sh model.gguf ...
 #
 set -eu
 cd "$(dirname "$0")/.."
 
-[ -x ./notorch ] || { echo "test_lfm3: ./notorch not built (make harness)"; exit 1; }
-
 not_run() {
-    echo "parity(lfm3): NOT RUN — $1"
-    echo "NOTORCH_LFM3_PARITY_FAILED"
-    exit 1
+    echo "parity(lfm3): SKIPPED — $1"
+    echo "NOTORCH_LFM3_PARITY_SKIPPED"
+    exit 77
 }
+[ -x ./notorch ] || not_run "./notorch not built (make harness)"
 if [ -z "${LFM3_LLAMA_BIN:-}" ] || [ ! -x "${LFM3_LLAMA_BIN}" ]; then
     not_run "LFM3_LLAMA_BIN is unset or not executable"
 fi
@@ -116,9 +119,7 @@ EOF2
 done
 
 if [ "$CHECKS" -eq 0 ]; then
-    echo "parity(lfm3): no comparison ran — $# model(s) given, every one skipped"
-    echo "NOTORCH_LFM3_PARITY_FAILED"
-    exit 1
+    not_run "no comparison ran — $# model(s) given, every one skipped"
 fi
 echo "parity(lfm3): $CHECKS comparisons, $FAILS failed"
 if [ "$FAILS" -gt 0 ]; then
