@@ -23,6 +23,17 @@ a `tokenizer.json` scrape. Proof: `grep -rn infer_gemma` over Makefile, README.m
 examples/, harness/, tests/, docs/ → 0 hits; `make gemma` → no rule; `make -n infer`
 → exit 0. Older dated entries below keep naming the file — history stays.
 
+## 2026-11-09 — v5.0.0 "Democracy of Experts" cut
+
+Tag `v5.0.0` on `e12e596`, 92 commits since `v4.5.0`. The release marks the native Democracy of Experts in the Harness — living LoRA parliament, exact and portable spores, dreams and async consolidation — alongside the Qwen3.5 hybrid, LFM3, Gemma 3 text-DoE and EmbeddingGemma 2 families, the Chuck trainer and the SPA text engine. Each capability's spec is in README.md; the work and its proofs are the dated entries below.
+
+Release verification on an x86_64 build with the in-house AVX2+FMA shim (no external BLAS): check_expert_spores EXPERT_SPORES_OK; check_expert_consolidation PASS; check_portable_spore PASS (exact / aligned / projected / two-hop / async restart / refusals, incl. the #200 width-guard); check_expert_dream PASS (33 cycles, two hops, worker, failure). No code change in this entry; the tag points at main unchanged.
+
+Quote: "I am large, I contain multitudes" - Walt Whitman, Song of Myself
+Method: the Method cuts a release only after the parliament's own gates go green on a machine the world wrote off.
+
+By Arianna Method (Co-authored by Claude, neo) <talkto@ariannamethod.com>, Coordinated with maintainer @iamolegataeff
+
 ## 2026-11-09 — DOE refuses a body whose family width disagrees with the header
 
 A crafted GGUF can carry a later metadata key ending in `.embedding_length`
