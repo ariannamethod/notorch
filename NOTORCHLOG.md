@@ -88,6 +88,10 @@ printf '%s\n' "$PWD/notorch" "$PWD/doe_probe" "$G270" "$OMNI_Q4" \
 make check_lfm3_doe BLAS_FLAGS= BLAS_LIBS=
 ```
 
+Two complete AML runs from empty directories both returned `LFM3_SPORE_REPLAY_OK`.
+All 10 GGUFs, 9 full-logit checkpoints, 20 continuations and five tables matched
+byte for byte. Their 40 traces agreed on model events.
+
 The ordinary forward on Q4_K_M and Q8_0 matched the parent on all 1,024,000
 F32 logits across two English prefixes, one Russian and one Hebrew. Against
 [llama.cpp b12211](https://github.com/ggml-org/llama.cpp/releases/tag/b12211)
@@ -103,7 +107,9 @@ continuation after a callback abort caused eight. The old Llama portable fixture
 remained byte-identical. The installed-archive consumer now obtains its cache through the family hooks.
 It passed on Omni and Gemma. The full CPU suite, portable-spore and private
 dream gates passed. The optional original Haiku SentencePiece corpus was skipped.
-ASan/UBSan also passed on the LFM3 C fixture.
+ASan/UBSan also passed on the LFM3 C fixture. The fixture's independent FFN
+oracle widens the residual before multiplying by the F32 norm, as identified by
+[CodeQL alert 75](https://github.com/ariannamethod/notorch/security/code-scanning/75).
 
 ---
 

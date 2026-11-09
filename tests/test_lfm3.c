@@ -279,7 +279,8 @@ static int before_ffn(void *user, int l, int pos, int n, int e, float *rows) {
         if (l == p->intervening_layer) x[0] += 2.5f;
         double v[E], inner[F], delta[E], ss = 0;
         for (int i = 0; i < E; i++) ss += (double)x[i]*x[i];
-        for (int i = 0; i < E; i++) v[i] = x[i]*p->m->layers[l].ffn_norm[i]/sqrt(ss/E+p->m->rms_eps);
+        double rms = sqrt(ss/E+p->m->rms_eps);
+        for (int i = 0; i < E; i++) v[i] = (double)x[i] * p->m->layers[l].ffn_norm[i] / rms;
         for (int k = 0; k < F; k++) {
             double g = row_dot(&p->m->layers[l].wgate, k, v);
             inner[k] = g/(1+exp(-g))*row_dot(&p->m->layers[l].wup, k, v);
