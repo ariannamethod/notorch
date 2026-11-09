@@ -26,7 +26,7 @@ test checks both.
 ## Build and convert
 
 ```sh
-make qwen3embedding_encode qwen3embedding_to_gguf     # scalar F32; BLAS=1 or SIMD=1 as for EG2
+make qwen3embedding_encode qwen3embedding_to_gguf     # scalar F32; BLAS=1 selects BLAS as for EG2
 ./qwen3embedding_to_gguf SNAPSHOT model.gguf
 ./qwen3embedding_to_gguf --tokenizer SNAPSHOT/tokenizer.json tokenizer.gguf
 ./qwen3embedding_encode model.gguf queries.tsv vectors.jsonl \
@@ -44,9 +44,10 @@ encoder's input cap. The input embedding table stays mapped BF16, and only the
 requested rows are expanded. The other weights are expanded once to F32.
 
 `--tokenizer` writes a separate GGUF from `tokenizer.json`, so the model file's
-hash does not depend on it. It refuses a file that is not NFC, the exact Qwen3
-split regex, byte-level BPE without byte fallback or `ignore_merges`, and a
-`[A, <special>]` template. It writes the 151,669 tokens, the 151,387 merges,
+hash does not depend on it. It accepts only an NFC normalizer, the exact Qwen3
+split regex, byte-level BPE with `byte_fallback` and `ignore_merges` false, and
+a single-sequence template `[A, <special token>]`. It refuses anything else. It
+writes the 151,669 tokens, the 151,387 merges,
 special added tokens as CONTROL and the others as USER_DEFINED, the template's
 `<|endoftext|>` as EOS (`add_eos_token`, no BOS), pre-type `qwen3`, and the
 source file's SHA-256. For the target revision that is 5,922,016 bytes with
@@ -152,9 +153,19 @@ published scores agree to at most 2.99e-7:
 | q2, d1 | 0.13549754337802583 | 0.13549736142158508 | 1.82e-7 |
 | q2, d2 | 0.59995466367794126 | 0.5999549627304077 | 2.99e-7 |
 
-The native IDs for the card's four texts end in 151643 and carry no BOS.
-All 28 fixtures are accepted by the text mode. Their official IDs and the
-official vectors are the two open references below.
+The same gate with an Accelerate build (the BLAS flags `make BLAS=1` passes on
+macOS) passes too: byte-identical repeats, |norm − 1| ≤ 2.21e-8, published
+scores within 4.52e-7. The native IDs for the card's four texts end in 151643
+and carry no BOS.
+The gate goes red for the TEI spelling `Query: ` with a space (max |Δ| 3.86e-3)
+and for interleaved RoPE (7.34e-2).
+
+The text mode accepts all 28 fixtures and encodes them with |norm − 1| ≤
+4.16e-8; the 1,161-token paragraph took 358 s scalar. Fed to the parity script
+as their own reference, they pass 28/28 with max |Δ| 0: ID mode reproduces text
+mode exactly. With one coordinate moved by 1e-4 they fail 27/28. The gates
+themselves are built and wait for the official IDs and vectors, the two open
+references below.
 
 ## Open items
 

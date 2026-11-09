@@ -11,6 +11,81 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-09 — Qwen3-Embedding, the second encoder: built and gated, two references open
+
+The SUBLITERATUS EG line gets its control encoder, by Oleg's mandate of
+2026-11-09: `nt_encoder_qwen3embedding` (`harness/arch_qwen3embedding.c`) next to
+EmbeddingGemma 2 on the same `nt_encoder` surface. The target is
+`Qwen/Qwen3-Embedding-0.6B` revision `97b0c614be4d`. Its `model.safetensors` is
+`0437e45c…23fd` and its `tokenizer.json` is `def76fb0…b50a`, both recomputed
+locally and equal to the Hub's LFS hashes. Every pin and the documented
+behavior behind it are in `research/qwen3-embedding-pins.json`. The
+[guide](docs/QWEN3EMBEDDING.md) has the gates.
+
+Built, in commit `63f8120`:
+- the encoder, a causal Qwen3 read to its final RMSNorm (per-head Q/K norm,
+  NEOX RoPE θ=1e6, 16 query over 8 KV heads, SiLU), pooled at the last unmasked
+  position and L2-normalized;
+- `tools/qwen3embedding_to_gguf.c`, which keeps 310 BF16 tensors unchanged
+  (1,191,575,136 bytes, `a4bfbbbd…90a2`) and writes a separate tokenizer GGUF
+  (151,669 tokens, 151,387 merges, `<|endoftext|>` appended, no BOS,
+  `710d5b0c…6a25`); both outputs are byte-identical on a repeat;
+- the `qwen3` pre-type in `examples/bpe.c`, the tokenizer.json split without
+  `\p{M}` over the existing NFC quick check, made as a `marks` switch on the
+  `qwen35` piece function;
+- the text mode with the upstream `query`/`document` prompts. It refuses
+  added-token literals, leading or trailing whitespace (sentence-transformers
+  strips it, the Transformers recipe does not), over-long input and text that
+  does not decode back to itself.
+
+Gated on neo (A18 Pro, Apple clang 21, portable scalar build):
+- `make test_qwen3embedding` matches an independent double-precision forward at
+  max |Δ| 2.83e-7 (gate 1e-5). Right and left padding, hooks, refusals and
+  atomicity are checked too. Six mutants turn it red: interleaved RoPE, no
+  causal mask, KV group by modulo, no Q norm, mask-blind pooling, no score scale.
+- `make test_qwen3embedding_text`: 58/58 checks. Six mutants turn it red: marks
+  in words, digit runs, no NFC, no `ſ` fold, no EOS, no whitespace refusal.
+- `make test_qwen35_text` still passes 62/62, as before the `bpe.c` change.
+  The full `make test`, with origin/main `e38a2ea` merged, exits 0, and
+  `test_embeddinggemma2`/`_text` pass in it.
+- `make check_qwen3embedding_model` on the converted checkpoint: two processes
+  give byte-identical vectors; width 1024; |norm − 1| ≤ 2.41e-8; the model
+  card's four published Transformers-recipe scores agree within 2.99e-7 (gate
+  1e-4, written into the script before its first run). Two mutants of the gate
+  run on the checkpoint turn it red: the card's TEI spelling `Query: ` with a
+  space (max |Δ| 3.86e-3) and interleaved RoPE (7.34e-2).
+- With an Accelerate build (the `BLAS=1` flags) the same gate passes:
+  byte-identical repeats, |norm − 1| ≤ 2.21e-8, scores within 4.52e-7.
+- All 28 tokenizer fixtures (`tests/qwen3embedding_fixtures.tsv`: ASCII,
+  Russian, Hebrew with and without niqqud, Arabic, Hindi, CJK, Korean, emoji,
+  symbols, whitespace runs, a 3,379-byte paragraph) are accepted and encoded on
+  the checkpoint, with |norm − 1| ≤ 4.16e-8. The paragraph is 1,161 tokens and
+  took 358 s on the scalar build. The same vectors exercise the parity gate's
+  mechanics. Re-encoded from their own IDs, all 28 reproduce the text-mode
+  vectors exactly (28/28, max |Δ| 0). A reference with one coordinate moved by
+  1e-4 fails (27/28; max |Δ| 1e-4 > 2e-5, cosine 0.999999995 alone would have
+  passed).
+
+Open, for Oleg:
+- **Official token IDs** for the 28 fixtures, for
+  `make check_qwen3embedding_tokenizer`. No approved tool here produces them:
+  the precedent oracle `tests/qwen35_tokenizer_parity.py` is Python
+  `tokenizers`, and llama.cpp is excluded.
+- **Official vectors** for `tests/check_qwen3embedding_parity.sh`, with
+  thresholds fixed as in EG2's RG3. They need a float32 forward of the pinned
+  checkpoint by sentence-transformers or Transformers.
+
+`config.json` holds nothing `gguf.c` cannot express. The 8192-token cap is
+this encoder's, as in EG2; the model's limit is 32,768. The `bpe.c` change
+alters the bytes of every binary that links it, `embeddinggemma2_encode`
+included, at any future notorch pin. The Gemma 4 path is untouched, and
+`test_embeddinggemma2_text` passes.
+
+Quote: "the meaning of a word is its use in the language" — Ludwig Wittgenstein, Philosophical Investigations, §43 (tr. G. E. M. Anscombe)
+Method: the Method logs the second encoder with what it measured and what it still needs from outside the tree.
+
+By Arianna Method (Co-authored by Claude, neo) <talkto@ariannamethod.com>, Coordinated with maintainer @iamolegataeff
+
 ## 2026-11-09 — The pre-harness Gemma example retires; the harness is the only Gemma-3 door
 
 `examples/infer_gemma.c` removed, with its `gemma` Makefile target, its clean-list
