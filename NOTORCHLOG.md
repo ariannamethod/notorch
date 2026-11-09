@@ -13,6 +13,24 @@ Newest entries on top.
 
 ---
 
+## 2026-11-09 — Qwen3.5: Unicode text with the official tokenizer
+
+`examples/bpe.c` gains the `qwen35` pre-type, the official Qwen3.5 regex with
+`\p{M}` inside words, and an NFC quick check in front of it: invalid UTF-8 and
+codepoints in `qwen35_refuse` encode to nothing, everything else is stably
+sorted by ccc. `tools/qwen35_to_gguf --tokenizer` writes `qwen35` for the
+official tokenizer.json and reads `"a b"` merges; the OneJev tokenizer GGUF is
+byte-identical (`9bad2a5c…5b8e`). `tools/gen_unicode_tables.py` builds
+`examples/unicode_marks.h` (llama.cpp e95426f ACCENT_MARK) and
+`examples/unicode_qwen35.h` (unicodedata 15.0.0 plus the codepoints
+tokenizers 0.22.2 reads otherwise); the refusal set matches Perl's UCD NFC_QC
+plus those, 5,772 of 5,772. Against tokenizers on the official file: 456 of
+456 accepted rows identical, 44 refusals all NFC-changing, 11 limit rows
+refused. `make test_qwen35_text`: 60 checks; removing `\p{M}` fails 3. Details
+in `docs/qwen35.md`.
+
+---
+
 ## 2026-11-07 — LFM3: the first hybrid family, measured against llama.cpp
 
 `harness/arch_lfm3.c` runs LiquidAI's LFM3 text decoder: gated short

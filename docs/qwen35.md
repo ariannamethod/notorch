@@ -38,6 +38,35 @@ token IDs throughout the vocabulary. `bpe_encode_special` explicitly opts into
 literal CONTROL/USER_DEFINED tokens for complete chat prompts; ordinary
 `bpe_encode` retains its previous CONTROL behavior.
 
+`qwen35` is the official checkpoint's regex, which keeps marks inside words
+(`\p{M}` from `examples/unicode_marks.h`). It is ported over codepoints in the
+reference's leftmost-first order, and its `(?i)` folds `'ſ` to `'s` as the
+reference does; llama.cpp's `[sS]` does not. The converter writes `qwen35` for
+the official tokenizer.json and `qwen35-ascii`, byte for byte as before, for
+the older regex; merges are read as pairs or as `"a b"` strings. NFC is a
+UAX #15 quick check: invalid UTF-8, or a codepoint in `qwen35_refuse`
+(`examples/unicode_qwen35.h`: NFC_QC No or Maybe, 108 marks the reference's
+Unicode 9.0 ccc table orders as starters, 4,433 Unicode 16 codepoints its regex
+reads as letters, marks or numbers), encodes to nothing. Any other text is NFC
+after a stable sort of each run of non-starters by ccc. The check also refuses
+some text NFC leaves alone, a Maybe mark that composes with nothing before it:
+Russian stress marks (а + U+0301), the Bengali, Tamil and Malayalam vowel sign
+AA. So Russian text written with stress marks, and most Bengali, gets no ids
+at all: it is refused, not tokenized. Accepting it needs NFC's composition
+step, which this tokenizer does not have. `tools/gen_unicode_tables.py`
+regenerates both headers.
+
+Against tokenizers 0.22.2 on the official tokenizer.json (sha256
+`5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42`,
+Qwen/Qwen3.5-0.8B `2fc06364715b967f1860aea9cf38778875588b17`),
+`tests/qwen35_tokenizer_parity.py` ran the 211 rows of
+`tests/qwen35_unicode_corpus.jsonl` and 300 seeded random rows: all 456
+accepted rows had the reference's ids, all 44 refusals were text the
+reference's NFC changes, and the 11 limit rows were refused. llama.cpp
+e95426f differed from the reference on 95 of the 511 rows, each one text NFC
+changes: its BPE path does not normalize. The official tokenizer GGUF is
+`2f38049769a7fb0d2b70b5ed329563d932cc366899379f35476419021260a4f4`.
+
 ## Verification, 2026-11-06
 
 The independent reference was Transformers 5.15.0, Torch 2.13.0 CPU, F32,

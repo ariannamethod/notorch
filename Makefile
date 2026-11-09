@@ -453,7 +453,7 @@ bench_multi_decode: tests/bench_multi_decode.c libnotorch_harness.a libnotorch.a
 check_residual: test_residual
 	./test_residual
 
-examples/bpe.o: examples/unicode_numbers.h examples/unicode_letters.h
+examples/bpe.o: examples/unicode_numbers.h examples/unicode_letters.h examples/unicode_marks.h examples/unicode_qwen35.h
 
 test_smollm_tokenizer: tests/test_smollm_tokenizer.c libnotorch_harness.a libnotorch.a Makefile
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)

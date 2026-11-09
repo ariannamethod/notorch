@@ -165,13 +165,15 @@ done:
 static int is_false(const char *v){return v && !strncmp(v,"false",5);}
 static int convert_tokenizer(const char *input,const char *out) {
     const char *pattern="(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+    /* The official Qwen3.5 regex, marks inside words: pre-type "qwen35". */
+    const char *marks="(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
     char *j=nj_load(input,NULL),**tokens=NULL,**merges=NULL,*regex=NULL;int32_t *types=NULL;
     int bad=0,rc=1;long long nv=0,nm=0;char partial[4200];gguf_writer *w=NULL;
     if(!j)goto done;
     const char *model=nj_get(j,"model"),*pre=nj_get(j,"pre_tokenizer");
     const char *p1=nj_first(nj_get(pre,"pretokenizers"),&bad),*p2=p1?nj_next(p1,']',&bad):NULL;
     regex=nj_string(nj_get(nj_get(p1,"pattern"),"Regex"));
-    if(bad || !p2 || nj_next(p2,']',&bad) || bad || !regex || strcmp(regex,pattern) ||
+    if(bad || !p2 || nj_next(p2,']',&bad) || bad || !regex || (strcmp(regex,pattern) && strcmp(regex,marks)) ||
        !nj_is(nj_get(model,"type"),"BPE") || !nj_is(nj_get(nj_get(j,"normalizer"),"type"),"NFC") ||
        !nj_is(nj_get(pre,"type"),"Sequence") || !nj_is(nj_get(p1,"type"),"Split") ||
        !nj_is(nj_get(p1,"behavior"),"Isolated") || !is_false(nj_get(p1,"invert")) ||
@@ -202,6 +204,11 @@ static int convert_tokenizer(const char *input,const char *out) {
     for(long long i=0;i<nv;i++)if(!tokens[i])goto done;
     long long i=0;
     for(const char *v=nj_first(list,&bad);v;v=nj_next(v,']',&bad),i++) {
+        if(*v=='"') {   /* "a b": the same merge, exactly one space between the halves */
+            char *s=nj_string(v),*sp=s?strchr(s,' '):NULL;
+            if(!sp || strchr(sp+1,' ')){free(s);goto done;}
+            merges[i]=s;continue;
+        }
         int b=0;const char *a=nj_first(v,&b),*z=a?nj_next(a,']',&b):NULL;
         char *x=nj_string(a),*y=nj_string(z);
         if(b || !x || !y || nj_next(z,']',&b) || b || strchr(x,' ') || strchr(y,' ') || !(merges[i]=malloc(strlen(x)+strlen(y)+2))){free(x);free(y);goto done;}
@@ -209,7 +216,7 @@ static int convert_tokenizer(const char *input,const char *out) {
     }
     if(bad || !(w=start(out,partial,sizeof(partial))))goto done;
     gguf_write_kv_str(w,"general.architecture","qwen35");gguf_write_kv_str(w,"tokenizer.ggml.model","gpt2");
-    gguf_write_kv_str(w,"tokenizer.ggml.pre","qwen35-ascii");gguf_write_kv_bool(w,"tokenizer.ggml.add_bos_token",0);
+    gguf_write_kv_str(w,"tokenizer.ggml.pre",strcmp(regex,pattern)?"qwen35":"qwen35-ascii");gguf_write_kv_bool(w,"tokenizer.ggml.add_bos_token",0);
     gguf_write_kv_str_array(w,"tokenizer.ggml.tokens",(const char *const*)tokens,nv);
     gguf_write_kv_str_array(w,"tokenizer.ggml.merges",(const char *const*)merges,nm);
     gguf_write_kv_i32_array(w,"tokenizer.ggml.token_type",types,nv);
