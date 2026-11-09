@@ -437,6 +437,20 @@ test_qwen35_text: tests/test_qwen35_text.c examples/bpe.c examples/bpe.h gguf.c 
 
 test: test_qwen35_text
 
+lfm3_omni_to_gguf: tools/lfm3_omni_to_gguf.c tools/narrow_json.h gguf.c gguf.h sha256.c notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tools/lfm3_omni_to_gguf.c gguf.c sha256.c notorch.c -lm
+
+gguf_tensor_diff: tools/gguf_tensor_diff.c gguf.c gguf.h notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tools/gguf_tensor_diff.c gguf.c notorch.c -lm
+
+LFM3_OMNI_SRC = harness/lfm3_omni.c harness/lfm3_omni_io.c harness/runtime.c gguf.c notorch.c
+LFM3_OMNI_HDR = harness/lfm3_omni.h harness/lfm3_omni_io.h harness/runtime.h gguf.h notorch.h stb_image.h $(CHUCK_HEADERS)
+lfm3_omni_probe: tools/lfm3_omni_probe.c $(LFM3_OMNI_SRC) $(LFM3_OMNI_HDR)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tools/lfm3_omni_probe.c $(LFM3_OMNI_SRC) -lm $(BLAS_LIBS)
+
+lfm3_omni_compare: tools/lfm3_omni_compare.c
+	$(CC) $(CFLAGS) -o $@ tools/lfm3_omni_compare.c -lm
+
 .PHONY: test_lfm3
 test_lfm3: tests/test_lfm3.c harness/arch_lfm3.c harness/runtime.c gguf.c notorch.c $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_lfm3.c harness/runtime.c gguf.c notorch.c -lm $(BLAS_LIBS)

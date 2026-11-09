@@ -109,6 +109,17 @@ typedef struct {
     kv_cache *(*kv_new)(void *model, int max_seq);
     void      (*kv_free)(void *model, kv_cache *kv);
     const nt_doe_decoder *doe; /* NULL for a decoder without native expert hooks. */
+    /* NULL when the family reads token ids only; a caller with embedding rows refuses
+     * such a family by name. Otherwise forward, with two additions. rows, when not
+     * NULL, holds n pointers: position j reads rows[j] (the model's embedding width)
+     * in place of the embedding of tokens[j], or its token when rows[j] is NULL.
+     * tokens[j] is still checked against the vocabulary, so a placeholder id marks
+     * the position and no sentinel enters the stream. hidden, when not NULL, receives
+     * the final-norm output of the last row, the vector the head reads. Errors follow
+     * forward: on a nonzero return neither logits nor hidden are written. */
+    int   (*forward_embd)(void *model, kv_cache *kv, const int *tokens,
+                          const float *const *rows, int n, int pos0,
+                          float *logits, float *hidden);
 } nt_arch;
 
 static inline kv_cache *nt_model_kv_new(const nt_arch *arch, void *model, nt_dims dims, int capacity) {

@@ -489,8 +489,10 @@ static int lfm3_conv_layer(lfm3_model *m, int l, float *conv, const float *xn, f
     return NT_OK;
 }
 
-static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
-                        int pos0, float *logits) {
+/* rows[j], where given, stands in for the embedding of tokens[j]: an image patch, an
+ * audio frame or a speech frame's codebook sum, put where the placeholder id sits. */
+static int lfm3_run(void *model, kv_cache *kv, const int *tokens, const float *const *rows,
+                    int n, int pos0, float *logits, float *hidden) {
     lfm3_model *m = (lfm3_model*)model;
     int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_attn, 0);
     if (rc != NT_OK) return rc;
@@ -514,7 +516,8 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
     double pft = pf_mark();
     for (int j = 0; j < n; j++) {
         float *xj = x + (size_t)j * E;
-        if (m->tok_emb.f32) memcpy(xj, m->tok_emb.f32 + (long)tokens[j] * E, E * sizeof(float));
+        if (rows && rows[j]) memcpy(xj, rows[j], E * sizeof(float));
+        else if (m->tok_emb.f32) memcpy(xj, m->tok_emb.f32 + (long)tokens[j] * E, E * sizeof(float));
         else if (gguf_dequant_row(m->gf, m->emb_ti, (uint64_t)tokens[j], xj) != 0)
             memset(xj, 0, E * sizeof(float));
     }
@@ -669,10 +672,11 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
         pf_add(PF_FFN, pft);
     }
 
-    if (logits) {
+    if (logits || hidden) {
         pft = pf_mark();
         rmsnorm(xn, x + (size_t)(n - 1) * E, m->out_norm, E, eps);
-        qmv(logits, m->has_output_weight ? &m->out_weight : &m->tok_emb, xn);
+        if (hidden) memcpy(hidden, xn, (size_t)E * sizeof(float));
+        if (logits) qmv(logits, m->has_output_weight ? &m->out_weight : &m->tok_emb, xn);
         pf_add(PF_HEAD, pft);
     }
 
@@ -680,6 +684,17 @@ static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
     free(proj_out); free(gate_buf); free(g_buf); free(u_buf);
     cache->next = pos0 + n;
     return NT_OK;
+}
+
+static int lfm3_forward(void *model, kv_cache *kv, const int *tokens, int n,
+                        int pos0, float *logits) {
+    return lfm3_run(model, kv, tokens, NULL, n, pos0, logits, NULL);
+}
+
+static int lfm3_forward_embd(void *model, kv_cache *kv, const int *tokens,
+                             const float *const *rows, int n, int pos0,
+                             float *logits, float *hidden) {
+    return lfm3_run(model, kv, tokens, rows, n, pos0, logits, hidden);
 }
 
 static void lfm3_kv_free(void *model, kv_cache *kv) {
@@ -717,4 +732,5 @@ const nt_arch nt_arch_lfm3 = {
     .forward = lfm3_forward,
     .kv_new  = lfm3_kv_new,
     .kv_free = lfm3_kv_free,
+    .forward_embd = lfm3_forward_embd,
 };

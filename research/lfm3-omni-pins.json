@@ -1,0 +1,91 @@
+{
+  "model": "LFM3-Omni-2B",
+  "resolved_from": "Hugging Face Hub search author=LiquidAI query='LFM3 Omni', 2026-11-10: one safetensors original (LiquidAI/LFM3-Omni-2B); the GGUF, ONNX and three MLX repositories are format derivatives of it (base_model tag)",
+  "repo": "LiquidAI/LFM3-Omni-2B",
+  "revision": "21d75123f86c1f7ffb4bef1ea202710c4e7ebe67",
+  "license": "LFM Open License v1.0 (license: other)",
+  "card": {
+    "inputs": "text, images, video with or without its soundtrack, 16 kHz audio; images and video at native resolution, one language token per 2x2 patch block; video at 2 fps, 4 to 384 frames",
+    "outputs": "text, 24 kHz speech, or interleaved text and speech",
+    "context": 32768,
+    "parameters": "2.17B",
+    "generation_modes": {"text": "no opening token", "audio": "<|audio_start|>", "interleaved": "<|mixed_start|>"},
+    "sampling": {"text": "greedy", "speech": "audio_temperature 0.4, audio_repetition_penalty 1.2"},
+    "template": "<|startoftext|>[<|im_start|>system\\n...<|im_end|>\\n]<|im_start|>user\\n...<|im_end|>\\n<|im_start|>assistant\\n<think></think>; media wrapped <|vision_start|>...<|vision_end|>"
+  },
+  "files": {
+    "model.safetensors": {"bytes": 4333941640, "sha256": "76c0ec2c3e27832fb19f886d5eb0afe37f03c5c32c4a796a7ce08cef119d2763", "tensors": 665, "dtype": "BF16"},
+    "audio_tokenizer/model.safetensors": {"bytes": 147143540, "sha256": "45984a872fdcf0b94cd0ec68822bbf26f0c6fcb580cfaba0f7fa3ee60355137f", "tensors": 203},
+    "tokenizer.json": {"bytes": 17908634, "sha256": "41927bd314d17d7d7fadb44e10cd0919f7b71528d7741596d8cbd15c6945ec44"},
+    "config.json": {"sha256": "17e3792551ef56b37e85bbd1e6e968f70dc5b4b14c96f1339d0be85e0ba46875"},
+    "processor_config.json": {"sha256": "dd756829f85a10d343c4488c7d3479d3dc782e6f35721b7dae2fb588f781fc4a"},
+    "generation_config.json": {"sha256": "5f069cac2df137d9ac81bdd7aee88d48052a3897f9761cc9ba2f357f93405b85"},
+    "audio_tokenizer/config.json": {"sha256": "04d24ad70085288c0c10a8788e470fabd0a786c27b772bfd90ea1cde1cf3ac6d"},
+    "chat_template.jinja": {"sha256": "ea74cc1d14319ed436dc0f37632893004d436913113e7605267f2b01694d65e4"},
+    "modeling_lfm3_omni.py": {"sha256": "9872e64112f9e255fba43212771226772af521e93f99c1984ecba1049664c465"},
+    "modeling_lfm3_vl.py": {"sha256": "06d98684d2f4322bf65140f206f0bf194d14f6587387cd354ad580c12585ff28"},
+    "modeling_lfm3.py": {"sha256": "e8cd5254ea99ce6bd731b57b10908c2e8b5010ce8315341f895a38484885eeab"},
+    "modeling_liquid_codec.py": {"sha256": "5ca87e1b6e0549b40dc90fad5ee9d55620e9defb78c67e19c5937208c8e14f74"},
+    "feature_extraction_lfm3_omni.py": {"sha256": "bafd4bcf85d17c0bbf5cf213633935a6b03c731e55a348e70b0ecaf5a876ef5e"},
+    "image_processing_lfm3_vl.py": {"sha256": "57db0cfa668bf89a6ff898874e1321e78c257d200f25c98e0ea52b30b8740088"},
+    "processing_lfm3_omni.py": {"sha256": "07f97f35ccd0262b586c8878251f46c6a84e1e15ed92b0072a3acd3a63d2de5f"}
+  },
+  "towers": {
+    "text_decoder": {"model_type": "lfm3", "layers": 24, "width": 2048, "ffn": 7680, "heads": 16, "kv_heads": 4, "head_dim": 128,
+                     "layer_types": "conv x13 (L_cache 7), full_attention x6 (rope 1e6, partial 0.5), sliding_attention x5 (window 256, rope 1e4)",
+                     "sandwich_norm": true, "vocab": 128000, "bos": 124894, "eos": 124900, "pad": 124893, "tied_head": true},
+    "vision_tower": {"model_type": "lfm3_vl_vision", "layers": 14, "width": 1024, "ffn": 2560, "heads": 16, "kv_heads": 8,
+                     "layer_types": "conv x8 (depthwise 3x3), full_attention x6 (bidirectional, axial 2-D rope theta 1e6)",
+                     "patch": 16, "temporal_patch": 2, "merge": 2, "norm_eps": 1e-5,
+                     "image_processor": {"min_pixels": 65536, "max_pixels": 2097152, "resample": "bicubic (torchvision, antialias)", "mean": 0.5, "std": 0.5}},
+    "vision_projector": {"layer_norm_eps": 1e-6, "in": 4096, "hidden": 4096, "out": 2048, "act": "gelu (erf)", "bias": true},
+    "audio_front_end": {"sample_rate": 16000, "n_fft": 400, "hop": 160, "window": "periodic hann 400", "mel_bins": 128,
+                        "mel": "slaney scale and norm, 0 to 8 kHz", "log": "log10, floor -12, (x + 4) / 4", "center": false},
+    "audio_downsampler": {"convs": "3x3 stride 2 (1->256) SiLU, depthwise 3x3 s2 + 1x1 SiLU, depthwise 3x3 s2 + 1x1 SiLU", "out": "4096 -> 768", "frames_per_token": 8},
+    "audio_encoder": {"model_type": "lfm2", "layers": 17, "width": 768, "ffn": 1792, "heads": 8, "kv_heads": 4, "head_dim": 96,
+                      "layer_types": "conv x10 (L_cache 3), full_attention x7 (causal, sliding window 32, rope 1e6)"},
+    "audio_projector": {"layer_norm_eps": 1e-5, "in": 768, "out": 2048, "act": "gelu (erf)"},
+    "depth_decoder": {"model_type": "lfm3", "layers": 3, "width": 1024, "ffn": 2816, "heads": 32, "kv_heads": 8, "head_dim": 32,
+                      "attention": "bidirectional over 12 codebook slots, rope 1e6, per-head sigmoid gate", "codebooks": 12,
+                      "codebook_size": 2017, "audio_eos_code": 2016, "maskgit_schedule": [4, 4, 4]},
+    "codebook_embedding": {"rows": 24204, "width": 2048, "feedback": "sum over the 12 codebooks"},
+    "codec_decoder": {"model_type": "liquid_codec", "fsq_levels": [8, 7, 6, 6], "quantizer_dim": 256, "width": 512, "layers": 8,
+                      "layer_types": "conv (L_cache 7) at 0,1,3,5,7, sliding_attention (window 30, rope 1e6) at 2,4,6",
+                      "heads": 8, "kv_heads": 2, "head_dim": 64, "sandwich_norm": true, "frame_stack": 6,
+                      "istft": {"n_fft": 1280, "hop": 320, "window": "hann 1280 (stored)"}, "sample_rate": 24000, "samples_per_frame": 1920},
+    "interleave": {"text": 6, "audio": 12}
+  },
+  "special_tokens": {"<|image|>": 125030, "<|video|>": 125029, "<|audio|>": 125031, "<|audio_out|>": 125032,
+                     "<|audio_start|>": 125012, "<|text_end|>": 125014, "<|mixed_start|>": 125015,
+                     "<|vision_start|>": 125009, "<|vision_end|>": 125010, "<|im_start|>": 124899, "<|im_end|>": 124900,
+                     "<think>": 124901, "</think>": 124902},
+  "official_gguf": {
+    "repo": "LiquidAI/LFM3-Omni-2B-GGUF", "revision": "d508b88f08a5b4286f2d2805a6a8d69a0ff44c72",
+    "LFM3-Omni-2B-F16.gguf": "9fde8072a7313d676591499d14ecf7f7ee2f1773cc9e4bdbdbeed4a87c5987f6",
+    "mmproj-LFM3-Omni-2B-F16.gguf": "361bc95192c7d9156b566fcd4e48930363b78218e493fb1be607456bd51586e3",
+    "LFM3-Omni-2B-Q8_0.gguf": "59118f661eaacb93d204723d76355b53347f0940b508c11412f6290fd49158d4",
+    "mmproj-LFM3-Omni-2B-Q8_0.gguf": "8a25f9d1931244429de404fccacfb7fb933970a36aa5688d2f5069f29c6b27b1"
+  },
+  "notorch_gguf": {
+    "tool": "tools/lfm3_omni_to_gguf SNAPSHOT OUT",
+    "lfm3-omni-2b-F16.gguf": {"sha256": "f17cd0bae02fbd8d1844031502d72e6b09ec66200dee152b1478c51786f483d4", "tensors": 747,
+                              "same_sha_on": ["polygon x86_64", "metal arm64"],
+                              "byte_identical_to_official_f16_pair": "745 of 745 tensors, tokens/merges/token_type identical",
+                              "added": ["a.mel_filters", "a.gen.wav.istft.window"],
+                              "skipped": "103 codec encoder tensors (encoder.*, frontend.*, to_quantizer.*, quantizer.project_in.*)"}
+  },
+  "fixtures": {
+    "grad.ppm": {"made_by": "lfm3_omni_probe fixtures", "sha256": "f599c5d1635754dcb990b794ff17e11710d1e47dcbeb5e425ae85fddca009d86"},
+    "tone.wav": {"made_by": "lfm3_omni_probe fixtures (1 s, 440 Hz, 16 kHz, 16-bit)", "sha256": "ed628002eaf310b12cad08d850b5d19db5e1d731358af13aeb6bbc6798d7a6c9"},
+    "test-1-positive.png": {"from": "llama.cpp tools/mtmd/tests", "sha256": "02ef128ec125a13f4ebca550fab584d189a794dcc597595b93da3d527593f343"},
+    "test-1.jpeg": {"from": "llama.cpp tools/mtmd", "sha256": "2dff664c0c8aaea18aff8cbe7e868845b775e90cdd7a0bac98df709b131deaa3"},
+    "speech.wav": {"from": "llama.cpp tools/mtmd/test-2.mp3 (cdeac0de...) through macOS afconvert -f WAVE -d LEI16@16000 -c 1", "sha256": "60fc78101adcd0da0a0556362ee5b826508b277d871724146440c91b68f4fe6a"}
+  },
+  "oracle": {
+    "what": "the published modules of this revision, imported from the repository's own .py files, weights from model.safetensors, run in float64 (eager attention); the feature extractor's _log_mel repeated in float64",
+    "where": "metal, existing venv ~/arianna/obliteratus/.venv: transformers 5.22.2, torch 2.15.0, torchvision 0.29.2 (nothing installed)",
+    "script_sha256": "2a1566839ca087add499fb19768dba5f4e8508471dfb9b93725eff24ba8d4e6b",
+    "python_is_not_a_deliverable": true
+  },
+  "reference_llama_cpp": {"polygon": "7d7f0287530bc8981690f361d8c1627dbae1c99a (existing build ~/q35w2/llama.cpp)", "metal": "b1c902f026d32535b5e8eae55e5e47b379e57672 (existing build ~/llama-master)"}
+}
