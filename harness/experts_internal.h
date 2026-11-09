@@ -11,6 +11,8 @@ struct nt_experts {
     char host[65], arch[64], norm_sha[65];
     nt_expert_body body;
     const gguf_file *frame_host;
+    const nt_arch *decoder;
+    nt_dims dims;
     float *frame;
     FILE *trace;
     uint32_t rng;

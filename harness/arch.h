@@ -54,6 +54,18 @@ const char *nt_strerror(int rc);
 typedef int (*nt_residual_fn)(void *user, int layer, int pos0, int n,
                               int width, float *residual);
 
+#define NT_DOE_DECODER_API 1
+
+/* CPU decoders offering DOE expose both sides of the FFN. The optional
+ * calibration uses the effective RMSNorm vectors in execution order:
+ * block input, FFN input, then the final norm (index 2 * n_layers). */
+typedef struct {
+    int (*forward)(void *model, kv_cache *kv, const int *tokens, int n, int pos0,
+                   float *logits, nt_residual_fn post_attention, nt_residual_fn post_block, void *user);
+    const gguf_file *(*describe)(const void *model, nt_dims *dims);
+    const float *(*norm)(const void *model, int index);
+} nt_doe_decoder;
+
 typedef struct {
     const char *const *names;    /* NULL-terminated list of supported names */
     void *(*load)(gguf_file *gf, nt_dims *dims);
@@ -95,7 +107,17 @@ typedef struct {
      * the same family's kv_free. */
     kv_cache *(*kv_new)(void *model, int max_seq);
     void      (*kv_free)(void *model, kv_cache *kv);
+    const nt_doe_decoder *doe; /* NULL for a decoder without native expert hooks. */
 } nt_arch;
+
+static inline kv_cache *nt_model_kv_new(const nt_arch *arch, void *model, nt_dims dims, int capacity) {
+    return arch->kv_new ? arch->kv_new(model, capacity) : kv_new(dims.n_layers, capacity, dims.kv_dim);
+}
+static inline void nt_model_kv_free(const nt_arch *arch, void *model, kv_cache *kv) {
+    if (!kv) return;
+    if (arch->kv_free) arch->kv_free(model, kv);
+    else kv_free(kv);
+}
 
 /* The checks every family needs and none should be writing for itself: token
  * ids inside the vocabulary, a sane group size, a position that fits, a cache

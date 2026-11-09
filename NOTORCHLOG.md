@@ -13,6 +13,27 @@ Newest entries on top.
 
 ---
 
+## 2026-11-09 — the Qwen3.5 hybrid hosts the DOE parliament
+
+Qwen3.5 now dispatches the two DOE hooks on its own decoder and keeps its
+recurrent cache on that decoder for waking turns, calibration and dreams.
+Portable fingerprints read the effective RMSNorm scales, including Qwen3.5's
+source-layout offset. The existing dense CPU forward remains available.
+
+On Linux x86-64, scalar F32, four attention threads, the separate Qwen3.5 BPE
+and two greedy choices, OneJev-0.8B and OneJev1.6-0.8B reproduced the plain
+token IDs and printed logits of `c8c57ac` on `Check this file`. On each host
+synchronous and asynchronous learning produced identical event traces and
+GGUF bytes. Both restored generations reproduced the same continuation on
+`Check it again`. SHA-256 of each learned spore:
+
+- OneJev: `ee590651c166f362d02009619ddcf848a860f465e447f06c5e3d6e36d0efd509`
+- OneJev 1.6: `756ff74e554f3a23ad681198847f69e034ea7712b7ccfd8bf0ac2a01f0aa72c8`
+
+`make test_qwen35` exercises both hook boundaries in each fixture layer,
+callback abort and recurrent restart. The existing consolidation, portable
+spore and private dream gates also pass on their original fixtures.
+
 ## 2026-11-09 — Private dreams across Qwen3 and Llama 3.2
 
 A waking turn can now hand the resident dense decoder to the DOE consolidation

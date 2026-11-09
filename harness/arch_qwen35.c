@@ -222,8 +222,8 @@ static void attention_heads(void *ptr,int h0,int h1) {
         }
     }
 }
-static int q35_forward_residual(void *ptr,kv_cache *kv,const int *tokens,int n,int pos,
-                                float *logits,nt_residual_fn callback,void *user) {
+static int q35_forward_hooks(void *ptr,kv_cache *kv,const int *tokens,int n,int pos,
+                             float *logits,nt_residual_fn post_attention,nt_residual_fn post_block,void *user) {
     q35_model *m=ptr;if(!m)return NT_E_ARG;
     int rc=nt_check_call(kv,tokens,n,pos,m->V,m->L,0);if(rc)return rc;
     if(kv->kv_dim!=-35)return NT_E_CACHE;
@@ -273,12 +273,13 @@ static int q35_forward_residual(void *ptr,kv_cache *kv,const int *tokens,int n,i
         }
         mm(tmp,&a->o,out,n);
         for(size_t i=0;i<(size_t)n*E;i++)x[i]+=tmp[i];
+        if(post_attention && (rc=post_attention(user,l,pos,n,E,x)))goto done;
         for(int t=0;t<n;t++)rmsnorm(norm+(size_t)t*E,x+(size_t)t*E,a->ffn_norm,E,m->eps);
         mm(gate,&a->gate,norm,n);mm(up,&a->up,norm,n);
         for(size_t i=0;i<(size_t)n*m->F;i++)gate[i]=silu(gate[i])*up[i];
         mm(tmp,&a->down,gate,n);
         for(size_t i=0;i<(size_t)n*E;i++)x[i]+=tmp[i];
-        if(callback && (rc=callback(user,l,pos,n,E,x)))goto done;
+        if(post_block && (rc=post_block(user,l,pos,n,E,x)))goto done;
     }
     if(logits){rmsnorm(norm,x+(size_t)(n-1)*E,m->norm,E,m->eps);mm(logits,&m->head,norm,1);}
     cache->next=pos+n;
@@ -286,10 +287,26 @@ done:
     free(x);free(norm);free(q);free(z);free(k);free(aa);free(bb);free(out);free(tmp);free(gate);free(up);free(scores);
     return rc;
 }
+static int q35_forward_residual(void *m,kv_cache *kv,const int *tokens,int n,int pos,
+                                float *logits,nt_residual_fn callback,void *user) {
+    return q35_forward_hooks(m,kv,tokens,n,pos,logits,NULL,callback,user);
+}
+static const gguf_file *q35_describe(const void *model,nt_dims *dims) {
+    const q35_model *m=model;
+    *dims=(nt_dims){m->L,0,m->V};
+    return m->gf;
+}
+static const float *q35_doe_norm(const void *model,int index) {
+    const q35_model *m=model;
+    if(index<0 || index>2*m->L)return NULL;
+    if(index==2*m->L)return m->norm;
+    return index%2 ? m->layers[index/2].ffn_norm : m->layers[index/2].in_norm;
+}
+static const nt_doe_decoder q35_doe={q35_forward_hooks,q35_describe,q35_doe_norm};
 static int q35_forward(void *m,kv_cache *kv,const int *tokens,int n,int pos,float *logits) {
     return q35_forward_residual(m,kv,tokens,n,pos,logits,NULL,NULL);
 }
 static const char *const names[]={"qwen35",NULL};
 const nt_arch nt_arch_qwen35={.names=names,.load=q35_load,.free=q35_free,
     .forward=q35_forward,.forward_residual=q35_forward_residual,
-    .kv_new=q35_kv_new,.kv_free=q35_kv_free};
+    .kv_new=q35_kv_new,.kv_free=q35_kv_free,.doe=&q35_doe};
