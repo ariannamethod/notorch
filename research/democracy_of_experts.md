@@ -12,10 +12,10 @@ The `doe/doe.c` line references use the [standalone source at `7265af0`](https:/
 
 ## 1. What DoE is
 
-A conventional mixture-of-experts model fixes its experts when training ends and routes each token to
-a few of them; the harness's OLMoE family works this way, with softmax over all experts and the top k
-(`notorch/harness/arch_olmoe.c:15-16`). DoE leaves the pretrained host untouched and adds experts
-whose number and weights change while it is used.
+OLMoE trains a bank of feed-forward experts at each block. During inference its router scores
+every bank and executes the top k. DoE adds a population whose size and weights can change between
+turns. Both populations participate in the same forward when a sparse body hosts the parliament.
+[Sparse decoder](../harness/arch_olmoe.c)
 
 Per host layer, `doe.c` keeps a parliament of 2 to 16 experts (`doe/doe.c:111-112`). An expert is a
 pair of thin matrices, A [dim, rank] and B [rank, dim] with rank 16, plus a frequency, a vitality
@@ -186,6 +186,53 @@ and their mixture weights. On the same body, spores taken immediately before and
 dream elect the same seats on that replay. Their updated factors can supply a different
 correction. The spore carries the living seats. Each native expert ID belongs to the
 receiving body's own router at that particular block.
+
+On the official OLMoE-1B-7B-0924-Instruct Q4_0, the spore saved after one
+Gemma waking turn was projected from width 640 into a 2,048-dimensional residual. OLMoE selected the cue
+` sleep`. On that input, living seats 1 and 3 received gates 0.648 and 0.352.
+The router in their block executed banks 22, 7, 29, 60, 32, 1, 33 and 59, listed
+in the order their outputs were summed. Across the seven private input positions
+seats 0 and 1 each spoke six times and seats 2 and 3 once each. All four wrote
+their A/B factors and cursors to the spore.
+
+The comma in “At the lighthouse, Miro reaches for his” makes the effect visible
+on replay. It is input ID 13 at position 4. In block 12 its eighth native FFN
+expert was bank 38 in plain inference, 28 after seating the imported parliament
+and 38 after OLMoE recorded its dream. At block 8 the native top-eight membership
+and order had held across both probes while the applied weights moved. The
+two archived parliaments cast identical living ballots on all 18 input positions.
+Copying only the four founders' post-dream A/B into the pre-dream archive
+reproduced all 288 native routes and both 50,304-entry logit vectors exactly.
+This intervention holds the waking archive's cursors and clocks fixed while
+restoring the learned correction that the router and output head read.
+
+The same parliament can meet a different routing geometry when the weight file changes.
+The official Q4_0 and Q4_K_M bodies contain identical F32 router matrices at all 16 blocks
+(8,388,608 bytes in total). With plain inference, switching bodies changed which eight banks
+ran at 132 of the 288 matched block/position pairs. The other weights influence the vector
+that reaches each fixed router. When both recorded histories crossed to Q4_K_M, the receiving
+body recalibrated the 32 anchors and preserved every byte of the living A/B and voting vectors.
+On “At the lighthouse, Miro reaches for his”, the awake history generated “ bag” and the
+post-dream history generated “ phone” as their first token. On Q4_0 both generated “ bag”.
+[Router and spore tensors](../experiments/doe_spores/olmoe-tensors.tsv) ·
+[Weight-swap routes](../experiments/doe_spores/olmoe-quantization.tsv)
+
+![Native expert membership and applied weights per OLMoE block for seating, dreaming and changing quantization](olmoe-routing.svg)
+
+Each block aggregates the same 18 positions across two prefixes. The upper panel counts changes
+in top-eight membership. On Q4_0 both parliament interventions cross that boundary at the same
+comma in block 12, so their curves coincide. The lower panel measures the mean L1 distance
+between native mixture weights, giving unselected banks weight zero. Its bottom tick marks
+exact equality and positive values use a logarithmic scale.
+[Per-block measurements](../experiments/doe_spores/olmoe-routes.tsv) ·
+[Reproduce the comparison in AML](../experiments/doe_spores/olmoe.aml)
+
+Repeated sleep can move a preference in either direction with the waking history fixed. After
+one, two, four and eight private episodes on Q4_0, the log odds of ` key` over ` bell` for
+“Every night the lighthouse keeper carries a” shifted by +0.021, −0.086, +0.031 and −0.045
+from the waking spore. At eight episodes the archive still recorded one waking turn and 24
+waking elections, alongside 48 private choices and 56 private elections.
+[Sleep series](../experiments/doe_spores/olmoe-sleep-series.tsv)
 
 ## 5. Claims and probes
 

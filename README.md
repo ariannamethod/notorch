@@ -174,6 +174,15 @@ reference parity gate. Six neutral fixtures and the complete frozen
 [measured results](docs/validation/embeddinggemma2-validation-2026-11-05.json)
 record the source, checkpoint and tokenizer boundary.
 
+**Qwen3-Embedding** is the second encoder on the same API: a causal Qwen3
+decoder read to its final norm, last-token pooling over the appended
+`<|endoftext|>`, 1024-dimensional normalized output. Its byte-level tokenizer
+runs in C through the exact Qwen3 split over NFC. The
+[encoder guide](docs/QWEN3EMBEDDING.md) covers conversion, text mode and gates.
+On the pinned 0.6B checkpoint the model card's four published scores agree within
+3e-7, and repeat runs give byte-identical vectors. The official-ID tokenizer gate
+and the vector-parity gate are built and wait for their references.
+
 fuck torch — but also, you do not need llama.cpp to *run* what you built.
 The CPU, Metal and CUDA paths live here. Packed matrices stay packed through
 their kernels; the PEN7 path owns its immutable parameters. The engineering
@@ -401,8 +410,22 @@ for state in olmo-awake olmo-dream; do
 done
 ```
 
+On Q4_0 the comma in “At the lighthouse, Miro reaches for his” has token ID
+13. In block 12 the last of its eight FFN experts was **38** in plain inference,
+**28** with the imported Gemma spore and **38** after one recorded OLMoE
+dream. On this prompt plain generation began “ phone”, and the imported
+parliament began “ bag”. Preview preserved the 705,888-byte awake spore.
+Blocking and worker sleep produced the same 706,048-byte spore.
+
+Both saved histories also crossed to Q4_K_M. The Harness kept the living A/B and
+voting vectors byte for byte and aligned the spore to the receiving weights. On
+the same prompt the awake spore generated “ bag” first and the post-dream spore
+generated “ phone”. Restoring the two spores to Gemma changed its next-token
+log odds for ` key` over ` bell` by −0.130377 on that prompt.
+
 [The two selections and the portable state](research/democracy_of_experts.md#two-selections-on-a-sparse-body)
 · [AML experiment](experiments/doe_spores/olmoe.aml)
+· [Weights, scores and reproduction](NOTORCHLOG.md#2026-11-09--a-comma-crosses-a-native-olmoe-routing-boundary)
 
 The [SmolLM2-360M experiment](experiments/doe_spores/transplant.aml) moves a
 single seat's A/B between two GGUF spores and probes fresh conversations.

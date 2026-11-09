@@ -12,6 +12,10 @@ embeddinggemma2_score
 test_embeddinggemma2
 test_embeddinggemma2_text
 test_embeddinggemma2_score
+/qwen3embedding_encode
+/qwen3embedding_to_gguf
+/test_qwen3embedding
+/test_qwen3embedding_text
 notorch_test
 notorch_test_gpu
 infer_gemma

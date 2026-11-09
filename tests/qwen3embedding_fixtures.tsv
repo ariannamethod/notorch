@@ -1,0 +1,28 @@
+en-query-01	query	What is the capital of China?
+en-doc-01	document	The capital of China is Beijing.
+en-contractions	document	It's 3:45 p.m. and we're late, aren't we? I'll call O'Brien; they'd've known.
+en-case	document	THE FOX'S TAIL: WE'RE SEEING IT, AREN'T WE? I'M SURE THEY'LL AGREE.
+en-numbers	document	Version 2.0.1 costs $1,299.99 (about €1,180) on 2024-06-05 at 07:30.
+en-code	document	def f(x):    return x**2  # square, see https://example.com/a?b=1&c=2
+en-ident	document	camelCase snake_case kebab-case SCREAMING_CASE __dunder__ x86_64
+en-query-02	query	how do i reset my password
+ru-01	document	Привет, мир! Как дела?
+ru-02	query	Съешь же ещё этих мягких французских булок, да выпей чаю.
+ru-03	document	Ёлка, щука и объём — 12 букв; «ёж» в кавычках.
+he-01	document	שלום עולם
+he-02-niqqud	document	בְּרֵאשִׁית בָּרָא אֱלֹהִים
+he-03	query	מה שלומך היום? 2024 שנה טובה!
+ar-01	document	مرحبا بالعالم ١٢٣
+hi-01	document	नमस्ते दुनिया, यह एक परीक्षा है।
+cjk-01	document	日本語のテキストと中文混合 text.
+ko-01	document	안녕하세요 세계
+emoji-01	document	I ❤️ notorch 🔥🔥 👨‍👩‍👧 🇮🇱 1️⃣
+emoji-02	query	Is 😀 happier than 🙂?
+symbols-01	document	½ ² Ⅻ ① ∑ ∞ ≠ ≈ → ← ‰ ° ™ ©
+ws-01	document	two  spaces   three    four
+punct-01	document	"quoted" 'single' (paren) [bracket] {brace} <angle> ... ?! !!! --- ___
+mixed-01	document	Lexer: if(x<0){y=-x;}else{y=x;} // ok — Привет שלום 😀
+fr-01	document	Ça va? Où est l'hôtel? Garçon, un café crème!
+de-01	document	Straße, Größe, Übermaß – Fußgängerübergänge.
+single-01	document	x
+long-01	document	Paragraph 1: the field resonates at 10 Hz (≈2π rad/s); Поле резонирует на частоте 10 Гц; שדה התהודה נמדד. 🔥 Score: 1/100. Paragraph 2: the field resonates at 20 Hz (≈4π rad/s); Поле резонирует на частоте 20 Гц; שדה התהודה נמדד. 🔥 Score: 2/100. Paragraph 3: the field resonates at 30 Hz (≈6π rad/s); Поле резонирует на частоте 30 Гц; שדה התהודה נמדד. 🔥 Score: 3/100. Paragraph 4: the field resonates at 40 Hz (≈8π rad/s); Поле резонирует на частоте 40 Гц; שדה התהודה נמדד. 🔥 Score: 4/100. Paragraph 5: the field resonates at 50 Hz (≈10π rad/s); Поле резонирует на частоте 50 Гц; שדה התהודה נמדד. 🔥 Score: 5/100. Paragraph 6: the field resonates at 60 Hz (≈12π rad/s); Поле резонирует на частоте 60 Гц; שדה התהודה נמדד. 🔥 Score: 6/100. Paragraph 7: the field resonates at 70 Hz (≈14π rad/s); Поле резонирует на частоте 70 Гц; שדה התהודה נמדד. 🔥 Score: 7/100. Paragraph 8: the field resonates at 80 Hz (≈16π rad/s); Поле резонирует на частоте 80 Гц; שדה התהודה נמדד. 🔥 Score: 8/100. Paragraph 9: the field resonates at 90 Hz (≈18π rad/s); Поле резонирует на частоте 90 Гц; שדה התהודה נמדד. 🔥 Score: 9/100. Paragraph 10: the field resonates at 100 Hz (≈20π rad/s); Поле резонирует на частоте 100 Гц; שדה התהודה נמדד. 🔥 Score: 10/100. Paragraph 11: the field resonates at 110 Hz (≈22π rad/s); Поле резонирует на частоте 110 Гц; שדה התהודה נמדד. 🔥 Score: 11/100. Paragraph 12: the field resonates at 120 Hz (≈24π rad/s); Поле резонирует на частоте 120 Гц; שדה התהודה נמדד. 🔥 Score: 12/100. Paragraph 13: the field resonates at 130 Hz (≈26π rad/s); Поле резонирует на частоте 130 Гц; שדה התהודה נמדד. 🔥 Score: 13/100. Paragraph 14: the field resonates at 140 Hz (≈28π rad/s); Поле резонирует на частоте 140 Гц; שדה התהודה נמדד. 🔥 Score: 14/100. Paragraph 15: the field resonates at 150 Hz (≈30π rad/s); Поле резонирует на частоте 150 Гц; שדה התהודה נמדד. 🔥 Score: 15/100. Paragraph 16: the field resonates at 160 Hz (≈32π rad/s); Поле резонирует на частоте 160 Гц; שדה התהודה נמדד. 🔥 Score: 16/100. Paragraph 17: the field resonates at 170 Hz (≈34π rad/s); Поле резонирует на частоте 170 Гц; שדה התהודה נמדד. 🔥 Score: 17/100. Paragraph 18: the field resonates at 180 Hz (≈36π rad/s); Поле резонирует на частоте 180 Гц; שדה התהודה נמדד. 🔥 Score: 18/100. Paragraph 19: the field resonates at 190 Hz (≈38π rad/s); Поле резонирует на частоте 190 Гц; שדה התהודה נמדד. 🔥 Score: 19/100. Paragraph 20: the field resonates at 200 Hz (≈40π rad/s); Поле резонирует на частоте 200 Гц; שדה התהודה נמדד. 🔥 Score: 20/100.

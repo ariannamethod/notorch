@@ -1,0 +1,92 @@
+{
+  "model": "Qwen/Qwen3-Embedding-0.6B",
+  "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+  "revision_last_modified": "2026-04-20T02:45:58.000Z",
+  "license": "apache-2.0",
+  "how_pinned": "Hub API /api/models/Qwen/Qwen3-Embedding-0.6B?blobs=true read 2026-11-09 for the revision, git blob IDs and LFS sha256; files fetched with `hf download --revision 97b0c614…` (huggingface_hub 1.16.4) and every sha256 below recomputed locally with shasum -a 256 on neo",
+  "files": {
+    "model.safetensors": {"bytes": 1191586416, "sha256": "0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd", "git_blob": "9116264a405846ebfe4e95556b63b1ca07c892a0"},
+    "tokenizer.json": {"bytes": 11423705, "sha256": "def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a", "git_blob": "18a4abbf4a408dc534006a455544dcc195f356d2"},
+    "config.json": {"bytes": 727, "sha256": "b5bf1f51fc45be473a54718cef92448d90a1be001bf9b9a44b8c7f10a19feaa9", "git_blob": "cef2749ee93607b8f9a58ec72f4f6bfaf874e71d"},
+    "tokenizer_config.json": {"bytes": 9706, "sha256": "253153d0738ceb4c668d2eff957714dd2bea0b56de772a9fdccd96cbf517e6a0", "git_blob": "7345216a0785dc7086e8c245b2a9d3896ce2b756"},
+    "config_sentence_transformers.json": {"bytes": 215, "sha256": "10667c72ddb772627bf1780cb7f86af8e2ae0032b8c243c731172064105c6961", "git_blob": "76aef3ade63553ebb698fe3c2a3264040ed093f8"},
+    "modules.json": {"bytes": 349, "sha256": "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf", "git_blob": "952a9b81c0bfd99800fabf352f69c7ccd46c5e43"},
+    "1_Pooling/config.json": {"bytes": 313, "sha256": "37bf193fa101f19101bfad9c31d3eb0f786e247b7b1e5cb7f007d730eed1ddbd", "git_blob": "b6291baabbc39f9792d6759883a47d7d5bd0fbcf"},
+    "README.md": {"bytes": 17237, "sha256": "c34d9b7e5a267ad3fdd13227a253686bc90844ff4744a2a6a86c7c905e3d06f3", "git_blob": "00a82ea60dfb1d8aed899c16e2b4f12673cd2f79"},
+    "generation_config.json": {"bytes": 117, "sha256": "28396d421a2108acce96383f6a7de78008f7f1b17f807958f3c14c51dbfb65fb", "git_blob": "d46f1983345269c582611bbedb3ca0a13f8e5f7b"}
+  },
+  "config": {
+    "architectures": ["Qwen3ForCausalLM"], "model_type": "qwen3", "transformers_version": "4.51.3",
+    "num_hidden_layers": 28, "hidden_size": 1024, "intermediate_size": 3072, "hidden_act": "silu",
+    "num_attention_heads": 16, "num_key_value_heads": 8, "head_dim": 128, "attention_bias": false,
+    "rms_norm_eps": 1e-06, "rope_theta": 1000000, "rope_scaling": null, "max_position_embeddings": 32768,
+    "use_sliding_window": false, "sliding_window": null, "tie_word_embeddings": true, "vocab_size": 151669,
+    "torch_dtype": "bfloat16", "bos_token_id": 151643, "eos_token_id": 151643
+  },
+  "checkpoint": {
+    "safetensors_header_bytes": 33384, "metadata": {"format": "pt"}, "tensors": 310, "dtype": "BF16",
+    "parameters": 595776512,
+    "names": "embed_tokens.weight [151669,1024], norm.weight [1024], and per block layers.N.{input_layernorm,post_attention_layernorm}.weight [1024], self_attn.{q_norm,k_norm}.weight [128], self_attn.q_proj [2048,1024], k_proj/v_proj [1024,1024], o_proj [1024,2048], mlp.{gate,up}_proj [3072,1024], mlp.down_proj [1024,3072]; no 'model.' prefix, no lm_head"
+  },
+  "architecture": {
+    "source": "transformers modeling_qwen3.py and modeling_rope_utils.py (read in a local transformers 4.57.6 install; config.json names 4.51.3), Apache-2.0",
+    "attention": "causal (is_causal = True); per-head RMSNorm of Q and K over head_dim before RoPE, none on V; scaling head_dim**-0.5; KV head of query head h is h / (16/8)",
+    "rope": "default type, inv_freq = 1/(theta**(arange(0,128,2)/128)) in float32, angle = position*inv_freq in float32, NEOX rotate_half (pairs i, i+64); positions = cache_position = arange(seq_len) when no position_ids are passed, also under padding",
+    "rmsnorm": "x * rsqrt(mean(x**2) + eps) in float32, then weight * that; no +1 offset",
+    "block": "x + o(attn(input_layernorm(x))); then x + down(silu(gate(n)) * up(n)) with n = post_attention_layernorm(x)",
+    "output": "last_hidden_state = norm(x) after block 28; no head is used"
+  },
+  "tokenizer": {
+    "type": "byte-level BPE (tokenizers): model BPE, byte_fallback false, ignore_merges false, continuing_subword_prefix '', end_of_word_suffix '', unk_token null",
+    "normalizer": "NFC",
+    "pre_tokenizer": "Sequence[Split(Regex, behavior Isolated, invert false), ByteLevel(add_prefix_space false, use_regex false)]",
+    "split_regex": "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
+    "vocab_entries": 151643, "added_tokens": 26, "added_special": 14, "added_not_special": 12, "total_ids": 151669, "merges": 151387,
+    "post_processor": "Sequence[ByteLevel, TemplateProcessing single = [A, SpecialToken <|endoftext|> (151643)]]",
+    "bos": "none: add_bos_token false, bos_token null, no BOS in the template",
+    "eos_appended": 151643,
+    "tokenizer_config_eos_token": "<|im_end|> (151645); not the token the post-processor appends",
+    "pad_token": "<|endoftext|>", "model_max_length": 131072, "tokenizer_class": "Qwen2Tokenizer"
+  },
+  "pooling": {
+    "modules": "modules.json: 0 Transformer, 1 1_Pooling, 2 2_Normalize (sentence_transformers.models.Normalize; it has no files, the directory is absent from the repository)",
+    "pooling_config": {"word_embedding_dimension": 1024, "pooling_mode_lasttoken": true, "include_prompt": true, "all other modes": false},
+    "last_token_rule": "sentence-transformers 5.1.0 Pooling: values, indices = attention_mask.flip(1).max(1); gather position seq_len - indices - 1, the last position whose mask is 1, for left or right padding",
+    "readme_transformers_recipe": "last_token_pool: with left padding the last column, otherwise attention_mask.sum(1) - 1; tokenizer padding_side='left'; F.normalize(p=2, dim=1)",
+    "eos_and_padding": "the post-processor appends <|endoftext|> to every sequence, so the pooled position is that token; padding uses the same ID (pad_token <|endoftext|>) but carries mask 0 and is never pooled",
+    "normalize": "x / max(||x||_2, 1e-12)",
+    "output_dim": 1024, "mrl_dims": "model card: user-defined dimensions 32..1024"
+  },
+  "prompts": {
+    "source": "config_sentence_transformers.json",
+    "query": "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
+    "document": "",
+    "default_prompt_name": null, "similarity_fn_name": "cosine",
+    "readme_format": "get_detailed_instruct: f'Instruct: {task_description}\\nQuery:{query}' (no space after 'Query:'); documents carry no instruction",
+    "readme_inconsistency": "the card's TEI curl example writes 'Query: ' with a space; the pinned prompt and the Transformers recipe have none, and this encoder follows them"
+  },
+  "sentence_transformers_behavior": {
+    "source": "sentence-transformers v5.1.0 models/Transformer.py and models/Pooling.py, read 2026-11-09",
+    "strip": "Transformer.tokenize applies str(s).strip() to prompt + text; the Transformers recipe does not strip, so this encoder's text mode refuses leading or trailing whitespace",
+    "max_seq_length": "min(max_position_embeddings 32768, tokenizer.model_max_length 131072) = 32768; the repository has no sentence_bert_config.json",
+    "truncation": "longest_first at max_seq_length; this encoder refuses instead of truncating"
+  },
+  "published_scores": {
+    "source": "README.md at the pinned revision (sha256 c34d9b7e…06f3), Transformers usage block",
+    "queries": ["What is the capital of China?", "Explain gravity"],
+    "documents": ["The capital of China is Beijing.", "Gravity is a force that attracts two bodies towards each other. It gives weight to physical objects and is responsible for the movement of planets around the sun."],
+    "transformers_scores": [[0.7645568251609802, 0.14142508804798126], [0.13549736142158508, 0.5999549627304077]],
+    "sentence_transformers_scores_rounded": [[0.7646, 0.1414], [0.1355, 0.6000]],
+    "vllm_scores": [[0.7620252966880798, 0.14078938961029053], [0.1358368694782257, 0.6013815999031067]]
+  },
+  "notorch_artifacts": {
+    "converter": "tools/qwen3embedding_to_gguf.c",
+    "model_gguf": {"bytes": 1191575136, "sha256": "a4bfbbbd49850f82b7eb8e8b4ba4514648685ae49578ca2ae99cd011656490a2", "tensors": 310, "repeat_conversion": "identical sha256"},
+    "tokenizer_gguf": {"bytes": 5922016, "sha256": "710d5b0ce98fc2c3f53f0185951054e46ee750ad3d3e227a1072a684e72c6a25", "repeat_conversion": "identical sha256"}
+  },
+  "open_questions": [
+    "Official token IDs for tests/qwen3embedding_fixtures.tsv: no approved tool in this tree produces them. The precedent oracle tests/qwen35_tokenizer_parity.py uses Python tokenizers, and llama.cpp is excluded; the reference needs a hand Oleg names, with the tool and version recorded.",
+    "Official float32 vectors for tests/check_qwen3embedding_parity.sh: they need a float32 forward of this checkpoint by sentence-transformers or Transformers at batch size 1, with library versions recorded.",
+    "Whether the EG line wants the 'query' condition with the card's web-search instruction or a task-specific instruction: the card recommends tailoring the instruction per task; this encoder offers only the pinned upstream prompt."
+  ]
+}

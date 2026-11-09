@@ -301,6 +301,62 @@ def founders():
     generate(q0, 'q0', 'q0-factors', 'q0-factors')
     compare('q0', 'q0-dream', 'q0-factors', 'factor-replay')
 
+def series_cue(night, episode, seen):
+    start = cat(cat('doe dream-start cycle=', night), ' cue=')
+    end = cat(cat('doe dream-end cycle=', night), ' choices=')
+    a = text_find(episode, start)
+    b = text_find(episode, ' literal="')
+    c = text_find(episode, '" seat=')
+    d = text_find(episode, end)
+    assert(a >= 0 and b > a+text_len(start) and c > b+10 and d > c, 'sleep series cycle')
+    cue = text_slice(episode, a+text_len(start), b)
+    literal = text_slice(episode, b+10, c)
+    assert(record_has(seen, cue) == 0, 'repeated dream cue')
+    record_set(seen, cue, 1)
+    ending = text_slice(episode, d+text_len(end), text_len(episode))
+    choices = text_slice(ending, 0, text_find(ending, ' elections='))
+    lines('sleep-cues.tsv', col(col(col(night, cue), literal), choices))
+    return cue
+
+def sleep_scores(night, cue, readings, awake):
+    left = record_get(awake, 'left_id')
+    right = record_get(awake, 'right_id')
+    assert(left == record_get(readings, 'left_id') and right == record_get(readings, 'right_id'), 'sleep series target IDs')
+    i = 0
+    while i < 2:
+        index = text_fixed(i, 0)
+        key = cat('probe', index)
+        logits = record_get(readings, key)
+        control = record_get(awake, key)
+        margin = logits[left] - logits[right]
+        delta = margin - (control[left] - control[right])
+        row = col(col(night, cue), cat('P', index))
+        lines('sleep-series.tsv', col(col(row, text_fixed(margin, 9)), text_fixed(delta, 9)))
+        i = i + 1
+
+# Every worker reopens the preceding spore. Frozen scoring runs in its own
+# process at the prespecified nights and never writes the next worker's input.
+def series():
+    lines('sleep-series.tsv', 'night\tcue_id\tprobe\tlog_odds_key_over_bell\tdelta_from_awake')
+    lines('sleep-cues.tsv', 'night\tcue_id\tliteral\tchoices')
+    seen = record_new()
+    awake = checkpoint_load(path('q0-awake.amlck'))
+    sleep_scores('0', '-', awake, awake)
+    previous = 'q0-dream'
+    first = path('q0-dream.trace')
+    cue = series_cue('1', file_read_slice(first, 0, file_size(first)), seen)
+    sleep_scores('1', cue, checkpoint_load(path('q0-dream.amlck')), awake)
+    n = 2
+    while n <= 8:
+        night = text_fixed(n, 0)
+        label = cat('q0-night', night)
+        episode = offline(q0, previous, label, 'worker')
+        cue = series_cue(night, episode, seen)
+        if n == 2 or n == 4 or n == 8:
+            sleep_scores(night, cue, score(q0, label, label), awake)
+        previous = label
+        n = n + 1
+
 cli = list_get(read_line(), 0)
 helper = list_get(read_line(), 0)
 gemma = list_get(read_line(), 0)
@@ -369,4 +425,5 @@ offline(gemma, 'q0-dream', 'return-dream', 'bind')
 measure(gemma, 'gemma', 'return-awake', 'return-awake')
 measure(gemma, 'gemma', 'return-dream', 'return-dream')
 founders()
+series()
 PRINT 'OLMOE_SPORE_ROUTES_OK'

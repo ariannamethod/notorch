@@ -39,8 +39,8 @@ int bpe_encode_raw(const bpe_tokenizer *t, const char *text, int *out_ids, int c
 /* Explicitly parse CONTROL and USER_DEFINED token literals, e.g. a complete
  * caller-rendered chat prompt. Ordinary bpe_encode keeps CONTROL literals raw.
  * The qwen35-ascii pre-type returns zero for non-ASCII input (NFC boundary).
- * qwen35 returns zero for invalid UTF-8 and for text its NFC quick check
- * refuses (examples/unicode_qwen35.h). Plain bpe_encode does the same. */
+ * qwen35 and qwen3 return zero for invalid UTF-8 and for text their NFC quick
+ * check refuses (examples/unicode_qwen35.h). Plain bpe_encode does the same. */
 int bpe_encode_special(const bpe_tokenizer *t, const char *text, int *out_ids, int cap);
 
 /* Decode one token id -> its UTF-8 bytes, appended to buf (cap incl. NUL).

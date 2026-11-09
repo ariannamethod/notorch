@@ -11,6 +11,212 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-09 — A comma crosses a native OLMoE routing boundary
+
+One Gemma 3-270M-IT Q8_0 waking turn (“Miro is the lighthouse keeper. Every
+night Miro carries a key. At sunrise the lighthouse keeper returns home.”)
+produced a 221,536-byte portable spore with 24 waking elections. The Harness
+projected it from Gemma layer 9, width 640, into OLMoE layer 8, width 2048.
+OLMoE-1B-7B-0924-Instruct has 16 blocks and selects 8 of 64 native FFN
+experts per block. Each of the two fixed prefixes started with a fresh KV and
+a freshly restored parliament. P0 is “Every night the lighthouse keeper
+carries a” (8 OLMoE tokens) and P1 is “At the lighthouse, Miro reaches for
+his” (10). In the sparse vocabulary ` key` is 2234 and ` bell` is 17487.
+The C scorer verified that appending each literal extends the entire prefix by
+exactly that one ID. Every checkpoint contains two full logit arrays. The AML
+experiment computes the softmax and the log-odds margin from those arrays.
+
+**Sleep and writes.** The Q4_0 parliament selected cue 7, ` sleep`, with
+seat 1 contributing the most response energy. Its six greedy choices decoded
+to ` Byrne, a first-`. At the cue, living seats 1 and 3 voted and block 8
+summed banks 22, 7, 29, 60, 32, 1, 33 and 59. Across the seven private inputs
+the four founders won 6, 6, 1 and 1 elections each. Independent GGUF reads
+found changed A, B and cursor in all four, with every other state tensor
+byte-identical. Preview preserved the 705,888-byte awake GGUF
+(`386523dccd67cbf9b15cab40c0bedc98be0e8a149438ba51bc69508f0339fc1b`).
+The foreground and worker produced the same 706,048-byte learned GGUF
+(`c6e63b13b96629d52b73d2f23d92de6e104a623ffc8385455ba1f597358647c8`).
+[All 112 private native mixtures and living ballots](experiments/doe_spores/olmoe-dream-routes.tsv).
+
+**A/B intervention.** Holding every field of the Q4_0 waking archive fixed,
+transplanting only seat 0's post-dream A/B shifted P0's key/bell log odds by
++0.038973. Seat 3 alone shifted them by −0.017140. All four founders together
+gave +0.020664 and exactly reproduced both 50,304-entry dreamed logit arrays
+and all 288 prefix routes, including the applied weights and living ballots.
+The hash of the two-probe AML checkpoint was
+`f7d4d9bc812e204ac48eb561aef3c7a62551721e22eb93c0eb97fe804a108ebe`.
+[All single-seat interventions](experiments/doe_spores/olmoe-seats.tsv).
+
+**Successive private episodes.** A branch of the Q4_0 parliament slept eight
+times from the same waking history. The cues, in order, were sleep, circle,
+winter, river, walk, quiet, small and bread. Each episode made six choices and
+held seven private elections. The last GGUF still held one waking turn and
+24 waking elections, alongside 8 dreams, 48 private choices and 56 private
+elections. On P0 the log-odds shift from awake at nights 1, 2, 4 and 8 was
++0.020664, −0.086269, +0.030560 and −0.045143. On P1 it was −0.003660,
+−0.038589, +0.065842 and +0.020678. The final spore's SHA-256 was
+`8fc669397de87b92c41afd0d770bc2e548cd1807e0af6ae21fb5f6f5b1591edc`.
+[Scores](experiments/doe_spores/olmoe-sleep-series.tsv) ·
+[Cues](experiments/doe_spores/olmoe-sleep-cues.tsv).
+
+**The same history in three bodies.** For each target these are the post-dream
+minus pre-dream changes in the log odds of ` key` over ` bell`. Both histories
+originated in the same Gemma turn. Only the Q4_0 body performed the dream.
+The `P1` column on the right gives the literal first greedy continuation token.
+
+| Receiving body | P0 log-odds shift | P1 log-odds shift | P1 awake → post-dream |
+| --- | ---: | ---: | --- |
+| OLMoE Q4_0 | +0.020664 | −0.003660 | ` bag` → ` bag` |
+| OLMoE Q4_K_M | −0.092199 | +0.030678 | ` bag` → ` phone` |
+| Gemma 3-270M-IT Q8_0, return | +0.140171 | −0.130377 | ` hand` → ` hand` |
+
+The receiving Q4_K_M GGUF aligned the two portable histories over 32 anchors
+(minimum cosine 0.806842588). In each pair all ten non-frame state tensors
+matched byte for byte, including all 49,152 values in each A/B tensor and
+12,288 voting weights. Only the anchor-frame tensor differed. Both published
+quantizations store identical F32 router matrices in all 16 blocks, 8,388,608
+bytes. Run the comparisons on the host weights and the two bound spores with
+`doe_probe compare-f32`. The table gives each tensor name, size and outcome.
+[Full scores](experiments/doe_spores/olmoe-scores.tsv) ·
+[Tensor comparison](experiments/doe_spores/olmoe-tensors.tsv).
+
+With no parliament, changing quantization changed top-eight membership at
+132 of the 288 fixed-prefix block/position pairs. With a common awake spore
+it changed 135, and with a common post-dream spore it changed 133. On Q4_0,
+seating the Gemma spore changed one top-eight set and recording the dream
+changed one. Both occurred on P1's comma (ID 13, position 4) at block 12.
+Bank 38 gave way to 28, then returned. On Q4_K_M the two histories changed
+membership at two positions. All 144 routes below the parliament were equal
+in every within-body contrast, including order and applied weights.
+[History comparisons](experiments/doe_spores/olmoe-routes.tsv) ·
+[Matched weight swaps](experiments/doe_spores/olmoe-quantization.tsv) ·
+[Figure](research/olmoe-routing.svg).
+
+**Weights and reproduction.** The published [AllenAI GGUF revision](https://huggingface.co/allenai/OLMoE-1B-7B-0924-Instruct-GGUF/tree/02ab6ea6894a8418eb14f6d8ee1bfb08bd298080)
+supplied Q4_0 (3,928,037,856 bytes, SHA-256
+`361e8d83f0820e50d0ed1a13b10586ed9f476d99dcaf6aafd14f07e11840b22b`)
+and Q4_K_M (4,213,512,672 bytes,
+`8c310f1435a1222338fd2d3d974975be9cd908180b644bab0c2a94da1ac32f3f`).
+The [Gemma GGUF revision](https://huggingface.co/ggml-org/gemma-3-270m-it-GGUF/tree/e7647be17ae1108f2f605ed061ca0608b171afff)
+supplied Q8_0 (`0ef57d2c838458a1952664260dcba38e5bdda37494f3af732f06e4add24068e3`).
+The run used x86-64 AMD EPYC 9V74, GCC 14.2, the in-tree CPU kernels,
+greedy sampling, raw prompts, context 64 and one attention thread. AML was
+built from [e5d5f1f](https://github.com/ariannamethod/ariannamethod.ai/commit/e5d5f1faed84ef332228fff36dee2ec31964816f).
+From the NoTorch checkout, set absolute paths for `AML`, `G270`, `OLMO_Q4` and
+`OLMO_K`. `RUN` names a new output directory.
+
+```sh
+make -C "$AML" runner
+make notorch doe_probe AML_ROOT="$AML" BLAS_FLAGS= BLAS_LIBS=
+printf '%s\n' "$PWD/notorch" "$PWD/doe_probe" "$G270" "$OLMO_Q4" "$OLMO_K" \
+  "$PWD/experiments/doe_spores/olmoe_routes.awk" "$RUN" |
+  taskset -c 2 "$AML/runner/aml" experiments/doe_spores/olmoe.aml
+# Inspect the on-disk F32 routers and the tensors that crossed to Q4_K_M.
+set --
+for layer in $(seq 0 15); do set -- "$@" "blk.$layer.ffn_gate_inp.weight"; done
+NT_GGUF_MMAP=lazy ./doe_probe compare-f32 "$OLMO_Q4" "$OLMO_K" "$@"
+set -- doe.lora_a doe.lora_b doe.vote doe.alive doe.vitality doe.frequency \
+  doe.cursor doe.age doe.low_vitality doe.rms_history doe.anchor_frame
+for history in awake dream; do
+  ./doe_probe compare-f32 "$RUN/q0-$history.gguf" "$RUN/km-$history.gguf" "$@"
+done
+gnuplot -c experiments/doe_spores/olmoe-figure.gp "$RUN" olmoe-routing.svg
+```
+
+Two independent end-to-end AML runs each printed `OLMOE_SPORE_ROUTES_OK`.
+All 22 GGUF spores, 16 full-logit checkpoints, 18 continuations and 11 TSV
+tables matched byte for byte, as did the waking and private events in the
+56 trace files. A separate GGUF read verified the four written seats and their
+cursors against the private ballots. Switching the fixture count back to signed
+32-bit multiplication triggered UBSan on 65,536 × 65,536.
+
+The Q4_0 and Q4_K_M plain CPU forwards matched `e38a2ea` on all 201,216
+F32 logits (two prefixes and two files). Both real quantizations also matched
+the parent's 12 greedy IDs and chosen logits on each prefix through the CLI,
+including with route tracing enabled. The native Qwen3-MoE checks use a
+deterministic GGUF fixture for its normalized top-k. The installed archive
+consumer gate passed with both OLMoE and Gemma. `make test` passed, including
+1,332 sparse checks. The optional original Haiku corpus requires an
+external SentencePiece model and was skipped. The sparse numerical gate also
+passed in a separate ASan/UBSan build.
+
+---
+
+## 2026-11-09 — Qwen3-Embedding, the second encoder: built and gated, two references open
+
+The SUBLITERATUS EG line gets its control encoder, by Oleg's mandate of
+2026-11-09: `nt_encoder_qwen3embedding` (`harness/arch_qwen3embedding.c`) next to
+EmbeddingGemma 2 on the same `nt_encoder` surface. The target is
+`Qwen/Qwen3-Embedding-0.6B` revision `97b0c614be4d`. Its `model.safetensors` is
+`0437e45c…23fd` and its `tokenizer.json` is `def76fb0…b50a`, both recomputed
+locally and equal to the Hub's LFS hashes. Every pin and the documented
+behavior behind it are in `research/qwen3-embedding-pins.json`. The
+[guide](docs/QWEN3EMBEDDING.md) has the gates.
+
+Built, in commit `63f8120`:
+- the encoder, a causal Qwen3 read to its final RMSNorm (per-head Q/K norm,
+  NEOX RoPE θ=1e6, 16 query over 8 KV heads, SiLU), pooled at the last unmasked
+  position and L2-normalized;
+- `tools/qwen3embedding_to_gguf.c`, which keeps 310 BF16 tensors unchanged
+  (1,191,575,136 bytes, `a4bfbbbd…90a2`) and writes a separate tokenizer GGUF
+  (151,669 tokens, 151,387 merges, `<|endoftext|>` appended, no BOS,
+  `710d5b0c…6a25`); both outputs are byte-identical on a repeat;
+- the `qwen3` pre-type in `examples/bpe.c`, the tokenizer.json split without
+  `\p{M}` over the existing NFC quick check, made as a `marks` switch on the
+  `qwen35` piece function;
+- the text mode with the upstream `query`/`document` prompts. It refuses
+  added-token literals, leading or trailing whitespace (sentence-transformers
+  strips it, the Transformers recipe does not), over-long input and text that
+  does not decode back to itself.
+
+Gated on neo (A18 Pro, Apple clang 21, portable scalar build):
+- `make test_qwen3embedding` matches an independent double-precision forward at
+  max |Δ| 2.83e-7 (gate 1e-5). Right and left padding, hooks, refusals and
+  atomicity are checked too. Six mutants turn it red: interleaved RoPE, no
+  causal mask, KV group by modulo, no Q norm, mask-blind pooling, no score scale.
+- `make test_qwen3embedding_text`: 58/58 checks. Six mutants turn it red: marks
+  in words, digit runs, no NFC, no `ſ` fold, no EOS, no whitespace refusal.
+- `make test_qwen35_text` still passes 62/62, as before the `bpe.c` change.
+  The full `make test`, with origin/main `e38a2ea` merged, exits 0, and
+  `test_embeddinggemma2`/`_text` pass in it.
+- `make check_qwen3embedding_model` on the converted checkpoint: two processes
+  give byte-identical vectors; width 1024; |norm − 1| ≤ 2.41e-8; the model
+  card's four published Transformers-recipe scores agree within 2.99e-7 (gate
+  1e-4, written into the script before its first run). Two mutants of the gate
+  run on the checkpoint turn it red: the card's TEI spelling `Query: ` with a
+  space (max |Δ| 3.86e-3) and interleaved RoPE (7.34e-2).
+- With an Accelerate build (the `BLAS=1` flags) the same gate passes:
+  byte-identical repeats, |norm − 1| ≤ 2.21e-8, scores within 4.52e-7.
+- All 28 tokenizer fixtures (`tests/qwen3embedding_fixtures.tsv`: ASCII,
+  Russian, Hebrew with and without niqqud, Arabic, Hindi, CJK, Korean, emoji,
+  symbols, whitespace runs, a 3,379-byte paragraph) are accepted and encoded on
+  the checkpoint, with |norm − 1| ≤ 4.16e-8. The paragraph is 1,161 tokens and
+  took 358 s on the scalar build. The same vectors exercise the parity gate's
+  mechanics. Re-encoded from their own IDs, all 28 reproduce the text-mode
+  vectors exactly (28/28, max |Δ| 0). A reference with one coordinate moved by
+  1e-4 fails (27/28; max |Δ| 1e-4 > 2e-5, cosine 0.999999995 alone would have
+  passed).
+
+Open, for Oleg:
+- **Official token IDs** for the 28 fixtures, for
+  `make check_qwen3embedding_tokenizer`. No approved tool here produces them:
+  the precedent oracle `tests/qwen35_tokenizer_parity.py` is Python
+  `tokenizers`, and llama.cpp is excluded.
+- **Official vectors** for `tests/check_qwen3embedding_parity.sh`, with
+  thresholds fixed as in EG2's RG3. They need a float32 forward of the pinned
+  checkpoint by sentence-transformers or Transformers.
+
+`config.json` holds nothing `gguf.c` cannot express. The 8192-token cap is
+this encoder's, as in EG2; the model's limit is 32,768. The `bpe.c` change
+alters the bytes of every binary that links it, `embeddinggemma2_encode`
+included, at any future notorch pin. The Gemma 4 path is untouched, and
+`test_embeddinggemma2_text` passes.
+
+Quote: "the meaning of a word is its use in the language" — Ludwig Wittgenstein, Philosophical Investigations, §43 (tr. G. E. M. Anscombe)
+Method: the Method logs the second encoder with what it measured and what it still needs from outside the tree.
+
+By Arianna Method (Co-authored by Claude, neo) <talkto@ariannamethod.com>, Coordinated with maintainer @iamolegataeff
+
 ## 2026-11-09 — Sparse fixture dimensions stay 64-bit
 
 [CodeQL alert 74](https://github.com/ariannamethod/notorch/security/code-scanning/74)

@@ -133,13 +133,45 @@ static int scores(gguf_file *host, const nt_arch *arch, const char *tokenizer,
     return ok;
 }
 
+/* Compare named, equally shaped F32 tensors on disk. An aligned spore can
+ * preserve the learned factors while acquiring a different calibration frame. */
+static int compare_f32(const char *left, const char *right, int n, char **names) {
+    gguf_file *a = gguf_open(left), *b = gguf_open(right);
+    int ok = a && b;
+    puts("tensor\tfloat_count\tbytes\tidentical");
+    for (int i = 0; ok && i < n; i++) {
+        int ia = gguf_find_tensor(a, names[i]), ib = gguf_find_tensor(b, names[i]);
+        const gguf_tensor_info *x = ia >= 0 ? &a->tensors[ia] : NULL;
+        const gguf_tensor_info *y = ib >= 0 ? &b->tensors[ib] : NULL;
+        ok = x && y && x->dtype == GGUF_TYPE_F32 && y->dtype == x->dtype &&
+             x->ndim > 0 && x->ndim <= 4 && x->ndim == y->ndim &&
+             !memcmp(x->shape, y->shape, x->ndim * sizeof(x->shape[0])) &&
+             x->n_elements == y->n_elements;
+        if (ok) {
+            uint64_t bytes = gguf_type_size(x->dtype, x->n_elements);
+            ok = bytes && bytes <= SIZE_MAX && x->offset <= a->data_size && y->offset <= b->data_size &&
+                 bytes <= a->data_size - x->offset && bytes <= b->data_size - y->offset;
+            if (ok) printf("%s\t%llu\t%llu\t%d\n", names[i], (unsigned long long)x->n_elements,
+                           (unsigned long long)bytes,
+                           !memcmp(a->data+x->offset, b->data+y->offset, (size_t)bytes));
+        }
+        if (!ok) fprintf(stderr, "doe_probe: missing or incompatible F32 tensor %s\n", names[i]);
+    }
+    gguf_close(b);
+    gguf_close(a);
+    return ok;
+}
+
 int main(int argc, char **argv) {
+    if (argc >= 5 && !strcmp(argv[1], "compare-f32"))
+        return !compare_f32(argv[2], argv[3], argc-4, argv+4);
     const char *tokenizer = NULL;
     if (argc > 3 && !strcmp(argv[1], "--tokenizer")) {
         tokenizer = argv[2]; argv += 2; argc -= 2;
     }
     if (argc < 7 || (strcmp(argv[1], "transplant") && strcmp(argv[1], "score"))) {
-        fprintf(stderr, "doe_probe transplant HOST RECIPIENT DONOR NEW_SPORE SLOT...\n"
+        fprintf(stderr, "doe_probe compare-f32 FILE1 FILE2 TENSOR...\n"
+                        "doe_probe transplant HOST RECIPIENT DONOR NEW_SPORE SLOT...\n"
                         "doe_probe [--tokenizer FILE] score HOST SPORE|- CHECKPOINT LEFT RIGHT PROMPT...\n");
         return 1;
     }
