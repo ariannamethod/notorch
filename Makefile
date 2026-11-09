@@ -332,10 +332,6 @@ infer: examples/infer_janus.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_janus_nt examples/infer_janus.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_janus_nt (Janus RRPRAM, $(BLAS_NAME))"
 
-gemma: examples/infer_gemma.c gguf.c gguf.h notorch.c notorch.h $(CHUCK_HEADERS)
-	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_gemma examples/infer_gemma.c gguf.c notorch.c -lm $(BLAS_LIBS)
-	@echo "Compiled: infer_gemma (Gemma-3 GGUF, $(BLAS_NAME))"
-
 llama: examples/infer_llama.c examples/bpe.c examples/bpe.h gguf.c gguf.h notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o infer_llama examples/infer_llama.c examples/bpe.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: infer_llama (LLaMA/Qwen GGUF + GGUF-BPE tokenizer, $(BLAS_NAME))"
@@ -1245,7 +1241,7 @@ clean:
 	rm -f notorch libnotorch.dylib libnotorch.so libnotorch_harness.a libnotorch_metal.a \
 		$(HARNESS_LIB_OBJ) gguf_add_tokenizer test_qmatmul test_residual test_gemma3 test_smollm_tokenizer \
 		notorch_test notorch_test_gpu notorch.o gguf.o pen7.o libnotorch.a notorch_cuda.o \
-		infer_janus_nt infer_gemma infer_llama \
+		infer_janus_nt infer_llama \
 		train_q train_yent train_llama3_bpe train_llama3_char infer_llama3_bpe \
 		train_dpo train_grpo train_distillation test_vision test_gguf test_gguf_write \
 		tests/test_simd_correctness tests/test_simd_loss tests/test_simd_tails tests/test_rrpram_lr \

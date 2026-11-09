@@ -789,7 +789,7 @@ void nt_blas_matvec(float *out, const float *W, const float *x, int m, int n);
 int  nt_qmatvec(float *out, const uint8_t *Wq, int dtype, const float *x, int m, int k);
 ```
 
-under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on macOS, OpenBLAS on Linux). without BLAS they fall back to the naive C loops — correct, just slower. the example engines reach the same BLAS path directly through their own local wrappers in their hot paths: `infer_gemma.c` / `infer_llama.c` / `infer_janus.c` call `cblas_sgemm`, and `infer_llama3_bpe.c` calls `cblas_sgemv` (scalar fallback without `USE_BLAS`).
+under `USE_BLAS` these dispatch to `cblas_sgemm` / `cblas_sgemv` (Accelerate on macOS, OpenBLAS on Linux). without BLAS they fall back to the naive C loops — correct, just slower. the example engines reach the same BLAS path directly through their own local wrappers in their hot paths: `infer_llama.c` / `infer_janus.c` call `cblas_sgemm`, and `infer_llama3_bpe.c` calls `cblas_sgemv` (scalar fallback without `USE_BLAS`).
 
 ---
 
