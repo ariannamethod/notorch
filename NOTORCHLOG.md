@@ -11,6 +11,32 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-09 — Native FFN routes inside private sleep
+
+A sparse parliament can attach a private route observer. The dream calls the
+same native router on its own KV. `--moe-trace` emits `moe dream-route` records
+for cue and generated inputs during preview, blocking learning and worker
+learning. `--expert-trace` supplies the matching living gates and greedy choices.
+Calibration emits no routes. The observer and cookie belong to the individual
+parliament and a worker retains them until its owner joins.
+
+On the four-block OLMoE fixture six choices gave 28 private route records.
+Preview, synchronous and background recording agreed on every ID and applied
+weight. A restart with tracing disabled produced the same learned GGUF. The
+cue's route matched plain inference below the parliament. At the parliament's
+own block the applied weight changed from 0.921860695 to 0.921803594. Moving
+the intervention after the router failed this gate. Two workers on one loaded
+model with separate observation cookies emitted 12 and 24 records to their
+respective observers. Clearing the first observer silenced its next episode.
+
+The AML experiment checks every living ballot on matched histories and joins
+private choices, living gates and native mixtures by input and layer. Exact-v1
+single-founder transfers isolate changes in that founder's A/B tensors under
+an otherwise identical header. A transfer of all four founders must reproduce
+both full output distributions and every prefix route of the dreamed state.
+
+---
+
 ## 2026-11-09 — The living parliament enters a sparse decoder
 
 The OLMoE and Qwen3-MoE CPU decoder exposes its attention residual before the

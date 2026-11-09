@@ -63,14 +63,16 @@ def offline(host, parent, label, mode):
     list_push(args, '--expert-trace')
     list_push(args, '--spore-in')
     list_push(args, spore(parent))
-    list_push(args, '--portable-spore')
+    if text_equal(mode, 'exact') == 0:
+        list_push(args, '--portable-spore')
     list_push(args, '--spore-out')
     list_push(args, spore(label))
-    if text_equal(mode, 'bind'):
+    if text_equal(mode, 'bind') or text_equal(mode, 'exact'):
         list_push(args, '--spore-only')
     else:
         list_push(args, '--dream-only')
         list_push(args, '6')
+        list_push(args, '--moe-trace')
         if text_equal(mode, 'preview') == 0:
             list_push(args, '--learn-experts')
         if text_equal(mode, 'worker'):
@@ -81,6 +83,8 @@ def offline(host, parent, label, mode):
     assert(text_len(output) == 0, 'private or offline output')
     trace = record_get(result, 'stderr')
     assert(text_find(trace, 'doe turn=') < 0, 'offline waking turn')
+    if text_equal(mode, 'exact'):
+        return ''
     if text_equal(mode, 'bind'):
         start = text_find(trace, 'doe transfer mode=')
         assert(start >= 0 and text_find(trace, ' anchors=32 ') > start, 'missing transport record')
@@ -91,20 +95,47 @@ def offline(host, parent, label, mode):
     begin = text_find(trace, 'doe dream-start ')
     end = text_find(trace, 'doe dream-end ')
     assert(begin >= 0 and end > begin, 'incomplete private episode')
-    return text_slice(trace, begin, end)
+    ending = text_slice(trace, end, text_len(trace))
+    learn = text_find(ending, ' learn=')
+    assert(learn > 0, 'missing dream commit status')
+    status = text_slice(ending, learn, text_find(ending, '\n'))
+    if text_equal(mode, 'preview'):
+        assert(text_equal(status, ' learn=0'), 'preview committed')
+    else:
+        assert(text_equal(status, ' learn=1'), 'dream did not commit')
+    return text_slice(trace, begin, end+learn)
 
-def token_ids(host, tag, i):
+def tokenize(host, literal, label):
     args = command(cli)
     list_push(args, '-T')
     list_push(args, host)
-    list_push(args, list_get(prompts, i))
-    key = cat(cat(tag, '-P'), text_fixed(i, 0))
-    output = record_get(run(args, cat(key, '-tokenizer')), 'stdout')
+    list_push(args, literal)
+    output = record_get(run(args, cat(label, '-tokenizer')), 'stdout')
     end = text_find(output, '\n')
     assert(end > 0 and end == text_len(output)-1, 'tokenizer CSV')
-    ids = text_slice(output, 0, end)
+    return text_slice(output, 0, end)
+
+def token_ids(host, tag, i):
+    key = cat(cat(tag, '-P'), text_fixed(i, 0))
+    ids = tokenize(host, list_get(prompts, i), key)
     record_set(tokens, key, ids)
     lines('tokens.tsv', col(key, ids))
+
+def dream_routes(episode):
+    start = text_find(episode, ' literal="')
+    end = text_find(episode, '" seat=')
+    assert(start >= 0 and end > start+10, 'missing dream cue literal')
+    cue = text_slice(episode, start+10, end)
+    ids = tokenize(q0, cue, 'q0-dream-cue')
+    args = command('awk')
+    list_push(args, '-v')
+    list_push(args, 'scope=dream')
+    list_push(args, '-v')
+    list_push(args, cat('expected=', ids))
+    list_push(args, '-f')
+    list_push(args, reducer)
+    list_push(args, path('q0-dream.trace'))
+    lines('dream-routes.tsv', record_get(run(args, 'q0-private-routes'), 'stdout'))
 
 # doe_probe opens a fresh KV and parliament per prompt, checks both suffixes
 # against the entire prefix and writes both full-vocabulary arrays to one checkpoint.
@@ -167,6 +198,7 @@ def measure(host, tag, label, parent):
 def compare(tag, before, after, scope):
     table = 'routes.tsv'
     source_hash = '-'
+    check_votes = text_equal(scope, 'factor-replay') or (text_equal(scope, 'parliament') and text_equal(before, 'q0-plain') == 0)
     if text_equal(scope, 'quantization'):
         table = 'quantization.tsv'
         if text_equal(before, 'q0-plain'):
@@ -189,6 +221,8 @@ def compare(tag, before, after, scope):
         list_push(args, cat('expected=', record_get(tokens, cat(cat(tag, '-'), index))))
         list_push(args, '-v')
         list_push(args, cat('scope=', scope))
+        list_push(args, '-v')
+        list_push(args, cat('vote_check=', text_fixed(check_votes, 0)))
         list_push(args, '-v')
         list_push(args, cat('source_sha=', source_hash))
         list_push(args, '-f')
@@ -238,9 +272,17 @@ def seat_scores(label, copied, readings, awake):
         lines('seats.tsv', col(col(row, text_fixed(margin, 9)), text_fixed(delta, 9)))
         i = i + 1
 
+def factor_write(label, copied, baseline_hash):
+    digest = file_hash_sha256(spore(label))
+    changed = text_equal(digest, baseline_hash) == 0
+    lines('factor-writes.tsv', col(col(col(label, copied), text_fixed(changed, 0)), digest))
+
 def founders():
     awake = checkpoint_load(path('q0-awake.amlck'))
     dream = checkpoint_load(path('q0-dream.amlck'))
+    offline(q0, 'q0-awake', 'q0-awake-exact', 'exact')
+    baseline_hash = file_hash_sha256(spore('q0-awake-exact'))
+    factor_write('q0-awake-exact', '-', baseline_hash)
     seat_scores('q0-awake', '-', awake, awake)
     seat_scores('q0-dream', '-', dream, awake)
     i = 0
@@ -248,9 +290,11 @@ def founders():
         seat = text_fixed(i, 0)
         label = cat('q0-seat', seat)
         transplant(label, i)
+        factor_write(label, seat, baseline_hash)
         seat_scores(label, seat, score(q0, label, label), awake)
         i = i + 1
     transplant('q0-factors', -1)
+    factor_write('q0-factors', '0,1,2,3', baseline_hash)
     all_four = score(q0, 'q0-factors', 'q0-factors')
     seat_scores('q0-factors', '0,1,2,3', all_four, awake)
     assert(text_equal(file_hash_sha256(path('q0-factors.amlck')), file_hash_sha256(path('q0-dream.amlck'))), 'all-founder logits differ from dream')
@@ -287,6 +331,8 @@ lines('routes.tsv', route_header)
 lines('quantization.tsv', col(route_header, 'source_archive_sha256'))
 lines('seats.tsv', 'state\tcopied_seats\tprobe\tlog_odds_key_over_bell\tdelta_from_awake')
 lines('factor-replay.tsv', 'probe\tidentical_prompt_routes\tcheckpoint_sha256')
+lines('factor-writes.tsv', 'state\tcopied_seats\tfactors_changed_vs_awake\texact_spore_sha256')
+lines('dream-routes.tsv', 'pos\tinput_kind\ttoken\tlayer\tdoe_k\tdoe_consensus\tdoe_gates\tmoe_ids\tmoe_weights')
 i = 0
 while i < 2:
     token_ids(q0, 'q0', i)
@@ -300,6 +346,7 @@ preview = offline(q0, 'q0-awake', 'q0-preview', 'preview')
 sync = offline(q0, 'q0-awake', 'q0-sync', 'sync')
 worker = offline(q0, 'q0-awake', 'q0-dream', 'worker')
 assert(text_equal(preview, sync) and text_equal(sync, worker), 'dream trajectory')
+dream_routes(worker)
 assert(text_equal(file_hash_sha256(spore('q0-awake')), file_hash_sha256(spore('q0-preview'))), 'preview wrote state')
 assert(text_equal(file_hash_sha256(spore('q0-sync')), file_hash_sha256(spore('q0-dream'))), 'worker spore differs')
 assert(text_equal(file_hash_sha256(spore('q0-awake')), file_hash_sha256(spore('q0-dream'))) == 0, 'dream update missing')

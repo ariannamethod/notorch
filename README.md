@@ -377,8 +377,9 @@ On OLMoE, two selections happen at the middle block. The parliament elects livin
 LoRA seats and adds their correction to the attention residual. The pretrained
 router reads that corrected vector and chooses which FFN experts to execute.
 `--expert-trace` shows the living seats' gates. `--moe-trace` shows the native
-expert IDs in execution order and their applied weights at every waking layer.
-Route tracing works with plain inference too. OLMoE keeps the selected mass
+expert IDs in per-token accumulation order and their applied weights at each
+layer. Ordinary decoding emits `moe route`. A private dream emits
+`moe dream-route` on its own positions. Route tracing works with plain inference too. OLMoE keeps the selected mass
 from its full softmax. Qwen3-MoE normalizes the selected weights to sum to one.
 
 Set `G270`, `OLMO_Q4` and `OLMO_K` to Gemma 3-270M-IT Q8_0 and the two
@@ -392,8 +393,8 @@ export NT_CHAT='||' NT_CTX=64 NT_ATTN_THREADS=1
   "$G270" 'Miro is the lighthouse keeper. Every night Miro carries a key. At sunrise the lighthouse keeper returns home.' 1 0
 ./notorch -q --experts --spore-only --spore-in gemma-key.gguf --portable-spore \
   --spore-out olmo-awake.gguf "$OLMO_Q4"
-./notorch -q --experts --learn-experts --async-consolidation --dream-only 6 \
-  --spore-in olmo-awake.gguf --portable-spore --spore-out olmo-dream.gguf "$OLMO_Q4"
+./notorch -q --experts --expert-trace --moe-trace --learn-experts --async-consolidation --dream-only 6 \
+  --spore-in olmo-awake.gguf --portable-spore --spore-out olmo-dream.gguf "$OLMO_Q4" 2>olmo-sleep.routes
 for state in olmo-awake olmo-dream; do
   ./notorch -q --experts --expert-trace --moe-trace --spore-in "$state.gguf" \
     "$OLMO_K" 'At the lighthouse, Miro reaches for his' 12 0 2>"$state.routes"

@@ -32,6 +32,10 @@ int nt_experts_finish(nt_experts *p, int learn);
  * Initialize *job to NULL and keep the trace stream open through await. */
 typedef struct nt_consolidation nt_consolidation;
 int nt_experts_submit(nt_experts **owner, nt_consolidation **job);
+/* Observe the body's native FFN routes on private dream KV. Pass NULL to
+ * clear. A non-NULL observer requires a loaded sparse body. The callback
+ * runs on the dreaming thread; keep user valid through the call or await. */
+int nt_experts_set_dream_route(nt_experts *p, nt_moe_route_fn route, void *user);
 /* From a completed generation opened with open_on_body, let the body
  * generate 1..32 greedy choices on private KV. Pass its EOS id, or -1 when
  * absent. With learn=0 the same episode can be inspected through the trace.

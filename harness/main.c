@@ -224,9 +224,10 @@ static void residency(const char *when) {
 
 static void print_moe_route(void *user, int layer, int pos, int token, int k,
                             const int *ids, const float *weights) {
-    FILE *out = user;
+    const char *event = user;
+    FILE *out = stderr;
     flockfile(out);
-    fprintf(out, "moe route layer=%d pos=%d token=%d ids=", layer, pos, token);
+    fprintf(out, "moe %s layer=%d pos=%d token=%d ids=", event, layer, pos, token);
     for (int i = 0; i < k; i++) fprintf(out, "%s%d", i ? "," : "", ids[i]);
     fputs(" weights=", out);
     for (int i = 0; i < k; i++) fprintf(out, "%s%.9g", i ? "," : "", weights[i]);
@@ -239,7 +240,7 @@ static int session_forward(session *s, const int *tokens, int n, int pos, float 
         return s->arch->forward_routes(s->model, s->kv, tokens, n, pos, logits,
                                        s->experts ? nt_experts_attend : NULL,
                                        s->experts ? nt_experts_observe : NULL, s->experts,
-                                       print_moe_route, stderr);
+                                       print_moe_route, "route");
     if (s->experts)
         return s->arch->doe->forward(s->model, s->kv, tokens, n, pos, logits,
                                       nt_experts_attend, nt_experts_observe, s->experts);
@@ -404,7 +405,7 @@ static void usage(const char *self) {
         "  --portable-spore include a residual frame in --spore-out for switching bodies\n"
         "  --spore-out FILE write a new GGUF spore on success (requires --experts)\n"
         "  --expert-trace   print elections, waking logits and private dream pieces on stderr\n"
-        "  --moe-trace      print the sparse FFN's chosen experts and weights during waking forward\n"
+        "  --moe-trace      print native sparse FFN choices and weights for waking and dream tokens\n"
         "  -q               no banner\n"
         "  -n, -t           tokens and temperature, for chat as well as one shot\n"
         "  --tokenizer F    choose F instead of the embedded or adjacent vocabulary\n"
@@ -581,8 +582,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "notorch: expert learning and spore I/O require --experts\n");
         return 1;
     }
-    if (moe_trace && (tokenize_only || arch_only || spore_only || dream_only)) {
-        fprintf(stderr, "notorch: --moe-trace needs a waking forward\n");
+    if (moe_trace && (tokenize_only || arch_only || spore_only)) {
+        fprintf(stderr, "notorch: --moe-trace needs a waking or dream forward\n");
         return 1;
     }
     if (experts && (tokenize_only || arch_only || repeats != 1)) {
@@ -673,6 +674,11 @@ int main(int argc, char **argv) {
         if (!s.experts) {
             fprintf(stderr, "notorch: could not open expert state%s%s\n",
                     spore_in ? " from " : "", spore_in ? spore_in : "");
+            goto done;
+        }
+        if (moe_trace && dream_tokens &&
+            nt_experts_set_dream_route(s.experts, print_moe_route, "dream-route")) {
+            fprintf(stderr, "notorch: could not observe native routes on the private dream body\n");
             goto done;
         }
     }
