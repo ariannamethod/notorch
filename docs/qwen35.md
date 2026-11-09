@@ -51,7 +51,10 @@ reads as letters, marks or numbers), encodes to nothing. Any other text is NFC
 after a stable sort of each run of non-starters by ccc. The check also refuses
 some text NFC leaves alone, a Maybe mark that composes with nothing before it:
 Russian stress marks (а + U+0301), the Bengali, Tamil and Malayalam vowel sign
-AA. `tools/gen_unicode_tables.py` regenerates both headers.
+AA. So Russian text written with stress marks, and most Bengali, gets no ids
+at all: it is refused, not tokenized. Accepting it needs NFC's composition
+step, which this tokenizer does not have. `tools/gen_unicode_tables.py`
+regenerates both headers.
 
 Against tokenizers 0.22.2 on the official tokenizer.json (sha256
 `5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42`,
