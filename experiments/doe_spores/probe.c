@@ -47,35 +47,43 @@ static int field(AM_Record *rec, const char *name, AML_Var value) {
     return ok;
 }
 
-static int score_one(gguf_file *host, void *model, nt_dims dims, const char *spore,
+static int score_one(gguf_file *host, const nt_arch *arch, nt_expert_body body,
+                     nt_dims dims, const char *spore,
                      const int *ids, int n, float *logits) {
     int plain = strcmp(spore, "-") == 0;
-    nt_experts *p = plain ? NULL : nt_experts_open(host, spore, stderr);
-    kv_cache *kv = kv_new(dims.n_layers, n, dims.kv_dim);
+    nt_experts *p = plain ? NULL : nt_experts_open_on_body(host, spore, stderr, &body);
+    kv_cache *kv = nt_model_kv_new(arch, body.model, dims, n);
     int ok = kv && (plain || p);
     for (int start = 0; ok && start < n; start += NT_PREFILL_CHUNK) {
         int count = n-start < NT_PREFILL_CHUNK ? n-start : NT_PREFILL_CHUNK;
         float *out = start+count == n ? logits : NULL;
-        int rc = nt_llama_forward_hooks(model, kv, ids+start, count, start, out,
-                                        p ? nt_experts_attend : NULL,
-                                        p ? nt_experts_observe : NULL, p);
+        int rc = arch->doe->forward(body.model, kv, ids+start, count, start, out,
+                                    p ? nt_experts_attend : NULL,
+                                    p ? nt_experts_observe : NULL, p);
         ok = rc == NT_OK;
     }
     for (int i = 0; ok && i < dims.vocab; i++) ok = isfinite(logits[i]);
-    kv_free(kv);
+    nt_model_kv_free(arch, body.model, kv);
     nt_experts_free(p);
     return ok;
 }
 
-static int scores(gguf_file *host, const char *spore, const char *out,
+static int scores(gguf_file *host, const nt_arch *arch, const char *tokenizer,
+                  const char *spore, const char *out,
                   char **targets, int probes, char **prompts) {
     nt_dims dims = {0};
-    void *model = nt_arch_llama.load(host, &dims);
-    bpe_tokenizer *tok = bpe_load(host->path);
+    if (tokenizer) {
+        char family[64];
+        if (gguf_read_str_kv(tokenizer, "general.architecture", family, sizeof(family)) ||
+            strcmp(family, host->arch)) return 0;
+    }
+    void *model = arch->load(host, &dims);
+    bpe_tokenizer *tok = bpe_load(tokenizer ? tokenizer : host->path);
     AM_Record *rec = am_record_new();
     AM_Array *logits = model ? am_array_new(dims.vocab) : NULL;
     int cand[2] = {-1,-1};
-    int ok = tok && logits && rec && bpe_n_vocab(tok) == dims.vocab;
+    int ok = tok && logits && rec && (tokenizer ? bpe_n_vocab(tok) <= dims.vocab :
+                                      bpe_n_vocab(tok) == dims.vocab);
     for (int i = 0; ok && i < 2; i++) {
         int ids[2];
         ok = bpe_encode_raw(tok, targets[i], ids, 2) == 1;
@@ -93,7 +101,8 @@ static int scores(gguf_file *host, const char *spore, const char *out,
         for (int j = 0; ok && j < 2; j++)
             ok = target_follows(tok, prompts[i], ids, n, targets[j], cand[j]);
         fprintf(stderr, "probe=%d tokens=%d\n", i, n);
-        if (ok) ok = score_one(host, model, dims, spore, ids, n, logits->data);
+        if (ok) ok = score_one(host, arch, (nt_expert_body){model, tok},
+                               dims, spore, ids, n, logits->data);
         if (ok) {
             char name[32];
             snprintf(name, sizeof(name), "probe%d", i);
@@ -120,23 +129,28 @@ static int scores(gguf_file *host, const char *spore, const char *out,
     am_array_free(logits);
     am_record_free(rec);
     bpe_free(tok);
-    if (model) nt_arch_llama.free(model);
+    if (model) arch->free(model);
     return ok;
 }
 
 int main(int argc, char **argv) {
+    const char *tokenizer = NULL;
+    if (argc > 3 && !strcmp(argv[1], "--tokenizer")) {
+        tokenizer = argv[2]; argv += 2; argc -= 2;
+    }
     if (argc < 7 || (strcmp(argv[1], "transplant") && strcmp(argv[1], "score"))) {
         fprintf(stderr, "doe_probe transplant HOST RECIPIENT DONOR NEW_SPORE SLOT...\n"
-                        "doe_probe score HOST SPORE|- CHECKPOINT LEFT RIGHT PROMPT...\n");
+                        "doe_probe [--tokenizer FILE] score HOST SPORE|- CHECKPOINT LEFT RIGHT PROMPT...\n");
         return 1;
     }
     gguf_file *host = gguf_open(argv[2]);
     if (!host) return 1;
-    int ok = nt_pick_arch(host->arch) == &nt_arch_llama;
+    const nt_arch *arch = nt_pick_arch(host->arch);
+    int ok = arch && arch->doe;
     if (ok && !strcmp(argv[1], "transplant"))
-        ok = transplant(host, argv[3], argv[4], argv[5], argc-6, argv+6);
+        ok = !tokenizer && transplant(host, argv[3], argv[4], argv[5], argc-6, argv+6);
     else if (ok)
-        ok = argc >= 8 && scores(host, argv[3], argv[4], argv+5, argc-7, argv+7);
+        ok = argc >= 8 && scores(host, arch, tokenizer, argv[3], argv[4], argv+5, argc-7, argv+7);
     if (!ok) fprintf(stderr, "doe_probe: %s failed for %s\n", argv[1], argv[2]);
     gguf_close(host);
     return !ok;

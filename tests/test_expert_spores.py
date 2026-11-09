@@ -77,7 +77,20 @@ def test(work):
     assert set(work.iterdir()) == {host, gemma}
     run(["--spore-out", "implicit.gguf"], ok=False)
     assert not (work / "implicit.gguf").exists()
-    run(opts, model=gemma, ok=False)
+    # Admission checks the registered decoder before attempting to load tensors.
+    unsupported = work / "unsupported.gguf"
+    unsupported.write_bytes(gemma.read_bytes().replace(b"gemma3", b"gemma4", 1))
+    assert "--experts is unavailable on gemma4" in run(opts, model=unsupported, ok=False).stderr
+    gemma_state = work / "gemma-state.gguf"
+    gemma_sync = run([*train, "--spore-out", gemma_state], source, model=gemma)
+    gemma_worker = work / "gemma-worker.gguf"
+    asynchronous = run([*train, "--async-consolidation", "--spore-out", gemma_worker],
+                       source, model=gemma)
+    assert trace(gemma_sync) and trace(gemma_sync) == trace(asynchronous)
+    assert gemma_state.read_bytes() == gemma_worker.read_bytes()
+    assert read_spore(gemma_state)[0]["doe.turns"] == 1
+    assert trace(run([*opts, "--spore-in", gemma_state], model=gemma))
+    run([*opts, "--spore-in", gemma_state], model=host, ok=False)
     a, static = work / "learn.gguf", work / "static.gguf"
     first = run([*train, "--spore-out", a], source)
     frozen = run([*opts, "--spore-out", static], source)

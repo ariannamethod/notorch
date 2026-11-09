@@ -56,14 +56,15 @@ typedef int (*nt_residual_fn)(void *user, int layer, int pos0, int n,
 
 #define NT_DOE_DECODER_API 1
 
-/* CPU decoders offering DOE expose both sides of the FFN. The optional
- * calibration uses the effective RMSNorm vectors in execution order:
- * block input, FFN input, then the final norm (index 2 * n_layers). */
+/* CPU decoders offering DOE expose both sides of the FFN. Calibration hashes
+ * the full residual-width norms in block execution order, then the final norm.
+ * The original two-norm layout is used when norms_per_layer is zero. */
 typedef struct {
     int (*forward)(void *model, kv_cache *kv, const int *tokens, int n, int pos0,
                    float *logits, nt_residual_fn post_attention, nt_residual_fn post_block, void *user);
     const gguf_file *(*describe)(const void *model, nt_dims *dims);
     const float *(*norm)(const void *model, int index);
+    int norms_per_layer;
 } nt_doe_decoder;
 
 typedef struct {
