@@ -11,6 +11,40 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-09 — The living parliament enters a sparse decoder
+
+The OLMoE and Qwen3-MoE CPU decoder exposes its attention residual before the
+FFN norm and router, and the completed block after the weighted expert outputs
+rejoin the skip. Both the grouped prefill and scalar decode report the actual
+selected FFN IDs and applied weights through a per-call observer. The public
+`--moe-trace` follows waking forwards with or without a parliament. The two
+normalization policies and the original accumulation order are preserved.
+
+Each block supplies its two full-width RMSNorm vectors for portable calibration.
+The loader checks declared and tensor geometry, packed row boundaries and the
+bounds of each matrix before probing its storage. A partial group allocation
+now releases its scratch exactly once and falls back to scalar execution.
+The [research article](research/democracy_of_experts.md) describes the two
+selections, voting, sleep ownership and which parts of a spore cross a body.
+
+The C oracle constructs a sparse GGUF for each family. A known intervention
+changes the ordered top-k, the FFN contribution and the logits for grouped and
+single-token calls. Moving the intervention just after the router matmul in an
+isolated build failed 80 numerical checks (32 selected-ID, 32 post-block and
+16 head checks). Fault injection tested each of the 18 optional allocations
+individually and together on both families. The fallback reproduced the
+routes, weights, KV and logits. All 48 mandatory-allocation failures in the
+four fixture conditions preserved the outputs and allowed an exact retry.
+
+`make test` exercises the numeric oracle and both public CLI traces. The
+32-anchor fixtures now project separate Gemma and Llama spores into OLMoE.
+A private preview returns unchanged bytes. The blocking update, worker update
+and update after restart return the same new spore. The real-weight AML
+[protocol](experiments/doe_spores/olmoe.aml) also holds the input IDs fixed and
+compares sleep, quantization and transfers of individual founders' A/B.
+
+---
+
 ## 2026-11-09 — The pre-harness Gemma example retires; the harness is the only Gemma-3 door
 
 `examples/infer_gemma.c` removed, with its `gemma` Makefile target, its clean-list

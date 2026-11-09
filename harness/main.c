@@ -33,7 +33,7 @@ typedef struct {
     nt_experts *experts;
     float *sampling_copy; /* sampling at T>0 consumes its input */
     nt_consolidation *pending;
-    int learn, trace, async, dream_tokens;
+    int learn, trace, moe_trace, async, dream_tokens;
 } session;
 
 /* GGUF-embedded BPE where the file has one; bytes where it does not, which is
@@ -222,7 +222,24 @@ static void residency(const char *when) {
     fputc('\n', stderr);
 }
 
+static void print_moe_route(void *user, int layer, int pos, int token, int k,
+                            const int *ids, const float *weights) {
+    FILE *out = user;
+    flockfile(out);
+    fprintf(out, "moe route layer=%d pos=%d token=%d ids=", layer, pos, token);
+    for (int i = 0; i < k; i++) fprintf(out, "%s%d", i ? "," : "", ids[i]);
+    fputs(" weights=", out);
+    for (int i = 0; i < k; i++) fprintf(out, "%s%.9g", i ? "," : "", weights[i]);
+    fputc('\n', out);
+    funlockfile(out);
+}
+
 static int session_forward(session *s, const int *tokens, int n, int pos, float *logits) {
+    if (s->moe_trace)
+        return s->arch->forward_routes(s->model, s->kv, tokens, n, pos, logits,
+                                       s->experts ? nt_experts_attend : NULL,
+                                       s->experts ? nt_experts_observe : NULL, s->experts,
+                                       print_moe_route, stderr);
     if (s->experts)
         return s->arch->doe->forward(s->model, s->kv, tokens, n, pos, logits,
                                       nt_experts_attend, nt_experts_observe, s->experts);
@@ -377,7 +394,7 @@ static void usage(const char *self) {
     fprintf(stderr,
         "usage: %s [-q] [-n tokens] [-t temp] [-r runs] [--tokenizer file] <model.gguf> [prompt] [max_tokens] [temp]\n"
         "  no prompt        chat in the terminal\n"
-        "  --experts        seat a native parliament on the dense llama-family or Qwen3.5 decoder\n"
+        "  --experts        seat a native parliament on a supported CPU decoder\n"
         "  --learn-experts  update elected experts after each turn (requires --experts)\n"
         "  --async-consolidation  consolidate in the background (requires --learn-experts)\n"
         "  --dream N        generate 1..32 private choices after each learned turn\n"
@@ -387,6 +404,7 @@ static void usage(const char *self) {
         "  --portable-spore include a residual frame in --spore-out for switching bodies\n"
         "  --spore-out FILE write a new GGUF spore on success (requires --experts)\n"
         "  --expert-trace   print elections, waking logits and private dream pieces on stderr\n"
+        "  --moe-trace      print the sparse FFN's chosen experts and weights during waking forward\n"
         "  -q               no banner\n"
         "  -n, -t           tokens and temperature, for chat as well as one shot\n"
         "  --tokenizer F    choose F instead of the embedded or adjacent vocabulary\n"
@@ -466,7 +484,7 @@ int main(int argc, char **argv) {
      * parity gate drives; the flags are for chat, which has no prompt to hang
      * positional arguments behind. */
     int tokenize_only = 0, arch_only = 0, repeats = 1;
-    int experts = 0, learn = 0, trace = 0, async = 0, portable = 0, spore_only = 0;
+    int experts = 0, learn = 0, trace = 0, moe_trace = 0, async = 0, portable = 0, spore_only = 0;
     int dream_tokens = 0, dream_only = 0;
     const char *spore_in = NULL, *spore_out = NULL, *tok_path = NULL;
     while (ai < argc && argv[ai][0] == '-' && argv[ai][1]) {
@@ -488,6 +506,7 @@ int main(int argc, char **argv) {
         if (!strcmp(arg, "--spore-only")) { spore_only = 1; ai++; continue; }
         if (!strcmp(arg, "--portable-spore")) { portable = 1; ai++; continue; }
         if (!strcmp(arg, "--expert-trace")) { trace = 1; ai++; continue; }
+        if (!strcmp(arg, "--moe-trace")) { moe_trace = 1; ai++; continue; }
         if (!strcmp(arg, "--spore-in") || !strcmp(arg, "--spore-out")) {
             if (++ai >= argc) { usage(argv[0]); return 1; }
             if (!strcmp(arg, "--spore-in")) spore_in = argv[ai++];
@@ -562,6 +581,10 @@ int main(int argc, char **argv) {
         fprintf(stderr, "notorch: expert learning and spore I/O require --experts\n");
         return 1;
     }
+    if (moe_trace && (tokenize_only || arch_only || spore_only || dream_only)) {
+        fprintf(stderr, "notorch: --moe-trace needs a waking forward\n");
+        return 1;
+    }
     if (experts && (tokenize_only || arch_only || repeats != 1)) {
         fprintf(stderr, "notorch: --experts needs one inference session\n");
         return 1;
@@ -620,12 +643,18 @@ int main(int argc, char **argv) {
         gguf_close(gf);
         return 1;
     }
+    if (moe_trace && !arch->forward_routes) {
+        fprintf(stderr, "notorch: --moe-trace is unavailable on %s\n", gf->arch);
+        gguf_close(gf);
+        return 1;
+    }
     nt_dims dims = {0};
     void *model = arch->load(gf, &dims);
     if (!model) { gguf_close(gf); return 1; }
     fprintf(stderr, "loaded in %.0f ms\n", now_ms() - t0);
 
-    session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1, .learn = learn, .trace = trace, .async = async, .dream_tokens = dream_tokens };
+    session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1, .learn = learn,
+                  .trace = trace, .moe_trace = moe_trace, .async = async, .dream_tokens = dream_tokens };
     chat_wrap_init(&g_chat, dims.vocab, path);
     if (open_tokenizer(&s, gf, path, tok_path)) { arch->free(model); gguf_close(gf); return 1; }
 

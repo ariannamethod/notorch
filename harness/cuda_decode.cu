@@ -716,9 +716,9 @@ static const char *const gemma3_cuda_names[] = {"gemma3", NULL};
 
 extern "C" {
 const nt_arch nt_arch_llama_cuda = {llama_cuda_names, cuda_llama_load, cuda_free, cuda_forward,
-                                    cuda_forward_residual, cuda_forward_multi, cuda_kv_new, cuda_kv_free, NULL};
+                                    cuda_forward_residual, cuda_forward_multi, cuda_kv_new, cuda_kv_free, NULL, NULL};
 const nt_arch nt_arch_gemma3_cuda = {gemma3_cuda_names, cuda_gemma3_load, cuda_free, cuda_forward,
-                                     cuda_forward_residual, cuda_forward_multi, cuda_kv_new, cuda_kv_free, NULL};
+                                     cuda_forward_residual, cuda_forward_multi, cuda_kv_new, cuda_kv_free, NULL, NULL};
 
 /* The device twin of a CPU family, or NULL when there is none. */
 const nt_arch *nt_cuda_arch_for(const nt_arch *cpu) {

@@ -17,8 +17,18 @@ static const char *const words[V] = {
     " exposure"," probe"
 };
 
+static void tensor(gguf_writer *w, int pass, const char *name, int rank,
+                   const uint64_t *shape, const float *values) {
+    uint64_t count = 1;
+    for (int i = 0; i < rank; i++) count *= shape[i];
+    int rc = pass ? gguf_write_tensor_f32(w, name, values, count)
+                  : gguf_write_tensor_decl(w, name, rank, shape, GGUF_TYPE_F32);
+    assert(!rc);
+}
+
 static void body(const char *path, const char *arch, int width, int shift, int flat, int norm_salt, int lie) {
     int depth = width == 64 ? 2 : 4;
+    int sparse = !strcmp(arch, "olmoe");
     const char *vocab[V];
     int32_t types[V];
     for (int i = 0; i < V; i++) { vocab[(i+shift)%V] = words[i]; types[i] = 4; }
@@ -36,11 +46,15 @@ static void body(const char *path, const char *arch, int width, int shift, int f
     }
     snprintf(key, sizeof(key), "%s.attention.layer_norm_rms_epsilon", arch);
     gguf_write_kv_f32(w, key, 1e-5f);
+    if (sparse) {
+        gguf_write_kv_u32(w, "olmoe.expert_count", 2);
+        gguf_write_kv_u32(w, "olmoe.expert_used_count", 1);
+    }
     /* A later key containing ".embedding_length" wins the generic header scan. */
     if (lie) gguf_write_kv_u32(w, "forged.embedding_length", lie);
     gguf_write_kv_str_array(w, "tokenizer.ggml.tokens", vocab, V);
     gguf_write_kv_i32_array(w, "tokenizer.ggml.token_type", types, V);
-    float *matrix = calloc((size_t)width*width, sizeof(float));
+    float *matrix = calloc((size_t)width*width*(sparse ? 2 : 1), sizeof(float));
     float *embedding = calloc((size_t)width*V, sizeof(float));
     float *norm = malloc((size_t)width*sizeof(float));
     assert(matrix && embedding && norm);
@@ -49,27 +63,32 @@ static void body(const char *path, const char *arch, int width, int shift, int f
         int axis = flat ? 0 : (i+shift)%width;
         embedding[(size_t)((i+shift)%V)*width+axis] = shift && i%2 ? -1 : 1;
     }
-    const char *names[] = {"attn_norm","attn_q","attn_k","attn_v","attn_output",
+    const char *dense_fields[] = {"attn_norm","attn_q","attn_k","attn_v","attn_output",
                            "ffn_norm","ffn_gate","ffn_up","ffn_down",
                            "attn_q_norm","attn_k_norm","post_attention_norm","post_ffw_norm"};
-    int fields = !strcmp(arch, "gemma3") ? 13 : 9;
+    const char *sparse_fields[] = {"attn_norm","attn_q","attn_k","attn_v","attn_output",
+                           "ffn_norm","attn_q_norm","attn_k_norm","ffn_gate_inp",
+                           "ffn_gate_exps","ffn_up_exps","ffn_down_exps"};
+    const char **names = sparse ? sparse_fields : dense_fields;
+    int fields = sparse ? 12 : !strcmp(arch, "gemma3") ? 13 : 9;
+    float router[2*width];
+    for (int i = 0; i < width; i++) {
+        router[i] = i%2 ? -0.125f : 0.125f;
+        router[width+i] = -router[i];
+    }
     uint64_t output_width = norm_salt == -1 ? width-1 : width;
-    uint64_t shape[] = {(unsigned)width, (unsigned)width};
+    uint64_t vocab_shape[] = {(unsigned)width, V};
     for (int pass = 0; pass < 2; pass++) {
-        if (pass == 0) {
-            gguf_write_tensor_decl(w, "token_embd.weight", 2, (uint64_t[]){(unsigned)width,V}, GGUF_TYPE_F32);
-            gguf_write_tensor_decl(w, "output_norm.weight", 1, &output_width, GGUF_TYPE_F32);
-        } else {
-            gguf_write_tensor_f32(w, "token_embd.weight", embedding, (uint64_t)width*V);
-            gguf_write_tensor_f32(w, "output_norm.weight", norm, output_width);
-        }
+        tensor(w, pass, "token_embd.weight", 2, vocab_shape, embedding);
+        tensor(w, pass, "output_norm.weight", 1, &output_width, norm);
+        if (sparse) tensor(w, pass, "output.weight", 2, vocab_shape, embedding);
         for (int l = 0; l < depth; l++) for (int k = 0; k < fields; k++) {
             char name[64];
             snprintf(name, sizeof(name), "blk.%d.%s.weight", l, names[k]);
-            int vector = strstr(names[k], "norm") != NULL;
-            if (pass == 0) gguf_write_tensor_decl(w, name, vector ? 1 : 2, shape, GGUF_TYPE_F32);
-            else gguf_write_tensor_f32(w, name, vector ? norm : matrix,
-                                       vector ? (unsigned)width : (uint64_t)width*width);
+            int route = !strcmp(names[k], "ffn_gate_inp");
+            int rank = strstr(names[k], "norm") ? 1 : strstr(names[k], "_exps") ? 3 : 2;
+            uint64_t shape[] = {(unsigned)width, route ? 2u : (unsigned)width, 2};
+            tensor(w, pass, name, rank, shape, rank == 1 ? norm : route ? router : matrix);
         }
     }
     assert(!gguf_write_close(w));
@@ -139,6 +158,7 @@ int main(int argc, char **argv) {
         body("gemma", "gemma3", 64, 0, 0, 0, 0);
         body("gemma-aligned", "gemma3", 64, 0, 0, 0, 0);
         body("forged-wide", "gemma3", 64, 0, 0, 0, 4096);
+        body("sparse", "olmoe", 96, 7, 0, 0, 0);
     } else if (argc == 5 && !strcmp(argv[1], "check")) check(argv[2], argv[3], argv[4]);
     else if (argc == 3 && !strcmp(argv[1], "break-frame")) set_first(argv[2], "doe.anchor_frame");
     else if (argc == 4 && !strcmp(argv[1], "set-first")) set_first(argv[2], argv[3]);

@@ -194,7 +194,8 @@ See [commands, format boundaries and measured parity](docs/qwen35.md).
 ### DoE. Living experts in the Harness
 
 `--experts` seats a native **Democracy of Experts** on the middle block of the
-dense llama-family, Qwen3.5 hybrid and Gemma 3 text CPU decoders. Each token
+dense llama-family, Qwen3.5 hybrid, Gemma 3 text, OLMoE and Qwen3-MoE CPU
+decoders. Each token
 elects a variable number of LoRA experts between attention and the FFN. Four
 rank-4 experts start in six seats.
 `--learn-experts` gives the elected experts one Oja update after each completed
@@ -369,6 +370,38 @@ the lighthouse keeper carries a”. Preview left each host's spore byte-identica
 Synchronous and background learning wrote identical GGUFs on all three hosts.
 [Full scores](experiments/doe_spores/gemma3-scores.tsv) ·
 [Weights, commands and controls](NOTORCHLOG.md#2026-11-09--gemma-3-experts-and-a-qwen35-round-trip).
+
+#### A living parliament inside OLMoE
+
+On OLMoE, two selections happen at the middle block. The parliament elects living
+LoRA seats and adds their correction to the attention residual. The pretrained
+router reads that corrected vector and chooses which FFN experts to execute.
+`--expert-trace` shows the living seats' gates. `--moe-trace` shows the native
+expert IDs in execution order and their applied weights at every waking layer.
+Route tracing works with plain inference too. OLMoE keeps the selected mass
+from its full softmax. Qwen3-MoE normalizes the selected weights to sum to one.
+
+Set `G270`, `OLMO_Q4` and `OLMO_K` to Gemma 3-270M-IT Q8_0 and the two
+OLMoE-1B-7B-0924-Instruct GGUFs (Q4_0 and Q4_K_M). Start a waking memory on
+Gemma, record a private dream on OLMoE and replay both histories on the second
+quantization. Each output spore takes a new filename.
+
+```sh
+export NT_CHAT='||' NT_CTX=64 NT_ATTN_THREADS=1
+./notorch -q --experts --learn-experts --portable-spore --spore-out gemma-key.gguf \
+  "$G270" 'Miro is the lighthouse keeper. Every night Miro carries a key. At sunrise the lighthouse keeper returns home.' 1 0
+./notorch -q --experts --spore-only --spore-in gemma-key.gguf --portable-spore \
+  --spore-out olmo-awake.gguf "$OLMO_Q4"
+./notorch -q --experts --learn-experts --async-consolidation --dream-only 6 \
+  --spore-in olmo-awake.gguf --portable-spore --spore-out olmo-dream.gguf "$OLMO_Q4"
+for state in olmo-awake olmo-dream; do
+  ./notorch -q --experts --expert-trace --moe-trace --spore-in "$state.gguf" \
+    "$OLMO_K" 'At the lighthouse, Miro reaches for his' 12 0 2>"$state.routes"
+done
+```
+
+[The two selections and the portable state](research/democracy_of_experts.md#two-selections-on-a-sparse-body)
+· [AML experiment](experiments/doe_spores/olmoe.aml)
 
 The [SmolLM2-360M experiment](experiments/doe_spores/transplant.aml) moves a
 single seat's A/B between two GGUF spores and probes fresh conversations.
