@@ -20,7 +20,7 @@ enum { WD = 16, VW = 8, VH = 2, VFF = 12, MMH = 20, AC = 4, NMEL = 16, NFFT = 16
        NC = 3, CS = 5, DW = 8, DFF = 12, CW = 8, CFF = 12, CNFFT = 8 };
 
 typedef struct {
-    int v_rows, v_kv3, a_ffn, c_ck, lin_mid, hop_gt, hop_half;
+    int v_rows, v_kv3, a_ffn, c_ck, lin_mid, hop_gt, hop_half, d_heads3, d_heads_huge;
 } breaks;
 
 static uint32_t rng;
@@ -98,7 +98,9 @@ static int write_file(const char *path, breaks b) {
     add("a.gen.code.embd.weight", 3, DW, CS, NC, 0, 0, 0.6f);
     add("a.gen.code.head_norm.weight", 2, DW, NC, 0, 0, 1, 0.1f);
     nrm("a.gen.code.output_norm.weight", DW);
-    block("a.gen.code", 0, DW, DFF, 0, 0, 2, 1, 4, 1, 0);
+    /* d_heads3: three heads of 4 whose own projections agree (q 12 rows, out 12 -> 8), so
+     * only heads x head width against the stack width can refuse it */
+    block("a.gen.code", 0, DW, DFF, 0, 0, b.d_heads3 ? 3 : 2, 1, 4, 1, 0);
     lin("a.gen.code.out_embd.weight", WD, NC * CS);
     /* codec: FSQ table of 2x2 levels, two conv layers and an attention layer, the head */
     add("a.gen.wav.quant.first.codebook.weight", 2, 2, CS - 1, 0, 0, 0, 1);
@@ -143,7 +145,7 @@ static int write_file(const char *path, breaks b) {
     gguf_write_kv_f32(w, "lfm3_omni.audio.log_offset", 4);
     gguf_write_kv_f32(w, "lfm3_omni.audio.log_divisor", 4);
     gguf_write_kv_u32(w, "lfm3_omni.depth.layers", 1);
-    gguf_write_kv_u32(w, "lfm3_omni.depth.heads", 2);
+    gguf_write_kv_u32(w, "lfm3_omni.depth.heads", b.d_heads3 ? 3 : b.d_heads_huge ? 65536 : 2);
     gguf_write_kv_u32(w, "lfm3_omni.depth.kv_heads", 1);
     gguf_write_kv_f32(w, "lfm3_omni.depth.theta", 1e6f);
     gguf_write_kv_f32(w, "lfm3_omni.depth.eps", 1e-5f);
@@ -247,6 +249,8 @@ int main(void) {
         {{.lin_mid = 1},  "a downsampler 1x1 convolution that is not channels x channels is refused"},
         {{.hop_gt = 1},   "a codec hop beyond n_fft is refused"},
         {{.hop_half = 1}, "a codec hop beyond n_fft / 2 is refused"},
+        {{.d_heads3 = 1}, "a depth stack whose heads x head width is not its width is refused"},
+        {{.d_heads_huge = 1}, "a depth stack of 65536 heads is refused before any product is formed"},
     };
     for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
         lfm3_omni *x = open_omni(bad[i].b, &gf);

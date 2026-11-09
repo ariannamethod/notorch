@@ -171,8 +171,9 @@ static int lfm_load(lfm_stack *s, gguf_file *gf, const char *prefix, const char 
     char nm[160];
     int bad = 0, W = s->width;
     s->ffn = 0; s->ck = 0;
-    if (s->n < 1 || s->n > 256 || W < 1 || s->heads < 1 || s->kv_heads < 1 || s->heads % s->kv_heads ||
-        s->head_dim < 2 || s->head_dim % 2 || s->window < 0) {
+    if (s->n < 1 || s->n > 256 || W < 1 || W > (1 << 20) || s->heads < 1 || s->heads > 1024 || s->kv_heads < 1 ||
+        s->kv_heads > s->heads || s->heads % s->kv_heads || s->head_dim < 2 || s->head_dim > 4096 || s->head_dim % 2 ||
+        (long long)s->heads * s->head_dim != W || s->window < 0) {
         fprintf(stderr, "lfm3_omni: %s stack geometry unusable (layers %d, width %d, heads %d/%d, head %d)\n",
                 prefix, s->n, W, s->heads, s->kv_heads, s->head_dim);
         return 0;
@@ -289,8 +290,11 @@ static int lfm_run(const lfm3_omni *om, const lfm_stack *s, float *x, int n) {
     int W = s->width, hd = s->head_dim, F = s->ffn, H = s->heads, KVH = s->kv_heads;
     int qd = H * hd, kd = KVH * hd, rc = -1;
     float *xn = malloc((size_t)n * W * sizeof(float)), *y = malloc((size_t)n * W * sizeof(float));
-    float *a = malloc((size_t)n * (size_t)(3 * W > F ? 3 * W : F) * sizeof(float));
-    float *b = malloc((size_t)n * (size_t)(F > qd ? F : qd) * sizeof(float));
+    size_t aw = (size_t)3 * W > (size_t)F ? (size_t)3 * W : (size_t)F;
+    size_t bw = (size_t)F > (size_t)qd ? (size_t)F : (size_t)qd;
+    if (bw < (size_t)W) bw = (size_t)W;
+    float *a = malloc((size_t)n * aw * sizeof(float));
+    float *b = malloc((size_t)n * bw * sizeof(float));
     float *q = malloc((size_t)n * qd * sizeof(float)), *k = malloc((size_t)n * kd * sizeof(float));
     float *v = malloc((size_t)n * kd * sizeof(float)), *g = malloc((size_t)n * H * sizeof(float));
     float *cs = malloc((size_t)n * hd / 2 * sizeof(float)), *sn = malloc((size_t)n * hd / 2 * sizeof(float));
@@ -456,7 +460,8 @@ lfm3_omni *lfm3_omni_load(gguf_file *gf) {
     o->v_width = o->v_patch[0].rows;
     int VW = o->v_width, vhd = o->v_heads > 0 ? VW / o->v_heads : 0;
     /* the head geometry every attention layer and the rope table are sized from */
-    if (bad || VW < 1 || o->v_patch[1].rows != VW || o->v_layers < 1 || o->v_layers > 256 || o->v_heads < 1 ||
+    if (bad || VW < 1 || VW > (1 << 20) || o->v_patch[1].rows != VW || o->v_layers < 1 || o->v_layers > 256 ||
+        o->v_heads < 1 || o->v_heads > 1024 ||
         o->v_kv_heads < 1 || o->v_kv_heads > o->v_heads || o->v_heads % o->v_kv_heads || vhd * o->v_heads != VW || vhd % 4) {
         fprintf(stderr, "lfm3_omni: vision geometry unusable (width %d, heads %d/%d, layers %d)\n",
                 VW, o->v_heads, o->v_kv_heads, o->v_layers);
