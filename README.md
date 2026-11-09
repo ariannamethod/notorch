@@ -185,9 +185,9 @@ OneJev prompts pass every-layer and full-logit comparison with Transformers;
 1,214 frozen-fixture checks exercise chunking and failures.
 See [commands, format boundaries and measured parity](docs/qwen35.md).
 
-### Living experts in the Harness
+### DoE. Living experts in the Harness
 
-`--experts` seats a native Democracy of Experts on the middle block of the
+`--experts` seats a native **Democracy of Experts** on the middle block of the
 dense llama-family CPU decoder. Each token elects a variable number of LoRA
 experts between attention and the FFN. Four rank-4 experts start in six seats.
 `--learn-experts` gives the elected experts one Oja update after each completed
