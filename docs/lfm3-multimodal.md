@@ -97,10 +97,13 @@ codec turns the codes into a waveform. Text and audio interleave 6:12.
 Omni comes first. Every step has its fixture before its C and its gate before
 the next step.
 
-1. **Interface.** A way for a family to take embedding rows for some positions
-   (a `forward_embd` hook, or token id −1 plus a row table). This changes
-   `harness/arch.h`, and every family that does not implement it must keep
-   refusing. Decided with the maintainer before it is written.
+1. **Interface.** Decided with the maintainer, 2026-11-09: an optional
+   `forward_embd` hook in the family's vtable in `harness/arch.h`, taking
+   embedding rows for the positions that have them. A family without it refuses
+   such a call loudly and by name. No sentinel goes into the token stream, no
+   token id −1: in-band markers are the class the `kv_dim` sentinel was, closed
+   by moving `/reset` onto the family's hooks, and it stays closed. The hook
+   needs a fixture before it is written, like every step below.
 2. **Vision tower + projector** over the mmproj GGUF, F32 first. Gate: per-layer
    outputs against the upstream PyTorch module on a fixed 64×64 and a fixed
    512×384 image (relative L2 ≤ 2e-4 per layer), projector output against
@@ -135,8 +138,16 @@ Two kinds, as for Qwen3.5 (`tests/qwen35_fixture_gen.py`):
 The upstream modeling code needs a newer Transformers than the one these
 fixtures were first attempted with: 5.8.0 has no
 `masking_utils.create_recurrent_attention_mask`, which `modeling_lfm3_omni.py`
-imports. Until a newer one is installed, the reference is llama.cpp's mtmd
-on the official GGUF pair, end to end.
+imports. Transformers 5.22.2 (with huggingface_hub, tokenizers and
+safetensors), installed into a directory of its own beside the existing
+environment, is the maintainer's word for these dumps; any further dependency
+is named in the record of the step that needs it. Until the dumps exist, the
+reference is llama.cpp's mtmd on the official GGUF pair, end to end.
+
+llama.cpp moves; every parity number here names the commit it was measured
+against. `7d7f0287530bc8981690f361d8c1627dbae1c99a` was the head of master on
+2026-11-08 and still on 2026-11-09. A later slice is measured on the same
+machine and recorded beside the earlier one, which stays.
 
 ## End-to-end references recorded, 2026-11-09
 
