@@ -267,7 +267,8 @@ static void attn_heads(void *vctx, int h0, int h1) {
  * validated every row. */
 static int llama_rows(llama_model *m, int n, const int *tokens, kv_cache *const *kvs,
                       const int *pos, float *logits, int head_rows,
-                      nt_residual_fn callback, void *user, void *const *users) {
+                      nt_residual_fn post_attention, nt_residual_fn callback,
+                      void *user, void *const *users) {
     int rc = NT_OK;
     int E = m->embed, H = m->n_heads, KV = m->n_kv_heads;
     int HD = m->head_dim, KVD = m->kv_dim, FFN = m->ffn, Q_DIM = m->q_dim;
@@ -377,6 +378,11 @@ static int llama_rows(llama_model *m, int n, const int *tokens, kv_cache *const 
         for (long i = 0; i < (long)n * E; i++) x[i] += ffn_out[i];
         pf_add(PF_RESID, pft);
 
+        if (post_attention) {
+            rc = post_attention(user, l, pos[0], n, E, x);
+            if (rc != NT_OK) goto done;
+        }
+
         pft = pf_mark();
         for (int j = 0; j < n; j++)
             rmsnorm(xn + (long)j * E, x + (long)j * E, m->layers[l].ffn_norm, E, eps);
@@ -435,9 +441,10 @@ done:
     return rc;
 }
 
-static int llama_forward_residual(void *model, kv_cache *kv, const int *tokens, int n,
-                                  int pos0, float *logits,
-                                  nt_residual_fn callback, void *user) {
+int nt_llama_forward_hooks(void *model, kv_cache *kv, const int *tokens, int n,
+                           int pos0, float *logits, nt_residual_fn post_attention,
+                           nt_residual_fn post_block, void *user) {
+    if (!model) return NT_E_ARG;
     llama_model *m = (llama_model*)model;
     int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_layers, m->kv_dim);
     if (rc != NT_OK) return rc;
@@ -445,9 +452,15 @@ static int llama_forward_residual(void *model, kv_cache *kv, const int *tokens, 
     kv_cache **kvs = (kv_cache**)malloc((size_t)n * sizeof(kv_cache*));
     if (!pos || !kvs) { free(pos); free(kvs); return NT_E_MEMORY; }
     for (int j = 0; j < n; j++) { pos[j] = pos0 + j; kvs[j] = kv; }
-    rc = llama_rows(m, n, tokens, kvs, pos, logits, 1, callback, user, NULL);
+    rc = llama_rows(m, n, tokens, kvs, pos, logits, 1, post_attention, post_block, user, NULL);
     free(pos); free(kvs);
     return rc;
+}
+
+static int llama_forward_residual(void *model, kv_cache *kv, const int *tokens, int n,
+                                  int pos0, float *logits,
+                                  nt_residual_fn callback, void *user) {
+    return nt_llama_forward_hooks(model, kv, tokens, n, pos0, logits, NULL, callback, user);
 }
 
 static int llama_forward(void *model, kv_cache *kv, const int *tokens, int n,
@@ -470,7 +483,7 @@ static int llama_forward_multi(void *model, kv_cache *const *kvs, const int *tok
         int rc = nt_check_call(kvs[j], &tokens[j], 1, pos[j], m->vocab, m->n_layers, m->kv_dim);
         if (rc != NT_OK) return rc;
     }
-    return llama_rows(m, n, tokens, kvs, pos, logits, n, callback, NULL, users);
+    return llama_rows(m, n, tokens, kvs, pos, logits, n, NULL, callback, NULL, users);
 }
 
 static const char *const llama_names[] = { "llama", "mistral3", "qwen2", "qwen3", NULL };

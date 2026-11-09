@@ -63,6 +63,10 @@ tests/bench_*
 !tests/*.c
 !tests/*.h
 !tests/*.sh
+/doe_probe
+/test_expert_consolidation
+/expert_fixtures
+!tests/test_expert_spores.py
 !tests/test_sampling_mutations.py
 !tests/test_penelope_reference.py
 !tests/test_penelope_review.py
