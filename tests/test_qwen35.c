@@ -15,6 +15,25 @@ static int inspect(void *user,int layer,int pos,int n,int width,float *x) {
     return 0;
 }
 static int stop(void *user,int l,int p,int n,int e,float *x){(void)user;(void)l;(void)p;(void)n;(void)e;(void)x;return 73;}
+typedef struct { int selected, arrived, observed; } hook_trial;
+static int erase_input(void *user,int layer,int pos,int n,int width,float *x) {
+    hook_trial *t=user;
+    if(layer==t->selected) {
+        CHECK(pos==0 && !t->arrived,"one intervention at the selected mixer");
+        t->arrived++;
+        memset(x,0,(size_t)n*width*sizeof(float));
+    }
+    return NT_OK;
+}
+static int observe_erased(void *user,int layer,int pos,int n,int width,float *x) {
+    hook_trial *t=user;
+    if(layer==t->selected) {
+        CHECK(pos==0 && t->arrived==1,"FFN follows the selected attention hook");
+        for(int i=0;i<n*width;i++)CHECK(x[i]==0,"zero input remains zero across the bias-free FFN");
+        t->observed++;
+    }
+    return NT_OK;
+}
 int main(void) {
     char path[]="/tmp/notorch-qwen35-XXXXXX";int fd=mkstemp(path);if(fd<0)return 1;close(fd);
     CHECK(!fixture(path,0),"fixture written");gguf_file *g=gguf_open(path);nt_dims d={0};
@@ -28,7 +47,15 @@ int main(void) {
         }
         for(int i=0;i<40;i++)CHECK(fabsf(out[i]-golden_logits[i])<2e-5f,"independent final logits");
     }
+    for(int layer=0;layer<d.n_layers;layer++) {
+        hook_trial t={.selected=layer};
+        CHECK(!nt_arch_qwen35.doe->forward(m,kv,ids,7,0,out,erase_input,observe_erased,&t),
+              "intervene across full-attention and recurrent blocks");
+        CHECK(t.arrived==1 && t.observed==1,"both DOE hooks ran");
+    }
     for(int i=0;i<40;i++)out[i]=1234;
+    CHECK(nt_arch_qwen35.doe->forward(m,kv,ids,7,0,out,stop,NULL,NULL)==73,"attention hook error propagates");
+    CHECK(nt_arch_qwen35.forward(m,kv,ids,1,1,out)==NT_E_STATE,"interrupted recurrent cache needs restart");
     int invalid=40;
     CHECK(nt_arch_qwen35.forward(m,kv,&invalid,1,0,out)==NT_E_TOKEN,"invalid ID");
     CHECK(nt_arch_qwen35.forward(m,kv,ids,7,3,out)==NT_E_CAPACITY,"capacity");

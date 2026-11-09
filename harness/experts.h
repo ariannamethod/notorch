@@ -12,7 +12,7 @@ typedef struct nt_experts nt_experts;
  * completed turn for these exact host bytes. Destroy the session after any
  * nonzero hook/finish result; a failed turn must never be saved or continued. */
 nt_experts *nt_experts_open(const gguf_file *host, const char *spore, FILE *trace);
-/* Borrow the host, its loaded nt_arch_llama decoder and tokenizer through
+/* Borrow the host, its loaded DOE-capable CPU decoder and tokenizer through
  * close. Export and foreign-host import sample the body with private KV.
  * The original open handles fresh and exact-host state. */
 typedef struct {

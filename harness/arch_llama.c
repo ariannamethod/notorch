@@ -486,6 +486,32 @@ static int llama_forward_multi(void *model, kv_cache *const *kvs, const int *tok
     return llama_rows(m, n, tokens, kvs, pos, logits, n, NULL, callback, NULL, users);
 }
 
+static const gguf_file *llama_describe(const void *model, nt_dims *dims) {
+    const llama_model *m = model;
+    *dims = (nt_dims){m->n_layers, m->kv_dim, m->vocab};
+    return m->gf;
+}
+
+static const float *llama_doe_norm(const void *model, int index) {
+    const llama_model *m = model;
+    char name[64];
+    const float *norm;
+    if (index < 0 || index > 2*m->n_layers) return NULL;
+    if (index == 2*m->n_layers) {
+        strcpy(name, "output_norm.weight");
+        norm = m->out_norm;
+    } else {
+        int l = index/2;
+        snprintf(name, sizeof(name), index%2 ? "blk.%d.ffn_norm.weight" : "blk.%d.attn_norm.weight", l);
+        norm = index%2 ? m->layers[l].ffn_norm : m->layers[l].attn_norm;
+    }
+    int ti = gguf_find_tensor(m->gf, name);
+    return ti >= 0 && m->gf->tensors[ti].ndim == 1 &&
+           m->gf->tensors[ti].shape[0] == (unsigned)m->embed ? norm : NULL;
+}
+
+static const nt_doe_decoder llama_doe = {nt_llama_forward_hooks, llama_describe, llama_doe_norm};
+
 static const char *const llama_names[] = { "llama", "mistral3", "qwen2", "qwen3", NULL };
 
 const nt_arch nt_arch_llama = {
@@ -495,4 +521,5 @@ const nt_arch nt_arch_llama = {
     .forward = llama_forward,
     .forward_residual = llama_forward_residual,
     .forward_multi = llama_forward_multi,
+    .doe = &llama_doe,
 };

@@ -1,5 +1,4 @@
 #include "harness/spore_frame.h"
-#include "harness/arch_models.h"
 #include "sha256.h"
 #include <math.h>
 #include <stdlib.h>
@@ -68,42 +67,22 @@ int nt_spore_cue_ids(const bpe_tokenizer *tok, int index, int ids[NT_SPORE_CUE_C
     return (size_t)used == strlen(literal) && !memcmp(bytes, literal, used) ? n : 0;
 }
 
-/* The ordered per-channel RMSNorm weights survive requantization of the linear
- * maps. Hash the actual dense decoder's f32 vectors, including its final norm. */
-static int hash_norm(unsigned char chain[64], const llama_model *m, const char *name,
-                     const float *norm) {
-    int index = gguf_find_tensor(m->gf, name);
-    if (!norm || index < 0) return -1;
-    const gguf_tensor_info *t = &m->gf->tensors[index];
-    if (t->ndim != 1 || t->shape[0] != (unsigned)m->embed) return -1;
-    for (int i = 0; i < m->embed; i++) if (!isfinite(norm[i])) return -1;
-    return nt_sha256(norm, (size_t)m->embed*sizeof(float), chain+32) ||
-           nt_sha256(chain, 64, chain);
-}
-
-static int norm_fingerprint(const llama_model *m, char out[65]) {
+/* Preserve the v1 fingerprint of the effective, ordered f32 weights. */
+int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host,
+                         const nt_arch *arch, nt_dims dims, float *frame, char norm_sha[65]) {
+    if (!body->tokenizer) return -1;
+    int width = host->embed_dim, layer = dims.n_layers / 2;
     unsigned char chain[64] = {0};
-    char name[64];
-    for (int l = 0; l < m->n_layers; l++) {
-        snprintf(name, sizeof(name), "blk.%d.attn_norm.weight", l);
-        if (hash_norm(chain, m, name, m->layers[l].attn_norm)) return -1;
-        snprintf(name, sizeof(name), "blk.%d.ffn_norm.weight", l);
-        if (hash_norm(chain, m, name, m->layers[l].ffn_norm)) return -1;
+    for (int k = 0; k <= 2*dims.n_layers; k++) {
+        const float *norm = arch->doe->norm(body->model, k);
+        if (!norm) return -1;
+        for (int i = 0; i < width; i++) if (!isfinite(norm[i])) return -1;
+        if (nt_sha256(norm, (size_t)width*sizeof(float), chain+32) ||
+            nt_sha256(chain, sizeof(chain), chain)) return -1;
     }
-    if (hash_norm(chain, m, "output_norm.weight", m->out_norm)) return -1;
-    for (int i = 0; i < 32; i++) snprintf(out+2*i, 3, "%02x", chain[i]);
-    return 0;
-}
-
-int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host, float *frame,
-                         char norm_sha[65]) {
-    if (!host || !body || !body->model || !body->tokenizer) return -1;
-    const llama_model *m = body->model;
-    int width = host->embed_dim, layer = host->n_layers / 2;
-    if (m->gf != host || width < NT_SPORE_ANCHORS ||
-        bpe_n_vocab(body->tokenizer) > m->vocab || norm_fingerprint(m, norm_sha))
-        return -1;
-    kv_cache *kv = kv_new(m->n_layers, NT_SPORE_CUE_CAP, m->kv_dim);
+    for (int i = 0; i < 32; i++) snprintf(norm_sha+2*i, 3, "%02x", chain[i]);
+    int capacity = host->ctx_len > 0 && host->ctx_len < NT_SPORE_CUE_CAP ? host->ctx_len : NT_SPORE_CUE_CAP;
+    kv_cache *kv = nt_model_kv_new(arch, body->model, dims, capacity);
     if (!kv) return -1;
     int rc = -1;
     for (int k = 0; k < NT_SPORE_ANCHORS; k++) {
@@ -111,13 +90,13 @@ int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host, floa
         int n = nt_spore_cue_ids(body->tokenizer, k, ids);
         capture c = {layer, width, frame + (size_t)k * width};
         if (!n || (host->ctx_len > 0 && n > host->ctx_len) ||
-            nt_llama_forward_hooks(body->model, kv, ids, n, 0, NULL,
+            arch->doe->forward(body->model, kv, ids, n, 0, NULL,
                                    capture_last, NULL, &c) != CAPTURED ||
             orthogonalize(frame, k, width)) goto done;
     }
     rc = nt_spore_frame_valid(frame, width) ? 0 : -1;
 done:
-    kv_free(kv);
+    nt_model_kv_free(arch, body->model, kv);
     return rc;
 }
 

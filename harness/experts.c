@@ -87,7 +87,11 @@ nt_experts *nt_experts_open_on_body(const gguf_file *host, const char *spore, FI
     p->depth = host->n_layers;
     p->layer = p->depth / 2;
     snprintf(p->arch, sizeof(p->arch), "%s", host->arch);
+    p->decoder = nt_pick_arch(host->arch);
     if (body) {
+        if (!p->decoder || !p->decoder->doe || !body->model ||
+            p->decoder->doe->describe(body->model, &p->dims) != host ||
+            (body->tokenizer && bpe_n_vocab(body->tokenizer) > p->dims.vocab)) goto fail;
         p->body = *body;
         p->frame_host = host;
     }
@@ -376,12 +380,12 @@ static uint64_t elements(const spore_tensor *t) {
 
 int nt_experts_calibrate(nt_experts *p) {
     if (p->frame) return 0;
-    if (nt_pick_arch(p->arch) != &nt_arch_llama || p->dim < NT_SPORE_ANCHORS ||
+    if (!p->decoder || !p->decoder->doe || p->dim < NT_SPORE_ANCHORS ||
         p->dim > NT_MAX_ELEMENTS / NT_SPORE_ANCHORS || !p->frame_host)
         return -1;
     float *frame = malloc((size_t)p->dim * NT_SPORE_ANCHORS * sizeof(*frame));
     if (!frame) return -1;
-    if (nt_spore_frame_build(&p->body, p->frame_host, frame, p->norm_sha)) { free(frame); return -1; }
+    if (nt_spore_frame_build(&p->body, p->frame_host, p->decoder, p->dims, frame, p->norm_sha)) { free(frame); return -1; }
     p->frame = frame;
     return 0;
 }
@@ -574,8 +578,9 @@ static int restore(nt_experts *p, const char *path) {
         const gguf_kv *arch = field(g, "doe.source_arch", 8);
         const gguf_kv *w = field(g, "doe.width", 4);
         const gguf_kv *depth = field(g, "doe.depth", 4);
+        const nt_arch *source = arch ? nt_pick_arch(arch->val.str) : NULL;
         if (!frame || strcmp(frame->val.str, NT_SPORE_FRAME_ID) || !is_digest(norm_sha) ||
-            !arch || nt_pick_arch(arch->val.str) != &nt_arch_llama ||
+            !source || !source->doe ||
             !w || w->val.u32 < NT_SPORE_ANCHORS || w->val.u32 > NT_MAX_ELEMENTS / NT_SPORE_ANCHORS ||
             !depth || !depth->val.u32 || depth->val.u32 / 2 != layer->val.u32) goto done;
         width = (int)w->val.u32;

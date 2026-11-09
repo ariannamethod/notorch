@@ -9,7 +9,8 @@ const char *nt_spore_cue_text(int index);
 int nt_spore_cue_ids(const bpe_tokenizer *tok, int index, int ids[NT_SPORE_CUE_CAP]);
 #define NT_SPORE_FRAME_ID "mid-attention-literals-qr-v1"
 
-int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host, float *frame,
+int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host,
+                         const nt_arch *arch, nt_dims dims, float *frame,
                          char norm_sha[65]);
 int nt_spore_frame_valid(const float *frame, int width);
 double nt_spore_frame_min_cos(const float *left, const float *right, int width);

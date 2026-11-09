@@ -223,7 +223,7 @@ static void residency(const char *when) {
 
 static int session_forward(session *s, const int *tokens, int n, int pos, float *logits) {
     if (s->experts)
-        return nt_llama_forward_hooks(s->model, s->kv, tokens, n, pos, logits,
+        return s->arch->doe->forward(s->model, s->kv, tokens, n, pos, logits,
                                       nt_experts_attend, nt_experts_observe, s->experts);
     return s->arch->forward(s->model, s->kv, tokens, n, pos, logits);
 }
@@ -376,7 +376,7 @@ static void usage(const char *self) {
     fprintf(stderr,
         "usage: %s [-q] [-n tokens] [-t temp] [-r runs] [--tokenizer file] <model.gguf> [prompt] [max_tokens] [temp]\n"
         "  no prompt        chat in the terminal\n"
-        "  --experts        seat a native parliament on the dense llama-family decoder\n"
+        "  --experts        seat a native parliament on the dense llama-family or Qwen3.5 decoder\n"
         "  --learn-experts  update elected experts after each turn (requires --experts)\n"
         "  --async-consolidation  consolidate in the background (requires --learn-experts)\n"
         "  --dream N        generate 1..32 private choices after each learned turn\n"
@@ -630,7 +630,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (experts && arch != &nt_arch_llama) {
+    if (experts && !arch->doe) {
         fprintf(stderr, "notorch: --experts is unavailable on %s\n", gf->arch);
         gguf_close(gf);
         return 1;
@@ -689,7 +689,7 @@ int main(int argc, char **argv) {
         if (n_tok <= 0) { fprintf(stderr, "notorch: no ids for this prompt (empty, or refused by the tokenizer)\n"); rc = 1; }
         else {
             s.max_seq = n_tok + max_tokens + 1;
-            s.kv = arch->kv_new ? arch->kv_new(model, s.max_seq) : kv_new(dims.n_layers, s.max_seq, dims.kv_dim);
+            s.kv = nt_model_kv_new(arch, model, dims, s.max_seq);
             if (!s.kv) { fprintf(stderr, "notorch: could not make a cache for %d positions\n", s.max_seq); rc = 1; }
         }
         if (s.kv) {
@@ -718,7 +718,7 @@ int main(int argc, char **argv) {
         const char *ctx = getenv("NT_CTX");
         s.max_seq = ctx ? atoi(ctx) : 2048;
         if (s.max_seq < max_tokens + 2) s.max_seq = max_tokens + 2;
-        s.kv = arch->kv_new ? arch->kv_new(model, s.max_seq) : kv_new(dims.n_layers, s.max_seq, dims.kv_dim);
+        s.kv = nt_model_kv_new(arch, model, dims, s.max_seq);
         if (!s.kv) { fprintf(stderr, "notorch: could not make a cache for %d positions\n", s.max_seq); rc = 1; }
         else rc = chat(&s, max_tokens, temp);
     }
@@ -738,8 +738,7 @@ done:
     if (s.tok) bpe_free(s.tok);
     free(s.logits);
     if (s.kv) {
-        if (arch->kv_free) arch->kv_free(model, s.kv);
-        else kv_free(s.kv);
+        nt_model_kv_free(arch, model, s.kv);
     }
     arch->free(model); gguf_close(gf);
     return rc;

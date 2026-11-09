@@ -1,6 +1,5 @@
 /* A private greedy episode on the resident decoder. The waking KV and turn
  * statistics never enter this episode. Only elected factors can learn from it. */
-#include "harness/arch_models.h"
 #include "harness/experts_internal.h"
 #include "harness/spore_frame.h"
 #include <math.h>
@@ -63,35 +62,35 @@ static int trace_piece(FILE *out, const bpe_tokenizer *tok, int step, int id, in
 }
 
 static int generate(nt_experts *d, int cue, int limit, int eos) {
-    const llama_model *m = d->body.model;
+    const nt_arch *arch = d->decoder;
     const bpe_tokenizer *tok = d->body.tokenizer;
     int ids[NT_SPORE_CUE_CAP];
     int n = nt_spore_cue_ids(tok, cue, ids);
     if (!n) return NT_E_TOKEN;
     int capacity = n + limit;
-    if (m->gf->ctx_len > 0 && capacity > m->gf->ctx_len) return NT_E_CAPACITY;
-    kv_cache *kv = kv_new(m->n_layers, capacity, m->kv_dim);
-    float *logits = malloc((size_t)m->vocab * sizeof(float));
+    if (d->frame_host->ctx_len > 0 && capacity > d->frame_host->ctx_len) return NT_E_CAPACITY;
+    kv_cache *kv = nt_model_kv_new(arch, d->body.model, d->dims, capacity);
+    float *logits = malloc((size_t)d->dims.vocab * sizeof(float));
     int rc = NT_E_MEMORY;
     if (!kv || !logits) goto done;
-    rc = nt_llama_forward_hooks(d->body.model, kv, ids, n, 0, logits,
+    rc = arch->doe->forward(d->body.model, kv, ids, n, 0, logits,
                                 nt_experts_attend, nt_experts_observe, d);
     for (int t = 0; !rc && t < limit; t++) {
-        for (int i = 0; i < m->vocab; i++)
+        for (int i = 0; i < d->dims.vocab; i++)
             if (!isfinite(logits[i])) { rc = NT_E_STATE; goto done; }
-        int id = sample(logits, m->vocab, 0);
+        int id = sample(logits, d->dims.vocab, 0);
         if (id >= bpe_n_vocab(tok)) { rc = NT_E_TOKEN; break; }
         int stop = id == eos || bpe_is_eog(tok, id);
         nt_experts_choice(d, logits[id], logits[id]);
         if (d->trace && (rc = trace_piece(d->trace, tok, t, id, stop))) break;
         if (stop) break;
-        rc = nt_llama_forward_hooks(d->body.model, kv, &id, 1, n+t,
+        rc = arch->doe->forward(d->body.model, kv, &id, 1, n+t,
                                     t+1 == limit ? NULL : logits,
                                     nt_experts_attend, nt_experts_observe, d);
     }
 done:
     free(logits);
-    kv_free(kv);
+    nt_model_kv_free(arch, d->body.model, kv);
     return rc;
 }
 

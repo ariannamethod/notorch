@@ -188,7 +188,7 @@ See [commands, format boundaries and measured parity](docs/qwen35.md).
 ### DoE. Living experts in the Harness
 
 `--experts` seats a native **Democracy of Experts** on the middle block of the
-dense llama-family CPU decoder. Each token elects a variable number of LoRA
+dense llama-family or Qwen3.5 hybrid CPU decoder. Each token elects a variable number of LoRA
 experts between attention and the FFN. Four rank-4 experts start in six seats.
 `--learn-experts` gives the elected experts one Oja update after each completed
 turn and enables vitality, mitosis and apoptosis. Plain inference is the default.
@@ -196,6 +196,17 @@ turn and enables vitality, mitosis and apoptosis. Plain inference is the default
 ```sh
 ./notorch --experts --learn-experts --spore-out first.gguf model.gguf "A robin builds its nest in" 8 0
 ./notorch --experts --spore-in first.gguf --expert-trace model.gguf "The robin returns to" 8 0
+```
+
+Qwen3.5 seats the same experts after the full-attention or GatedDeltaNet
+residual and before the FFN. Supply the GGUF tokenizer for a source-layout
+model with a separate vocabulary. Dreams and calibration get their own
+recurrent, convolution and full-attention state.
+
+```sh
+./notorch --tokenizer tokenizer.gguf --experts --learn-experts --async-consolidation \
+  --spore-out awake.gguf onejev.gguf "Check this file" 2 0
+./notorch --tokenizer tokenizer.gguf --experts --spore-in awake.gguf onejev.gguf "Check it again" 2 0
 ```
 
 The default spore is an independent GGUF bound to the SHA-256 of the host file. Give
