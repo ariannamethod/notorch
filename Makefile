@@ -451,6 +451,13 @@ lfm3_omni_probe: tools/lfm3_omni_probe.c $(LFM3_OMNI_SRC) $(LFM3_OMNI_HDR)
 lfm3_omni_compare: tools/lfm3_omni_compare.c
 	$(CC) $(CFLAGS) -o $@ tools/lfm3_omni_compare.c -lm
 
+.PHONY: test_lfm3_omni
+test_lfm3_omni: tests/test_lfm3_omni.c $(LFM3_OMNI_SRC) $(LFM3_OMNI_HDR)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_lfm3_omni.c $(LFM3_OMNI_SRC) -lm $(BLAS_LIBS)
+	./test_lfm3_omni
+
+test: test_lfm3_omni
+
 .PHONY: test_lfm3
 test_lfm3: tests/test_lfm3.c harness/arch_lfm3.c harness/runtime.c gguf.c notorch.c $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_lfm3.c harness/runtime.c gguf.c notorch.c -lm $(BLAS_LIBS)

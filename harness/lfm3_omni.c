@@ -164,9 +164,19 @@ typedef struct {
     float *out_norm;
 } lfm_stack;
 
+/* Every layer of a stack shares one geometry, because the runner sizes its scratch once:
+ * a layer whose FFN or convolution window differs from layer 0's is refused here, not
+ * discovered as a write past a buffer. */
 static int lfm_load(lfm_stack *s, gguf_file *gf, const char *prefix, const char *out_norm) {
     char nm[160];
     int bad = 0, W = s->width;
+    s->ffn = 0; s->ck = 0;
+    if (s->n < 1 || s->n > 256 || W < 1 || s->heads < 1 || s->kv_heads < 1 || s->heads % s->kv_heads ||
+        s->head_dim < 2 || s->head_dim % 2 || s->window < 0) {
+        fprintf(stderr, "lfm3_omni: %s stack geometry unusable (layers %d, width %d, heads %d/%d, head %d)\n",
+                prefix, s->n, W, s->heads, s->kv_heads, s->head_dim);
+        return 0;
+    }
     s->L = calloc((size_t)s->n, sizeof *s->L);
     if (!s->L) return 0;
     for (int l = 0; l < s->n; l++) {
@@ -179,14 +189,21 @@ static int lfm_load(lfm_stack *s, gguf_file *gf, const char *prefix, const char 
             y->post2 = vec(gf, N("ffn_post_norm.weight"), W, &bad);
         }
         y->conv = gguf_find_tensor(gf, N("conv_pw1.weight")) >= 0;
-        if (!mat(&y->fg, gf, N("ffn_gate.weight"), W) || !mat(&y->fu, gf, N("ffn_up.weight"), W)) bad = 1;
-        s->ffn = y->fg.rows;
-        if (!mat(&y->fd, gf, N("ffn_down.weight"), s->ffn) || y->fu.rows != s->ffn || y->fd.rows != W) bad = 1;
+        if (!mat(&y->fg, gf, N("ffn_gate.weight"), W) || !mat(&y->fu, gf, N("ffn_up.weight"), W)) { bad = 1; break; }
+        if (!s->ffn) s->ffn = y->fg.rows;
+        if (y->fg.rows != s->ffn || y->fu.rows != s->ffn || !mat(&y->fd, gf, N("ffn_down.weight"), s->ffn) || y->fd.rows != W) {
+            fprintf(stderr, "lfm3_omni: %s layer %d FFN is not %d wide like layer 0, or does not return to %d\n",
+                    prefix, l, s->ffn, W);
+            bad = 1;
+        }
         if (y->conv) {
             int ti = gguf_find_tensor(gf, N("conv_dw.weight"));
-            s->ck = ti >= 0 ? (int)gf->tensors[ti].shape[0] : 0;
-            if (s->ck < 1 || s->ck > 64) bad = 1;
-            else y->dw = vec(gf, nm, W * s->ck, &bad);
+            int ck = ti >= 0 ? (int)gf->tensors[ti].shape[0] : 0;
+            if (!s->ck) s->ck = ck;
+            if (ck < 1 || ck > 64 || ck != s->ck) {
+                fprintf(stderr, "lfm3_omni: %s layer %d convolution window %d (first conv layer: %d)\n", prefix, l, ck, s->ck);
+                bad = 1;
+            } else y->dw = vec(gf, nm, W * s->ck, &bad);
             if (!mat(&y->pw1, gf, N("conv_pw1.weight"), W) || !mat(&y->pw2, gf, N("conv_pw2.weight"), W) ||
                 y->pw1.rows != 3 * W || y->pw2.rows != W) bad = 1;
         } else {
@@ -207,6 +224,17 @@ static int lfm_load(lfm_stack *s, gguf_file *gf, const char *prefix, const char 
     s->out_norm = out_norm ? vec(gf, out_norm, W, &bad) : NULL;
     if (bad) fprintf(stderr, "lfm3_omni: %s stack does not load\n", prefix);
     return !bad;
+}
+
+/* The head width, read off the first attention layer's query norm. */
+static int first_head_dim(gguf_file *gf, const char *prefix, int n) {
+    char nm[160];
+    for (int l = 0; l < n && l < 256; l++) {
+        snprintf(nm, sizeof nm, "%s.blk.%d.attn_q_norm.weight", prefix, l);
+        int ti = gguf_find_tensor(gf, nm);
+        if (ti >= 0) return gf->tensors[ti].n_elements <= 4096 ? (int)gf->tensors[ti].n_elements : 0;
+    }
+    return 0;
 }
 
 static void lfm_free(lfm_stack *s) {
@@ -426,28 +454,48 @@ lfm3_omni *lfm3_omni_load(gguf_file *gf) {
     int pd = 3 * I->patch * I->patch;
     if (!mat(&o->v_patch[0], gf, "v.patch_embd.weight", pd) || !mat(&o->v_patch[1], gf, "v.patch_embd.weight.1", pd)) bad = 1;
     o->v_width = o->v_patch[0].rows;
-    int VW = o->v_width, vhd = o->v_heads ? VW / o->v_heads : 0;
+    int VW = o->v_width, vhd = o->v_heads > 0 ? VW / o->v_heads : 0;
+    /* the head geometry every attention layer and the rope table are sized from */
+    if (bad || VW < 1 || o->v_patch[1].rows != VW || o->v_layers < 1 || o->v_layers > 256 || o->v_heads < 1 ||
+        o->v_kv_heads < 1 || o->v_kv_heads > o->v_heads || o->v_heads % o->v_kv_heads || vhd * o->v_heads != VW || vhd % 4) {
+        fprintf(stderr, "lfm3_omni: vision geometry unusable (width %d, heads %d/%d, layers %d)\n",
+                VW, o->v_heads, o->v_kv_heads, o->v_layers);
+        lfm3_omni_free(o);
+        return NULL;
+    }
     o->v_embed_norm = vec(gf, "v.embedding_norm.weight", VW, &bad);
     o->vl = calloc((size_t)o->v_layers, sizeof *o->vl);
-    if (!o->vl || !vhd) bad = 1;
+    if (!o->vl) bad = 1;
     for (int l = 0; !bad && l < o->v_layers; l++) {
 #define V(x) (snprintf(nm, sizeof nm, "v.blk.%d.%s", l, x), nm)
         o->vl[l].ln1 = vec(gf, V("ln1.weight"), VW, &bad);
         o->vl[l].ln2 = vec(gf, V("ln2.weight"), VW, &bad);
-        if (!mat(&o->vl[l].fg, gf, V("ffn_gate.weight"), VW) || !mat(&o->vl[l].fu, gf, V("ffn_up.weight"), VW)) bad = 1;
-        o->v_ffn = o->vl[l].fg.rows;
-        if (!mat(&o->vl[l].fd, gf, V("ffn_down.weight"), o->v_ffn)) bad = 1;
+        if (!mat(&o->vl[l].fg, gf, V("ffn_gate.weight"), VW) || !mat(&o->vl[l].fu, gf, V("ffn_up.weight"), VW)) { bad = 1; break; }
+        if (l == 0) o->v_ffn = o->vl[l].fg.rows;
+        if (o->vl[l].fg.rows != o->v_ffn || o->vl[l].fu.rows != o->v_ffn ||
+            !mat(&o->vl[l].fd, gf, V("ffn_down.weight"), o->v_ffn) || o->vl[l].fd.rows != VW) {
+            fprintf(stderr, "lfm3_omni: vision layer %d FFN is not %d wide like layer 0, or does not return to %d\n", l, o->v_ffn, VW);
+            bad = 1;
+        }
         o->vl[l].conv = gguf_find_tensor(gf, V("conv2d_in_proj.weight")) >= 0;
         if (o->vl[l].conv) {
             if (!mat(&o->vl[l].in, gf, V("conv2d_in_proj.weight"), VW) || !mat(&o->vl[l].out, gf, V("conv2d_out_proj.weight"), VW) ||
-                o->vl[l].in.rows != 3 * VW) bad = 1;
+                o->vl[l].in.rows != 3 * VW || o->vl[l].out.rows != VW) {
+                fprintf(stderr, "lfm3_omni: vision layer %d convolution projections are not %d -> 3x%d -> %d\n", l, VW, VW, VW);
+                bad = 1;
+            }
             o->vl[l].dw = vec(gf, V("conv2d_spatial.weight"), 9 * VW, &bad);
         } else {
             o->vl[l].qn = vec(gf, V("attn_q_norm.weight"), vhd, &bad);
             o->vl[l].kn = vec(gf, V("attn_k_norm.weight"), vhd, &bad);
             if (!mat(&o->vl[l].q, gf, V("attn_q.weight"), VW) || !mat(&o->vl[l].k, gf, V("attn_k.weight"), VW) ||
                 !mat(&o->vl[l].v, gf, V("attn_v.weight"), VW) || !mat(&o->vl[l].o, gf, V("attn_out.weight"), VW) ||
-                o->vl[l].q.rows != VW || o->vl[l].k.rows != o->v_kv_heads * vhd) bad = 1;
+                o->vl[l].q.rows != VW || o->vl[l].k.rows != o->v_kv_heads * vhd ||
+                o->vl[l].v.rows != o->v_kv_heads * vhd || o->vl[l].o.rows != VW) {
+                fprintf(stderr, "lfm3_omni: vision layer %d attention is not q %d, k/v %d, out %d rows\n",
+                        l, VW, o->v_kv_heads * vhd, VW);
+                bad = 1;
+            }
         }
 #undef V
     }
@@ -468,19 +516,31 @@ lfm3_omni *lfm3_omni_load(gguf_file *gf) {
         o->a_b[i] = vec(gf, nm, C, &bad);
         if (cn[i]) { snprintf(nm, sizeof nm, "%s.weight", cw[i]); o->a_w[i] = vec(gf, nm, cn[i] * C, &bad); }
     }
-    if (!mat(&o->a_lin_mid, gf, "a.conv1d.3.weight", C) || !mat(&o->a_lin_end, gf, "a.conv1d.6.weight", C)) bad = 1;
+    if (C < 1 || C > 65536 || !mat(&o->a_lin_mid, gf, "a.conv1d.3.weight", C) || !mat(&o->a_lin_end, gf, "a.conv1d.6.weight", C) ||
+        o->a_lin_mid.rows != C || o->a_lin_end.rows != C) {
+        fprintf(stderr, "lfm3_omni: audio downsampler 1x1 convolutions are not %d x %d\n", C, C);
+        bad = 1;
+    }
     ti = gguf_find_tensor(gf, "a.mel_filters");
-    I->n_mel = ti >= 0 ? (int)gf->tensors[ti].shape[1] : 0;
+    I->n_mel = ti >= 0 && gf->tensors[ti].ndim == 2 ? (int)gf->tensors[ti].shape[1] : 0;
     int nbins = o->n_fft / 2 + 1;
+    /* three stride-2 convolutions: eight mel frames per row, n_mel / 8 bins left */
+    if (I->n_mel < 8 || I->n_mel > 1024 || I->n_mel % 8 || I->stride != 8 || I->hop < 1 || I->hop > o->n_fft ||
+        o->n_fft % 4 || (int)gf->tensors[ti].shape[0] != nbins) {
+        fprintf(stderr, "lfm3_omni: audio front end unusable (mel %d, n_fft %d, hop %d, stride %d)\n",
+                I->n_mel, o->n_fft, I->hop, I->stride);
+        lfm3_omni_free(o);
+        return NULL;
+    }
     o->mel = vec(gf, "a.mel_filters", I->n_mel * nbins, &bad);
-    if (I->n_mel % 8 || !mat(&o->a_out, gf, "a.pre_encode.out.weight", C * I->n_mel / 8)) bad = 1;
+    if (!mat(&o->a_out, gf, "a.pre_encode.out.weight", C * I->n_mel / 8)) bad = 1;
     o->a_width = o->a_out.rows;
     o->a_out_b = vec(gf, "a.pre_encode.out.bias", o->a_width, &bad);
     o->enc.tag = "audio";
     o->enc.width = o->a_width;
     o->enc.causal = 1;
-    o->enc.head_dim = o->enc.heads ? o->a_width / o->enc.heads : 0;
-    if (!o->enc.head_dim || !lfm_load(&o->enc, gf, "a", "a.post_ln.weight")) bad = 1;
+    o->enc.head_dim = first_head_dim(gf, "a", o->enc.n);
+    if (o->enc.head_dim * o->enc.heads != o->a_width || !lfm_load(&o->enc, gf, "a", "a.post_ln.weight")) bad = 1;
     o->am_norm_w = vec(gf, "mm.a.mlp.0.weight", o->a_width, &bad);
     o->am_norm_b = vec(gf, "mm.a.mlp.0.bias", o->a_width, &bad);
     if (!mat(&o->am1, gf, "mm.a.mlp.1.weight", o->a_width) || !mat(&o->am3, gf, "mm.a.mlp.3.weight", o->am1.rows) ||
@@ -490,8 +550,12 @@ lfm3_omni *lfm3_omni_load(gguf_file *gf) {
 
     /* depth decoder */
     int NC = I->n_codebooks, CS = I->codebook_size;
-    if (!mat(&o->d_proj, gf, "a.gen.code.proj_in.weight", I->width)) bad = 1;
-    o->depth.width = NC ? o->d_proj.rows / NC : 0;
+    if (CS < 2 || CS > 65536 || I->eos_code != CS - 1 || !mat(&o->d_proj, gf, "a.gen.code.proj_in.weight", I->width) ||
+        o->d_proj.rows % NC) {
+        fprintf(stderr, "lfm3_omni: depth decoder unusable (codebooks %d of %d codes, eos %d)\n", NC, CS, I->eos_code);
+        bad = 1;
+    }
+    o->depth.width = o->d_proj.rows / NC;
     int DW = o->depth.width;
     o->d_proj_b = vec(gf, "a.gen.code.proj_in.bias", NC * DW, &bad);
     o->d_mask = vec(gf, "a.gen.code.mask_embd", DW, &bad);
@@ -500,26 +564,35 @@ lfm3_omni *lfm3_omni_load(gguf_file *gf) {
     if (!mat(&o->d_out, gf, "a.gen.code.out_embd.weight", I->width) || o->d_out.rows != NC * CS) bad = 1;
     o->depth.tag = "depth";
     o->depth.causal = 0;
-    ti = gguf_find_tensor(gf, "a.gen.code.blk.0.attn_q_norm.weight");
-    o->depth.head_dim = ti >= 0 ? (int)gf->tensors[ti].n_elements : 0;
-    if (!o->depth.head_dim || !lfm_load(&o->depth, gf, "a.gen.code", "a.gen.code.output_norm.weight")) bad = 1;
+    o->depth.head_dim = first_head_dim(gf, "a.gen.code", o->depth.n);
+    if (!lfm_load(&o->depth, gf, "a.gen.code", "a.gen.code.output_norm.weight")) bad = 1;
 
-    /* codec */
+    /* codec: the iSTFT reads frames of n_fft at a stride of hop and divides by the summed
+     * squared window, which every trimmed sample must have at least two frames under */
+    if (o->c_nfft < 4 || o->c_nfft > 65536 || o->c_nfft % 2 || o->c_hop < 1 || 2 * o->c_hop > o->c_nfft ||
+        o->c_fs < 1 || o->c_fs > 64) {
+        fprintf(stderr, "lfm3_omni: codec geometry unusable (n_fft %d, hop %d, frame stack %d)\n", o->c_nfft, o->c_hop, o->c_fs);
+        lfm3_omni_free(o);
+        return NULL;
+    }
     ti = gguf_find_tensor(gf, "a.gen.wav.quant.first.codebook.weight");
-    o->n_lv = ti >= 0 ? (int)gf->tensors[ti].shape[0] : 0;
-    o->fsq = vec(gf, "a.gen.wav.quant.first.codebook.weight", o->n_lv * (CS - 1), &bad);
+    o->n_lv = ti >= 0 && gf->tensors[ti].ndim == 2 ? (int)gf->tensors[ti].shape[0] : 0;
+    if (o->n_lv < 1 || o->n_lv > 16) bad = 1;
+    else o->fsq = vec(gf, "a.gen.wav.quant.first.codebook.weight", o->n_lv * (CS - 1), &bad);
     ti = gguf_find_tensor(gf, "a.gen.wav.quant.first.out_proj.weight");
-    int qdim = ti >= 0 ? (int)gf->tensors[ti].shape[1] : 0;
-    o->q_out_w = vec(gf, "a.gen.wav.quant.first.out_proj.weight", qdim * NC * o->n_lv, &bad);
-    o->q_out_b = vec(gf, "a.gen.wav.quant.first.out_proj.bias", qdim, &bad);
-    if (!mat(&o->c_in, gf, "a.gen.wav.tfm.in_proj.weight", qdim)) bad = 1;
+    int qdim = ti >= 0 && gf->tensors[ti].ndim == 2 ? (int)gf->tensors[ti].shape[1] : 0;
+    if (qdim < 1 || qdim > 65536) bad = 1;
+    else {
+        o->q_out_w = vec(gf, "a.gen.wav.quant.first.out_proj.weight", qdim * NC * o->n_lv, &bad);
+        o->q_out_b = vec(gf, "a.gen.wav.quant.first.out_proj.bias", qdim, &bad);
+        if (!mat(&o->c_in, gf, "a.gen.wav.tfm.in_proj.weight", qdim)) bad = 1;
+    }
     o->codec.width = o->c_in.rows;
     o->c_in_b = vec(gf, "a.gen.wav.tfm.in_proj.bias", o->codec.width, &bad);
     o->codec.tag = "codec";
     o->codec.causal = 1;
-    ti = gguf_find_tensor(gf, "a.gen.wav.tfm.blk.2.attn_q_norm.weight");
-    o->codec.head_dim = ti >= 0 ? (int)gf->tensors[ti].n_elements : 0;
-    if (!o->codec.head_dim || !lfm_load(&o->codec, gf, "a.gen.wav.tfm", "a.gen.wav.tfm.output_norm.weight")) bad = 1;
+    o->codec.head_dim = first_head_dim(gf, "a.gen.wav.tfm", o->codec.n);
+    if (!lfm_load(&o->codec, gf, "a.gen.wav.tfm", "a.gen.wav.tfm.output_norm.weight")) bad = 1;
     if (!mat(&o->c_lin, gf, "a.gen.wav.tfm.out_proj.weight", o->codec.width) || o->c_lin.rows != 2 * (o->c_nfft / 2 + 1)) bad = 1;
     o->c_lin_b = vec(gf, "a.gen.wav.tfm.out_proj.bias", o->c_lin.rows, &bad);
     o->window = vec(gf, "a.gen.wav.istft.window", o->c_nfft, &bad);
@@ -933,7 +1006,9 @@ int lfm3_omni_codec_decode(lfm3_omni *o, const int *codes, int T, float *pcm) {
     int NC = I->n_codebooks, LV = o->n_lv, QD = o->q_out_w ? NC * LV : 0, CW = o->codec.width, FS = o->c_fs;
     int N = o->c_nfft, hop = o->c_hop, B = N / 2 + 1, n = T * FS;
     int qdim = o->c_in.cols;
-    if (T < 1) return -1;
+    /* 2^20 decoder positions is more than six hours of speech and keeps every product
+     * below (size_t and int) without a question */
+    if (T < 1 || (long long)T * FS > (1LL << 20)) return -1;
     for (size_t i = 0; i < (size_t)T * NC; i++) if (codes[i] < 0 || codes[i] >= I->codebook_size - 1) return -1;
     long olen = (long)(n - 1) * hop + N;
     float *lat = malloc((size_t)T * QD * sizeof(float)), *q = malloc((size_t)T * qdim * sizeof(float));
@@ -963,8 +1038,10 @@ int lfm3_omni_codec_decode(lfm3_omni *o, const int *codes, int T, float *pcm) {
             env[(size_t)f * hop + t] += (double)o->window[t] * o->window[t];
         }
     int trim = (N - hop) / 2;
-    for (long i = 0; i < (long)T * I->codec_samples_per_frame; i++)
-        pcm[i] = (float)(acc[i + trim] / env[i + trim]);
+    long total = (long)T * I->codec_samples_per_frame;
+    if (total + trim > olen) goto done;
+    for (long i = 0; i < total; i++) if (!(env[i + trim] > 0)) goto done;
+    for (long i = 0; i < total; i++) pcm[i] = (float)(acc[i + trim] / env[i + trim]);
     rc = 0;
 done:
     free(lat); free(q); free(e); free(x); free(spec); free(frames); free(acc); free(env);

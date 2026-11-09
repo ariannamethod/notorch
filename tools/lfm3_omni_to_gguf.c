@@ -112,7 +112,7 @@ static out_t plan[MAXT];
 static int nplan;
 static int bad_plan;
 
-typedef struct { int n_text_layers, rope_rot, n_cb, cb_size; int lv[8], nlv; double mel[128 * 201]; } extra_t;
+typedef struct { int n_text_layers, rope_rot, n_cb, cb_size; int lv[8], nlv; double *mel; } extra_t;
 static extra_t X;
 
 /* shape given in GGUF order (fastest first); 0 means "the source shape reversed" */
@@ -196,8 +196,10 @@ static double mel_to_hz(double m) {
     double f = 200.0 * m / 3.0;
     return m >= 15.0 ? 1000.0 * exp((log(6.4) / 27.0) * (m - 15.0)) : f;
 }
-static void mel_bank(double *out, int n_mel, int n_freq, double sr) {
-    double fft[1024], filt[256];
+/* out holds n_mel * n_freq values; the bank is sized by the geometry it is given. */
+static int mel_bank(double *out, int n_mel, int n_freq, double sr) {
+    double *fft = malloc((size_t)n_freq * sizeof(double)), *filt = malloc((size_t)(n_mel + 2) * sizeof(double));
+    if (!fft || !filt) { free(fft); free(filt); return -1; }
     for (int i = 0; i < n_freq; i++) fft[i] = (double)(int)(sr / 2) * i / (n_freq - 1);
     double lo = hz_to_mel(0.0), hi = hz_to_mel(sr / 2);
     for (int i = 0; i < n_mel + 2; i++) filt[i] = mel_to_hz(lo + (hi - lo) * i / (n_mel + 1));
@@ -207,8 +209,10 @@ static void mel_bank(double *out, int n_mel, int n_freq, double sr) {
             double up = (filt[m + 2] - fft[f]) / (filt[m + 2] - filt[m + 1]);
             double v = down < up ? down : up;
             if (v < 0) v = 0;
-            out[m * n_freq + f] = v * (2.0 / (filt[m + 2] - filt[m]));
+            out[(size_t)m * n_freq + f] = v * (2.0 / (filt[m + 2] - filt[m]));
         }
+    free(fft); free(filt);
+    return 0;
 }
 
 static int emit(gguf_writer *w, const out_t *o) {
@@ -609,8 +613,14 @@ int main(int argc, char **argv) {
         u32_of(fe, "win_length", &FWIN) || u32_of(fe, "encoder_stride", &FSTRIDE) || f64_of(fe, "log_floor", &ffloor) ||
         f64_of(fe, "normalization_offset", &foff) || f64_of(fe, "normalization_divisor", &fdiv))
         return fail("feature_extractor config incomplete", NULL);
-    if (FNFFT / 2 + 1 > 1024 || AMEL > 128 || FWIN != FNFFT) return fail("mel geometry out of range", NULL);
-    mel_bank(X.mel, (int)AMEL, (int)(FNFFT / 2 + 1), (double)FSR);
+    /* The bank is allocated for the geometry the files declare, within bounds that keep the
+     * product, and every index into it, far inside int. */
+    if (AMEL < 8 || AMEL > 1024 || AMEL % 8 || FNFFT < 4 || FNFFT > 65536 || FNFFT % 4 || FWIN != FNFFT || FSR < 1 ||
+        FHOP < 1 || FHOP > FNFFT)
+        return fail("mel geometry out of range", NULL);
+    if (!(X.mel = malloc((size_t)AMEL * (FNFFT / 2 + 1) * sizeof(double))) ||
+        mel_bank(X.mel, (int)AMEL, (int)(FNFFT / 2 + 1), (double)FSR))
+        return fail("out of memory", "mel bank");
     add("a.mel_filters", NULL, NULL, MEL_BANK, 0, 2, S2(FNFFT / 2 + 1, AMEL));
 
     if (bad_plan) return fail("the plan does not match the checkpoint", NULL);
