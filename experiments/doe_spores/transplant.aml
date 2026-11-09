@@ -1,0 +1,173 @@
+# Three absolute paths on stdin: NoTorch checkout, host GGUF, new output directory.
+def cat(a, b):
+    return text_concat(a, b)
+
+def path(name):
+    return cat(cat(outdir, '/'), name)
+
+def spore(name):
+    return path(cat(name, '.gguf'))
+
+def save(name, value):
+    assert(file_append_line(path(name), value) == 1, 'write result')
+
+def save_trace(name, trace):
+    rest = trace
+    end = text_find(rest, '\n')
+    while end >= 0:
+        save(name, text_slice(rest, 0, end))
+        rest = text_slice(rest, end + 1, text_len(rest))
+        end = text_find(rest, '\n')
+    if text_len(rest) > 0:
+        save(name, rest)
+
+def run(args):
+    result = process_run(args, env, 180)
+    if record_get(result, 'status') != 0:
+        PRINT record_get(result, 'stderr')
+    assert(record_get(result, 'status') == 0, 'native operation failed')
+    return result
+
+def train(word, mode):
+    name = cat(cat(word, '-'), mode)
+    prompt = cat('Miro is the lighthouse keeper. Every night Miro carries a ', word)
+    prompt = cat(prompt, '. At sunrise the lighthouse keeper returns home.')
+    args = list_new()
+    list_push(args, cat(repo, '/notorch'))
+    list_push(args, '-q')
+    list_push(args, '--experts')
+    list_push(args, '--expert-trace')
+    if text_equal(mode, 'vote') == 0:
+        list_push(args, '--learn-experts')
+    if text_equal(mode, 'async'):
+        list_push(args, '--async-consolidation')
+    list_push(args, '--spore-out')
+    list_push(args, spore(name))
+    list_push(args, host)
+    list_push(args, prompt)
+    list_push(args, '1')
+    list_push(args, '0')
+    result = run(args)
+    save_trace(cat(name, '.trace'), record_get(result, 'stderr'))
+    emitted = record_get(result, 'stdout')
+    assert(text_find(emitted, prompt) == 0, 'exposure prefix')
+    return text_slice(emitted, text_len(prompt), text_len(emitted))
+
+def transfer(dst, src, label, seat):
+    args = list_new()
+    list_push(args, helper)
+    list_push(args, 'transplant')
+    list_push(args, host)
+    list_push(args, spore(dst))
+    list_push(args, spore(src))
+    list_push(args, spore(label))
+    if seat < 0:
+        j = 0
+        while j < 4:
+            list_push(args, text_fixed(j, 0))
+            j = j + 1
+    else:
+        list_push(args, text_fixed(seat, 0))
+    run(args)
+
+def column(line, value):
+    return cat(cat(line, '\t'), value)
+
+def score(label, parent):
+    checkpoint = path(cat(label, '.amlck'))
+    args = list_new()
+    list_push(args, helper)
+    list_push(args, 'score')
+    list_push(args, host)
+    source = spore(label)
+    if text_equal(label, 'plain'):
+        source = '-'
+    list_push(args, source)
+    list_push(args, checkpoint)
+    list_push(args, ' key')
+    list_push(args, ' bell')
+    i = 0
+    while i < list_len(prompts):
+        list_push(args, list_get(prompts, i))
+        i = i + 1
+    result = run(args)
+    trace = record_get(result, 'stderr')
+    save_trace(cat(label, '.votes'), trace)
+    values = checkpoint_load(checkpoint)
+    left = record_get(values, 'left_id')
+    right = record_get(values, 'right_id')
+    if text_equal(label, 'plain'):
+        save('targets.tsv', column(' key', text_fixed(left, 0)))
+        save('targets.tsv', column(' bell', text_fixed(right, 0)))
+    if text_equal(parent, '') == 0:
+        original = checkpoint_load(path(cat(parent, '.amlck')))
+        assert(text_equal(file_hash_sha256(path(cat(label, '.votes'))), file_hash_sha256(path(cat(parent, '.votes')))), 'transplant changed election trace')
+    i = 0
+    while i < list_len(prompts):
+        token = cat('probe', text_fixed(i, 0))
+        logits = record_get(values, token)
+        probs = softmax(logits)
+        margin = logits[left] - logits[right]
+        delta = 'NA'
+        if text_equal(parent, '') == 0:
+            control = record_get(original, token)
+            shift = margin - (control[left] - control[right])
+            delta = text_fixed(shift, 9)
+        line = column(label, token)
+        line = column(line, text_fixed(probs[left], 9))
+        line = column(line, text_fixed(probs[right], 9))
+        line = column(line, text_fixed(margin, 9))
+        save('scores.tsv', column(line, delta))
+        i = i + 1
+
+def intervene(dst, src):
+    before = file_hash_sha256(spore(dst))
+    selfname = cat(dst, '-self')
+    transfer(dst, dst, selfname, -1)
+    assert(text_equal(before, file_hash_sha256(spore(selfname))), 'self transplant changed bytes')
+    i = 0
+    while i < 4:
+        label = cat(cat(dst, '-seat'), text_fixed(i, 0))
+        transfer(dst, src, label, i)
+        score(label, dst)
+        i = i + 1
+    allname = cat(dst, '-all')
+    transfer(dst, src, allname, -1)
+    score(allname, dst)
+    assert(text_equal(before, file_hash_sha256(spore(dst))), 'changed recipient bytes')
+
+repo = list_get(read_line(), 0)
+host = list_get(read_line(), 0)
+outdir = list_get(read_line(), 0)
+assert(dir_claim(outdir) == 1, 'output directory must be new')
+helper = cat(repo, '/doe_probe')
+env = record_new()
+record_set(env, 'NT_TOKENS', '')
+record_set(env, 'NT_CHAT', '||')
+record_set(env, 'NT_ATTN_THREADS', '1')
+model_hash = file_hash_sha256(host)
+save('host.sha256', model_hash)
+prompts = list_new()
+list_push(prompts, 'Every night the lighthouse keeper carries a')
+list_push(prompts, 'Before leaving for the harbor, Miro picks up the')
+list_push(prompts, 'The object the keeper keeps in his pocket is a')
+list_push(prompts, 'At the lighthouse, Miro reaches for his')
+list_push(prompts, 'On the desk there is a')
+suffix = train('key', 'async')
+assert(text_equal(suffix, train('bell', 'async')), 'different sampled continuations')
+assert(text_equal(suffix, train('key', 'sync')), 'key async/sync output')
+assert(text_equal(suffix, train('bell', 'sync')), 'bell async/sync output')
+assert(text_equal(suffix, train('key', 'vote')), 'key exposure control')
+assert(text_equal(suffix, train('bell', 'vote')), 'bell exposure control')
+assert(text_equal(file_hash_sha256(spore('key-async')), file_hash_sha256(spore('key-sync'))), 'key async/sync spore')
+assert(text_equal(file_hash_sha256(spore('bell-async')), file_hash_sha256(spore('bell-sync'))), 'bell async/sync spore')
+save('scores.tsv', 'condition\tprobe\tp_key\tp_bell\tlog_odds_key_over_bell\tdelta_from_recipient')
+score('plain', '')
+score('key-vote', '')
+score('bell-vote', '')
+score('key-async', '')
+score('bell-async', '')
+intervene('key-async', 'bell-async')
+intervene('bell-async', 'key-async')
+assert(text_equal(model_hash, file_hash_sha256(host)), 'host changed')
+PRINT 'TRANSPLANT_COMPLETE'
