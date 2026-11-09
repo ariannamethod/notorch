@@ -105,6 +105,7 @@ struct bpe_tokenizer {
     int pre_smollm;
     int pre_qwen35_ascii;
     int pre_qwen35;        /* the official split over NFC text; 2 once normalized */
+    int pre_qwen3;         /* the same split without \p{M}; 2 once normalized */
     int pre_lfm2;          /* llama.cpp's llama3 split, with ignore_merges */
     int *special_id, n_special;
     /* Tokens the file marks USER_DEFINED. They are stored as literal text rather than in the
@@ -184,6 +185,7 @@ bpe_tokenizer *bpe_load(const char *path) {
         t->pre_smollm = (strcmp(pre, "smollm") == 0);
         t->pre_qwen35_ascii = (strcmp(pre, "qwen35-ascii") == 0);
         t->pre_qwen35 = (strcmp(pre, "qwen35") == 0);
+        t->pre_qwen3 = (strcmp(pre, "qwen3") == 0);
         t->pre_lfm2 = (strcmp(pre, "lfm2") == 0);
     }
 
@@ -630,11 +632,12 @@ int bpe_encode(const bpe_tokenizer *t, const char *text, int *out, int cap) {
     if(t->pre_qwen35_ascii)for(const unsigned char *p=(const unsigned char*)text;*p;p++)if(*p>=128)return 0;
     /* The source normalizer is NFC. Text this cannot normalize exactly is refused
      * the same way, before anything is written. */
-    if (t->pre_qwen35 == 1) {
+    if (t->pre_qwen35 == 1 || t->pre_qwen3 == 1) {
         char *nfc = qwen35_nfc(text);
         if (!nfc) return 0;
         bpe_tokenizer view = *t;
-        view.pre_qwen35 = 2;
+        view.pre_qwen35 *= 2;
+        view.pre_qwen3 *= 2;
         int n = bpe_encode(&view, nfc, out, cap);
         free(nfc);
         return n;
@@ -816,14 +819,18 @@ static int lfm2_piece(const char *s, int n) {
  * Ported alternative by alternative over codepoints, leftmost-first as the
  * reference (tokenizers, Oniguruma) runs it. A word is letters and marks; a mark
  * may also be its one-character prefix. The reference's (?i) folds 'ſ (U+017F)
- * to 's, which llama.cpp's [sS] does not. Only valid UTF-8 reaches this. */
-static int qwen35_word(unsigned int cp) {
-    return lfm2_letter(cp) || range_in(bpe_marks, sizeof(bpe_marks) / sizeof(bpe_marks[0]), cp);
+ * to 's, which llama.cpp's [sS] does not. Only valid UTF-8 reaches this.
+ * With marks = 0 it is the "qwen3" split, Qwen3's tokenizer.json regex:
+ *   (?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}|
+ *    ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
+ * where a word is letters only and a mark is punctuation. */
+static int qwen35_word(unsigned int cp, int marks) {
+    return lfm2_letter(cp) || (marks && range_in(bpe_marks, sizeof(bpe_marks) / sizeof(bpe_marks[0]), cp));
 }
-static int qwen35_other(unsigned int cp) {
-    return !(lfm2_space(cp) || qwen35_word(cp) || smollm_is_number(cp));
+static int qwen35_other(unsigned int cp, int marks) {
+    return !(lfm2_space(cp) || qwen35_word(cp, marks) || smollm_is_number(cp));
 }
-static int qwen35_piece(const char *s, int n) {
+static int qwen35_piece(const char *s, int n, int marks) {
     unsigned int c0, c1, c2, c;
     int l0 = lfm2_at(s, n, 0, &c0), l1 = lfm2_at(s, n, l0, &c1), p, l;
 
@@ -835,15 +842,15 @@ static int qwen35_piece(const char *s, int n) {
         if (l2 && ((a == 'r' && b == 'e') || (a == 'v' && b == 'e') || (a == 'l' && b == 'l')))
             return l0 + l1 + l2;
     }
-    if (qwen35_word(c0) || (l1 && qwen35_word(c1) &&      /* optional prefix, word */
+    if (qwen35_word(c0, marks) || (l1 && qwen35_word(c1, marks) &&   /* optional prefix, word */
         !(c0 == '\r' || c0 == '\n' || lfm2_letter(c0) || smollm_is_number(c0)))) {
-        for (p = l0; (l = lfm2_at(s, n, p, &c)) && qwen35_word(c); p += l) {}
+        for (p = l0; (l = lfm2_at(s, n, p, &c)) && qwen35_word(c, marks); p += l) {}
         return p;
     }
     if (smollm_is_number(c0)) return l0;                   /* one number */
     p = (c0 == ' ') ? l0 : 0;                              /* space?, punctuation, newlines */
-    if (lfm2_at(s, n, p, &c) && qwen35_other(c)) {
-        while ((l = lfm2_at(s, n, p, &c)) && qwen35_other(c)) p += l;
+    if (lfm2_at(s, n, p, &c) && qwen35_other(c, marks)) {
+        while ((l = lfm2_at(s, n, p, &c)) && qwen35_other(c, marks)) p += l;
         while (p < n && (s[p] == '\r' || s[p] == '\n')) p++;
         return p;
     }
@@ -939,8 +946,8 @@ static int bpe_encode_span(const bpe_tokenizer *t, const char *span, int L, int 
         int j;
         if (t->pre_qwen35_ascii) {
             j=i+qwen35_ascii_piece(text+i,L-i);
-        } else if (t->pre_qwen35) {
-            j = i + qwen35_piece(text + i, L - i);
+        } else if (t->pre_qwen35 || t->pre_qwen3) {
+            j = i + qwen35_piece(text + i, L - i, t->pre_qwen35 != 0);
         } else if (t->pre_lfm2) {
             j = i + lfm2_piece(text + i, L - i);
         } else if (t->pre_qwen2) {
