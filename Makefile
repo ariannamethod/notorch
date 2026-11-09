@@ -182,7 +182,7 @@ PEN7_LIB_OBJ = pen7.o harness/arch_penelope.o harness/runtime.o
 
 harness/arch_penelope.o: harness/penelope_internal.h
 
-HARNESS_HDR = harness/arch.h harness/arch_models.h harness/archs.h harness/runtime.h harness/logo.h harness/penelope_internal.h examples/bpe.h gguf.h notorch.h
+HARNESS_HDR = harness/experts.h sha256.h harness/arch.h harness/arch_models.h harness/archs.h harness/runtime.h harness/logo.h harness/penelope_internal.h examples/bpe.h gguf.h notorch.h
 
 libnotorch.a: $(PEN7_LIB_OBJ) notorch.c notorch.h gguf.c gguf.h spa_agent.o spa_binding.o sentencepiece.o sha256.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
@@ -262,7 +262,7 @@ test: test_spa_runtime
 # The general family registry and tokenizer stay in libnotorch_harness. The
 # immutable PEN7 interface is also public in libnotorch, which reuses the same
 # PEN7/runtime objects. General harness consumers link both, harness first.
-HARNESS_LIB_OBJ = harness/archs.o harness/runtime.o harness/arch_llama.o harness/arch_qwen35.o \
+HARNESS_LIB_OBJ = harness/experts.o harness/archs.o harness/runtime.o harness/arch_llama.o harness/arch_qwen35.o \
                   harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_embeddinggemma2.o harness/arch_olmoe.o harness/arch_mamba.o \
                   harness/arch_resonance.o harness/arch_janus.o harness/arch_penelope.o harness/arch_lfm3.o examples/bpe.o
 
@@ -303,6 +303,7 @@ install: lib lib_harness
 	install -m 0644 gguf.h       $(PREFIX)/include/ariannamethod/gguf.h
 	# The harness headers include each other as "harness/arch.h", so they are
 	# installed under a directory of that name and the caller adds one -I.
+	install -m 0644 harness/experts.h $(PREFIX)/include/ariannamethod/harness/experts.h
 	install -m 0644 harness/arch.h    $(PREFIX)/include/ariannamethod/harness/arch.h
 	install -m 0644 harness/archs.h   $(PREFIX)/include/ariannamethod/harness/archs.h
 	install -m 0644 harness/runtime.h $(PREFIX)/include/ariannamethod/harness/runtime.h
@@ -417,7 +418,7 @@ test: test_lfm3
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
-HARNESS_SRC = harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_qwen35.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c harness/arch_penelope.c harness/arch_lfm3.c examples/bpe.c gguf.c notorch.c
+HARNESS_SRC = harness/experts.c sha256.c harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_qwen35.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c harness/arch_penelope.c harness/arch_lfm3.c examples/bpe.c gguf.c notorch.c
 
 # `harness` is phony because a directory of that name sits right there, and
 # make would otherwise call it up to date and build nothing.
@@ -512,6 +513,15 @@ check_harness_emit: test_harness_emit
 	./test_harness_emit $(MODEL)
 
 .PHONY: check_penelope check_harness_emit
+
+expert_fixtures: tests/expert_fixtures.c tests/decode_fixtures.h libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch.a -lm $(BLAS_LIBS)
+
+.PHONY: check_expert_spores
+check_expert_spores: notorch expert_fixtures tests/test_expert_spores.py
+	python3 tests/test_expert_spores.py ./notorch ./expert_fixtures
+
+test: check_expert_spores
 
 test_parliament_values: tests/test_parliament_values.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_parliament_values.c notorch.c -lm $(BLAS_LIBS)
@@ -1162,7 +1172,7 @@ clean:
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
 	rm -f test_sampling
-	rm -f pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_parliament_values test_tanh_sgd
+	rm -f expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o

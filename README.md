@@ -183,6 +183,32 @@ OneJev prompts pass every-layer and full-logit comparison with Transformers;
 1,214 frozen-fixture checks exercise chunking and failures.
 See [commands, format boundaries and measured parity](docs/qwen35.md).
 
+### Living experts in the Harness
+
+`--experts` seats a native Democracy of Experts on the middle block of the
+dense llama-family CPU decoder. Each token elects a variable number of LoRA
+experts between attention and the FFN. Four rank-4 experts start in six seats.
+`--learn-experts` gives the elected experts one Oja update after each completed
+turn and enables vitality, mitosis and apoptosis. Plain inference is the default.
+
+```sh
+./notorch --experts --learn-experts --spore-out first.gguf model.gguf "A robin builds its nest in" 8 0
+./notorch --experts --spore-in first.gguf --expert-trace model.gguf "The robin returns to" 8 0
+```
+
+A spore is an independent GGUF bound to the SHA-256 of the host file. Give
+`--spore-out` a new filename to keep each generation. The KV cache and the
+transcript begin fresh on restart. The spore restores LoRA A/B, vote weights,
+membership, vitality, frequency, age, low-vitality counts, Oja cursors,
+consensus, oscillator input history, RNG and clocks. In chat, `/reset` clears
+the KV while the parliament lives on. `--expert-trace` prints per-token gates,
+chosen logits, births, deaths and turn boundaries to stderr.
+
+The [SmolLM2-135M replay](experiments/doe_spores/replay.py) regenerates the
+control and learned spores, traces and restart comparison. The [engineering
+record](NOTORCHLOG.md#2026-11-09--smollm2-remembers-a-parliament-across-processes)
+contains measured continuations and the numerical change made during bring-up.
+
 ## train a model
 
 copy a trainer. give it a corpus. let Chuck watch the gradients.
