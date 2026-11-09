@@ -1,5 +1,6 @@
 #include "harness/spore_frame.h"
 #include "sha256.h"
+#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,7 +74,9 @@ int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host,
     if (!body->tokenizer) return -1;
     int width = host->embed_dim, layer = dims.n_layers / 2;
     unsigned char chain[64] = {0};
-    for (int k = 0; k <= 2*dims.n_layers; k++) {
+    int per_layer = arch->doe->norms_per_layer ? arch->doe->norms_per_layer : 2;
+    if (per_layer < 1 || dims.n_layers < 1 || dims.n_layers > (INT_MAX-1)/per_layer) return -1;
+    for (int k = 0; k <= per_layer*dims.n_layers; k++) {
         const float *norm = arch->doe->norm(body->model, k);
         if (!norm) return -1;
         for (int i = 0; i < width; i++) if (!isfinite(norm[i])) return -1;

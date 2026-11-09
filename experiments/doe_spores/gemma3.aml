@@ -1,0 +1,187 @@
+# Gemma 3 writes a waking spore and dreams. Carry both generations into
+# Gemma 3 1B and Qwen3.5, then bring Qwen's private update home to 270M.
+# stdin: notorch, doe_probe, 270M, 1B, Qwen3.5, Qwen tokenizer, fresh directory.
+def path(name):
+    return text_concat(text_concat(outdir, '/'), name)
+
+def spore(label):
+    return path(text_concat(label, '.gguf'))
+
+def col(a, b):
+    return text_concat(text_concat(a, '\t'), b)
+
+def lines(name, content):
+    rest = content
+    end = text_find(rest, '\n')
+    while end >= 0:
+        assert(file_append_line(path(name), text_slice(rest, 0, end)) == 1, 'write trace')
+        rest = text_slice(rest, end+1, text_len(rest))
+        end = text_find(rest, '\n')
+    if text_len(rest) > 0:
+        assert(file_append_line(path(name), rest) == 1, 'write trace tail')
+
+def args_for(binary, host):
+    args = list_new()
+    list_push(args, binary)
+    if text_equal(host, qwen):
+        list_push(args, '--tokenizer')
+        list_push(args, tokenizer)
+    return args
+
+def run(args, label):
+    result = process_run(args, env, 300)
+    trace = record_get(result, 'stderr')
+    status = record_get(result, 'status')
+    if status != 0:
+        PRINT text_concat(text_concat(label, ' exit '), text_fixed(status, 0))
+        PRINT trace
+    assert(status == 0, label)
+    lines(text_concat(label, '.trace'), trace)
+    return result
+
+# budget=-1 is one waking turn, zero is an offline transfer, positive is sleep.
+def state(host, parent, label, budget, learning, word):
+    args = args_for(cli, host)
+    list_push(args, '-q')
+    list_push(args, '--expert-trace')
+    list_push(args, '--experts')
+    if learning > 0:
+        list_push(args, '--learn-experts')
+    if learning == 2:
+        list_push(args, '--async-consolidation')
+    if text_len(parent) > 0:
+        list_push(args, '--spore-in')
+        list_push(args, spore(parent))
+    list_push(args, '--portable-spore')
+    list_push(args, '--spore-out')
+    list_push(args, spore(label))
+    if budget == 0:
+        list_push(args, '--spore-only')
+    if budget > 0:
+        list_push(args, '--dream-only')
+        list_push(args, text_fixed(budget, 0))
+    list_push(args, host)
+    if budget < 0:
+        first = text_concat('Miro is the lighthouse keeper. Every night Miro carries a ', word)
+        list_push(args, text_concat(first, '. At sunrise the lighthouse keeper returns home.'))
+        list_push(args, '1')
+        list_push(args, '0')
+    result = run(args, label)
+    trace = record_get(result, 'stderr')
+    if budget >= 0:
+        assert(text_len(record_get(result, 'stdout')) == 0, 'offline stdout')
+        assert(text_find(trace, 'doe turn=') < 0, 'offline waking update')
+    if budget == 0:
+        assert(text_find(trace, 'transfer mode=projected anchors=32') >= 0, 'cross-body projection')
+    if budget > 0:
+        begin = text_find(trace, 'doe dream-start ')
+        end = text_find(trace, 'doe dream-end ')
+        assert(begin >= 0 and end > begin, 'incomplete dream')
+        return text_slice(trace, begin, end)
+    return ''
+
+def same(a, b):
+    return text_equal(file_hash_sha256(spore(a)), file_hash_sha256(spore(b)))
+
+# Preview, synchronous learning and the worker must take the same trajectory.
+def sleep(host, parent, label):
+    preview = text_concat(label, '-preview')
+    sync = text_concat(label, '-sync')
+    read = state(host, parent, preview, 6, 0, '')
+    write = state(host, parent, sync, 6, 1, '')
+    worker = state(host, parent, label, 6, 2, '')
+    assert(text_equal(read, write) and text_equal(write, worker), 'private choices differed')
+    assert(same(parent, preview) and same(sync, label), 'preview/worker spore bytes')
+    assert(same(parent, label) == 0, 'private learning did not write')
+
+# Each score starts on fresh native KV with a fresh parliament. The C probe
+# verifies the target tokens in context and returns a full-vocabulary AML checkpoint.
+def measure(host, label):
+    checkpoint = path(text_concat(label, '.amlck'))
+    args = args_for(helper, host)
+    list_push(args, 'score')
+    list_push(args, host)
+    list_push(args, spore(label))
+    list_push(args, checkpoint)
+    list_push(args, ' key')
+    list_push(args, ' bell')
+    list_push(args, first_probe)
+    list_push(args, second_probe)
+    run(args, text_concat(label, '-score'))
+    values = checkpoint_load(checkpoint)
+    left = record_get(values, 'left_id')
+    right = record_get(values, 'right_id')
+    i = 0
+    while i < 2:
+        logits = record_get(values, text_concat('probe', text_fixed(i, 0)))
+        probs = softmax(logits)
+        row = col(col(col(label, text_fixed(i, 0)), text_fixed(left, 0)), text_fixed(right, 0))
+        row = col(col(row, text_fixed(probs[left], 9)), text_fixed(probs[right], 9))
+        lines('scores.tsv', col(row, text_fixed(logits[left]-logits[right], 9)))
+        i = i + 1
+    greedy(host, label, 12, text_concat(label, '-greedy'))
+
+def greedy(host, label, budget, receipt):
+    args = args_for(cli, host)
+    list_push(args, '-q')
+    list_push(args, '--expert-trace')
+    list_push(args, '--experts')
+    list_push(args, '--spore-in')
+    list_push(args, spore(label))
+    list_push(args, host)
+    list_push(args, second_probe)
+    list_push(args, text_fixed(budget, 0))
+    list_push(args, '0')
+    result = run(args, receipt)
+    output = record_get(result, 'stdout')
+    assert(text_find(output, second_probe) == 0, 'missing greedy prompt')
+    lines(text_concat(receipt, '.txt'), text_slice(output, text_len(second_probe), text_len(output)))
+
+cli = list_get(read_line(), 0)
+helper = list_get(read_line(), 0)
+small = list_get(read_line(), 0)
+large = list_get(read_line(), 0)
+qwen = list_get(read_line(), 0)
+tokenizer = list_get(read_line(), 0)
+outdir = list_get(read_line(), 0)
+assert(text_equal(file_hash_sha256(small), '0ef57d2c838458a1952664260dcba38e5bdda37494f3af732f06e4add24068e3'), '270M weights')
+assert(text_equal(file_hash_sha256(large), '8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135'), '1B weights')
+assert(text_equal(file_hash_sha256(qwen), 'f277970417e643a86ccd426e16f8a567c99d8f0ee367e4613485c4ea96847923'), 'Qwen weights')
+assert(text_equal(file_hash_sha256(tokenizer), '2f38049769a7fb0d2b70b5ed329563d932cc366899379f35476419021260a4f4'), 'Qwen tokenizer')
+assert(dir_claim(outdir) == 1, 'choose a new output directory')
+env = record_new()
+record_set(env, 'NT_TOKENS', '')
+record_set(env, 'NT_CHAT', '||')
+record_set(env, 'NT_ATTN_THREADS', '1')
+record_set(env, 'NT_CTX', '64')
+first_probe = 'Every night the lighthouse keeper carries a'
+second_probe = 'At the lighthouse, Miro reaches for his'
+lines('scores.tsv', 'state\tprobe\tkey_id\tbell_id\tp_key\tp_bell\tlog_odds_key_over_bell')
+state(small, '', 'gemma-key-sync', -1, 1, 'key')
+state(small, '', 'gemma-key', -1, 2, 'key')
+state(small, '', 'gemma-bell', -1, 2, 'bell')
+assert(same('gemma-key-sync', 'gemma-key'), 'waking worker spore bytes')
+assert(same('gemma-bell', 'gemma-key') == 0, 'distinct waking histories')
+sleep(small, 'gemma-key', 'gemma-dream')
+measure(small, 'gemma-key')
+measure(small, 'gemma-bell')
+measure(small, 'gemma-dream')
+state(large, 'gemma-key', 'large-awake', 0, 0, '')
+state(large, 'gemma-dream', 'large-inherited', 0, 0, '')
+measure(large, 'large-awake')
+measure(large, 'large-inherited')
+sleep(large, 'large-inherited', 'large-dream')
+measure(large, 'large-dream')
+state(qwen, 'gemma-key', 'qwen-awake', 0, 0, '')
+state(qwen, 'gemma-dream', 'qwen-inherited', 0, 0, '')
+measure(qwen, 'qwen-awake')
+measure(qwen, 'qwen-inherited')
+sleep(qwen, 'qwen-inherited', 'qwen-dream')
+measure(qwen, 'qwen-dream')
+state(small, 'qwen-inherited', 'return-awake', 0, 0, '')
+state(small, 'qwen-dream', 'return-dream', 0, 0, '')
+measure(small, 'return-awake')
+measure(small, 'return-dream')
+greedy(small, 'return-awake', 32, 'return-awake-long')
+greedy(small, 'return-dream', 32, 'return-dream-long')
+PRINT 'GEMMA3_SPORE_ROUNDTRIP_OK'

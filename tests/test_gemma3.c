@@ -18,7 +18,7 @@ static void put(tensor*t,const char*name,int rows,int cols,int salt){
     for(int i=0;i<(rows?rows:1)*cols;i++)t->data[i]=rows?((i*7+salt*3)%23-11)*.0375f:.8f+.03f*((i+salt)%7);
 }
 /* mode1 malformed postnorm; mode2 illegal residual bias; mode3 none+factor2. */
-static int fixture(const char*path,int mode){
+static int fixture(const char*path,int mode,int silent_ffn){
     tensor ts[82];int nt=0;
     put(&ts[nt++],"token_embd.weight",V,E,1);put(&ts[nt++],"output_norm.weight",0,E,2);
     const char*fields[]={"attn_norm","attn_q","attn_k","attn_v","attn_output","attn_q_norm",
@@ -27,6 +27,7 @@ static int fixture(const char*path,int mode){
     for(int l=0;l<L;l++)for(int k=0;k<13;k++){
         char name[80];snprintf(name,sizeof(name),"blk.%d.%s.weight",l,fields[k]);
         put(&ts[nt++],name,rows[k],mode==1&&l==0&&k==12?3:cols[k],3+l*13+k);
+        if(l==silent_ffn && k==11) memset(ts[nt-1].data,0,sizeof(ts[nt-1].data));
     }
     if(mode==2)put(&ts[nt++],"blk.0.ffn_down.bias",0,E,0);
     gguf_writer*w=gguf_write_open(path);if(!w)return -1;
@@ -104,9 +105,65 @@ static int observe(void*user,int layer,int pos,int n,int width,float*x){
     if(layer==L-1)memcpy(p->last,x+(n-1)*E,sizeof(p->last));
     return 0;
 }
+
+typedef struct {
+    int layer, calls, intervene;
+    float rows[N*E];
+} boundary;
+
+static int capture(void *user, int layer, int pos, int n, int width, float *x) {
+    boundary *b = user;
+    if (layer != b->layer) return NT_OK;
+    if (pos != 0 || n != N || width != E) return NT_E_STATE;
+    b->calls++;
+    memcpy(b->rows, x, sizeof(b->rows));
+    if (b->intervene) x[(N-1)*E] += 0.5f;
+    return NT_OK;
+}
+
+static void expert_boundaries(const nt_arch *a, void *m, kv_cache *kv,
+                             const int *ids, const float *plain) {
+    CHECK(a->doe != NULL, "Gemma3 registers expert hooks");
+    if (!a->doe) return;
+    char path[] = "/tmp/nt_gemma3_boundary_XXXXXX";
+    int fd = mkstemp(path);
+    if (fd < 0) { CHECK(0, "create boundary fixture"); return; }
+    close(fd);
+    float logits[V];
+    CHECK(a->doe->forward(m,kv,ids,N,0,logits,NULL,NULL,NULL) == NT_OK &&
+          !memcmp(plain,logits,sizeof(logits)), "idle DOE hooks preserve every logit");
+    /* A zero down projection silences only the selected FFN. The independent
+     * post-block observation on that body is the input to the real body's FFN. */
+    int layers[] = {2,5};  /* sliding and global */
+    for (size_t i = 0; i < sizeof(layers)/sizeof(*layers); i++) {
+        int l = layers[i];
+        boundary pre = {.layer=l}, reference = {.layer=l};
+        nt_dims dims;
+        gguf_file *g = fixture(path,0,l) == 0 ? gguf_open(path) : NULL;
+        void *quiet = g ? a->load(g,&dims) : NULL;
+        CHECK(quiet && a->forward_residual(quiet,kv,ids,N,0,NULL,capture,&reference) == NT_OK &&
+              reference.calls == 1, "independent pre-FFN oracle for all five positions");
+        CHECK(a->doe->forward(m,kv,ids,N,0,NULL,capture,NULL,&pre) == NT_OK && pre.calls == 1 &&
+              !memcmp(pre.rows,reference.rows,sizeof(pre.rows)), "DOE reads normalized attention plus skip");
+        pre.intervene = 1;
+        CHECK(a->doe->forward(m,kv,ids,N,0,logits,capture,NULL,&pre) == NT_OK &&
+              !close_values(plain,logits,V,1e-5f), "expert intervention changes downstream logits");
+        if (quiet) a->free(quiet);
+        if (g) gguf_close(g);
+    }
+    unlink(path);
+    probe abort = {.fail=1};
+    float sentinel[V];
+    for (int i=0; i<V; i++) sentinel[i] = -123.0f;
+    memcpy(logits,sentinel,sizeof(logits));
+    CHECK(a->doe->forward(m,kv,ids,N,0,logits,observe,NULL,&abort) == 77 &&
+          abort.calls == 1 && !memcmp(sentinel,logits,sizeof(logits)), "expert abort precedes output");
+    CHECK(a->forward(m,kv,ids,N,0,logits) == NT_OK && !memcmp(plain,logits,sizeof(logits)),
+          "fresh forward after expert abort");
+}
 int main(void){
     char path[]="/tmp/nt_gemma3_XXXXXX";int fd=mkstemp(path);if(fd<0)return 1;close(fd);
-    CHECK(fixture(path,0)==0,"write tiny Gemma3 GGUF");
+    CHECK(fixture(path,0,-1)==0,"write tiny Gemma3 GGUF");
     gguf_file*gf=gguf_open(path);nt_dims dims;
     const nt_arch*a=nt_pick_arch("gemma3");
     CHECK(a==&nt_arch_gemma3,"architecture registry selects Gemma3");
@@ -117,6 +174,7 @@ int main(void){
     CHECK(a->forward_residual(m,kv,ids,N,0,base,observe,&p)==0&&!p.bad&&p.calls==L,
         "all six layer residuals match independent equations across sliding boundary");
     CHECK(close_values(base,golden_logits,V,2e-5f),"tied output logits match independent equations");
+    expert_boundaries(a,m,kv,ids,base);
     CHECK(a->forward(m,kv,ids,N,0,out)==0&&!memcmp(base,out,sizeof(out)),"plain forward byte equality");
     CHECK(a->forward_residual(m,kv,ids,N,0,out,NULL,NULL)==0&&!memcmp(base,out,sizeof(out)),"NULL callback byte equality");
     p=(probe){0};int rc=0;
@@ -134,7 +192,7 @@ int main(void){
     CHECK(a->forward(m,kv,ids,N,5,out)==NT_E_CAPACITY,"cache overflow refused");
     a->free(m);gguf_close(gf);
     for(int mode=1;mode<=5;mode++){
-        CHECK(fixture(path,mode)==0,"write variant GGUF");gf=gguf_open(path);m=gf?a->load(gf,&dims):NULL;
+        CHECK(fixture(path,mode,-1)==0,"write variant GGUF");gf=gguf_open(path);m=gf?a->load(gf,&dims):NULL;
         if(mode!=3)CHECK(!m,"malformed or unsupported tensor/metadata refused");
         else CHECK(m&&a->forward(m,kv,ids,N,0,out)==0&&!memcmp(base,out,sizeof(out)),"rope scaling none ignores factor");
         if(m)a->free(m);

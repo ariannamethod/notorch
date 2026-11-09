@@ -60,4 +60,16 @@ reject --portable-spore aligned ' probe'
 reject --spore-in portable --spore-out portable aligned
 cmp portable packed
 test ! -e rejected
+
+# Zero branch weights make the sampled frames identical in every variant.
+# Changing one final-block norm must still select projection rather than copying A/B.
+learn --portable-spore --spore-out gemma-spore gemma ' exposure'
+bind --spore-in gemma-spore --spore-out gemma-copy gemma-aligned
+grep -q 'transfer mode=aligned ' trace
+for norm in attn_norm post_attention_norm ffn_norm post_ffw_norm; do
+    cp gemma-aligned gemma-edited
+    "$root/test_portable_spore" set-first gemma-edited "blk.1.$norm.weight"
+    bind --spore-in gemma-spore --spore-out "gemma-$norm" gemma-edited
+    grep -q 'transfer mode=projected ' trace
+done
 echo 'Portable spore: exact, aligned, projected, two-hop, async restart and refusals passed'
