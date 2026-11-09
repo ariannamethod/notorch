@@ -263,7 +263,7 @@ test: test_spa_runtime
 # immutable PEN7 interface is also public in libnotorch, which reuses the same
 # PEN7/runtime objects. General harness consumers link both, harness first.
 HARNESS_LIB_OBJ = harness/tokenizer.o harness/dream.o harness/spore_frame.o harness/experts.o harness/archs.o harness/runtime.o harness/arch_llama.o harness/arch_qwen35.o \
-                  harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_embeddinggemma2.o harness/arch_olmoe.o harness/arch_mamba.o \
+                  harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_embeddinggemma2.o harness/arch_qwen3embedding.o harness/arch_olmoe.o harness/arch_mamba.o \
                   harness/arch_resonance.o harness/arch_janus.o harness/arch_penelope.o harness/arch_lfm3.o examples/bpe.o
 
 lib_harness: libnotorch_harness.a
@@ -386,7 +386,39 @@ check_embeddinggemma2_score: test_embeddinggemma2_score
 
 test: test_embeddinggemma2_score
 
-QWEN35_SRC = harness/arch_qwen35.c harness/runtime.c gguf.c notorch.c
+# Qwen3-Embedding: the second encoder of the same nt_encoder surface, same flags.
+# Its vectors are scored by embeddinggemma2_score, which reads any encoder JSONL.
+QE_SRC = harness/arch_qwen3embedding.c harness/runtime.c gguf.c notorch.c
+QE_TEXT = tools/qwen3embedding_text.h examples/bpe.c examples/bpe.h
+qwen3embedding_encode: tools/qwen3embedding_encode.c $(QE_TEXT) $(QE_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(EG2_FLAGS) -o $@ tools/qwen3embedding_encode.c examples/bpe.c $(QE_SRC) -lm $(EG2_LIBS)
+
+qwen3embedding_to_gguf: tools/qwen3embedding_to_gguf.c tools/narrow_json.h gguf.c gguf.h sha256.c sha256.h notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tools/qwen3embedding_to_gguf.c gguf.c sha256.c notorch.c -lm
+
+.PHONY: test_qwen3embedding test_qwen3embedding_text check_qwen3embedding_tokenizer check_qwen3embedding_model
+test_qwen3embedding: tests/test_qwen3embedding.c $(QE_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(EG2_FLAGS) -o $@ tests/test_qwen3embedding.c $(QE_SRC) -lm $(EG2_LIBS)
+	./test_qwen3embedding
+
+test_qwen3embedding_text: tests/test_qwen3embedding_text.c qwen3embedding_encode qwen3embedding_to_gguf $(QE_TEXT) tools/narrow_json.h gguf.c notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tests/test_qwen3embedding_text.c examples/bpe.c gguf.c notorch.c -lm
+	./test_qwen3embedding_text
+
+test: test_qwen3embedding test_qwen3embedding_text
+
+# Tokenizer gate against official IDs (tests/qwen3embedding_fixtures.tsv, reference
+# format in docs/QWEN3EMBEDDING.md):
+# make check_qwen3embedding_tokenizer QE_TOKENIZER=tokenizer.gguf QE_REFERENCE=reference_ids.jsonl
+check_qwen3embedding_tokenizer: test_qwen3embedding_text
+	./test_qwen3embedding_text "$(QE_TOKENIZER)" tests/qwen3embedding_fixtures.tsv "$(QE_REFERENCE)"
+
+# Determinism, shape/norm and the model card's published scores, on the real checkpoint:
+# make check_qwen3embedding_model QE_MODEL=model.gguf QE_TOKENIZER=tokenizer.gguf
+check_qwen3embedding_model: qwen3embedding_encode embeddinggemma2_score
+	./tests/check_qwen3embedding_model.sh "$(QE_MODEL)" "$(QE_TOKENIZER)"
+
+QWEN35_SRC =harness/arch_qwen35.c harness/runtime.c gguf.c notorch.c
 .PHONY: test_qwen35 test_qwen35_text
 qwen35_eval: tools/qwen35_eval.c $(QWEN35_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tools/qwen35_eval.c $(QWEN35_SRC) -lm $(BLAS_LIBS)

@@ -178,5 +178,9 @@ typedef struct {
 } nt_encoder;
 
 extern const nt_encoder nt_encoder_embeddinggemma2;
+/* Causal attention: a masked position is never a key, and the pooled vector is
+ * the final state of the last unmasked position. Sites: INPUT, POST_ATTENTION,
+ * BLOCK (the post-FFN residual), FINAL_NORM; output_dim equals width. */
+extern const nt_encoder nt_encoder_qwen3embedding;
 
 #endif

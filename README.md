@@ -174,6 +174,15 @@ reference parity gate. Six neutral fixtures and the complete frozen
 [measured results](docs/validation/embeddinggemma2-validation-2026-11-05.json)
 record the source, checkpoint and tokenizer boundary.
 
+**Qwen3-Embedding** is the second encoder on the same API: a causal Qwen3
+decoder read to its final norm, last-token pooling over the appended
+`<|endoftext|>`, 1024-dimensional normalized output. Its byte-level tokenizer
+runs in C through the exact Qwen3 split over NFC. The
+[encoder guide](docs/QWEN3EMBEDDING.md) covers conversion, text mode and gates.
+On the pinned 0.6B checkpoint the model card's four published scores agree within
+3e-7, and repeat runs give byte-identical vectors. The official-ID tokenizer gate
+and the vector-parity gate are built and wait for their references.
+
 fuck torch — but also, you do not need llama.cpp to *run* what you built.
 The CPU, Metal and CUDA paths live here. Packed matrices stay packed through
 their kernels; the PEN7 path owns its immutable parameters. The engineering
