@@ -366,7 +366,9 @@ static void usage(const char *self) {
         "  --experts        seat a native parliament on the dense llama-family decoder\n"
         "  --learn-experts  update elected experts after each turn (requires --experts)\n"
         "  --async-consolidation  consolidate in the background (requires --learn-experts)\n"
-        "  --spore-in FILE  restore a parliament for this host (requires --experts)\n"
+        "  --spore-in FILE  restore an exact or portable parliament (requires --experts)\n"
+        "  --spore-only     convert --spore-in to --spore-out before the first turn\n"
+        "  --portable-spore include a residual frame in --spore-out for switching bodies\n"
         "  --spore-out FILE write a new GGUF spore on success (requires --experts)\n"
         "  --expert-trace   print elections and chosen token logits on stderr\n"
         "  -q               no banner\n"
@@ -470,13 +472,15 @@ int main(int argc, char **argv) {
      * parity gate drives; the flags are for chat, which has no prompt to hang
      * positional arguments behind. */
     int tokenize_only = 0, arch_only = 0, repeats = 1;
-    int experts = 0, learn = 0, trace = 0, async = 0;
+    int experts = 0, learn = 0, trace = 0, async = 0, portable = 0, spore_only = 0;
     const char *spore_in = NULL, *spore_out = NULL, *tok_path = NULL;
     while (ai < argc && argv[ai][0] == '-' && argv[ai][1]) {
         const char *arg = argv[ai];
         if (!strcmp(arg, "--experts")) { experts = 1; ai++; continue; }
         if (!strcmp(arg, "--learn-experts")) { learn = 1; ai++; continue; }
         if (!strcmp(arg, "--async-consolidation")) { async = 1; ai++; continue; }
+        if (!strcmp(arg, "--spore-only")) { spore_only = 1; ai++; continue; }
+        if (!strcmp(arg, "--portable-spore")) { portable = 1; ai++; continue; }
         if (!strcmp(arg, "--expert-trace")) { trace = 1; ai++; continue; }
         if (!strcmp(arg, "--spore-in") || !strcmp(arg, "--spore-out")) {
             if (++ai >= argc) { usage(argv[0]); return 1; }
@@ -532,6 +536,14 @@ int main(int argc, char **argv) {
 
     if (async && !learn) {
         fprintf(stderr, "notorch: --async-consolidation requires --learn-experts\n");
+        return 1;
+    }
+    if (spore_only && (!spore_in || !spore_out || learn || ai+1 != argc)) {
+        fprintf(stderr, "notorch: --spore-only takes --spore-in, --spore-out and one host without a training turn\n");
+        return 1;
+    }
+    if (portable && !spore_out) {
+        fprintf(stderr, "notorch: --portable-spore requires --spore-out\n");
         return 1;
     }
     if ((learn || spore_in || spore_out) && !experts) {
@@ -607,17 +619,19 @@ int main(int argc, char **argv) {
     if (max_tokens < 1) max_tokens = 1;
 
     pf_on = getenv("NT_PROFILE") != NULL;
-    s.logits = (float*)calloc(dims.vocab, sizeof(float));
     int rc = 1;
-    if (!s.logits) goto done;
     if (experts) {
-        s.experts = nt_experts_open(gf, spore_in, trace ? stderr : NULL);
+        nt_expert_body body = {model, s.tok};
+        s.experts = nt_experts_open_on_body(gf, spore_in, trace ? stderr : NULL, &body);
         if (!s.experts) {
             fprintf(stderr, "notorch: could not open expert state%s%s\n",
                     spore_in ? " from " : "", spore_in ? spore_in : "");
             goto done;
         }
     }
+    if (spore_only) { rc = 0; goto done; }
+    s.logits = (float*)calloc(dims.vocab, sizeof(float));
+    if (!s.logits) goto done;
     if ((experts || trace) && !isfinite(temp)) {
         fprintf(stderr, "notorch: expert sampling requires a finite temperature\n");
         goto done;
@@ -676,7 +690,8 @@ done:
         fprintf(stderr, "notorch: final expert consolidation failed\n");
         rc = 1;
     }
-    if (!rc && spore_out && nt_experts_save(s.experts, spore_out)) {
+    if (!rc && spore_out && (portable ? nt_experts_save_portable(s.experts, spore_out)
+                                     : nt_experts_save(s.experts, spore_out))) {
         fprintf(stderr, "notorch: could not publish a new spore at %s\n", spore_out);
         rc = 1;
     }

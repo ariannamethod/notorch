@@ -1,6 +1,7 @@
 /* Native DOE for a single dense decoder block. Tensor layout is shared with
  * nt_parliament_*_values. Each turn collects residuals; Oja runs at its end. */
-#include "harness/experts.h"
+#include "harness/spore_frame.h"
+#include "harness/archs.h"
 #include "sha256.h"
 #include <fcntl.h>
 #include <math.h>
@@ -15,8 +16,11 @@ enum { SEATS = 6, FOUNDERS = 4, RANK = 4, WINDOW = 2, HISTORY = 16 };
 #define TAU 6.28318530718f
 
 struct nt_experts {
-    int dim, layer;
-    char host[65];
+    int dim, layer, depth;
+    char host[65], arch[64], norm_sha[65];
+    nt_expert_body body;
+    const gguf_file *frame_host;
+    float *frame;
     FILE *trace;
     uint32_t rng;
     uint64_t turns, elections;
@@ -77,15 +81,37 @@ static int host_hash(const char *path, char hex[65]) {
     return 0;
 }
 
+static void seed_weights(nt_experts *p) {
+    size_t dr = (size_t)p->dim * RANK;
+    for (size_t i = 0; i < (size_t)SEATS * p->dim; i++) p->vote[i] = 0.01f * normal(p);
+    for (int e = 0; e < FOUNDERS; e++) {
+        for (size_t i = 0; i < dr; i++) {
+            p->a[e*dr+i] = 0.01f * normal(p);
+            p->b[e*dr+i] = 0.01f * normal(p);
+        }
+    }
+}
+
 static int restore(nt_experts *p, const char *path);
 
 nt_experts *nt_experts_open(const gguf_file *host, const char *spore, FILE *trace) {
+    return nt_experts_open_on_body(host, spore, trace, NULL);
+}
+
+nt_experts *nt_experts_open_on_body(const gguf_file *host, const char *spore, FILE *trace,
+                                    const nt_expert_body *body) {
     if (!host || host->embed_dim < 1 || host->n_layers < 1 ||
         host->embed_dim > NT_MAX_ELEMENTS / (SEATS * RANK)) return NULL;
     nt_experts *p = calloc(1, sizeof(*p));
     if (!p) return NULL;
     p->dim = host->embed_dim;
-    p->layer = host->n_layers / 2;
+    p->depth = host->n_layers;
+    p->layer = p->depth / 2;
+    snprintf(p->arch, sizeof(p->arch), "%s", host->arch);
+    if (body) {
+        p->body = *body;
+        p->frame_host = host;
+    }
     p->trace = trace;
     p->rng = 0x4e54444f;
     p->consensus = 0.5f;
@@ -102,15 +128,11 @@ nt_experts *nt_experts_open(const gguf_file *host, const char *spore, FILE *trac
     if (spore) {
         if (restore(p, spore)) goto fail;
     } else {
-        for (size_t i = 0; i < (size_t)SEATS * p->dim; i++) p->vote[i] = 0.01f * normal(p);
+        seed_weights(p);
         for (int e = 0; e < FOUNDERS; e++) {
             p->alive[e] = 1;
             p->vitality[e] = 0.7f;
             p->frequency[e] = TAU * e / FOUNDERS;
-            for (size_t i = 0; i < dr; i++) {
-                p->a[e*dr+i] = 0.01f * normal(p);
-                p->b[e*dr+i] = 0.01f * normal(p);
-            }
         }
     }
     return p;
@@ -121,7 +143,7 @@ fail:
 
 void nt_experts_free(nt_experts *p) {
     if (!p) return;
-    free(p->a); free(p->b); free(p->vote);
+    free(p->a); free(p->b); free(p->vote); free(p->frame);
     free(p->sum_in); free(p->sum_out); free(p->injected); free(p->update);
     free(p);
 }
@@ -329,8 +351,7 @@ typedef struct {
 } spore_tensor;
 
 enum { TENSORS = 10 };
-static void directory(nt_experts *p, spore_tensor out[TENSORS]) {
-    uint64_t d = (uint64_t)p->dim;
+static void directory(nt_experts *p, uint64_t d, spore_tensor out[TENSORS]) {
     const spore_tensor fields[TENSORS] = {
         {"doe.lora_a", p->a, 3, {RANK,d,SEATS}},
         {"doe.lora_b", p->b, 3, {d,RANK,SEATS}},
@@ -352,8 +373,25 @@ static uint64_t elements(const spore_tensor *t) {
     return n;
 }
 
-int nt_experts_save(nt_experts *p, const char *path) {
+static int calibrate(nt_experts *p) {
+    if (p->frame) return 0;
+    if (nt_pick_arch(p->arch) != &nt_arch_llama || p->dim < NT_SPORE_ANCHORS ||
+        p->dim > NT_MAX_ELEMENTS / NT_SPORE_ANCHORS || !p->frame_host)
+        return -1;
+    float *frame = malloc((size_t)p->dim * NT_SPORE_ANCHORS * sizeof(*frame));
+    if (!frame) return -1;
+    if (nt_spore_frame_build(&p->body, p->frame_host, frame, p->norm_sha)) { free(frame); return -1; }
+    p->frame = frame;
+    return 0;
+}
+
+static spore_tensor frame_tensor(float *frame, int width) {
+    return (spore_tensor){"doe.anchor_frame", frame, 2, {(uint64_t)width, NT_SPORE_ANCHORS}};
+}
+
+static int save_spore(nt_experts *p, const char *path, int portable) {
     if (!p || !path || !*path || p->count || !p->turns) return -1;
+    if (portable && calibrate(p)) return -1;
     char *tmp = malloc(strlen(path) + sizeof(".XXXXXX"));
     if (!tmp) return -1;
     sprintf(tmp, "%s.XXXXXX", path);
@@ -363,17 +401,26 @@ int nt_experts_save(nt_experts *p, const char *path) {
     if (!w) goto done;
     gguf_write_kv_str(w, "general.architecture", "notorch-doe-spore");
     gguf_write_kv_str(w, "doe.host_sha256", p->host);
-    gguf_write_kv_u32(w, "doe.version", 1);
+    gguf_write_kv_u32(w, "doe.version", portable ? 2 : 1);
     gguf_write_kv_u32(w, "doe.layer", (uint32_t)p->layer);
     gguf_write_kv_u32(w, "doe.rng", p->rng);
     gguf_write_kv_u64(w, "doe.turns", p->turns);
     gguf_write_kv_u64(w, "doe.elections", p->elections);
     gguf_write_kv_f32(w, "doe.consensus", p->consensus);
-    spore_tensor t[TENSORS];
-    directory(p, t);
-    for (int i = 0; i < TENSORS; i++)
+    spore_tensor t[TENSORS+1];
+    directory(p, p->dim, t);
+    if (portable) {
+        gguf_write_kv_str(w, "doe.frame", NT_SPORE_FRAME_ID);
+        gguf_write_kv_str(w, "doe.source_arch", p->arch);
+        gguf_write_kv_str(w, "doe.norm_sha256", p->norm_sha);
+        gguf_write_kv_u32(w, "doe.width", (uint32_t)p->dim);
+        gguf_write_kv_u32(w, "doe.depth", (uint32_t)p->depth);
+        t[TENSORS] = frame_tensor(p->frame, p->dim);
+    }
+    int count = TENSORS + portable;
+    for (int i = 0; i < count; i++)
         gguf_write_tensor_decl(w, t[i].name, t[i].ndim, t[i].shape, GGUF_TYPE_F32);
-    for (int i = 0; i < TENSORS; i++)
+    for (int i = 0; i < count; i++)
         gguf_write_tensor_f32(w, t[i].name, t[i].data, elements(&t[i]));
     /* link publishes all bytes at once and refuses any existing destination,
      * including the host, the parent spore, and a concurrent writer's child. */
@@ -385,8 +432,76 @@ done:
     return rc;
 }
 
+int nt_experts_save(nt_experts *p, const char *path) {
+    return save_spore(p, path, 0);
+}
+
+int nt_experts_save_portable(nt_experts *p, const char *path) {
+    return save_spore(p, path, 1);
+}
+
 static int bounded_int(float v, int max) {
     return v >= 0 && v <= max && v == floorf(v);
+}
+
+static int valid_lifecycle(const nt_experts *p) {
+    int alive = 0;
+    for (int i = 0; i < SEATS; i++) {
+        if (!bounded_int(p->alive[i], 1) || !bounded_int(p->cursor[i], RANK-1) ||
+            !bounded_int(p->age[i], 21) || !bounded_int(p->low[i], 8) ||
+            p->vitality[i] < 0 || p->vitality[i] > 1 ||
+            p->frequency[i] < 0 || p->frequency[i] >= TAU) return 0;
+        alive += (int)p->alive[i];
+    }
+    for (int j = 0; j < HISTORY; j++)
+        if (p->history[j] < 0 || p->history[j] > 1) return 0;
+    return alive >= 2;
+}
+
+/* Validate the complete donor directory before any donor dimension is used to
+ * allocate memory. Tensor views are borrowed until this spore is closed. */
+static int tensor_views(const gguf_file *g, uint64_t physical, spore_tensor *t, int count,
+                        const float **values) {
+    uint64_t offset = 0;
+    for (int i = 0; i < count; i++) {
+        const gguf_tensor_info *ti = &g->tensors[i];
+        uint64_t n = elements(&t[i]), bytes = n * sizeof(float);
+        if (strcmp(ti->name, t[i].name) || ti->dtype != GGUF_TYPE_F32 || ti->ndim != t[i].ndim ||
+            memcmp(ti->shape, t[i].shape, ti->ndim*sizeof(uint64_t)) ||
+            ti->offset != offset || offset > physical || bytes > physical-offset ||
+            offset > g->data_size || bytes > g->data_size-offset) return -1;
+        values[i] = (const float *)(g->data + offset);
+        for (uint64_t j = 0; j < n; j++)
+            if (!isfinite(values[i][j]) || fabsf(values[i][j]) > 1e4f) return -1;
+        offset = (offset + bytes + 31) & ~(uint64_t)31;
+    }
+    return offset == physical ? 0 : -1;
+}
+
+static int project_seats(nt_experts *p, int width, const float *frame, const float **values) {
+    seed_weights(p);
+    for (int e = 0; e < SEATS; e++) {
+        size_t src = (size_t)e * width, dst = (size_t)e * p->dim;
+        if (nt_spore_project(frame, width, values[2]+src, 1,
+                             p->frame, p->dim, p->vote+dst, 1)) return -1;
+        for (int r = 0; r < RANK; r++) {
+            if (nt_spore_project(frame, width, values[0]+src*RANK+r, RANK,
+                                 p->frame, p->dim, p->a+dst*RANK+r, RANK) ||
+                nt_spore_project(frame, width, values[1]+src*RANK+(size_t)r*width, 1,
+                                 p->frame, p->dim, p->b+dst*RANK+(size_t)r*p->dim, 1))
+                return -1;
+        }
+    }
+    return 0;
+}
+
+static const gguf_kv *field(const gguf_file *g, const char *name, unsigned type) {
+    const gguf_kv *kv = gguf_get_kv(g, name);
+    return kv && kv->type == type ? kv : NULL;
+}
+
+static int is_digest(const gguf_kv *v) {
+    return v && strlen(v->val.str) == 64 && strspn(v->val.str, "0123456789abcdef") == 64;
 }
 
 static int restore(nt_experts *p, const char *path) {
@@ -395,55 +510,82 @@ static int restore(nt_experts *p, const char *path) {
     gguf_file *g = gguf_open(path);
     if (!g) return -1;
     int rc = -1;
-    const gguf_kv *host = gguf_get_kv(g, "doe.host_sha256");
-    const gguf_kv *version = gguf_get_kv(g, "doe.version");
-    const gguf_kv *layer = gguf_get_kv(g, "doe.layer");
-    const gguf_kv *rng = gguf_get_kv(g, "doe.rng");
-    const gguf_kv *turns = gguf_get_kv(g, "doe.turns");
-    const gguf_kv *elections = gguf_get_kv(g, "doe.elections");
-    const gguf_kv *consensus = gguf_get_kv(g, "doe.consensus");
-    if (strcmp(g->arch, "notorch-doe-spore") || g->version != 3 || g->n_tensors != TENSORS ||
-        !host || host->type != 8 || strcmp(host->val.str, p->host) ||
-        !version || version->type != 4 || version->val.u32 != 1 ||
-        !layer || layer->type != 4 || layer->val.u32 != (unsigned)p->layer ||
-        !rng || rng->type != 4 || !rng->val.u32 ||
-        !turns || turns->type != 10 || !turns->val.u64 ||
-        !elections || elections->type != 10 || elections->val.u64 < turns->val.u64 ||
-        !consensus || consensus->type != 6 || !isfinite(consensus->val.f32) ||
+    const gguf_kv *host = field(g, "doe.host_sha256", 8);
+    const gguf_kv *version = field(g, "doe.version", 4);
+    const gguf_kv *layer = field(g, "doe.layer", 4);
+    const gguf_kv *rng = field(g, "doe.rng", 4);
+    const gguf_kv *turns = field(g, "doe.turns", 10);
+    const gguf_kv *elections = field(g, "doe.elections", 10);
+    const gguf_kv *consensus = field(g, "doe.consensus", 6);
+    if (strcmp(g->arch, "notorch-doe-spore") || g->version != 3 ||
+        !version || (version->val.u32 != 1 && version->val.u32 != 2) ||
+        !is_digest(host) ||
+        !layer || !rng || !rng->val.u32 || !turns || !turns->val.u64 ||
+        !elections || elections->val.u64 < turns->val.u64 ||
+        !consensus || !isfinite(consensus->val.f32) ||
         consensus->val.f32 < 0 || consensus->val.f32 > 1 ||
         g->data_offset > (uint64_t)st.st_size) goto done;
+    int portable = version->val.u32 == 2;
+    int same_host = !strcmp(host->val.str, p->host);
+    if (g->n_tensors != (uint64_t)(TENSORS + portable) ||
+        (!same_host && !portable) || (same_host && layer->val.u32 != (unsigned)p->layer))
+        goto done;
+
+    int width = p->dim, same_shape = 0;
+    const gguf_kv *norm_sha = field(g, "doe.norm_sha256", 8);
+    spore_tensor t[TENSORS+1];
+    const float *values[TENSORS+1];
+    if (portable) {
+        const gguf_kv *frame = field(g, "doe.frame", 8);
+        const gguf_kv *arch = field(g, "doe.source_arch", 8);
+        const gguf_kv *w = field(g, "doe.width", 4);
+        const gguf_kv *depth = field(g, "doe.depth", 4);
+        if (!frame || strcmp(frame->val.str, NT_SPORE_FRAME_ID) || !is_digest(norm_sha) ||
+            !arch || nt_pick_arch(arch->val.str) != &nt_arch_llama ||
+            !w || w->val.u32 < NT_SPORE_ANCHORS || w->val.u32 > NT_MAX_ELEMENTS / NT_SPORE_ANCHORS ||
+            !depth || !depth->val.u32 || depth->val.u32 / 2 != layer->val.u32) goto done;
+        width = (int)w->val.u32;
+        same_shape = width == p->dim && depth->val.u32 == (unsigned)p->depth &&
+                     !strcmp(arch->val.str, p->arch);
+        if (same_host && !same_shape) goto done;
+        t[TENSORS] = frame_tensor(NULL, width);
+    }
+    directory(p, width, t);
+    if (tensor_views(g, (uint64_t)st.st_size-g->data_offset, t, TENSORS+portable, values) ||
+        (portable && !nt_spore_frame_valid(values[TENSORS], width))) goto done;
+    for (int i = 3; i < TENSORS; i++)
+        memcpy(t[i].data, values[i], (size_t)elements(&t[i])*sizeof(float));
+    if (!valid_lifecycle(p)) goto done;
+    int copy_weights = 1;
+    if (!same_host) {
+        if (calibrate(p)) goto done;
+        const float *frame = values[TENSORS];
+        double minimum = same_shape ? nt_spore_frame_min_cos(frame, p->frame, width) : 0;
+        /* Each measured axis must stay closer to its original direction than
+         * to the perpendicular plane (45 degrees), and all norm digests match. */
+        int aligned = same_shape && !strcmp(norm_sha->val.str, p->norm_sha) &&
+                      minimum > 0.7071067811865475;
+        if (!aligned) {
+            if (project_seats(p, width, frame, values)) goto done;
+            copy_weights = 0;
+        }
+        if (p->trace) {
+            fprintf(p->trace, "doe transfer mode=%s anchors=%d width=%d->%d layer=%u->%d",
+                    aligned ? "aligned" : "projected", NT_SPORE_ANCHORS, width, p->dim,
+                    layer->val.u32, p->layer);
+            if (same_shape) fprintf(p->trace, " min_cos=%.9g", minimum);
+            fprintf(p->trace, " source=%s target=%s\n", host->val.str, p->host);
+        }
+    }
+    if (copy_weights) {
+        for (int i = 0; i < 3; i++)
+            memcpy(t[i].data, values[i], (size_t)elements(&t[i])*sizeof(float));
+    }
     p->rng = rng->val.u32;
     p->turns = turns->val.u64;
     p->elections = elections->val.u64;
     p->consensus = consensus->val.f32;
-    spore_tensor t[TENSORS];
-    directory(p, t);
-    uint64_t offset = 0;
-    uint64_t physical = (uint64_t)st.st_size - g->data_offset;
-    for (int i = 0; i < TENSORS; i++) {
-        const gguf_tensor_info *ti = &g->tensors[i];
-        uint64_t n = elements(&t[i]), bytes = n*sizeof(float);
-        if (strcmp(ti->name, t[i].name) || ti->dtype != GGUF_TYPE_F32 || ti->ndim != t[i].ndim ||
-            memcmp(ti->shape, t[i].shape, ti->ndim*sizeof(uint64_t)) ||
-            ti->offset != offset || offset > physical || bytes > physical-offset ||
-            offset > g->data_size || bytes > g->data_size-offset) goto done;
-        memcpy(t[i].data, g->data + offset, (size_t)bytes);
-        for (uint64_t j = 0; j < n; j++)
-            if (!isfinite(t[i].data[j]) || fabsf(t[i].data[j]) > 1e4f) goto done;
-        offset = (offset + bytes + 31) & ~(uint64_t)31;
-    }
-    if (offset != physical) goto done;
-    int alive = 0;
-    for (int i = 0; i < SEATS; i++) {
-        if (!bounded_int(p->alive[i], 1) || !bounded_int(p->cursor[i], RANK-1) ||
-            !bounded_int(p->age[i], 21) || !bounded_int(p->low[i], 8) ||
-            p->vitality[i] < 0 || p->vitality[i] > 1 ||
-            p->frequency[i] < 0 || p->frequency[i] >= TAU) goto done;
-        alive += (int)p->alive[i];
-    }
-    for (int j = 0; j < HISTORY; j++)
-        if (p->history[j] < 0 || p->history[j] > 1) goto done;
-    if (alive >= 2) rc = 0;
+    rc = 0;
 done:
     gguf_close(g);
     return rc;
