@@ -32,6 +32,16 @@ int nt_experts_finish(nt_experts *p, int learn);
  * Initialize *job to NULL and keep the trace stream open through await. */
 typedef struct nt_consolidation nt_consolidation;
 int nt_experts_submit(nt_experts **owner, nt_consolidation **job);
+/* From a completed generation opened with open_on_body, let the body
+ * generate 1..32 greedy choices on private KV. Pass its EOS id, or -1 when
+ * absent. With learn=0 the same episode can be inspected through the trace.
+ * On failure no dream learning or counters are committed. */
+enum { NT_DREAM_MAX_TOKENS = 32 };
+int nt_experts_dream(nt_experts *p, int tokens, int eos, int learn);
+/* Transfer sole ownership to the same worker as submit. It first consolidates
+ * a pending waking turn, if present, then learns from one dream. The borrowed
+ * model, tokenizer, host and trace must outlive await. */
+int nt_experts_submit_dream(nt_experts **owner, nt_consolidation **job, int tokens, int eos);
 int nt_experts_await(nt_experts **owner, nt_consolidation **job);
 /* Replace only one living seat's A and B from the same host and slot. Both
  * parliaments must be at a completed turn boundary. Returns NT_OK or a refusal

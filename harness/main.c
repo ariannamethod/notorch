@@ -32,7 +32,7 @@ typedef struct {
     nt_experts *experts;
     float *sampling_copy; /* sampling at T>0 consumes its input */
     nt_consolidation *pending;
-    int learn, trace, async;
+    int learn, trace, async, dream_tokens;
 } session;
 
 /* GGUF-embedded BPE where the file has one; bytes where it does not, which is
@@ -228,6 +228,20 @@ static int session_forward(session *s, const int *tokens, int n, int pos, float 
     return s->arch->forward(s->model, s->kv, tokens, n, pos, logits);
 }
 
+/* A private episode can follow a waking turn or resume a completed spore. */
+static int consolidate(session *s, int wake) {
+    if (s->async) {
+        if (s->dream_tokens)
+            return nt_experts_submit_dream(&s->experts, &s->pending, s->dream_tokens, s->eos);
+        return nt_experts_submit(&s->experts, &s->pending);
+    }
+    if (wake && s->experts) {
+        int rc = nt_experts_finish(s->experts, s->learn);
+        if (rc) return rc;
+    }
+    return s->dream_tokens ? nt_experts_dream(s->experts, s->dream_tokens, s->eos, s->learn) : NT_OK;
+}
+
 /* Prompt in, text out, cache advanced. Returns the position after the last
  * token written, so a chat turn can hand it to the next one.
  *
@@ -242,6 +256,7 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
         fprintf(stderr, "notorch: previous expert consolidation failed\n");
         return 0;
     }
+    if (pf_on) pf_reset();
     double gen0 = now_ms();
     for (int i = 0; i < n_tok; i += NT_PREFILL_CHUNK) {
         int cn = n_tok - i; if (cn > NT_PREFILL_CHUNK) cn = NT_PREFILL_CHUNK;
@@ -296,9 +311,7 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
                 gen, total_ms - prefill_ms,
                 gen > 0 ? gen * 1000.0 / (total_ms - prefill_ms) : 0);
     pf_report("decode", total_ms - prefill_ms);
-    int rc = NT_OK;
-    if (s->async) rc = nt_experts_submit(&s->experts, &s->pending);
-    else if (s->experts) rc = nt_experts_finish(s->experts, s->learn);
+    int rc = consolidate(s, 1);
     if (rc != NT_OK) {
         fprintf(stderr, "notorch: expert turn could not be committed\n");
         return 0;
@@ -366,11 +379,13 @@ static void usage(const char *self) {
         "  --experts        seat a native parliament on the dense llama-family decoder\n"
         "  --learn-experts  update elected experts after each turn (requires --experts)\n"
         "  --async-consolidation  consolidate in the background (requires --learn-experts)\n"
+        "  --dream N        generate 1..32 private choices after each learned turn\n"
+        "  --dream-only N   dream from --spore-in without a user turn (preview unless learning)\n"
         "  --spore-in FILE  restore an exact or portable parliament (requires --experts)\n"
         "  --spore-only     convert --spore-in to --spore-out before the first turn\n"
         "  --portable-spore include a residual frame in --spore-out for switching bodies\n"
         "  --spore-out FILE write a new GGUF spore on success (requires --experts)\n"
-        "  --expert-trace   print elections and chosen token logits on stderr\n"
+        "  --expert-trace   print elections, waking logits and private dream pieces on stderr\n"
         "  -q               no banner\n"
         "  -n, -t           tokens and temperature, for chat as well as one shot\n"
         "  --tokenizer F    the vocabulary from F, for a model file that carries none\n"
@@ -473,12 +488,24 @@ int main(int argc, char **argv) {
      * positional arguments behind. */
     int tokenize_only = 0, arch_only = 0, repeats = 1;
     int experts = 0, learn = 0, trace = 0, async = 0, portable = 0, spore_only = 0;
+    int dream_tokens = 0, dream_only = 0;
     const char *spore_in = NULL, *spore_out = NULL, *tok_path = NULL;
     while (ai < argc && argv[ai][0] == '-' && argv[ai][1]) {
         const char *arg = argv[ai];
         if (!strcmp(arg, "--experts")) { experts = 1; ai++; continue; }
         if (!strcmp(arg, "--learn-experts")) { learn = 1; ai++; continue; }
         if (!strcmp(arg, "--async-consolidation")) { async = 1; ai++; continue; }
+        if (!strcmp(arg, "--dream") || !strcmp(arg, "--dream-only")) {
+            char *end = NULL;
+            long n = ai+1 < argc ? strtol(argv[ai+1], &end, 10) : 0;
+            if (dream_tokens || !end || *end || n < 1 || n > NT_DREAM_MAX_TOKENS) {
+                fprintf(stderr, "notorch: choose one dream mode with a budget of 1..%d choices\n", NT_DREAM_MAX_TOKENS);
+                return 1;
+            }
+            dream_tokens = (int)n;
+            dream_only = !strcmp(arg, "--dream-only");
+            ai += 2; continue;
+        }
         if (!strcmp(arg, "--spore-only")) { spore_only = 1; ai++; continue; }
         if (!strcmp(arg, "--portable-spore")) { portable = 1; ai++; continue; }
         if (!strcmp(arg, "--expert-trace")) { trace = 1; ai++; continue; }
@@ -534,6 +561,12 @@ int main(int argc, char **argv) {
     }
     if (ai >= argc) { nt_logo(quiet); usage(argv[0]); return 1; }
 
+    if (dream_tokens && (!experts || spore_only || (!dream_only && !learn) ||
+        (dream_only && (!spore_in || ai+1 != argc || (learn && !spore_out))))) {
+        fprintf(stderr, "notorch: --dream requires --experts --learn-experts; --dream-only takes "
+                        "--experts --spore-in and one host (add --spore-out when learning)\n");
+        return 1;
+    }
     if (async && !learn) {
         fprintf(stderr, "notorch: --async-consolidation requires --learn-experts\n");
         return 1;
@@ -607,7 +640,7 @@ int main(int argc, char **argv) {
     if (!model) { gguf_close(gf); return 1; }
     fprintf(stderr, "loaded in %.0f ms\n", now_ms() - t0);
 
-    session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1, .learn = learn, .trace = trace, .async = async };
+    session s = { .arch = arch, .model = model, .vocab = dims.vocab, .eos = -1, .learn = learn, .trace = trace, .async = async, .dream_tokens = dream_tokens };
     chat_wrap_init(&g_chat, dims.vocab, path);
     if (open_tokenizer(&s, gf, path, tok_path)) { arch->free(model); gguf_close(gf); return 1; }
 
@@ -630,6 +663,11 @@ int main(int argc, char **argv) {
         }
     }
     if (spore_only) { rc = 0; goto done; }
+    if (dream_only) {
+        rc = consolidate(&s, 0);
+        if (rc) fprintf(stderr, "notorch: private dream failed: %s\n", nt_strerror(rc));
+        goto done;
+    }
     s.logits = (float*)calloc(dims.vocab, sizeof(float));
     if (!s.logits) goto done;
     if ((experts || trace) && !isfinite(temp)) {

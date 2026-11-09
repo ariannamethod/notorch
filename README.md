@@ -19,6 +19,8 @@
 - [why](#why)
 - [the funeral](#the-funeral)
 - [run a model](#run-a-model)
+  - [living experts and weight swaps](#living-experts-in-the-harness)
+  - [dreaming between turns](#dreaming-between-turns)
 - [train a model](#train-a-model)
 - [architecture](#architecture)
 - [what's inside](#whats-inside)
@@ -236,6 +238,82 @@ seats, history, consensus, RNG and turn counters. `--expert-trace` reports the
 transfer mode, both host digests, widths and layers. The commands and measured
 continuations for SmolLM2 Q4, SmolLM2 Q8 and Qwen2.5 are in the
 [engineering log](NOTORCHLOG.md#2026-11-09--a-parliament-crosses-gguf-bodies).
+
+#### One parliament, different weights
+
+In the SmolLM2-360M experiment, one generation learned “Miro carries a key”
+and a sibling learned “Miro carries a bell”. Each had one waking turn and 24
+elections. Each portable spore occupied 331,616 bytes. The Harness loaded the
+same pair on three weight files and ran five fixed prompts with greedy decoding
+and a twelve-token budget.
+
+| Receiving weights | Width | Expert import | Prompts with different continuations between the two histories |
+| --- | ---: | --- | ---: |
+| SmolLM2-360M Q4_K_M | 960 | Exact | 5/5 |
+| SmolLM2-360M Q8_0 | 960 | Aligned | 2/5 |
+| Qwen2.5-0.5B-Instruct Q4_K_M | 896 | Projected | 2/5 |
+
+On Qwen2.5, “At the lighthouse, Miro reaches for his” continued with
+“watch and sees that the minute hand is 6 cm long” from the key spore and
+“watch and finds that it is exactly 10 minutes past” from the bell spore.
+[Probabilities and single-seat interventions](experiments/doe_spores/portable-scores.tsv).
+
+#### Dreaming between turns
+
+With `--dream N`, a completed learning turn can seed a private episode of up
+to 32 greedy choices. The living experts score 32 calibrated directions through
+their own A/B factors. The strongest unused direction supplies a word. The
+resident model generates from that word on its own KV cache. The elected seats
+receive one Oja update at a quarter of the waking rate. Committing an episode
+marks the cue as used for the current round of 32. `--async-consolidation`
+runs the waking update and dream on the same worker while chat accepts input.
+
+The following commands replay a SmolLM2 → Qwen3 → Llama handoff. Set
+`SMOL_Q4`, `QWEN3` and `LLAMA3` to the three local weight files in the
+table below or the preceding table. Each output filename must be new.
+
+```sh
+./notorch -q --experts --learn-experts --portable-spore --spore-out miro.gguf \
+  "$SMOL_Q4" "Miro is the lighthouse keeper. Every night Miro carries a key. At sunrise the lighthouse keeper returns home." 1 0
+
+# Hear Qwen3's proposed dream on stderr. This also works on an archived spore.
+./notorch -q --experts --expert-trace --dream-only 6 --spore-in miro.gguf "$QWEN3"
+
+# Commit that episode and carry Qwen3's experts into Llama with no intervening user turn.
+./notorch -q --experts --learn-experts --async-consolidation --dream-only 6 \
+  --spore-in miro.gguf --portable-spore --spore-out qwen-dream.gguf "$QWEN3"
+./notorch -q --experts --spore-in qwen-dream.gguf "$LLAMA3" "At the lighthouse, Miro reaches for his" 12 0
+
+# In interactive chat, keep learning and dreaming after each subsequent reply.
+./notorch --experts --learn-experts --async-consolidation --dream 6 \
+  --spore-in qwen-dream.gguf --portable-spore --spore-out llama-next.gguf "$LLAMA3"
+```
+
+From the same SmolLM2 key spore both larger bodies picked ` music` for their
+first dream. Qwen3 generated `: "The Sound of Silence`. Llama generated
+`Question`, a newline and the beginning of a numbered list. Both held seven
+elections and made six choices. In preview mode both reproduced the respective
+dream and returned a byte-identical spore on the receiving body.
+
+| Receiving weights (Q4_K_M) | Width | “At the lighthouse, Miro reaches for his…” before → after one local dream | Change in log odds of ` key` over ` bell` on “Every night the lighthouse keeper carries a” |
+| --- | ---: | --- | ---: |
+| Qwen3-1.7B | 2048 | “flashlight, which is on the table” → “bag of marbles, which contains 100” | +0.665598 |
+| Llama-3.2-3B-Instruct | 3072 | “trusty notebook and begins to sketch the scene before him.” in both runs | −0.021778 |
+
+We also switched **Qwen3 → Llama 3.2** twice, carrying Qwen3's key spore
+before and after its six-token dream. On Llama, the earlier dream shifted the
+same key/bell log odds by **+0.066209**. Both branches gave the same twelve
+greedy tokens on each of the five fixed prompts. Llama's next dream used
+` river` and advanced the inherited clock to cycle 2.
+
+The dream text stays in the optional trace. The spore carries the updated
+factors, Oja cursors, RNG and a separate dream clock. A sleeping parliament
+keeps its waking turn count, elections, consensus and vitality. Existing
+unslept generations use exact v1 or portable v2. After the first recorded
+dream the corresponding schemas are v3 and v4.
+[AML protocol](experiments/doe_spores/dream.aml) ·
+[Full scores](experiments/doe_spores/dream-scores.tsv) ·
+[Two-hop measurements and model revisions](NOTORCHLOG.md#2026-11-09--private-dreams-across-qwen3-and-llama-32).
 
 The [SmolLM2-360M experiment](experiments/doe_spores/transplant.aml) moves a
 single seat's A/B between two GGUF spores and probes fresh conversations.

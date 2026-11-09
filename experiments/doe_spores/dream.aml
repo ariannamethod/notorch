@@ -1,0 +1,224 @@
+# Reproduce two larger recipients and the Qwen3 -> Llama hop under AML.
+# stdin: CLI, SmolLM2-360M Q4, Qwen3-1.7B Q4, Llama-3.2-3B Q4, fresh output dir.
+def cat(a, b):
+    return text_concat(a, b)
+
+def col(a, b):
+    return cat(cat(a, '\t'), b)
+
+def path(name):
+    return cat(cat(outdir, '/'), name)
+
+def emit(file, line):
+    assert(file_append_line(path(file), line) == 1, 'receipt write')
+
+def spore(label):
+    return path(cat(label, '.gguf'))
+
+def cli():
+    args = list_new()
+    list_push(args, harness)
+    list_push(args, '-q')
+    list_push(args, '--experts')
+    list_push(args, '--expert-trace')
+    return args
+
+def run(args, label):
+    result = process_run(args, env, 300)
+    trace = record_get(result, 'stderr')
+    if record_get(result, 'status') != 0:
+        PRINT trace
+    assert(record_get(result, 'status') == 0, 'Harness failed')
+    save_lines(cat(label, '.trace'), trace)
+    return result
+
+def save_lines(file, content):
+    rest = content
+    end = text_find(rest, '\n')
+    while end >= 0:
+        emit(file, text_slice(rest, 0, end))
+        rest = text_slice(rest, end+1, text_len(rest))
+        end = text_find(rest, '\n')
+    if text_len(rest) > 0:
+        emit(file, rest)
+
+
+def suffix_id(prefix, ids, suffix):
+    both = doe_encode(cat(prefix, suffix))
+    assert(len(both) == len(ids) + 1, 'suffix must add one token')
+    i = 0
+    while i < len(ids):
+        assert(both[i] == ids[i], 'suffix changed prefix')
+        i = i + 1
+    return both[i]
+
+
+def source_spore(word):
+    label = cat('smol-', word)
+    args = cli()
+    list_push(args, '--learn-experts')
+    list_push(args, '--async-consolidation')
+    list_push(args, '--portable-spore')
+    list_push(args, '--spore-out')
+    list_push(args, spore(label))
+    list_push(args, source)
+    prompt = cat('Miro is the lighthouse keeper. Every night Miro carries a ', word)
+    list_push(args, cat(prompt, '. At sunrise the lighthouse keeper returns home.'))
+    list_push(args, '1')
+    list_push(args, '0')
+    result = run(args, label)
+    trace = record_get(result, 'stderr')
+    assert(text_find(trace, 'turn=1 elections=24 ') >= 0, 'source waking counters')
+    assert(text_find(trace, 'choice step=0 id=198 ') >= 0, 'source greedy newline')
+
+# A zero budget rebinds without a turn; preview runs the same private decoder.
+def generation(host, parent, label, budget, learn, portable):
+    args = cli()
+    if budget == 0:
+        list_push(args, '--spore-only')
+    else:
+        list_push(args, '--dream-only')
+        list_push(args, text_fixed(budget, 0))
+        if learn == 1:
+            list_push(args, '--learn-experts')
+            list_push(args, '--async-consolidation')
+    list_push(args, '--spore-in')
+    list_push(args, spore(parent))
+    if portable == 1:
+        list_push(args, '--portable-spore')
+    list_push(args, '--spore-out')
+    list_push(args, spore(label))
+    list_push(args, host)
+    result = run(args, label)
+    assert(text_len(record_get(result, 'stdout')) == 0, 'private episode wrote to chat')
+    trace = record_get(result, 'stderr')
+    assert(text_find(trace, 'doe turn=') < 0, 'unexpected waking turn')
+    first = text_find(trace, 'doe dream-start ')
+    if budget == 0:
+        assert(first < 0, 'unexpected private turn')
+    else:
+        end = text_find(trace, 'doe dream-end ')
+        assert(first >= 0 and end > first, 'incomplete private episode')
+        emit('dreams.tsv', col(label, text_slice(trace, end, text_len(trace)-1)))
+        # Discard startup timings and the learn flag for preview/commit comparison.
+        return text_slice(trace, first, end)
+    return ''
+
+def score(host, body, label, index):
+    doe_open(host, spore(label), 128)
+    prefix = list_get(probes, index)
+    ids = doe_encode(prefix)
+    left = suffix_id(prefix, ids, ' key')
+    right = suffix_id(prefix, ids, ' bell')
+    logits = doe_prompt(ids)
+    margin = logits[left] - logits[right]
+    probs = softmax(logits)
+    top = doe_choose(-1)
+    line = col(col(body, label), text_fixed(index, 0))
+    line = col(col(col(line, text_fixed(left, 0)), text_fixed(right, 0)), text_fixed(top, 0))
+    emit('scores.tsv', col(col(col(line, text_fixed(probs[left], 9)), text_fixed(probs[right], 9)), text_fixed(margin, 9)))
+    doe_close()
+
+def generate(host, body, parent, condition, index):
+    label = cat(cat(cat(body, '-'), condition), cat('-probe-', text_fixed(index, 0)))
+    args = cli()
+    list_push(args, '--spore-in')
+    list_push(args, parent)
+    list_push(args, host)
+    prefix = list_get(probes, index)
+    list_push(args, prefix)
+    list_push(args, '12')
+    list_push(args, '0')
+    result = run(args, label)
+    output = record_get(result, 'stdout')
+    assert(text_find(output, prefix) == 0, 'greedy output missing prefix')
+    save_lines(cat(label, '.txt'), text_slice(output, text_len(prefix), text_len(output)))
+    # The trace also records EOS when it ends the run before twelve tokens.
+    tail = record_get(result, 'stderr')
+    pos = text_find(tail, 'doe choice step=')
+    step = 0
+    while pos >= 0:
+        tail = text_slice(tail, pos, text_len(tail))
+        begin = text_find(tail, ' id=') + 4
+        end = text_find(tail, ' logit=')
+        assert(begin >= 4 and end > begin, 'choice trace')
+        token = text_slice(tail, begin, end)
+        line = col(col(body, condition), text_fixed(index, 0))
+        emit('generation.tsv', col(col(line, text_fixed(step, 0)), token))
+        step = step + 1
+        tail = text_slice(tail, end, text_len(tail))
+        pos = text_find(tail, 'doe choice step=')
+    assert(step > 0, 'empty greedy trace')
+
+
+# Complete all five prompts from the previous transport experiment on the
+# matched Qwen -> Llama route. Probe 1 has already run in measure().
+def other_hop_probes():
+    index = 0
+    while index < list_len(probes):
+        if index != 1:
+            generate(llama, 'hop', spore('hop-awake'), 'hop-awake', index)
+            generate(llama, 'hop', spore('hop-dreamed'), 'hop-dreamed', index)
+        index = index + 1
+
+def measure(host, body, label):
+    score(host, body, label, 0)
+    score(host, body, label, 1)
+    generate(host, body, spore(label), label, 1)
+
+def direct(host, body):
+    key = cat(body, '-key')
+    bell = cat(body, '-bell')
+    first = cat(key, '-d6')
+    preview = cat(key, '-preview')
+    generation(host, 'smol-key', key, 0, 0, 1)
+    generation(host, 'smol-bell', bell, 0, 0, 0)
+    read = generation(host, key, preview, 6, 0, 1)
+    learned = generation(host, key, first, 6, 1, 1)
+    assert(text_equal(read, learned), 'preview and recording diverged')
+    assert(text_equal(file_hash_sha256(spore(key)), file_hash_sha256(spore(preview))), 'preview changed state')
+    assert(text_equal(file_hash_sha256(spore(key)), file_hash_sha256(spore(first))) == 0, 'recording did not change state')
+    second = cat(first, '-d6')
+    generation(host, first, second, 6, 1, 0)
+    measure(host, body, key)
+    measure(host, body, bell)
+    measure(host, body, first)
+    score(host, body, second, 0)
+
+harness = list_get(read_line(), 0)
+source = list_get(read_line(), 0)
+qwen = list_get(read_line(), 0)
+llama = list_get(read_line(), 0)
+outdir = list_get(read_line(), 0)
+assert(text_equal(file_hash_sha256(source), '2fa3f013dcdd7b99f9b237717fa0b12d75bbb89984cc1274be1471a465bac9c2'), 'SmolLM2 weights')
+assert(text_equal(file_hash_sha256(qwen), '72c5c3cb38fa32d5256e2fe30d03e7a64c6c79e668ad84057e3bd66e250b24fb'), 'Qwen3 weights')
+assert(text_equal(file_hash_sha256(llama), '6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff'), 'Llama weights')
+assert(dir_claim(outdir) == 1, 'choose a new output directory')
+env = record_new()
+record_set(env, 'NT_TOKENS', '')
+record_set(env, 'NT_CHAT', '||')
+record_set(env, 'NT_CTX', '64')
+record_set(env, 'NT_ATTN_THREADS', '1')
+probes = list_new()
+list_push(probes, 'Every night the lighthouse keeper carries a')
+list_push(probes, 'At the lighthouse, Miro reaches for his')
+list_push(probes, 'Before leaving for the harbor, Miro picks up the')
+list_push(probes, 'The object the keeper keeps in his pocket is a')
+list_push(probes, 'On the desk there is a')
+emit('scores.tsv', 'body\tstate\tprobe\tkey_id\tbell_id\tgreedy_id\tp_key\tp_bell\tlog_odds')
+emit('dreams.tsv', 'state\tepisode')
+emit('generation.tsv', 'body\tstate\tprobe\tstep\ttoken_id')
+source_spore('key')
+source_spore('bell')
+direct(qwen, 'qwen')
+generation(qwen, 'qwen-key', 'qwen-key-d2', 2, 1, 0)
+score(qwen, 'qwen', 'qwen-key-d2', 0)
+direct(llama, 'llama')
+generation(llama, 'qwen-key', 'hop-awake', 0, 0, 0)
+generation(llama, 'qwen-key-d6', 'hop-dreamed', 0, 0, 0)
+measure(llama, 'hop', 'hop-awake')
+measure(llama, 'hop', 'hop-dreamed')
+generation(llama, 'hop-dreamed', 'hop-next', 6, 1, 1)
+score(llama, 'hop', 'hop-next', 0)
+other_hop_probes()
+PRINT 'DREAM_SPORES_COMPLETE'

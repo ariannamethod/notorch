@@ -262,7 +262,8 @@ double now_ms(void) {
 static const char *pf_name[PF_N] = { "embed", "rmsnorm", "qkv+bias", "rope+kv",
                                      "attention", "attn proj", "ffn matmul",
                                      "silu", "residual", "head" };
-static double pf_acc[PF_N];
+/* Private decode workers collect timings independently of the waking thread. */
+static _Thread_local double pf_acc[PF_N];
 int pf_on = 0;
 
 static double pf_now(void) {

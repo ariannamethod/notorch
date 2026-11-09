@@ -66,6 +66,7 @@ tests/bench_*
 !tests/*.sh
 /doe_probe
 /test_portable_spore
+/test_expert_dream
 /test_expert_consolidation
 /expert_fixtures
 !tests/test_expert_spores.py
