@@ -13,6 +13,7 @@
  * link it without linking this file. Adding a family is adding a file next to
  * arch_llama.c and one line to nt_archs. */
 #include "harness/archs.h"
+#include "harness/tokenizer.h"
 #include "harness/logo.h"
 #include "harness/experts.h"
 #include "examples/bpe.h"
@@ -279,9 +280,9 @@ static int run_turn(session *s, const int *tokens, int n_tok, int pos0,
             memcpy(s->sampling_copy, s->logits, (size_t)s->vocab*sizeof(float));
             sampling = s->sampling_copy;
         }
-        int next = sample(sampling, s->vocab, temp);
+        int next = nt_sample_model_token(sampling, s->vocab, s->tok, temp);
         if (s->experts || s->trace) {
-            int best = sample(s->logits, s->vocab, 0);
+            int best = nt_sample_model_token(s->logits, s->vocab, s->tok, 0);
             if (s->experts) nt_experts_choice(s->experts, s->logits[best], s->logits[next]);
             if (s->trace) fprintf(stderr, "doe choice step=%d id=%d logit=%.9g best=%d best_logit=%.9g\n",
                                   step, next, s->logits[next], best, s->logits[best]);
@@ -388,41 +389,19 @@ static void usage(const char *self) {
         "  --expert-trace   print elections, waking logits and private dream pieces on stderr\n"
         "  -q               no banner\n"
         "  -n, -t           tokens and temperature, for chat as well as one shot\n"
-        "  --tokenizer F    the vocabulary from F, for a model file that carries none\n"
+        "  --tokenizer F    choose F instead of the embedded or adjacent vocabulary\n"
         "  NT_CTX=N         context length for chat (default 2048)\n"
         "  NT_BLAS_THREADS=N  OpenBLAS threads for this run (default 1)\n"
         "  NT_PROFILE=1     per-section timings\n", self);
 }
 
-/* The text side of a run: the vocabulary the model file carries, or one named with
- * --tokenizer for a family whose converter writes it to a file of its own (Qwen3.5),
- * or bytes as ids. Bytes are only an answer for a model whose ids are bytes: a
- * 248,320-row Qwen3.5 file without a tokenizer took "x" as id 120 and looped on "\n:"
- * without a word about it. A named tokenizer has to be for the same architecture and
- * must not hold ids the model has no row for. NT_TOKENS reaches the forward without
- * any of this, which is what it is for. */
+/* The shared loader selects the vocabulary. The CLI also accepts raw token IDs
+ * or byte input when the decoder has a byte-sized vocabulary. */
 static int open_tokenizer(session *s, const gguf_file *gf, const char *model_path, const char *tok_path) {
-    s->tok = bpe_load(tok_path ? tok_path : model_path);
-    if (tok_path) {
-        char arch[64] = {0};
-        if (!s->tok) { fprintf(stderr, "notorch: no tokenizer in %s\n", tok_path); return 1; }
-        if (gguf_read_str_kv(tok_path, "general.architecture", arch, sizeof(arch)) == 0 && strcmp(arch, gf->arch)) {
-            fprintf(stderr, "notorch: %s is a tokenizer for '%s', the model is '%s'\n", tok_path, arch, gf->arch);
-            return 1;
-        }
-        if (bpe_n_vocab(s->tok) > s->vocab) {
-            fprintf(stderr, "notorch: %s has %d tokens, the model has rows for %d\n",
-                    tok_path, bpe_n_vocab(s->tok), s->vocab);
-            return 1;
-        }
-    }
+    const char *error = nt_model_tokenizer_open(gf, model_path, s->vocab, tok_path, &s->tok, &s->eos);
+    if (error) { fprintf(stderr, "notorch: %s (%s)\n", error, model_path); return 1; }
     if (s->tok) {
-        const gguf_kv *e = gguf_get_kv(gf, "tokenizer.ggml.eos_token_id");
-        uint64_t v;
-        if (tok_path && gguf_read_uint_kv(tok_path, "tokenizer.ggml.eos_token_id", &v) == 0) s->eos = (int)v;
-        else if (e) s->eos = (int)e->val.u32;
-        fprintf(stderr, "tokenizer: GGUF BPE (vocab=%d eos=%d)%s%s\n", bpe_n_vocab(s->tok), s->eos,
-                tok_path ? " from " : "", tok_path ? tok_path : "");
+        fprintf(stderr, "tokenizer: GGUF BPE (vocab=%d eos=%d)\n", bpe_n_vocab(s->tok), s->eos);
         return 0;
     }
     const char *raw = getenv("NT_TOKENS");
@@ -599,7 +578,13 @@ int main(int argc, char **argv) {
     }
 
     if (tokenize_only) {
-        bpe_tokenizer *tok = bpe_load(tok_path ? tok_path : path);
+        gguf_file *host = gguf_open_metadata(path);
+        if (!host) return 1;
+        bpe_tokenizer *tok = NULL;
+        int eos;
+        const char *error = nt_model_tokenizer_open(host, path, host->vocab_size, tok_path, &tok, &eos);
+        gguf_close(host);
+        if (error) { fprintf(stderr, "notorch: %s\n", error); return 1; }
         if (!tok) { fprintf(stderr, "notorch: no tokenizer in %s\n", tok_path ? tok_path : path); return 1; }
         const char *text = (ai + 1 < argc) ? argv[ai + 1] : "";
         int ids[8192];

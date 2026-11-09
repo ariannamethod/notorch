@@ -2,6 +2,7 @@
  * statistics never enter this episode. Only elected factors can learn from it. */
 #include "harness/experts_internal.h"
 #include "harness/spore_frame.h"
+#include "harness/tokenizer.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -78,8 +79,7 @@ static int generate(nt_experts *d, int cue, int limit, int eos) {
     for (int t = 0; !rc && t < limit; t++) {
         for (int i = 0; i < d->dims.vocab; i++)
             if (!isfinite(logits[i])) { rc = NT_E_STATE; goto done; }
-        int id = sample(logits, d->dims.vocab, 0);
-        if (id >= bpe_n_vocab(tok)) { rc = NT_E_TOKEN; break; }
+        int id = nt_sample_model_token(logits, d->dims.vocab, tok, 0);
         int stop = id == eos || bpe_is_eog(tok, id);
         nt_experts_choice(d, logits[id], logits[id]);
         if (d->trace && (rc = trace_piece(d->trace, tok, t, id, stop))) break;

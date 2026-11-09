@@ -88,7 +88,7 @@ static int skip_value(FILE* f, uint32_t type) {
 
 // ── GGUF Open ────────────────────────────────────────────────────────────────
 
-gguf_file* gguf_open(const char* path) {
+static gguf_file* open_gguf(const char* path, int metadata_only) {
     FILE* f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "gguf: cannot open %s\n", path); return NULL; }
 
@@ -116,7 +116,7 @@ gguf_file* gguf_open(const char* path) {
     // The tensor-info table is fixed-size. With more tensors than it holds, the
     // info loop stops early and data_offset (computed from ftell after the loop)
     // lands mid-header, silently corrupting every tensor read. Fail loud instead.
-    if (gf->n_tensors > GGUF_MAX_TENSORS) {
+    if (!metadata_only && gf->n_tensors > GGUF_MAX_TENSORS) {
         fprintf(stderr, "gguf: %llu tensors exceeds GGUF_MAX_TENSORS=%d (%s); refusing to load\n",
                 (unsigned long long)gf->n_tensors, GGUF_MAX_TENSORS, path);
         fclose(f); free(gf); return NULL;
@@ -194,6 +194,8 @@ gguf_file* gguf_open(const char* path) {
     if (gf->n_kv_heads == 0) gf->n_kv_heads = gf->n_heads;
     if (gf->rms_eps == 0) gf->rms_eps = 1e-5f;
     if (gf->rope_freq_base == 0) gf->rope_freq_base = 10000.0f;
+
+    if (metadata_only) { fclose(f); return gf; }
 
     // Parse tensor infos
     for (uint64_t i = 0; i < gf->n_tensors && i < GGUF_MAX_TENSORS; i++) {
@@ -277,6 +279,14 @@ gguf_file* gguf_open(const char* path) {
     fclose(f);
 
     return gf;
+}
+
+gguf_file* gguf_open(const char* path) {
+    return open_gguf(path, 0);
+}
+
+gguf_file* gguf_open_metadata(const char* path) {
+    return open_gguf(path, 1);
 }
 
 uint64_t gguf_type_size(uint32_t dtype, uint64_t n) {

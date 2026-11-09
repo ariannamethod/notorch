@@ -158,6 +158,12 @@ The harness also ships as `libnotorch_harness`, with CPU and CUDA family APIs.
 An organism can link it and supply its own generation loop.
 [Embedding and CUDA examples](NOTORCHLOG.md#readme-inference--notorch-runs-models-it-doesnt-just-train-them).
 
+The CPU Harness reads the model’s embedded tokenizer or, for split GGUFs,
+the adjacent `tokenizer.gguf`. Give each split model its own directory.
+`--tokenizer FILE` selects a specific vocabulary. The CLI (including `-T`)
+and native consumers use the same resolver in `harness/tokenizer.h`. Text
+generation samples only IDs covered by the loaded vocabulary.
+
 **EmbeddingGemma 2 text** has a separate full-sequence encoder API: native F32
 bidirectional attention, projection-only per-layer inputs, masked mean pooling,
 and 768-dimensional normalized output. Read/write activation hooks expose every

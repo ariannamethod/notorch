@@ -86,6 +86,9 @@ typedef struct {
 // Open and parse a GGUF file. Returns NULL on failure.
 gguf_file* gguf_open(const char* path);
 
+// Read only model metadata. Tensor descriptors and weight data are not loaded.
+gguf_file* gguf_open_metadata(const char* path);
+
 // Free GGUF file
 void gguf_close(gguf_file* gf);
 

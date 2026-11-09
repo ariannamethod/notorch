@@ -12,7 +12,7 @@ static int checks, failed;
 #define CHECK(c,s) do { checks++; if (!(c)) { fprintf(stderr,"FAIL: %s\n",s); failed++; } } while (0)
 
 /* A byte-level vocabulary of n tokens: the 256 byte symbols, then special fillers. */
-static int tokenizer_file(const char *path, const char *arch, int n) {
+static int tokenizer_file(const char *path, const char *arch, int n, int eos) {
     static char words[300][16];
     const char *tokens[300];
     if (n > 300) return -1;
@@ -33,14 +33,16 @@ static int tokenizer_file(const char *path, const char *arch, int n) {
     gguf_write_kv_str(w, "tokenizer.ggml.model", "gpt2");
     gguf_write_kv_str_array(w, "tokenizer.ggml.tokens", tokens, n);
     gguf_write_kv_str_array(w, "tokenizer.ggml.merges", merges, 1);
-    gguf_write_kv_u32(w, "tokenizer.ggml.eos_token_id", (uint32_t)(n - 1));
+    gguf_write_kv_u32(w, "tokenizer.ggml.eos_token_id", (uint32_t)eos);
     return gguf_write_close(w);
 }
 
 int main(void) {
-    char model[] = "/tmp/nt_cli_model_XXXXXX", tok[] = "/tmp/nt_cli_tok_XXXXXX";
-    int fd = mkstemp(model); if (fd < 0) return 1; close(fd);
-    fd = mkstemp(tok); if (fd < 0) { unlink(model); return 1; } close(fd);
+    char dir[] = "/tmp/nt_cli_model_XXXXXX", model[128], tok[128], sibling[128];
+    if (!mkdtemp(dir)) return 1;
+    snprintf(model, sizeof(model), "%s/model.gguf", dir);
+    snprintf(tok, sizeof(tok), "%s/named.gguf", dir);
+    snprintf(sibling, sizeof(sibling), "%s/tokenizer.gguf", dir);
     gguf_file gf; memset(&gf, 0, sizeof(gf)); strcpy(gf.arch, "qwen35");
     { gguf_writer *w = gguf_write_open(model); CHECK(w && gguf_write_kv_str(w, "general.architecture", "qwen35") == 0 && gguf_write_close(w) == 0, "model without tokenizer written"); }
 
@@ -54,19 +56,53 @@ int main(void) {
     s = (session){ .vocab = 256, .eos = -1 };
     CHECK(open_tokenizer(&s, &gf, model, NULL) == 0 && !s.tok, "a byte-id model keeps the byte scheme");
 
-    CHECK(tokenizer_file(tok, "qwen35", 271) == 0, "tokenizer file written");
+    CHECK(tokenizer_file(tok, "qwen35", 271, 270) == 0, "tokenizer file written");
     s = (session){ .vocab = 300, .eos = -1 };
     CHECK(open_tokenizer(&s, &gf, model, tok) == 0 && s.tok && s.eos == 270, "named tokenizer loads with its own eos");
     if (s.tok) { int ids[8]; CHECK(bpe_encode(s.tok, "ab", ids, 8) == 2, "named tokenizer encodes"); bpe_free(s.tok); }
     s = (session){ .vocab = 40, .eos = -1 };
     CHECK(open_tokenizer(&s, &gf, model, tok) == 1, "tokenizer larger than the model: refused");
     bpe_free(s.tok);
-    CHECK(tokenizer_file(tok, "llama", 271) == 0, "foreign tokenizer written");
+    CHECK(tokenizer_file(tok, "llama", 271, 270) == 0, "foreign tokenizer written");
     s = (session){ .vocab = 300, .eos = -1 };
     CHECK(open_tokenizer(&s, &gf, model, tok) == 1, "tokenizer of another architecture: refused");
     bpe_free(s.tok);
     s = (session){ .vocab = 300, .eos = -1 };
     CHECK(open_tokenizer(&s, &gf, model, "/nonexistent/tok.gguf") == 1 && !s.tok, "missing tokenizer file: refused");
+
+    CHECK(tokenizer_file(sibling, "qwen35", 270, 269) == 0, "model directory owns its tokenizer");
+    s = (session){ .vocab = 300, .eos = -1 };
+    CHECK(open_tokenizer(&s, &gf, model, NULL) == 0 && s.tok && s.eos == 269, "companion supplies EOS for a padded head");
+    if (s.tok) {
+        int ids[8];
+        CHECK(bpe_encode(s.tok, "ab", ids, 8) == 2 && ids[0] == 'a' && ids[1] == 'b', "companion token IDs");
+        float logits[300] = {0};
+        logits[279] = 1000;
+        logits[4] = 10;
+        CHECK(nt_sample_model_token(logits, 300, s.tok, 0) == 4, "greedy skips padding");
+        CHECK(nt_sample_model_token(logits, 300, NULL, 0) == 279, "raw IDs keep the full head");
+        CHECK(nt_sample_model_token(logits, 300, s.tok, 1) < 270 && logits[279] == 1000, "temperature skips padding");
+        bpe_free(s.tok);
+    }
+    CHECK(tokenizer_file(sibling, "llama", 270, 269) == 0, "foreign companion written");
+    s = (session){ .vocab = 300 };
+    CHECK(open_tokenizer(&s, &gf, model, NULL) == 1 && !s.tok, "foreign companion refused");
+    CHECK(tokenizer_file(tok, "qwen35", 271, 270) == 0, "matching override written");
+    CHECK(open_tokenizer(&s, &gf, model, tok) == 0 && s.tok && s.eos == 270, "explicit override wins over companion");
+    bpe_free(s.tok);
+    CHECK(tokenizer_file(sibling, "qwen35", 270, 300) == 0, "invalid EOS written");
+    s = (session){ .vocab = 300 };
+    CHECK(open_tokenizer(&s, &gf, model, NULL) == 1 && !s.tok, "EOS outside head refused");
+    FILE *broken = fopen(sibling, "wb");
+    if (broken) { fputs("invalid", broken); fclose(broken); }
+    CHECK(broken && open_tokenizer(&s, &gf, model, NULL) == 1 && !s.tok, "unreadable companion refused");
+    CHECK(tokenizer_file(model, "qwen35", 272, 271) == 0, "embedded tokenizer written");
+    s = (session){ .vocab = 300 };
+    CHECK(open_tokenizer(&s, &gf, model, NULL) == 0 && s.tok && s.eos == 271, "embedded wins over companion");
+    bpe_free(s.tok);
+    CHECK(open_tokenizer(&s, &gf, model, tok) == 0 && s.tok && s.eos == 270, "explicit override wins over embedded");
+    bpe_free(s.tok);
+    CHECK(unlink(sibling) == 0, "companion removed");
 
     /* /reset on a family-owned cache: Qwen3.5 stores -35 in kv_dim. */
     CHECK(!fixture(model, 0), "Qwen3.5 fixture written");
@@ -87,7 +123,7 @@ int main(void) {
         nt_arch_qwen35.free(m);
     }
     gguf_close(g);
-    unlink(model); unlink(tok);
+    unlink(model); unlink(tok); rmdir(dir);
     printf("HARNESS_TOKENIZER_%s (%d checks)\n", failed ? "FAIL" : "OK", checks);
     return !!failed;
 }
