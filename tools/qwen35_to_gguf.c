@@ -48,12 +48,13 @@ static int publish(const char *partial, const char *out, int tensors) {
     return 0;
 }
 
-typedef struct {char *name;const char *logical;uint64_t lo,hi,shape[3];uint32_t ndim,dtype;} tensor;
+typedef struct {char *name;const char *logical;uint64_t lo,hi,shape[3];uint32_t ndim,dtype;int shard;} tensor;
+#define MAX_SHARDS 64
 static int by_name(const void *a,const void *b){return strcmp(((const tensor*)a)->name,((const tensor*)b)->name);}
 static int convert_model(const char *snapshot,const char *out) {
-    char path[4096],partial[4200],key[128];char *config=NULL,*header=NULL;
-    gguf_writer *w=NULL;FILE *src=NULL;tensor *ts=NULL;int nt=0,bad=0,rc=1,head=0,expected=2;
-    uint64_t hs=0;struct stat st;
+    char path[4096],partial[4200],key[128];char *config=NULL,*header=NULL,*index=NULL,*shards[MAX_SHARDS]={0};
+    gguf_writer *w=NULL;FILE *src[MAX_SHARDS]={0};uint64_t data_at[MAX_SHARDS]={0};tensor *ts=NULL;
+    int nt=0,bad=0,rc=1,head=0,expected=2,ns=0;
     snprintf(path,sizeof(path),"%s/config.json",snapshot);config=nj_load(path,NULL);if(!config)goto done;
     const char *c=nj_get(config,"text_config");if(!c)c=config;
     const char *bias=nj_get(c,"attention_bias"),*rope=nj_get(c,"rope_parameters");
@@ -86,19 +87,41 @@ static int convert_model(const char *snapshot,const char *out) {
     }
     if(bad || l!=(int)vals[0])goto done;
     gguf_write_kv_f32(w,"qwen35.rms_epsilon",(float)eps);gguf_write_kv_f32(w,"qwen35.rope.freq_base",(float)base);
+    /* model.safetensors, or the shards model.safetensors.index.json names: Qwen's own
+     * 0.8B and 2B ship one shard called -00001-of-00001, 4B and 9B several. With an
+     * index, every text tensor must be found in the shard the index puts it in. */
+    const char *map=NULL;
     snprintf(path,sizeof(path),"%s/model.safetensors",snapshot);
-    src=fopen(path,"rb");
-    if(!src || fstat(fileno(src),&st) || st.st_size<8 || fread(&hs,8,1,src)!=1 || hs>(64u<<20) ||
-       hs>(uint64_t)st.st_size-8 || !(header=malloc((size_t)hs+1)) || fread(header,1,hs,src)!=hs || memchr(header,0,hs))goto done;
-    header[hs]=0;
+    if(access(path,F_OK)) {
+        snprintf(path,sizeof(path),"%s/model.safetensors.index.json",snapshot);
+        if(!(index=nj_load(path,NULL)) || !(map=nj_get(index,"weight_map")))goto done;
+        for(const char *k=nj_first(map,&bad),*v;k && (v=nj_value(k,&bad));k=nj_next(v,'}',&bad)) {
+            char *file=nj_string(v);size_t len=file?strlen(file):0;int seen=0;
+            if(!file || len<13 || strchr(file,'/') || strcmp(file+len-12,".safetensors")){free(file);goto done;}
+            for(int s=0;s<ns;s++)if(!strcmp(shards[s],file))seen=1;
+            if(seen){free(file);continue;}
+            if(ns==MAX_SHARDS){free(file);goto done;}
+            shards[ns++]=file;
+        }
+        if(bad || !ns)goto done;
+    } else if(!(shards[ns++]=strdup("model.safetensors")))goto done;
+    for(int s=0;s<ns;s++) {
+    uint64_t hs=0;struct stat st;
+    snprintf(path,sizeof(path),"%s/%s",snapshot,shards[s]);
+    free(header);header=NULL;
+    src[s]=fopen(path,"rb");
+    if(!src[s] || fstat(fileno(src[s]),&st) || st.st_size<8 || fread(&hs,8,1,src[s])!=1 || hs>(64u<<20) ||
+       hs>(uint64_t)st.st_size-8 || !(header=malloc((size_t)hs+1)) || fread(header,1,hs,src[s])!=hs || memchr(header,0,hs))goto done;
+    header[hs]=0;data_at[s]=8+hs;
     for(const char *k=nj_first(header,&bad),*v;k && (v=nj_value(k,&bad));k=nj_next(v,'}',&bad)) {
         char *name=nj_string(k);if(!name)goto done;
         int skip=!strncmp(name,"model.language_model.",21)?21:
             (nj_is(nj_get(config,"model_type"),"qwen3_5_text") && !strncmp(name,"model.",6)?6:0);
         if(!skip && strcmp(name,"lm_head.weight")){free(name);continue;}
+        if(map){char *where=nj_string(nj_get(map,name));int here=where && !strcmp(where,shards[s]);free(where);if(!here){free(name);goto done;}}
         if(!strcmp(name,"lm_head.weight"))head++;
         tensor *next=realloc(ts,(size_t)(nt+1)*sizeof(*ts));if(!next){free(name);goto done;}ts=next;
-        tensor *t=&ts[nt++];memset(t,0,sizeof(*t));t->name=name;t->logical=name+skip;
+        tensor *t=&ts[nt++];memset(t,0,sizeof(*t));t->name=name;t->logical=name+skip;t->shard=s;
         const char *dtype=nj_get(v,"dtype");uint64_t width=0,count=1;
         if(nj_is(dtype,"F32")){t->dtype=GGUF_TYPE_F32;width=4;}
         if(nj_is(dtype,"BF16")){t->dtype=GGUF_TYPE_BF16;width=2;}
@@ -113,7 +136,9 @@ static int convert_model(const char *snapshot,const char *out) {
            count>UINT64_MAX/width || (uint64_t)(hi-lo)!=count*width || (uint64_t)hi>(uint64_t)st.st_size-8-hs)goto done;
         t->lo=lo;t->hi=hi;
     }
-    if(bad || head>1 || nt!=expected+head)goto done;
+    if(bad)goto done;
+    }
+    if(head>1 || nt!=expected+head)goto done;
     if(!head){const char *tied=nj_get(config,"tie_word_embeddings");if(!tied)tied=nj_get(c,"tie_word_embeddings");if(!tied || strncmp(tied,"true",4))goto done;}
     qsort(ts,(size_t)nt,sizeof(*ts),by_name);
     for(int i=0;i<nt;i++) {
@@ -123,17 +148,18 @@ static int convert_model(const char *snapshot,const char *out) {
     char buf[65536];
     for(int i=0;i<nt;i++) {
         uint64_t left=ts[i].hi-ts[i].lo;
-        if(gguf_write_tensor_begin(w,ts[i].logical) || fseeko(src,(off_t)(8+hs+ts[i].lo),SEEK_SET))goto done;
-        while(left){size_t n=fread(buf,1,left<sizeof(buf)?(size_t)left:sizeof(buf),src);if(!n || gguf_write_tensor_chunk(w,buf,n))goto done;left-=n;}
+        FILE *f=src[ts[i].shard];
+        if(gguf_write_tensor_begin(w,ts[i].logical) || fseeko(f,(off_t)(data_at[ts[i].shard]+ts[i].lo),SEEK_SET))goto done;
+        while(left){size_t n=fread(buf,1,left<sizeof(buf)?(size_t)left:sizeof(buf),f);if(!n || gguf_write_tensor_chunk(w,buf,n))goto done;left-=n;}
         if(gguf_write_tensor_end(w))goto done;
     }
     {int closed=gguf_write_close(w);w=NULL;if(!closed)rc=publish(partial,out,nt);}
 done:
-    if(rc)fail("conversion failed; expected a single-shard dense Qwen3.5 text checkpoint",snapshot);
+    if(rc)fail("conversion failed; expected a dense Qwen3.5 text checkpoint (model.safetensors, or an index and its shards)",snapshot);
     if(w)gguf_write_abort(w);
-    if(src)fclose(src);
+    for(int s=0;s<MAX_SHARDS;s++){if(src[s])fclose(src[s]);free(shards[s]);}
     for(int i=0;i<nt;i++)free(ts[i].name);
-    free(ts);free(header);free(config);return rc;
+    free(ts);free(header);free(index);free(config);return rc;
 }
 
 static int is_false(const char *v){return v && !strncmp(v,"false",5);}
