@@ -40,10 +40,13 @@ static int mat(wt *w, gguf_file *gf, const char *name, int cols) {
     w->rows = (int)(t->n_elements / (uint64_t)cols);
     w->dtype = (int)t->dtype;
     w->q = gf->data + t->offset;
+    /* the decoder's choice (runtime.c wt_probe): the int8-activation kernels where the dtype
+     * has them, unless NT_NO_I8 asks for the float path */
     float probe = 0;
     float *x = calloc((size_t)cols, sizeof(float));
     if (!x) return 0;
-    int ok = nt_qmatvec(&probe, w->q, w->dtype, x, 1, cols) == 0;
+    w->use_i8 = !getenv("NT_NO_I8") && nt_qmatvec_i8(&probe, w->q, w->dtype, x, 1, cols) == 0;
+    int ok = w->use_i8 || nt_qmatvec(&probe, w->q, w->dtype, x, 1, cols) == 0;
     free(x);
     if (!ok) { w->q = NULL; w->f32 = gguf_dequant(gf, ti); }
     return w->q || w->f32;
@@ -72,6 +75,17 @@ static int key_f32(gguf_file *gf, const char *key, float *out) {
     if (!kv || kv->type != 6) { fprintf(stderr, "lfm3_omni: key %s missing\n", key); return 0; }
     *out = kv->val.f32;
     return 1;
+}
+
+/* NT_PROFILE=1: one stderr line per tower stage with its milliseconds since *t0, which it
+ * moves on; *acc, when given, gathers a stage that repeats (conv or attention layers). */
+static void stage(const char *what, double *t0, double *acc) {
+    static int on = -1;
+    if (on < 0) on = getenv("NT_PROFILE") != NULL;
+    double t = now_ms();
+    if (acc) *acc += t - *t0;
+    else if (on) fprintf(stderr, "[omni] %-18s %8.1f ms\n", what, t - *t0);
+    *t0 = t;
 }
 
 /* ── small arithmetic ────────────────────────────────────────────────────────── */
@@ -729,6 +743,28 @@ done:
     return rc;
 }
 
+/* The 3x3 depthwise convolution of B*x over the patch grid, times C: grid rows are
+ * independent, so each core takes whole rows and every output keeps its own sum. */
+typedef struct { const float *dw, *gated, *bcx; float *out; int gh, gw, VW; } vconv_job;
+
+static void vconv_rows(void *ctx, int r0, int r1) {
+    const vconv_job *v = ctx;
+    int gh = v->gh, gw = v->gw, VW = v->VW;
+    for (int r = r0; r < r1; r++)
+        for (int c = 0; c < gw; c++)
+            for (int ch = 0; ch < VW; ch++) {
+                float acc = 0;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int rr = r + dy, cc = c + dx;
+                        if (rr < 0 || rr >= gh || cc < 0 || cc >= gw) continue;
+                        acc += v->dw[(size_t)ch * 9 + (dy + 1) * 3 + dx + 1] * v->gated[((size_t)rr * gw + cc) * VW + ch];
+                    }
+                size_t j = (size_t)r * gw + c;
+                v->out[j * VW + ch] = acc * v->bcx[j * 3 * VW + VW + ch];
+            }
+}
+
 int lfm3_omni_vision_encode(lfm3_omni *o, const float *const (*frames)[2], int n_groups, int h, int w, float *out) {
     const lfm3_omni_info *I = &o->info;
     int P = I->patch, gh = h / P, gw = w / P, N = gh * gw, VW = o->v_width;
@@ -753,6 +789,7 @@ int lfm3_omni_vision_encode(lfm3_omni *o, const float *const (*frames)[2], int n
                 size_t at = ((size_t)r * gw + c) * hd / 2 + i;
                 cs[at] = cosf(ang); sn[at] = sinf(ang);
             }
+    double t0 = now_ms(), t_conv = 0, t_attn = 0, t_ffn = 0;
     for (int gi = 0; gi < n_groups; gi++) {
         memset(x, 0, NW * sizeof(float));
         for (int tt = 0; tt < 2; tt++) {
@@ -769,26 +806,15 @@ int lfm3_omni_vision_encode(lfm3_omni *o, const float *const (*frames)[2], int n
         }
         rms_rows(x, x, o->v_embed_norm, N, VW, o->v_eps);
         probe(o, "vision.embed", -1, x, N, VW);
+        stage("vision patches", &t0, NULL);
         for (int l = 0; l < o->v_layers; l++) {
             rms_rows(xn, x, o->vl[l].ln1, N, VW, o->v_eps);
             if (o->vl[l].conv) {
                 qmm(a, &o->vl[l].in, xn, N);                 /* [N][B | C | x] */
                 for (int j = 0; j < N; j++)
                     for (int ch = 0; ch < VW; ch++) t2[(size_t)j * VW + ch] = a[(size_t)j * 3 * VW + ch] * a[(size_t)j * 3 * VW + 2 * VW + ch];
-                const float *dw = o->vl[l].dw;
-                for (int r = 0; r < gh; r++)
-                    for (int c = 0; c < gw; c++)
-                        for (int ch = 0; ch < VW; ch++) {
-                            float acc = 0;
-                            for (int dy = -1; dy <= 1; dy++)
-                                for (int dx = -1; dx <= 1; dx++) {
-                                    int rr = r + dy, cc = c + dx;
-                                    if (rr < 0 || rr >= gh || cc < 0 || cc >= gw) continue;
-                                    acc += dw[(size_t)ch * 9 + (dy + 1) * 3 + dx + 1] * t2[((size_t)rr * gw + cc) * VW + ch];
-                                }
-                            size_t j = (size_t)r * gw + c;
-                            b[j * VW + ch] = acc * a[j * 3 * VW + VW + ch];
-                        }
+                vconv_job vj = {o->vl[l].dw, t2, a, b, gh, gw, VW};
+                nt_par_for(vconv_rows, &vj, gh, 2);
                 qmm(y, &o->vl[l].out, b, N);
             } else {
                 qmm(q, &o->vl[l].q, xn, N); qmm(k, &o->vl[l].k, xn, N); qmm(v, &o->vl[l].v, xn, N);
@@ -808,6 +834,7 @@ int lfm3_omni_vision_encode(lfm3_omni *o, const float *const (*frames)[2], int n
                 attention(q, k, v, t2, N, Hh, KVH, hd, 0, 0);
                 qmm(y, &o->vl[l].o, t2, N);
             }
+            stage(NULL, &t0, o->vl[l].conv ? &t_conv : &t_attn);
             for (size_t i = 0; i < NW; i++) x[i] += y[i];
             rms_rows(xn, x, o->vl[l].ln2, N, VW, o->v_eps);
             qmm(a, &o->vl[l].fg, xn, N); qmm(b, &o->vl[l].fu, xn, N);
@@ -815,6 +842,7 @@ int lfm3_omni_vision_encode(lfm3_omni *o, const float *const (*frames)[2], int n
             qmm(y, &o->vl[l].fd, a, N);
             for (size_t i = 0; i < NW; i++) x[i] += y[i];
             probe(o, "vision.layer", l, x, N, VW);
+            stage(NULL, &t0, &t_ffn);
         }
         /* projector: LayerNorm per patch, each 2x2 block concatenated in the reference's
          * (row, col) order within the block, block rows in raster order */
@@ -833,6 +861,12 @@ int lfm3_omni_vision_encode(lfm3_omni *o, const float *const (*frames)[2], int n
         qmm(dst, &o->mm2, mh, nb);
         bias_rows(dst, o->mm2_b, nb, I->width);
         probe(o, "vision.out", gi, dst, nb, I->width);
+        stage("vision projector", &t0, NULL);
+    }
+    if (getenv("NT_PROFILE")) {
+        fprintf(stderr, "[omni] %-18s %8.1f ms\n", "vision conv ops", t_conv);
+        fprintf(stderr, "[omni] %-18s %8.1f ms\n", "vision attn ops", t_attn);
+        fprintf(stderr, "[omni] %-18s %8.1f ms\n", "vision ffn", t_ffn);
     }
     rc = 0;
 done:
@@ -880,6 +914,7 @@ int lfm3_omni_audio_mel(const lfm3_omni *o, const float *pcm, int n, float **mel
     double *pw = malloc((size_t)frames * bins * sizeof(double));
     int rc = -1;
     if (!sig || !win || !tab || !pw || !out) goto done;
+    double t0 = now_ms();
     memcpy(sig, pcm, (size_t)n * sizeof(float));
     for (int t = 0; t < nf; t++) {
         win[t] = 0.5 - 0.5 * cos(2.0 * M_PI * t / nf);   /* periodic Hann */
@@ -898,6 +933,7 @@ int lfm3_omni_audio_mel(const lfm3_omni *o, const float *pcm, int n, float **mel
             out[(size_t)m * frames + f] = (float)((lg + o->a_offset) / o->a_div);
         }
     }
+    stage("audio mel", &t0, NULL);
     *mel = out; out = NULL; *n_frames = frames;
     rc = 0;
 done:
@@ -907,13 +943,18 @@ done:
 
 /* 3x3, stride 2, padding 1, one input plane per output channel (depthwise) or a single
  * input plane shared by every channel (the first convolution). in [C or 1][H][W]. */
-static void conv3s2(float *out, const float *in, const float *w, const float *b, int C, int depthwise, int H, int W, int Ho, int Wo) {
-    for (int c = 0; c < C; c++) {
-        const float *src = in + (depthwise ? (size_t)c * H * W : 0);
-        const float *k = w + (size_t)c * 9;
+typedef struct { float *out; const float *in, *w, *b; int depthwise, H, W, Ho, Wo; } conv_job;
+
+/* channels are independent: each core takes whole channels, the sum per output unchanged */
+static void conv3s2_items(void *ctx, int c0, int c1) {
+    const conv_job *j = ctx;
+    int H = j->H, W = j->W, Ho = j->Ho, Wo = j->Wo;
+    for (int c = c0; c < c1; c++) {
+        const float *src = j->in + (j->depthwise ? (size_t)c * H * W : 0);
+        const float *k = j->w + (size_t)c * 9;
         for (int oy = 0; oy < Ho; oy++)
             for (int ox = 0; ox < Wo; ox++) {
-                float acc = b[c];
+                float acc = j->b[c];
                 for (int ky = 0; ky < 3; ky++) {
                     int iy = 2 * oy - 1 + ky;
                     if (iy < 0 || iy >= H) continue;
@@ -922,9 +963,14 @@ static void conv3s2(float *out, const float *in, const float *w, const float *b,
                         if (ix >= 0 && ix < W) acc += k[ky * 3 + kx] * src[(size_t)iy * W + ix];
                     }
                 }
-                out[((size_t)c * Ho + oy) * Wo + ox] = acc;
+                j->out[((size_t)c * Ho + oy) * Wo + ox] = acc;
             }
     }
+}
+
+static void conv3s2(float *out, const float *in, const float *w, const float *b, int C, int depthwise, int H, int W, int Ho, int Wo) {
+    conv_job j = {out, in, w, b, depthwise, H, W, Ho, Wo};
+    nt_par_for(conv3s2_items, &j, C, 8);
 }
 
 /* 1x1 over [C][S]: transpose to [S][C], one matmul, back, bias and SiLU. */
@@ -932,7 +978,10 @@ static int pointwise(float *x, const wt *w, const float *b, int C, int S) {
     float *t = malloc((size_t)S * C * sizeof(float)), *u = malloc((size_t)S * C * sizeof(float));
     if (!t || !u) { free(t); free(u); return -1; }
     for (int c = 0; c < C; c++) for (int s = 0; s < S; s++) t[(size_t)s * C + c] = x[(size_t)c * S + s];
-    qmm(u, w, t, S);
+    /* F32 weights (the official layout) have no batched packed kernel: qmm would walk the
+     * thousands of positions one scalar matvec at a time. One GEMM instead. */
+    if (w->q && w->dtype == GGUF_TYPE_F32) mm_t(u, t, (const float *)w->q, S, C, C);
+    else qmm(u, w, t, S);
     for (int c = 0; c < C; c++) for (int s = 0; s < S; s++) x[(size_t)c * S + s] = silu(u[(size_t)s * C + c] + b[c]);
     free(t); free(u);
     return 0;
@@ -949,6 +998,7 @@ int lfm3_omni_audio_encode(lfm3_omni *o, const float *mel, int T, float *out) {
     float *hid = malloc((size_t)T3 * o->am1.rows * sizeof(float));
     int rc = -1;
     if (!h1 || !h2 || !h3 || !fl || !x || !xn || !hid || C * M3 != o->a_out.cols) goto done;
+    double t0 = now_ms();
     conv3s2(h1, mel, o->a_w[0], o->a_b[0], C, 0, M, T, M1, T1);
     for (size_t i = 0; i < (size_t)C * M1 * T1; i++) h1[i] = silu(h1[i]);
     conv3s2(h2, h1, o->a_w[1], o->a_b[1], C, 1, M1, T1, M2, T2);
@@ -962,8 +1012,10 @@ int lfm3_omni_audio_encode(lfm3_omni *o, const float *mel, int T, float *out) {
     qmm(x, &o->a_out, fl, T3);
     bias_rows(x, o->a_out_b, T3, AW);
     probe(o, "audio.downsample", -1, x, T3, AW);
+    stage("audio downsample", &t0, NULL);
     if (lfm_run(o, &o->enc, x, T3)) goto done;
     probe(o, "audio.encoder", -1, x, T3, AW);
+    stage("audio encoder", &t0, NULL);
     for (int j = 0; j < T3; j++) layernorm(xn + (size_t)j * AW, x + (size_t)j * AW, o->am_norm_w, o->am_norm_b, AW, 1e-5f);
     qmm(hid, &o->am1, xn, T3);
     bias_rows(hid, o->am1_b, T3, o->am1.rows);
@@ -971,6 +1023,7 @@ int lfm3_omni_audio_encode(lfm3_omni *o, const float *mel, int T, float *out) {
     qmm(out, &o->am3, hid, T3);
     bias_rows(out, o->am3_b, T3, I->width);
     probe(o, "audio.out", -1, out, T3, I->width);
+    stage("audio projector", &t0, NULL);
     rc = 0;
 done:
     free(h1); free(h2); free(h3); free(fl); free(x); free(xn); free(hid);
