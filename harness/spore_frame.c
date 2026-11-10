@@ -78,9 +78,16 @@ int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host,
     if (per_layer < 1 || dims.n_layers < 1 || dims.n_layers > (INT_MAX-1)/per_layer) return -1;
     for (int k = 0; k <= per_layer*dims.n_layers; k++) {
         const float *norm = arch->doe->norm(body->model, k);
-        if (!norm) return -1;
-        for (int i = 0; i < width; i++) if (!isfinite(norm[i])) return -1;
-        if (nt_sha256(norm, (size_t)width*sizeof(float), chain+32) ||
+        size_t bytes = (size_t)width * sizeof(float);
+        if (norm) {
+            for (int i = 0; i < width; i++) if (!isfinite(norm[i])) return -1;
+        } else {
+            int slot = k % per_layer;
+            if (k == per_layer*dims.n_layers || slot >= 32 ||
+                !(arch->doe->optional_norm_slots & (UINT32_C(1) << slot))) return -1;
+            bytes = 0;  /* SHA-256 of empty input distinguishes absence from every width-sized vector. */
+        }
+        if (nt_sha256(norm, bytes, chain+32) ||
             nt_sha256(chain, sizeof(chain), chain)) return -1;
     }
     for (int i = 0; i < 32; i++) snprintf(norm_sha+2*i, 3, "%02x", chain[i]);

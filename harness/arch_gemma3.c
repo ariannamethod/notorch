@@ -279,7 +279,7 @@ static const float *gemma3_doe_norm(const void *model, int index) {
     return norms[index%GEMMA3_RESIDUAL_NORMS];
 }
 static const nt_doe_decoder gemma3_doe = {
-    gemma3_forward_hooks, gemma3_describe, gemma3_doe_norm, GEMMA3_RESIDUAL_NORMS
+    gemma3_forward_hooks, gemma3_describe, gemma3_doe_norm, GEMMA3_RESIDUAL_NORMS, 0
 };
 static const char *const names[]={"gemma3",NULL};
 const nt_arch nt_arch_gemma3={.names=names,.load=gemma3_load,.free=gemma3_free,

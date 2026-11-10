@@ -1,0 +1,9 @@
+comparison	probe	logits	changed	mean_absolute_difference	max_absolute_difference
+omni-awake/omni-dream	P0	128000	127999	0.0852787752	0.533836365
+omni-awake/omni-dream	P1	128000	128000	0.0806036842	0.55308044
+q8-awake/q8-dream	P0	128000	127999	0.0742703413	0.319141388
+q8-awake/q8-dream	P1	128000	127997	0.0319611088	0.205815792
+return-awake/return-dream	P0	262144	262144	0.146139146	0.835422516
+return-awake/return-dream	P1	262144	262144	0.113332161	0.881004333
+omni-dream/omni-factors	P0	128000	0	0	0
+omni-dream/omni-factors	P1	128000	0	0	0

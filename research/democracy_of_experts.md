@@ -129,7 +129,7 @@ CPU formulas. [`test_parliament_inject.c`](../tests/test_parliament_inject.c) co
 
 One conversation owns six seats, four initially occupied, each with rank-4 A and B. At the
 middle block, every input token contributes a sample to the harmonic history. The living
-seats vote on the residual after attention. The Harness adds their weighted low-rank
+seats vote on the residual after the block's attention or short-convolution mixer. The Harness adds their weighted low-rank
 correction there, lets the body execute its feed-forward block, and observes the resulting
 residual. A completed learning turn supplies a pair of mean residuals and the mean prophecy
 signal. Each seat elected during the turn takes one Oja step at its own rank cursor. The owner
@@ -233,6 +233,47 @@ one, two, four and eight private episodes on Q4_0, the log odds of ` key` over `
 from the waking spore. At eight episodes the archive still recorded one waking turn and 24
 waking elections, alongside 48 private choices and 56 private elections.
 [Sleep series](../experiments/doe_spores/olmoe-sleep-series.tsv)
+
+### A parliament on a hybrid decoder
+
+An LFM3 sequence has two forms of short-term state. The short convolutions
+carry a window of gated inputs and the attention blocks retain keys and values.
+On the official LFM3-Omni-2B text body there are 24 decoder blocks and 11
+attention-cache slots. Counting the blocks places the parliament at block 12,
+which uses sliding-window attention. Its output is added to the residual before the living
+seats vote. The weighted correction enters the next feed-forward computation.
+Capturing the 32 calibration literals at this same boundary lets the hybrid
+receive a spore from a dense or sparse host.
+[LFM3 forward and cache](../harness/arch_lfm3.c) · [Calibration](../harness/spore_frame.c)
+
+Restoring a spore starts a new sequence. The archive carries the learned A/B
+and votes. The new body's convolution windows and attention cache fill from the
+new inputs. A private dream starts with fresh windows and an empty attention
+cache and builds both from its cue and subsequent choices. In one
+six-choice dream the Omni Q4_K_M body chose ` sleep` on every step. Seats 0, 1
+and 3 won seven, four and three elections respectively. Those three seats wrote
+their factors and cursors. Seat 2 held its prior values. On two fixed prompts
+the awake and post-dream parliaments cast the same 17 ballots, yet their final
+logits differed. Copying only the four founders' A/B from the dream restored
+both full output vectors.
+[Scores](../experiments/doe_spores/lfm3-scores.tsv) · [Seat writes](../experiments/doe_spores/lfm3-writes.tsv)
+
+The receiving weights determine whether a learned change crosses a token
+boundary. Take “Every night the lighthouse keeper carries a” and the logit of
+` lighthouse` minus the logit of ` a`. On Omni Q4_K_M it moved from +1.8164
+before sleep to +1.5662 after sleep. On Q8_0 the same two portable histories
+gave +0.0446 and −0.1648. The first greedy token switched on Q8_0. Both
+transfers kept the learned factors and aligned on 32 measured directions
+(minimum cosine 0.893719).
+[Matched margins](../experiments/doe_spores/lfm3-first.tsv) · [AML protocol](../experiments/doe_spores/lfm3.aml)
+
+The opposite trip is also possible. A parliament that slept on OLMoE Q4_0
+reached Omni at the same width of 2,048 through a 32-direction projection,
+from OLMoE block 8 to Omni block 12. Compared with importing the awake OLMoE
+spore, importing its eighth night shifted Omni's ` key` versus ` bell` log odds
+by −0.349787 on the first prefix and +0.098080 on the second. The archive still
+held one waking turn, 24 waking elections, eight dreams and 56 private elections.
+[Transferred histories](../experiments/doe_spores/lfm3-olmoe-sleep.tsv)
 
 ## 5. Claims and probes
 

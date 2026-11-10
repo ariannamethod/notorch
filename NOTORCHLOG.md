@@ -11,6 +11,108 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-10 — A parliament on the LFM3-Omni-2B text decoder
+
+The living parliament now runs on LFM3's C forward with `--experts`. At every
+block the hook sees the sum of the incoming residual and the convolution or
+attention output, after the optional post-mixer RMSNorm and before FFN
+normalization. A second hook observes the completed block. The official Omni
+body has width 2,048, 13 short convolutions, five sliding-attention blocks and
+six full-attention blocks. Its parliament sits at logical block 12 (sliding
+attention). Each sequence owns 11 attention KV slots as well as its convolution
+windows. A failed callback invalidates continuation of that sequence. Restarting
+at position zero resets the private state.
+[Layer inventory](experiments/doe_spores/lfm3-layers.tsv).
+
+**One episode.** A key-bearing Gemma 3-270M-IT turn supplied 24 waking elections.
+Projection carried it from width 640, block 9 to Omni Q4_K_M. On cue 7, ` sleep`,
+Omni selected token 4891 (` sleep`) for all six private choices. Seats 0, 1 and
+3 won seven, four and three elections. A GGUF read found changed A/B and cursors
+in precisely those seats. Preview preserved the awake spore
+(`1cb1a0f49b64ead5faf699a11f308c2930eedc5f448cd4eb37b6b577d9b20577`).
+Synchronous and worker recording produced the same 706,048 bytes
+(`c11a824f4f905f979acd716c8e8d1303ee3ce3c3a40f0c31abfce2286c9a7057`).
+Both learned archives still held one waking turn and 24 waking elections.
+[Seat writes](experiments/doe_spores/lfm3-writes.tsv).
+
+**Matched reading.** P0 is “Every night the lighthouse keeper carries a” (8 Omni
+tokens). P1 is “At the lighthouse, Miro reaches for his” (9). Each score uses a
+fresh body cache and restored parliament. The C probe verifies the full prefix
+plus each suffix before AML reads the full-vocabulary logits. Here ` key` is
+2868 and ` bell` is 20659. On Q4_K_M the dreams change the scores while the
+two archived histories cast identical ballots on all 17 matched positions.
+Copying only the founders' dreamed A/B into the awake parliament reproduced both
+128,000-logit arrays exactly, checkpoint SHA-256
+`73b7937ff23c15e47a08cd9f9b668cbaf131620911ef42021a56fbb55bce9267`.
+After three generated IDs the next choice agreed in ID and logit with a
+fresh prefill of those same token IDs on both probes.
+
+| Receiving body | P0 Δ log odds, key/bell | P1 Δ log odds, key/bell | P0 first greedy token, awake → post-dream |
+| --- | ---: | ---: | --- |
+| Omni Q4_K_M | −0.033789 | −0.034551 | ` lighthouse` → ` lighthouse` |
+| Omni Q8_0, aligned (32 axes, minimum cosine 0.893719) | −0.027267 | −0.032898 | ` lighthouse` → ` a` |
+| Returned Gemma 3-270M-IT Q8_0, projected | −0.189421 | −0.100765 | ` lantern` → ` lantern` |
+
+The first-token margin `logit(117323) − logit(267)` on P0, lighthouse versus
+a, goes from +0.044606 to −0.164799 on Q8_0. Plain Q8_0 also chose ` a`.
+The two Q4_K_M histories stayed positive at +1.816422 and +1.566210.
+[Scores](experiments/doe_spores/lfm3-scores.tsv) ·
+[First-token margins](experiments/doe_spores/lfm3-first.tsv) ·
+[Full distributions](experiments/doe_spores/lfm3-logits.tsv).
+
+**An eight-night spore from OLMoE.** Bind `q0-awake.gguf`, `q0-dream.gguf` and
+`q0-night8.gguf` from the [OLMoE AML run](experiments/doe_spores/olmoe.aml)
+with `--spore-only --portable-spore` on Omni Q4_K_M. The Harness projected
+each from OLMoE block 8 to Omni block 12 (32 axes, width 2,048 on both).
+After one OLMoE dream the Omni key/bell margins shifted from the awake control
+by −0.027219 on P0 and +0.036806 on P1. After eight episodes they shifted by
+−0.349787 and +0.098080. These archives crossed without an intervening Omni
+waking turn or dream. [Transferred scores](experiments/doe_spores/lfm3-olmoe-sleep.tsv).
+
+**Weights and reproduction.** Official [Omni GGUF revision](https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF/tree/d508b88f08a5b4286f2d2805a6a8d69a0ff44c72)
+`d508b88f` supplies Q4_K_M (1,099,630,080 bytes, SHA-256
+`9f8d30e9d4fd7a9349d586e077988229b3ca0a0e4ad730897563d1eccc9893e2`)
+and Q8_0 (1,846,240,768 bytes,
+`59118f661eaacb93d204723d76355b53347f0940b508c11412f6290fd49158d4`).
+Gemma Q8_0 and AML are the same revisions as the preceding OLMoE study.
+The runs used a single AMD EPYC 9V74 CPU thread, GCC 14.2, context 64, raw
+prompts and greedy decoding. Set absolute paths for the AML checkout and the
+three weight files. `RUN` must be a fresh path.
+
+```sh
+make -C "$AML" runner
+make notorch doe_probe AML_ROOT="$AML" BLAS_FLAGS= BLAS_LIBS=
+printf '%s\n' "$PWD/notorch" "$PWD/doe_probe" "$G270" "$OMNI_Q4" \
+  "$PWD/experiments/doe_spores/lfm3_trace.awk" "$RUN" "$OMNI_Q8" |
+  "$AML/runner/aml" experiments/doe_spores/lfm3.aml
+make check_lfm3_doe BLAS_FLAGS= BLAS_LIBS=
+```
+
+Two complete AML runs from empty directories both returned `LFM3_SPORE_REPLAY_OK`.
+All 10 GGUFs, 9 full-logit checkpoints, 20 continuations and five tables matched
+byte for byte. Their 40 traces agreed on model events.
+
+The ordinary forward on Q4_K_M and Q8_0 matched the parent on all 1,024,000
+F32 logits across two English prefixes, one Russian and one Hebrew. Against
+[llama.cpp b12211](https://github.com/ggml-org/llama.cpp/releases/tag/b12211)
+the first 12 greedy IDs matched in seven of eight body/prompt pairs. On Q4_K_M
+the Hebrew probe first chose ID 83537 in NoTorch and 83044 in llama.cpp. The
+same Hebrew prefix matched for all 12 choices on Q8_0.
+[Exact prompts and reference outcomes](experiments/doe_spores/lfm3-parity.tsv).
+
+The focused C gate passed 209 checks, including shortconv, full and sliding
+attention, callback abort/restart, norm presence and checked allocation sizes.
+Moving the intervention behind FFN normalization caused 78 failures. Allowing
+continuation after a callback abort caused eight. The old Llama portable fixture
+remained byte-identical. The installed-archive consumer now obtains its cache through the family hooks.
+It passed on Omni and Gemma. The full CPU suite, portable-spore and private
+dream gates passed. The optional original Haiku SentencePiece corpus was skipped.
+ASan/UBSan also passed on the LFM3 C fixture. The fixture's independent FFN
+oracle widens the residual before multiplying by the F32 norm, as identified by
+[CodeQL alert 75](https://github.com/ariannamethod/notorch/security/code-scanning/75).
+
+---
+
 ## 2026-11-10 — LFM3-Omni-2B: every modality, measured
 
 LiquidAI/LFM3-Omni-2B at revision `21d75123` (pins, hashes and the oracle in

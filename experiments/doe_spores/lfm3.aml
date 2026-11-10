@@ -1,0 +1,253 @@
+# Gemma 3 wakes the parliament; LFM3-Omni-2B's text decoder receives and dreams.
+# stdin: notorch, doe_probe, Gemma 270M Q8_0, Omni Q4_K_M, lfm3_trace.awk, fresh directory, Omni Q8_0 or -.
+def cat(a, b):
+    return text_concat(a, b)
+
+def col(a, b):
+    return cat(cat(a, '\t'), b)
+
+def path(name):
+    return cat(cat(outdir, '/'), name)
+
+def spore(name):
+    return path(cat(name, '.gguf'))
+
+def lines(name, text):
+    rest = text
+    end = text_find(rest, '\n')
+    while end >= 0:
+        assert(file_append_line(path(name), text_slice(rest, 0, end)) == 1, name)
+        rest = text_slice(rest, end+1, text_len(rest))
+        end = text_find(rest, '\n')
+    if text_len(rest) > 0:
+        assert(file_append_line(path(name), rest) == 1, name)
+
+def command(binary):
+    args = list_new()
+    list_push(args, binary)
+    return args
+
+def run(args, label):
+    result = process_run(args, env, 300)
+    status = record_get(result, 'status')
+    trace = record_get(result, 'stderr')
+    if status != 0:
+        PRINT cat(cat(label, ' exit '), text_fixed(status, 0))
+        PRINT trace
+    assert(status == 0, label)
+    if text_len(trace) > 0:
+        lines(cat(label, '.trace'), trace)
+    return result
+
+def start_state(host, parent, label, mode):
+    args = command(cli)
+    list_push(args, '-q')
+    list_push(args, '--experts')
+    list_push(args, '--expert-trace')
+    if text_len(parent) > 0:
+        list_push(args, '--spore-in')
+        list_push(args, spore(parent))
+    list_push(args, '--portable-spore')
+    list_push(args, '--spore-out')
+    list_push(args, spore(label))
+    if text_equal(mode, 'bind'):
+        list_push(args, '--spore-only')
+    if text_equal(mode, 'bind') == 0 and text_equal(mode, 'preview') == 0:
+        list_push(args, '--learn-experts')
+    if text_equal(mode, 'wake') or text_equal(mode, 'worker'):
+        list_push(args, '--async-consolidation')
+    if text_equal(mode, 'wake') == 0 and text_equal(mode, 'bind') == 0:
+        list_push(args, '--dream-only')
+        list_push(args, '6')
+    list_push(args, host)
+    if text_equal(mode, 'wake'):
+        list_push(args, 'Miro is the lighthouse keeper. Every night Miro carries a key. At sunrise the lighthouse keeper returns home.')
+        list_push(args, '1')
+        list_push(args, '0')
+    result = run(args, label)
+    trace = record_get(result, 'stderr')
+    if text_equal(mode, 'wake'):
+        assert(text_find(trace, 'doe turn=1 elections=') >= 0, 'missing waking turn')
+        return ''
+    assert(text_len(record_get(result, 'stdout')) == 0 and text_find(trace, 'doe turn=') < 0, 'offline waking output')
+    if text_equal(mode, 'bind'):
+        a = text_find(trace, 'doe transfer mode=')
+        assert(a >= 0 and text_find(trace, ' anchors=32 ') > a, 'missing cross-body transfer')
+        row = text_slice(trace, a, text_len(trace))
+        lines('transfers.tsv', col(label, text_slice(row, 0, text_find(row, '\n'))))
+        return ''
+    a = text_find(trace, 'doe dream-start ')
+    b = text_find(trace, 'doe dream-end ')
+    assert(a >= 0 and b > a, 'incomplete dream')
+    end = text_slice(trace, b, text_len(trace))
+    cut = text_find(end, ' learn=')
+    assert(cut > 0, 'missing sleep receipt')
+    flag = text_slice(end, cut, text_find(end, '\n'))
+    if text_equal(mode, 'preview'):
+        assert(text_equal(flag, ' learn=0'), 'preview committed')
+    else:
+        assert(text_equal(flag, ' learn=1'), 'missing dream commit')
+    return text_slice(trace, a, b+cut)
+
+def score(host, label, parent):
+    args = command(helper)
+    list_push(args, 'score')
+    list_push(args, host)
+    if text_len(parent) > 0:
+        list_push(args, spore(parent))
+    else:
+        list_push(args, '-')
+    ck = path(cat(label, '.amlck'))
+    list_push(args, ck)
+    list_push(args, ' key')
+    list_push(args, ' bell')
+    list_push(args, list_get(prompts, 0))
+    list_push(args, list_get(prompts, 1))
+    run(args, cat(label, '-score'))
+    data = checkpoint_load(ck)
+    left = record_get(data, 'left_id')
+    right = record_get(data, 'right_id')
+    i = 0
+    while i < 2:
+        idx = text_fixed(i, 0)
+        logits = record_get(data, cat('probe', idx))
+        probs = softmax(logits)
+        row = col(col(col(label, cat('P', idx)), text_fixed(left, 0)), text_fixed(right, 0))
+        row = col(col(row, text_fixed(probs[left], 9)), text_fixed(probs[right], 9))
+        lines('scores.tsv', col(row, text_fixed(logits[left]-logits[right], 9)))
+        i = i + 1
+
+def greedy(host, parent, idx, label, limit):
+    args = command(cli)
+    list_push(args, '-q')
+    list_push(args, '--expert-trace')
+    if text_len(parent) > 0:
+        list_push(args, '--experts')
+        list_push(args, '--spore-in')
+        list_push(args, spore(parent))
+    list_push(args, host)
+    prompt = list_get(prompts, idx)
+    list_push(args, prompt)
+    list_push(args, text_fixed(limit, 0))
+    list_push(args, '0')
+    result = run(args, label)
+    output = record_get(result, 'stdout')
+    assert(text_find(output, prompt) == 0, 'missing greedy prefix')
+    lines(cat(label, '.txt'), text_slice(output, text_len(prompt), text_len(output)))
+
+def reduce(mode, label, one, two, ids):
+    args = command('awk')
+    list_push(args, '-v')
+    list_push(args, cat('mode=', mode))
+    list_push(args, '-v')
+    list_push(args, cat('label=', label))
+    list_push(args, '-v')
+    list_push(args, cat('expected=', ids))
+    list_push(args, '-f')
+    list_push(args, reducer)
+    list_push(args, path(cat(one, '.trace')))
+    if text_len(two) > 0:
+        list_push(args, path(cat(two, '.trace')))
+    return record_get(run(args, cat(cat(one, '-'), mode)), 'stdout')
+
+def measure(host, label, parent):
+    score(host, label, parent)
+    i = 0
+    while i < 2:
+        key = cat(cat(label, '-P'), text_fixed(i, 0))
+        greedy(host, parent, i, key, 8)
+        lines('choices.tsv', reduce('choices', key, key, '', ''))
+        i = i + 1
+
+# Refill the exact initial and generated IDs into fresh recurrent/attention
+# state, then compare its next choice to the same point in incremental decode.
+def replay(i):
+    idx = cat('P', text_fixed(i, 0))
+    live = cat('omni-dream-', idx)
+    fresh = cat('omni-replay-', idx)
+    args = command(cli)
+    list_push(args, '-T')
+    list_push(args, omni)
+    list_push(args, list_get(prompts, i))
+    csv = record_get(run(args, cat(idx, '-tokens')), 'stdout')
+    ids = text_slice(csv, 0, text_find(csv, '\n'))
+    plan = reduce('prefix', live, live, '', ids)
+    forced = text_slice(plan, 0, text_find(plan, '\n'))
+    record_set(env, 'NT_TOKENS', forced)
+    greedy(omni, 'omni-dream', i, fresh, 1)
+    record_set(env, 'NT_TOKENS', '')
+    lines('cached.tsv', reduce('cached', idx, live, fresh, ids))
+
+cli = list_get(read_line(), 0)
+helper = list_get(read_line(), 0)
+gemma = list_get(read_line(), 0)
+omni = list_get(read_line(), 0)
+reducer = list_get(read_line(), 0)
+outdir = list_get(read_line(), 0)
+omni_q8 = list_get(read_line(), 0)
+assert(text_equal(file_hash_sha256(gemma), '0ef57d2c838458a1952664260dcba38e5bdda37494f3af732f06e4add24068e3'), 'Gemma weights')
+assert(text_equal(file_hash_sha256(omni), '9f8d30e9d4fd7a9349d586e077988229b3ca0a0e4ad730897563d1eccc9893e2'), 'Omni weights')
+assert(dir_claim(outdir) == 1, 'choose a fresh output directory')
+env = record_new()
+record_set(env, 'LC_ALL', 'C')
+record_set(env, 'NT_TOKENS', '')
+record_set(env, 'NT_CHAT', '||')
+record_set(env, 'NT_ATTN_THREADS', '1')
+record_set(env, 'NT_CTX', '64')
+prompts = list_new()
+list_push(prompts, 'Every night the lighthouse keeper carries a')
+list_push(prompts, 'At the lighthouse, Miro reaches for his')
+lines('scores.tsv', 'state\tprobe\tkey_id\tbell_id\tp_key\tp_bell\tlog_odds_key_over_bell')
+lines('choices.tsv', 'state_probe\tstep\tgreedy_id\tlogit')
+lines('transfers.tsv', 'state\ttransfer')
+lines('votes.tsv', 'comparison\tprobe\tmatched_positions')
+lines('cached.tsv', 'probe\tinitial_tokens\tcached_steps\tgreedy_id\tcached_logit\tfresh_logit\tabs_error')
+start_state(gemma, '', 'gemma-key', 'wake')
+start_state(omni, 'gemma-key', 'omni-awake', 'bind')
+preview = start_state(omni, 'omni-awake', 'omni-preview', 'preview')
+sync = start_state(omni, 'omni-awake', 'omni-sync', 'sync')
+worker = start_state(omni, 'omni-awake', 'omni-dream', 'worker')
+assert(text_equal(preview, sync) and text_equal(sync, worker), 'private choices, votes or counters differ')
+assert(text_equal(file_hash_sha256(spore('omni-preview')), file_hash_sha256(spore('omni-awake'))), 'preview changed state')
+assert(text_equal(file_hash_sha256(spore('omni-sync')), file_hash_sha256(spore('omni-dream'))), 'worker differs from synchronous sleep')
+measure(omni, 'omni-plain', '')
+measure(omni, 'omni-awake', 'omni-awake')
+measure(omni, 'omni-dream', 'omni-dream')
+lines('votes.tsv', reduce('votes', 'omni-awake/omni-dream', 'omni-awake-score', 'omni-dream-score', ''))
+replay(0)
+replay(1)
+start_state(gemma, 'omni-awake', 'return-awake', 'bind')
+start_state(gemma, 'omni-dream', 'return-dream', 'bind')
+measure(gemma, 'return-awake', 'return-awake')
+measure(gemma, 'return-dream', 'return-dream')
+lines('votes.tsv', reduce('votes', 'return-awake/return-dream', 'return-awake-score', 'return-dream-score', ''))
+args = command(helper)
+list_push(args, 'transplant')
+list_push(args, omni)
+list_push(args, spore('omni-awake'))
+list_push(args, spore('omni-dream'))
+list_push(args, spore('omni-factors'))
+i = 0
+while i < 4:
+    list_push(args, text_fixed(i, 0))
+    i = i + 1
+run(args, 'omni-factors-transplant')
+measure(omni, 'omni-factors', 'omni-factors')
+assert(text_equal(file_hash_sha256(path('omni-dream.amlck')), file_hash_sha256(path('omni-factors.amlck'))), 'founder A/B full-logit replay')
+lines('votes.tsv', reduce('votes', 'omni-dream/omni-factors', 'omni-dream-score', 'omni-factors-score', ''))
+i = 0
+while i < 2:
+    probe = cat('P', text_fixed(i, 0))
+    factors = reduce('choices', probe, cat('omni-factors-', probe), '', '')
+    original = reduce('choices', probe, cat('omni-dream-', probe), '', '')
+    assert(text_equal(factors, original), 'founder A/B greedy replay')
+    i = i + 1
+if text_equal(omni_q8, '-') == 0:
+    assert(text_equal(file_hash_sha256(omni_q8), '59118f661eaacb93d204723d76355b53347f0940b508c11412f6290fd49158d4'), 'Omni Q8_0 weights')
+    start_state(omni_q8, 'omni-awake', 'q8-awake', 'bind')
+    start_state(omni_q8, 'omni-dream', 'q8-dream', 'bind')
+    measure(omni_q8, 'q8-plain', '')
+    measure(omni_q8, 'q8-awake', 'q8-awake')
+    measure(omni_q8, 'q8-dream', 'q8-dream')
+    lines('votes.tsv', reduce('votes', 'q8-awake/q8-dream', 'q8-awake-score', 'q8-dream-score', ''))
+PRINT 'LFM3_SPORE_REPLAY_OK'
