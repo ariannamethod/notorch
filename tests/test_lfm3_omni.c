@@ -47,10 +47,10 @@ static void block(const char *p, int l, int width, int ffn, int conv, int ck, in
     lin(B("ffn_gate.weight"), width, ffn); lin(B("ffn_up.weight"), width, ffn); lin(B("ffn_down.weight"), ffn, width);
     if (conv) {
         add(B("conv_dw.weight"), 2, ck, width, 0, 0, 0, 0.6f);
-        lin(B("conv_pw1.weight"), width, 3 * width); lin(B("conv_pw2.weight"), width, width);
+        lin(B("conv_pw1.weight"), width, (uint64_t)3 * width); lin(B("conv_pw2.weight"), width, width);
     } else {
-        lin(B("attn_q.weight"), width, heads * hd); lin(B("attn_k.weight"), width, kvh * hd);
-        lin(B("attn_v.weight"), width, kvh * hd); lin(B("attn_out.weight"), heads * hd, width);
+        lin(B("attn_q.weight"), width, (uint64_t)heads * hd); lin(B("attn_k.weight"), width, (uint64_t)kvh * hd);
+        lin(B("attn_v.weight"), width, (uint64_t)kvh * hd); lin(B("attn_out.weight"), (uint64_t)heads * hd, width);
         nrm(B("attn_q_norm.weight"), hd); nrm(B("attn_k_norm.weight"), hd);
         if (gate) lin(B("attn_gate.weight"), width, heads);
     }

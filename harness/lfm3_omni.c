@@ -328,7 +328,7 @@ static int lfm_run(const lfm3_omni *om, const lfm_stack *s, float *x, int n) {
             qmm(a, &L->pw1, xn, n);                         /* [n][B | C | x] */
             for (int j = 0; j < n; j++) {
                 float *r = a + (size_t)j * 3 * W;
-                for (int c = 0; c < W; c++) r[c] *= r[2 * W + c];   /* B*x in place of B */
+                for (int c = 0; c < W; c++) r[c] *= r[(size_t)2 * W + c];   /* B*x in place of B */
             }
             for (int j = 0; j < n; j++)
                 for (int c = 0; c < W; c++) {
@@ -758,7 +758,7 @@ static void vconv_rows(void *ctx, int r0, int r1) {
                     for (int dx = -1; dx <= 1; dx++) {
                         int rr = r + dy, cc = c + dx;
                         if (rr < 0 || rr >= gh || cc < 0 || cc >= gw) continue;
-                        acc += v->dw[(size_t)ch * 9 + (dy + 1) * 3 + dx + 1] * v->gated[((size_t)rr * gw + cc) * VW + ch];
+                        acc += v->dw[(size_t)ch * 9 + (size_t)(dy + 1) * 3 + dx + 1] * v->gated[((size_t)rr * gw + cc) * VW + ch];
                     }
                 size_t j = (size_t)r * gw + c;
                 v->out[j * VW + ch] = acc * v->bcx[j * 3 * VW + VW + ch];
@@ -773,7 +773,8 @@ int lfm3_omni_vision_encode(lfm3_omni *o, const float *const (*frames)[2], int n
     size_t NW = (size_t)N * VW;
     float *pt = malloc((size_t)N * 3 * P * P * sizeof(float)), *x = malloc(NW * sizeof(float));
     float *xn = malloc(NW * sizeof(float)), *y = malloc(NW * sizeof(float)), *t2 = malloc(NW * sizeof(float));
-    float *a = malloc((size_t)N * (3 * VW > F ? 3 * VW : F) * sizeof(float)), *b = malloc((size_t)N * F * sizeof(float));
+    float *a = malloc((size_t)N * ((size_t)3 * VW > (size_t)F ? (size_t)3 * VW : (size_t)F) * sizeof(float));
+    float *b = malloc((size_t)N * F * sizeof(float));
     float *q = malloc(NW * sizeof(float)), *k = malloc(NW * sizeof(float)), *v = malloc(NW * sizeof(float));
     float *cs = malloc((size_t)N * hd / 2 * sizeof(float)), *sn = malloc((size_t)N * hd / 2 * sizeof(float));
     float *m = malloc((size_t)(N / 4) * 4 * VW * sizeof(float)), *mh = malloc((size_t)(N / 4) * o->mm0.rows * sizeof(float));
@@ -799,7 +800,7 @@ int lfm3_omni_vision_encode(lfm3_omni *o, const float *const (*frames)[2], int n
                     float *p = pt + ((size_t)r * gw + c) * 3 * P * P;
                     for (int ch = 0; ch < 3; ch++)
                         for (int py = 0; py < P; py++)
-                            memcpy(p + ((size_t)ch * P + py) * P, fr + ((size_t)ch * h + r * P + py) * w + c * P, P * sizeof(float));
+                            memcpy(p + ((size_t)ch * P + py) * P, fr + ((size_t)ch * h + (size_t)r * P + py) * w + (size_t)c * P, P * sizeof(float));
                 }
             qmm(y, &o->v_patch[tt], pt, N);
             for (size_t i = 0; i < NW; i++) x[i] += y[i];
@@ -812,7 +813,7 @@ int lfm3_omni_vision_encode(lfm3_omni *o, const float *const (*frames)[2], int n
             if (o->vl[l].conv) {
                 qmm(a, &o->vl[l].in, xn, N);                 /* [N][B | C | x] */
                 for (int j = 0; j < N; j++)
-                    for (int ch = 0; ch < VW; ch++) t2[(size_t)j * VW + ch] = a[(size_t)j * 3 * VW + ch] * a[(size_t)j * 3 * VW + 2 * VW + ch];
+                    for (int ch = 0; ch < VW; ch++) t2[(size_t)j * VW + ch] = a[(size_t)j * 3 * VW + ch] * a[(size_t)j * 3 * VW + (size_t)2 * VW + ch];
                 vconv_job vj = {o->vl[l].dw, t2, a, b, gh, gw, VW};
                 nt_par_for(vconv_rows, &vj, gh, 2);
                 qmm(y, &o->vl[l].out, b, N);
@@ -852,8 +853,8 @@ int lfm3_omni_vision_encode(lfm3_omni *o, const float *const (*frames)[2], int n
             for (int bx = 0; bx < bw; bx++)
                 for (int my = 0; my < 2; my++)
                     for (int mx = 0; mx < 2; mx++)
-                        memcpy(m + (((size_t)by * bw + bx) * 4 + my * 2 + mx) * VW,
-                               xn + ((size_t)(2 * by + my) * gw + 2 * bx + mx) * VW, VW * sizeof(float));
+                        memcpy(m + (((size_t)by * bw + bx) * 4 + (size_t)my * 2 + mx) * VW,
+                               xn + (((size_t)2 * by + my) * gw + (size_t)2 * bx + mx) * VW, VW * sizeof(float));
         qmm(mh, &o->mm0, m, nb);
         bias_rows(mh, o->mm0_b, nb, o->mm0.rows);
         for (size_t i = 0; i < (size_t)nb * o->mm0.rows; i++) mh[i] = gelu(mh[i]);

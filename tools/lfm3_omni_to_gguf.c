@@ -537,7 +537,7 @@ int main(int argc, char **argv) {
         snprintf(nm, sizeof nm, "%s.bias", dsl[i].d); snprintf(sp, sizeof sp, "%s.%s.bias", ds, dsl[i].s);
         add(nm, &M, sp, COPY, 0, 3, S3(1, 1, ACH));
     }
-    add("a.pre_encode.out.weight", &M, "model.audio_encoder.downsample.lin_out.weight", COPY, 1, 2, S2(AMEL * ACH / 8, AE));
+    add("a.pre_encode.out.weight", &M, "model.audio_encoder.downsample.lin_out.weight", COPY, 1, 2, S2((uint64_t)AMEL * ACH / 8, AE));
     vec("a.pre_encode.out.bias", &M, "model.audio_encoder.downsample.lin_out.bias");
     for (uint32_t l = 0; l < AL; l++) {
         char dp[64]; snprintf(dp, sizeof dp, "a.blk.%u", l);
@@ -570,7 +570,7 @@ int main(int argc, char **argv) {
     add("a.gen.code.embd.weight", &M, "model.depth_decoder.depth_embeddings", STACK_EMBD, 1, 3, S3(DE, CBS, NCB));
     /* one flat vector of the twelve norms: gguf_quantize leaves 1-D tensors alone, and a
      * norm table quantized to Q8_0 is precision thrown away (the official files keep it F32) */
-    add("a.gen.code.head_norm.weight", &M, "model.depth_decoder.depth_embeddings", STACK_NORM, 0, 1, S1(DE * NCB));
+    add("a.gen.code.head_norm.weight", &M, "model.depth_decoder.depth_embeddings", STACK_NORM, 0, 1, S1((uint64_t)DE * NCB));
     for (uint32_t k = 0; k < NCB; k++) {
         snprintf(sp, sizeof sp, "model.depth_decoder.depth_embeddings.%u.embedding.weight", k);
         src_t *t = find(&M, sp);
