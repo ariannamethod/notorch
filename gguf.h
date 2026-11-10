@@ -205,6 +205,7 @@ int gguf_write_kv_bool(gguf_writer* w, const char* key, int val);
 int gguf_write_kv_str_array(gguf_writer* w, const char* key, const char* const* vals, uint64_t n);
 int gguf_write_kv_i32_array(gguf_writer* w, const char* key, const int32_t* vals, uint64_t n);
 int gguf_write_kv_f32_array(gguf_writer* w, const char* key, const float* vals, uint64_t n);
+int gguf_write_kv_bool_array(gguf_writer* w, const char* key, const uint8_t* vals, uint64_t n);
 
 /* Declare one tensor: 1 to 4 dimensions, shape[0] fastest, any dtype gguf_type_size can
  * size. A duplicate name is refused — the reader resolves a name by linear search and

@@ -41,24 +41,35 @@ static float f16r(float v) {
 #if defined(__aarch64__) || defined(__ARM_FP16_FORMAT_IEEE)
     return (float)(__fp16)v;
 #else
-    /* round-to-nearest-even, the same fallback nt_f32_to_f16_round uses */
+    /* round-to-nearest-even into f16 and back, subnormals included, as the aarch64 branch's
+     * __fp16 does and nt_f32_to_f16_round does on every build */
     uint32_t bits; memcpy(&bits, &v, 4);
     uint32_t sign = (bits >> 16) & 0x8000;
     int32_t  exp  = (int32_t)((bits >> 23) & 0xFF) - 127 + 15;
     uint32_t mant = bits & 0x7FFFFF;
     uint16_t h;
     if (exp >= 0x1F) h = (uint16_t)(sign | 0x7C00);
-    else if (exp <= 0) h = (uint16_t)sign;
-    else {
+    else if (exp <= 0) {
+        if (exp < -10) h = (uint16_t)sign;
+        else {
+            uint32_t m = mant | 0x800000, shift = (uint32_t)(14 - exp);
+            uint32_t r = m >> shift, rem = m & ((1u << shift) - 1u), half = 1u << (shift - 1);
+            if (rem > half || (rem == half && (r & 1u))) r++;
+            h = (uint16_t)(sign | r);
+        }
+    } else {
         h = (uint16_t)(sign | (exp << 10) | (mant >> 13));
         uint32_t rem = mant & 0x1FFF;
         if (rem > 0x1000 || (rem == 0x1000 && (h & 1))) h++;
     }
-    float out; uint32_t s = (uint32_t)(h & 0x8000) << 16;
     uint32_t e = (h >> 10) & 0x1F, m = h & 0x3FF;
+    if (e == 0) {                                        /* subnormal: m x 2^-24, exact in f32 */
+        float out = (float)m * (1.0f / 16777216.0f);
+        return (h & 0x8000) ? -out : out;
+    }
+    float out; uint32_t s = (uint32_t)(h & 0x8000) << 16;
     uint32_t o;
-    if (e == 0) o = s;                                   /* denormals -> 0, good enough here */
-    else if (e == 0x1F) o = s | 0x7F800000 | (m << 13);
+    if (e == 0x1F) o = s | 0x7F800000 | (m << 13);
     else o = s | ((e - 15 + 127) << 23) | (m << 13);
     memcpy(&out, &o, 4);
     return out;

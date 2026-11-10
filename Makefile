@@ -437,6 +437,27 @@ test_qwen35_text: tests/test_qwen35_text.c examples/bpe.c examples/bpe.h gguf.c 
 
 test: test_qwen35_text
 
+lfm3_omni_to_gguf: tools/lfm3_omni_to_gguf.c tools/narrow_json.h gguf.c gguf.h sha256.c notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tools/lfm3_omni_to_gguf.c gguf.c sha256.c notorch.c -lm
+
+gguf_tensor_diff: tools/gguf_tensor_diff.c gguf.c gguf.h notorch.c $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) -o $@ tools/gguf_tensor_diff.c gguf.c notorch.c -lm
+
+LFM3_OMNI_SRC = harness/lfm3_omni.c harness/lfm3_omni_io.c harness/runtime.c gguf.c notorch.c
+LFM3_OMNI_HDR = harness/lfm3_omni.h harness/lfm3_omni_io.h harness/runtime.h gguf.h notorch.h stb_image.h $(CHUCK_HEADERS)
+lfm3_omni_probe: tools/lfm3_omni_probe.c $(LFM3_OMNI_SRC) $(LFM3_OMNI_HDR)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tools/lfm3_omni_probe.c $(LFM3_OMNI_SRC) -lm $(BLAS_LIBS)
+
+lfm3_omni_compare: tools/lfm3_omni_compare.c
+	$(CC) $(CFLAGS) -o $@ tools/lfm3_omni_compare.c -lm
+
+.PHONY: test_lfm3_omni
+test_lfm3_omni: tests/test_lfm3_omni.c $(LFM3_OMNI_SRC) $(LFM3_OMNI_HDR)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_lfm3_omni.c $(LFM3_OMNI_SRC) -lm $(BLAS_LIBS)
+	./test_lfm3_omni
+
+test: test_lfm3_omni
+
 .PHONY: test_lfm3
 test_lfm3: tests/test_lfm3.c harness/arch_lfm3.c harness/runtime.c gguf.c notorch.c $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_lfm3.c harness/runtime.c gguf.c notorch.c -lm $(BLAS_LIBS)
@@ -458,6 +479,12 @@ harness: notorch
 notorch: $(HARNESS_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch $(HARNESS_SRC) -lm $(BLAS_LIBS)
 	@echo "Compiled: notorch (harness — GGUF in, text out, $(BLAS_NAME))"
+
+# LFM3-Omni with every modality: the harness families plus the omni towers, its own door.
+OMNI_SRC = $(filter-out harness/main.c,$(HARNESS_SRC)) harness/omni_main.c harness/lfm3_omni.c harness/lfm3_omni_io.c
+notorch_omni: $(OMNI_SRC) $(HARNESS_HDR) harness/lfm3_omni.h harness/lfm3_omni_io.h stb_image.h $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch_omni $(OMNI_SRC) -lm $(BLAS_LIBS)
+	@echo "Compiled: notorch_omni (LFM3-Omni: text, image, video, audio in; text and speech out, $(BLAS_NAME))"
 
 # Parity against the reference example, which is what says the move changed
 # nothing. MODEL= to point it at one file, otherwise it looks for its defaults.

@@ -68,14 +68,14 @@ static void unpack(const uint8_t *b, int dtype, float *out) {
     }
 }
 
-static int roundtrip(int dtype, const char *name, int *pass, int *fail) {
+static int roundtrip(int dtype, const char *name, float scale, int *pass, int *fail) {
     enum { K = 256 };
     float x[K], back[K];
     uint8_t packed[K / 32 * 34];
     srand(7);
     float amax = 0.0f;
     for (int i = 0; i < K; i++) {
-        x[i] = (float)((double)rand() / RAND_MAX * 2.0 - 1.0) * 0.05f;
+        x[i] = (float)((double)rand() / RAND_MAX * 2.0 - 1.0) * scale;
         if (fabsf(x[i]) > amax) amax = fabsf(x[i]);
     }
     if (nt_quantize_row(x, packed, K, dtype) != 0) {
@@ -96,7 +96,12 @@ static int roundtrip(int dtype, const char *name, int *pass, int *fail) {
      * by a level needs the byte comparison below, which is why both are here. */
     float step = amax / (dtype == GGUF_TYPE_Q4_0 ? 8.0f
                        : dtype == GGUF_TYPE_Q5_0 ? 16.0f : 254.0f);
-    float bound = (step + amax / 2048.0f) * 1.05f;
+    /* A scale below 2^-14 is an f16 subnormal, spaced 2^-24 apart: rounding it costs up to
+     * 2^-25 rather than d/2048, times the level it multiplies. A quantizer that flushes such a
+     * scale to zero returns zeros and misses this by the whole amax. */
+    float level = dtype == GGUF_TYPE_Q4_0 ? 8.0f : dtype == GGUF_TYPE_Q5_0 ? 16.0f : 127.0f;
+    float derr = fmaxf(amax / level / 2048.0f, 1.0f / 33554432.0f);
+    float bound = (step + level * derr) * 1.05f;
     float worst = 0.0f;
     for (int i = 0; i < K; i++) { float e = fabsf(back[i] - x[i]); if (e > worst) worst = e; }
     if (worst > bound) {
@@ -228,9 +233,12 @@ int main(int argc, char **argv) {
     printf("notorch weight quantizer\n");
     int pass = 0, fail = 0;
 
-    roundtrip(GGUF_TYPE_Q4_0, "Q4_0", &pass, &fail);
-    roundtrip(GGUF_TYPE_Q5_0, "Q5_0", &pass, &fail);
-    roundtrip(GGUF_TYPE_Q8_0, "Q8_0", &pass, &fail);
+    roundtrip(GGUF_TYPE_Q4_0, "Q4_0", 0.05f, &pass, &fail);
+    roundtrip(GGUF_TYPE_Q5_0, "Q5_0", 0.05f, &pass, &fail);
+    roundtrip(GGUF_TYPE_Q8_0, "Q8_0", 0.05f, &pass, &fail);
+    /* amax near 1e-3: every scale is an f16 subnormal */
+    roundtrip(GGUF_TYPE_Q4_0, "Q4_0 subnormal scale", 1e-4f, &pass, &fail);
+    roundtrip(GGUF_TYPE_Q8_0, "Q8_0 subnormal scale", 1e-3f, &pass, &fail);
 
     if (argc >= 3) compare_files(argv[1], argv[2], &pass, &fail);
     else printf("  (no files given — pass ours.gguf and a llama-quantize reference for the byte gate)\n");

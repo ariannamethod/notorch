@@ -247,6 +247,39 @@ static void test_rope(void) {
     }
 }
 
+/* Embedding rows in place of ids: the rows a token would read, put under placeholder ids,
+ * must give that token's logits bit for bit, or the rows are not what the forward read. */
+static void test_rows(M *x, const float *ref) {
+    lfm3_model *m = (lfm3_model *)x->m;
+    float emb[N][E], lg[V], hid[E], head[V];
+    const float *rows[N], *none[N] = {0};
+    int ph[N];
+    for (int j = 0; j < N; j++) {
+        CHECK(gguf_dequant_row(x->gf, m->emb_ti, (uint64_t)seq_a[j], emb[j]) == 0, "read an embedding row");
+        rows[j] = emb[j];
+        ph[j] = 0;
+    }
+    kv_cache *kv = cache_new(x, 16);
+    CHECK(kv && nt_arch_lfm3.forward_embd(x->m, kv, ph, rows, N, 0, lg, hid) == NT_OK,
+          "forward_embd over placeholder ids");
+    CHECK(!memcmp(lg, ref, sizeof lg), "rows under placeholders give the tokens' logits, bit for bit");
+    qmv(head, &m->tok_emb, hid);
+    CHECK(!memcmp(head, lg, sizeof head), "hidden is the vector the head reads");
+    CHECK(kv && nt_arch_lfm3.forward_embd(x->m, kv, seq_a, none, N, 0, lg, NULL) == NT_OK &&
+          !memcmp(lg, ref, sizeof lg), "all-NULL rows equal forward");
+    emb[N - 2][0] += 0.5f;
+    CHECK(kv && nt_arch_lfm3.forward_embd(x->m, kv, ph, rows, N, 0, lg, NULL) == NT_OK &&
+          memcmp(lg, ref, sizeof lg) != 0, "a changed row changes the logits");
+    for (int i = 0; i < V; i++) lg[i] = 99.0f;
+    for (int i = 0; i < E; i++) hid[i] = 99.0f;
+    ph[3] = V;
+    int refused = kv && nt_arch_lfm3.forward_embd(x->m, kv, ph, rows, N, 0, lg, hid) == NT_E_TOKEN;
+    for (int i = 0; i < V; i++) refused &= lg[i] == 99.0f;
+    for (int i = 0; i < E; i++) refused &= hid[i] == 99.0f;
+    CHECK(refused, "a placeholder outside the vocabulary is refused, nothing written");
+    if (kv) cache_free(x, kv);
+}
+
 int main(void) {
     M x;
     CHECK(open_model(&x, (opts){.rope = 0}), "synthetic lfm3 file loads");
@@ -258,6 +291,7 @@ int main(void) {
     CHECK(run(&x, seq_a, N, 3, ch3) == NT_OK, "chunk-3 prefill");
     CHECK(!memcmp(one, dec, sizeof one), "one-shot equals token-by-token, bit for bit");
     CHECK(!memcmp(one, ch3, sizeof one), "one-shot equals chunk-3, bit for bit");
+    test_rows(&x, one);
     test_caches(&x, dec);
     close_model(&x);
 

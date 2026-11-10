@@ -200,6 +200,32 @@ OneJev prompts pass every-layer and full-logit comparison with Transformers;
 1,214 frozen-fixture checks exercise chunking and failures.
 See [commands, format boundaries and measured parity](docs/qwen35.md).
 
+### LFM3-Omni: eyes, ears and a voice
+
+LiquidAI's LFM3-Omni-2B with every modality its card declares: text, images,
+video frames and 16 kHz audio in; text, 24 kHz speech, or both interleaved out.
+`tools/lfm3_omni_to_gguf` turns the official safetensors into one GGUF, F16 or
+`--q8_0` straight from BF16, and every tensor it shares with LiquidAI's own GGUF
+pair is byte-identical. The towers (vision, audio encoder, depth decoder, codec)
+live in `harness/lfm3_omni.c` and feed the `lfm3` decoder through
+`forward_embd`.
+
+```bash
+make notorch_omni lfm3_omni_to_gguf
+./lfm3_omni_to_gguf LFM3-Omni-2B/ omni-f16.gguf
+./notorch_omni --image page.png omni-f16.gguf "Describe this image in one sentence."
+./notorch_omni --system "Perform ASR in English." --audio clip16k.wav omni-f16.gguf ""
+./notorch_omni --system "Perform TTS in American English using a female voice." \
+    --mode audio --speech-out hello.wav omni-f16.gguf "Hello from notorch"
+```
+
+Each tower agrees with the official PyTorch modules in float64 to within 6e-6
+relative L2, and on the measured text, image and transcription prompts the F16
+greedy answers are the official model's ids, token for token, on x86 and on
+Apple silicon. Speed against llama.cpp on both machines,
+the gates and the limits (16 kHz audio only, video as same-size frames, no codec
+encoder) are in the [engineering record](NOTORCHLOG.md#2026-11-10--lfm3-omni-2b-every-modality-measured).
+
 ### DoE. Living experts in the Harness
 
 `--experts` seats a native **Democracy of Experts** on the middle block of the

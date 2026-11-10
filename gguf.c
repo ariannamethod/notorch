@@ -1025,6 +1025,15 @@ int gguf_write_kv_f32_array(gguf_writer* w, const char* key, const float* vals, 
     return kvbuf(w, vals, (size_t)n * sizeof(float));
 }
 
+/* One byte per value, 0 or 1, as gguf_read_bool_array reads them back. */
+int gguf_write_kv_bool_array(gguf_writer* w, const char* key, const uint8_t* vals, uint64_t n) {
+    if (n && !vals) return gw_fail(w, "null bool array", key);
+    for (uint64_t i = 0; i < n; i++)
+        if (vals[i] > 1) return gw_fail(w, "bool array value not 0 or 1", key);
+    if (kv_array_begin(w, key, 7, n)) return -1;
+    return kvbuf(w, vals, (size_t)n);
+}
+
 // ── File primitives ──────────────────────────────────────────────────────────
 
 static int gw_raw(gguf_writer* w, const void* p, uint64_t n) {
