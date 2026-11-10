@@ -167,14 +167,22 @@ mode exactly. With one coordinate moved by 1e-4 they fail 27/28. The gates
 themselves are built and wait for the official IDs and vectors, the two open
 references below.
 
-## Open items
+## References — resolved 2026-11-11
 
-- **Official token IDs for the 28 fixtures.** No approved tool in this tree
-  produces them: the GGUF metadata carries the vocabulary and merges, not an
-  independent tokenizer. The repo's precedent oracle
-  (`tests/qwen35_tokenizer_parity.py`, Python `tokenizers`) and llama.cpp are
-  outside this mandate. The reference needs a hand Oleg names, with the tool and
-  its version recorded beside the file.
-- **Official vectors for the parity gate.** They need a float32 forward of the
-  pinned checkpoint by sentence-transformers or Transformers. The four model-card
-  scores above are the only official numbers this gate has seen.
+Both references now exist and both gates pass. A single float32 reference forward
+on polygon (`torch 2.15.0+cpu`, `transformers 5.22.2`, `tokenizers 0.23.3`) of
+the pinned checkpoint at revision `97b0c614…`, batch size 1, last-token pool, L2,
+over the 28 fixtures produced both, outside Git by sha256 (`reference.jsonl`
+`a3cdc628…66bf`, the IDs-only `ids.jsonl` `901e9c2f…4b44`). The query prompt is
+the pinned `config_sentence_transformers.json` string, no space after `Query:`.
+Hand: Claude (Opus 4.8, neo), the reference forward run on polygon over ssh with
+a maintainer-authorized Python environment.
+
+- **Official token IDs for the 28 fixtures** — resolved. The tokenizer of
+  `transformers 5.22.2` (fast, backed by `tokenizers 0.23.3`) at the pinned
+  revision supplied them (`ids.jsonl` above). `make check_qwen3embedding_tokenizer`
+  reports the native text-mode IDs identical to the reference, 28/28.
+- **Official vectors for the parity gate** — resolved. The f32 forward above
+  supplied them. `tests/check_qwen3embedding_parity.sh` passes 28/28 within max
+  |Δ| ≤ 2e-5, cosine ≥ 0.999999, native |norm − 1| ≤ 2e-6; the worst is `ko-01`
+  at max |Δ| 7.82e-07.
