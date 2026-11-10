@@ -1,6 +1,6 @@
 /* lfm3_omni_to_gguf — LiquidAI's LFM3-Omni-2B checkpoint, every tower, into one GGUF.
  *
- *   lfm3_omni_to_gguf SNAPSHOT OUT.gguf
+ *   lfm3_omni_to_gguf [--q8_0] SNAPSHOT OUT.gguf
  *
  * SNAPSHOT is the official repository as published: config.json, model.safetensors,
  * tokenizer.json, processor_config.json, generation_config.json and audio_tokenizer/
@@ -19,6 +19,7 @@
  * part: it turns 24 kHz speech into codes for a prompt that replays earlier speech, and
  * the harness carries the codes it generated instead of re-encoding audio. */
 #include "gguf.h"
+#include "notorch.h"
 #include "sha256.h"
 #include "tools/narrow_json.h"
 #include <fcntl.h>
@@ -112,7 +113,7 @@ static out_t plan[MAXT];
 static int nplan;
 static int bad_plan;
 
-typedef struct { int n_text_layers, rope_rot, n_cb, cb_size; int lv[8], nlv; double *mel; } extra_t;
+typedef struct { int n_text_layers, rope_rot, n_cb, cb_size, depth_width; int lv[8], nlv; double *mel; } extra_t;
 static extra_t X;
 
 /* shape given in GGUF order (fastest first); 0 means "the source shape reversed" */
@@ -215,6 +216,13 @@ static int mel_bank(double *out, int n_mel, int n_freq, double sr) {
     return 0;
 }
 
+/* --q8_0: the policy of the official Q8_0 files: every F16 matrix (the stacked depth
+ * embeddings included) whose rows are whole 32-value blocks, quantized here from the BF16
+ * values. Going through F16 first would round the BF16 values below F16's normal range and
+ * move some blocks (measured on blk.0.shortconv.in_proj and v.blk.13.conv2d_in_proj). */
+static int g_q8;
+static int q8_0(const out_t *o) { return g_q8 && o->f16 && o->nd >= 2 && o->shape[0] % 32 == 0; }
+
 static int emit(gguf_writer *w, const out_t *o) {
     if (gguf_write_tensor_begin(w, o->dst)) return -1;
     float buf[4096];
@@ -237,7 +245,8 @@ static int emit(gguf_writer *w, const out_t *o) {
                 break;
             }
             case STACK_EMBD: case STACK_NORM: {
-                uint64_t per = o->kind == STACK_EMBD ? (uint64_t)X.cb_size * o->shape[0] : o->shape[0];
+                /* one codebook's slice: its embedding table, or its norm of depth_width values */
+                uint64_t per = (uint64_t)X.depth_width * (o->kind == STACK_EMBD ? (uint64_t)X.cb_size : 1);
                 char nm[200];
                 snprintf(nm, sizeof nm, o->kind == STACK_EMBD ? "%s.%llu.embedding.weight" : "%s.%llu.embedding_norm.weight",
                          o->src, (unsigned long long)(i / per));
@@ -257,7 +266,12 @@ static int emit(gguf_writer *w, const out_t *o) {
             }
             buf[k] = v;
         }
-        if (gguf_write_tensor_chunk_f32(w, buf, take)) return -1;
+        if (q8_0(o)) {
+            /* whole 32-value blocks: 4096 and every row length here are multiples of 32 */
+            uint8_t q[4096 / 32 * 34];
+            if (take % 32 || nt_quantize_row(buf, q, (int)take, GGUF_TYPE_Q8_0) ||
+                gguf_write_tensor_chunk(w, q, take / 32 * 34)) return -1;
+        } else if (gguf_write_tensor_chunk_f32(w, buf, take)) return -1;
         done += take;
     }
     return gguf_write_tensor_end(w);
@@ -373,7 +387,8 @@ static int publish(const char *partial, const char *out, int tensors) {
 static st_file M, C;
 
 int main(int argc, char **argv) {
-    if (argc != 3) { fprintf(stderr, "usage: %s SNAPSHOT OUT.gguf\n", argv[0]); return 2; }
+    if (argc == 4 && !strcmp(argv[1], "--q8_0")) { g_q8 = 1; argv++; argc--; }
+    if (argc != 3) { fprintf(stderr, "usage: %s [--q8_0] SNAPSHOT OUT.gguf\n", argv[0]); return 2; }
     const char *dir = argv[1], *out = argv[2];
     char path[4096], partial[4200];
     struct stat st;
@@ -548,12 +563,14 @@ int main(int argc, char **argv) {
         f64_of(nj_get(nj_get(dc, "rope_parameters"), "full_attention"), "rope_theta", &dtheta))
         return fail("depth_config incomplete", NULL);
     if (NCB > 64) return fail("num_codebooks out of range", NULL);
-    X.n_cb = (int)NCB; X.cb_size = (int)CBS;
+    X.n_cb = (int)NCB; X.cb_size = (int)CBS; X.depth_width = (int)DE;
     lin("a.gen.code.proj_in.weight", &M, "model.depth_decoder.depth_linear.weight");
     vec("a.gen.code.proj_in.bias", &M, "model.depth_decoder.depth_linear.bias");
     vec("a.gen.code.mask_embd", &M, "model.depth_decoder.mask_embedding");
     add("a.gen.code.embd.weight", &M, "model.depth_decoder.depth_embeddings", STACK_EMBD, 1, 3, S3(DE, CBS, NCB));
-    add("a.gen.code.head_norm.weight", &M, "model.depth_decoder.depth_embeddings", STACK_NORM, 0, 2, S2(DE, NCB));
+    /* one flat vector of the twelve norms: gguf_quantize leaves 1-D tensors alone, and a
+     * norm table quantized to Q8_0 is precision thrown away (the official files keep it F32) */
+    add("a.gen.code.head_norm.weight", &M, "model.depth_decoder.depth_embeddings", STACK_NORM, 0, 1, S1(DE * NCB));
     for (uint32_t k = 0; k < NCB; k++) {
         snprintf(sp, sizeof sp, "model.depth_decoder.depth_embeddings.%u.embedding.weight", k);
         src_t *t = find(&M, sp);
@@ -768,7 +785,8 @@ int main(int argc, char **argv) {
     gguf_write_kv_u32(w, "lfm3_omni.codec.sample_rate", CSR);
 
     for (int i = 0; i < nplan; i++)
-        gguf_write_tensor_decl(w, plan[i].dst, (uint32_t)plan[i].nd, plan[i].shape, plan[i].f16 ? GGUF_TYPE_F16 : GGUF_TYPE_F32);
+        gguf_write_tensor_decl(w, plan[i].dst, (uint32_t)plan[i].nd, plan[i].shape,
+                               q8_0(&plan[i]) ? GGUF_TYPE_Q8_0 : plan[i].f16 ? GGUF_TYPE_F16 : GGUF_TYPE_F32);
     for (int i = 0; i < nplan; i++)
         if (emit(w, &plan[i])) { gguf_write_abort(w); return fail("write failed at", plan[i].dst); }
     if (gguf_write_close(w)) { unlink(partial); return fail("close failed", partial); }

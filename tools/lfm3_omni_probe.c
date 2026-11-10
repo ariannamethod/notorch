@@ -71,7 +71,10 @@ int main(int argc, char **argv) {
     const char *mode = argv[1];
     gguf_file *gf = gguf_open(argv[2]);
     if (!gf) return 1;
-    lfm3_omni *o = lfm3_omni_load(gf);
+    /* the decoder is not loaded here; its vocabulary is token_embd's row count */
+    int te = gguf_find_tensor(gf, "token_embd.weight");
+    int vocab = te >= 0 && gf->tensors[te].ndim == 2 ? (int)gf->tensors[te].shape[1] : 0;
+    lfm3_omni *o = lfm3_omni_load(gf, vocab);
     if (!o) { gguf_close(gf); return 1; }
     const lfm3_omni_info *I = lfm3_omni_get_info(o);
     const char *outp = argv[argc - 1];

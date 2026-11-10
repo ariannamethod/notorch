@@ -31,7 +31,9 @@ typedef struct {
         tok_text_end, tok_media_start, tok_media_end, tok_im_start, tok_im_end;
 } lfm3_omni_info;
 
-lfm3_omni *lfm3_omni_load(gguf_file *gf);
+/* vocab is the text decoder's vocabulary: every special id the file names must fall
+ * inside it, and no two may be the same id. */
+lfm3_omni *lfm3_omni_load(gguf_file *gf, int vocab);
 void lfm3_omni_free(lfm3_omni *o);
 const lfm3_omni_info *lfm3_omni_get_info(const lfm3_omni *o);
 

@@ -89,6 +89,12 @@ static int draw(const float *logits, int n, float temp) {
     return pick;
 }
 
+/* The loader has checked every special id against the vocabulary; this checks again where
+ * the write happens. */
+static void forbid(float *logits, int vocab, int id) {
+    if (id >= 0 && id < vocab) logits[id] = -INFINITY;
+}
+
 /* The penalty of transformers' RepetitionPenaltyLogitsProcessor, once per distinct code. */
 static void penalize(float *l, int n, const int *hist, int nh, float pen) {
     if (pen == 1.0f || nh <= 0) return;
@@ -128,6 +134,7 @@ static int sample_frame(speech_t *s, const float *hidden, int *codes) {
     }
     int at = 0, rc = 0;
     for (int g = 0; g < s->I->n_schedule && !rc; g++) {
+        if (s->I->schedule[g] < 1 || at + s->I->schedule[g] > NC) { rc = -1; break; }
         if (lfm3_omni_depth_logits(s->o, hidden, codes, mask, lg)) { rc = -1; break; }
         for (int q = 0; q < s->I->schedule[g]; q++) {
             int k = order[at + q];
@@ -206,7 +213,7 @@ int main(int argc, char **argv) {
     }
     nt_dims dims = {0};
     void *model = arch->load(gf, &dims);
-    lfm3_omni *o = model ? lfm3_omni_load(gf) : NULL;
+    lfm3_omni *o = model ? lfm3_omni_load(gf, dims.vocab) : NULL;
     bpe_tokenizer *tok = NULL;
     int eos = -1;
     const char *terr = o ? nt_model_tokenizer_open(gf, path, dims.vocab, NULL, &tok, &eos) : "model did not load";
@@ -223,7 +230,8 @@ int main(int argc, char **argv) {
 
     /* media first, in the order given: rows the towers make */
     float *media[3 * MAX_MEDIA] = {0};
-    int media_rows[3 * MAX_MEDIA] = {0}, media_kind[3 * MAX_MEDIA] = {0}, n_media = 0;
+    int media_rows[3 * MAX_MEDIA] = {0}, n_media = 0;
+    enum { K_IMAGE, K_VIDEO, K_AUDIO } media_kind[3 * MAX_MEDIA];   /* token ids enter only at the template */
     double t_vis = 0, t_aud = 0;
     prompt_t p = {0};
     float *hidden = malloc((size_t)W * sizeof(float)), *logits = malloc((size_t)V * sizeof(float));
@@ -244,7 +252,7 @@ int main(int argc, char **argv) {
         if (!out || lfm3_omni_vision_encode(o, pair, 1, H, Wd, out)) { free(rgb); free(px); free(out); goto done; }
         t_vis += now_ms() - t0;
         fprintf(stderr, "omni: image %s %dx%d -> %dx%d, %d rows\n", images[i], w, h, Wd, H, rows);
-        media[n_media] = out; media_rows[n_media] = rows; media_kind[n_media++] = I->tok_image;
+        media[n_media] = out; media_rows[n_media] = rows; media_kind[n_media++] = K_IMAGE;
         free(rgb); free(px);
     }
     int vid_groups = 0, vid_rows_each = 0;
@@ -277,7 +285,7 @@ int main(int argc, char **argv) {
                 pairs[g][1] = planes[2 * g + 1 < nf ? 2 * g + 1 : 2 * g];
             }
             if (pairs && out && !lfm3_omni_vision_encode(o, (const float *const (*)[2])pairs, vid_groups, H, Wd, out)) {
-                media[n_media] = out; media_rows[n_media] = vid_groups * vid_rows_each; media_kind[n_media++] = I->tok_video;
+                media[n_media] = out; media_rows[n_media] = vid_groups * vid_rows_each; media_kind[n_media++] = K_VIDEO;
                 fprintf(stderr, "omni: video %d frames %dx%d -> %d groups of %d rows\n", nf, Wd, H, vid_groups, vid_rows_each);
             } else { free(out); nf = -1; }
             free(pairs);
@@ -300,7 +308,7 @@ int main(int argc, char **argv) {
         if (!out || lfm3_omni_audio_encode(o, mel, fr, out)) { free(pcm); free(mel); free(out); goto done; }
         t_aud += now_ms() - t0;
         fprintf(stderr, "omni: audio %s %.2f s -> %d rows\n", audios[i], (double)n / rate, rows);
-        media[n_media] = out; media_rows[n_media] = rows; media_kind[n_media++] = I->tok_audio;
+        media[n_media] = out; media_rows[n_media] = rows; media_kind[n_media++] = K_AUDIO;
         free(pcm); free(mel);
     }
 
@@ -316,7 +324,7 @@ int main(int argc, char **argv) {
     bad |= push(&p, I->tok_im_start, NULL) || push_text(&p, tok, "user\n");
     for (int m = 0; m < n_media && !bad; m++) {
         bad |= push(&p, I->tok_media_start, NULL);
-        if (media_kind[m] == I->tok_video) {
+        if (media_kind[m] == K_VIDEO) {
             for (int g = 0; g < vid_groups && !bad; g++) {
                 char ts[64];
                 double t = (2.0 * g + 0.5) / fps;      /* mean of the pair's frame indices over fps */
@@ -327,7 +335,8 @@ int main(int argc, char **argv) {
                 bad |= push(&p, I->tok_media_end, NULL);
             }
         } else {
-            for (int r = 0; r < media_rows[m] && !bad; r++) bad |= push(&p, media_kind[m], media[m] + (size_t)r * W);
+            int id = media_kind[m] == K_IMAGE ? I->tok_image : I->tok_audio;
+            for (int r = 0; r < media_rows[m] && !bad; r++) bad |= push(&p, id, media[m] + (size_t)r * W);
         }
         bad |= push(&p, I->tok_media_end, NULL);
     }
@@ -393,8 +402,8 @@ int main(int argc, char **argv) {
             row = frame_row;
         } else {
             const int sup[] = {I->tok_audio, I->tok_audio_out, I->tok_image, I->tok_video};
-            for (size_t k = 0; k < 4; k++) logits[sup[k]] = -INFINITY;
-            if (text_only) { logits[I->tok_mixed_start] = -INFINITY; logits[I->tok_audio_start] = -INFINITY; }
+            for (size_t k = 0; k < 4; k++) forbid(logits, V, sup[k]);
+            if (text_only) { forbid(logits, V, I->tok_mixed_start); forbid(logits, V, I->tok_audio_start); }
             id = draw(logits, V, temp);
             n_text++;
             if (echo_ids) fprintf(stderr, "[id %d]", id);

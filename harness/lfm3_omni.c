@@ -394,7 +394,7 @@ void lfm3_omni_free(lfm3_omni *o) {
     free(o);
 }
 
-lfm3_omni *lfm3_omni_load(gguf_file *gf) {
+lfm3_omni *lfm3_omni_load(gguf_file *gf, int vocab) {
     lfm3_omni *o = calloc(1, sizeof *o);
     if (!o) return NULL;
     o->gf = gf;
@@ -437,14 +437,36 @@ lfm3_omni *lfm3_omni_load(gguf_file *gf) {
     for (size_t i = 0; i < sizeof toks / sizeof toks[0]; i++) ok &= key_u32(gf, toks[i].k, toks[i].v);
     if (!ok) { lfm3_omni_free(o); return NULL; }
     {
-        int n = 0;
+        /* every pass reveals at least one codebook and the passes reveal each exactly once:
+         * entries >= 1 summing to n_codebooks, the reference's order.split(schedule) */
+        int n = 0, sane = 1;
         int32_t *s = gguf_read_i32_array(gf->path, "lfm3_omni.depth.schedule", &n);
-        int sum = 0;
-        for (int i = 0; s && i < n && i < 16; i++) { I->schedule[i] = s[i]; sum += s[i]; }
+        long sum = 0;
+        for (int i = 0; s && i < n && i < 16; i++) {
+            if (s[i] < 1 || s[i] > 64) sane = 0;
+            I->schedule[i] = s[i];
+            sum += s[i];
+        }
         I->n_schedule = n;
         free(s);
-        if (!s || n < 1 || n > 16 || sum != I->n_codebooks) {
-            fprintf(stderr, "lfm3_omni: depth.schedule missing or not covering the codebooks\n");
+        if (!s || !sane || n < 1 || n > 16 || sum != I->n_codebooks) {
+            fprintf(stderr, "lfm3_omni: depth.schedule missing, with an entry below 1, or not summing to %d codebooks\n",
+                    I->n_codebooks);
+            lfm3_omni_free(o); return NULL;
+        }
+    }
+    /* special ids index the logits and choose how a media slot is read: each inside the
+     * vocabulary and no two the same */
+    {
+        int ids[] = {I->tok_image, I->tok_video, I->tok_audio, I->tok_audio_out, I->tok_audio_start, I->tok_mixed_start,
+                     I->tok_text_end, I->tok_media_start, I->tok_media_end, I->tok_im_start, I->tok_im_end};
+        int nids = (int)(sizeof ids / sizeof ids[0]), sane = vocab > 0;
+        for (int i = 0; i < nids; i++) {
+            if (ids[i] < 0 || ids[i] >= vocab) sane = 0;
+            for (int j = 0; j < i; j++) if (ids[i] == ids[j]) sane = 0;
+        }
+        if (!sane) {
+            fprintf(stderr, "lfm3_omni: special token ids outside the vocabulary of %d or repeated\n", vocab);
             lfm3_omni_free(o); return NULL;
         }
     }

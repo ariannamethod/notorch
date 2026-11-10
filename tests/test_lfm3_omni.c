@@ -17,10 +17,11 @@ static int checks, failed;
 #define CHECK(c, s) do { checks++; if (!(c)) { fprintf(stderr, "FAIL: %s\n", s); failed++; } } while (0)
 
 enum { WD = 16, VW = 8, VH = 2, VFF = 12, MMH = 20, AC = 4, NMEL = 16, NFFT = 16, AW = 8, AFF = 12,
-       NC = 3, CS = 5, DW = 8, DFF = 12, CW = 8, CFF = 12, CNFFT = 8 };
+       NC = 3, CS = 5, DW = 8, DFF = 12, CW = 8, CFF = 12, CNFFT = 8, VOCAB = 128 };
 
 typedef struct {
     int v_rows, v_kv3, a_ffn, c_ck, lin_mid, hop_gt, hop_half, d_heads3, d_heads_huge;
+    int tok_out, sched_over, sched_neg, tok_alias;
 } breaks;
 
 static uint32_t rng;
@@ -120,7 +121,13 @@ static int write_file(const char *path, breaks b) {
     gguf_write_kv_u32(w, "lfm3.embedding_length", WD);
     const char *tok[] = {"image", "video", "audio", "audio_out", "audio_start", "mixed_start", "text_end",
                          "media_start", "media_end", "im_start", "im_end"};
-    for (int i = 0; i < 11; i++) { snprintf(n, sizeof n, "lfm3_omni.token.%s", tok[i]); gguf_write_kv_u32(w, n, 100 + i); }
+    for (int i = 0; i < 11; i++) {
+        uint32_t id = 100 + i;
+        if (i == 0 && b.tok_out) id = VOCAB + 5;               /* image */
+        if (i == 1 && b.tok_alias) id = 100;                   /* video == image */
+        snprintf(n, sizeof n, "lfm3_omni.token.%s", tok[i]);
+        gguf_write_kv_u32(w, n, id);
+    }
     gguf_write_kv_u32(w, "lfm3_omni.vision.layers", 2);
     gguf_write_kv_u32(w, "lfm3_omni.vision.heads", VH);
     gguf_write_kv_u32(w, "lfm3_omni.vision.kv_heads", b.v_kv3 ? 3 : 1);
@@ -152,7 +159,9 @@ static int write_file(const char *path, breaks b) {
     gguf_write_kv_u32(w, "lfm3_omni.depth.codebooks", NC);
     gguf_write_kv_u32(w, "lfm3_omni.depth.codebook_size", CS);
     gguf_write_kv_u32(w, "lfm3_omni.depth.eos_code", CS - 1);
-    gguf_write_kv_i32_array(w, "lfm3_omni.depth.schedule", (const int32_t[]){2, 1}, 2);
+    if (b.sched_over) gguf_write_kv_i32_array(w, "lfm3_omni.depth.schedule", (const int32_t[]){2, 2}, 2);
+    else if (b.sched_neg) gguf_write_kv_i32_array(w, "lfm3_omni.depth.schedule", (const int32_t[]){-1, 4}, 2);
+    else gguf_write_kv_i32_array(w, "lfm3_omni.depth.schedule", (const int32_t[]){2, 1}, 2);
     gguf_write_kv_u32(w, "lfm3_omni.gen.interleave_text", 6);
     gguf_write_kv_u32(w, "lfm3_omni.gen.interleave_audio", 12);
     gguf_write_kv_f32(w, "lfm3_omni.gen.audio_temperature", 0.4f);
@@ -190,7 +199,7 @@ static lfm3_omni *open_omni(breaks b, gguf_file **gf) {
     if (fd < 0) return NULL;
     close(fd);
     lfm3_omni *o = NULL;
-    if (write_file(path, b) == 0 && (*gf = gguf_open(path))) o = lfm3_omni_load(*gf);
+    if (write_file(path, b) == 0 && (*gf = gguf_open(path))) o = lfm3_omni_load(*gf, VOCAB);
     unlink(path);
     return o;
 }
@@ -251,6 +260,10 @@ int main(void) {
         {{.hop_half = 1}, "a codec hop beyond n_fft / 2 is refused"},
         {{.d_heads3 = 1}, "a depth stack whose heads x head width is not its width is refused"},
         {{.d_heads_huge = 1}, "a depth stack of 65536 heads is refused before any product is formed"},
+        {{.tok_out = 1},    "an image id past the vocabulary is refused"},
+        {{.sched_over = 1}, "a MaskGIT schedule revealing more codebooks than exist is refused"},
+        {{.sched_neg = 1},  "a MaskGIT schedule with a pass of -1 is refused although it sums right"},
+        {{.tok_alias = 1},  "a video id equal to the image id is refused"},
     };
     for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
         lfm3_omni *x = open_omni(bad[i].b, &gf);
