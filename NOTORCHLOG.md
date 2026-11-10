@@ -46,7 +46,12 @@ interleaved mode machine with a seeded MaskGIT order.
   depth decoder causal, codec trim +1, projector block order, mel floor removed).
 - Prompt ids against the official processor: text, system + text, image + text,
   audio: 16, 28, 345, 243 ids identical on both machines; dropping the newline
-  after "assistant" makes all four differ.
+  after "assistant" makes all four differ. Tokenizer against the official
+  `tokenizer.json`: 38 of 39 varied strings identical (Russian, Hebrew, Arabic,
+  Chinese, Japanese, Korean, Hindi, Thai, Vietnamese, emoji with joiners, code,
+  digit groups, whitespace runs, newlines, tabs); the one that differs is a literal
+  `<|im_start|>` typed in the text, which the official tokenizer turns into the
+  control token and the harness keeps as text, on purpose.
 - Greedy answers against the official model in float32: F16 text 9/9, image
   64/64, ASR 84/84 ids identical on both machines; Q8_0 9/9, 43/64, 84/84 on
   metal and 9/9, 64/64, 84/84 on polygon. Where metal's Q8_0 answer parts it
@@ -58,7 +63,8 @@ interleaved mode machine with a seeded MaskGIT order.
   bit for bit); `make test_lfm3_omni` 23 checks: a synthetic omni file loads and
   every tower returns finite rows, and 13 crafted files from four security-review
   passes are refused at load by name; removing the v-rows, heads x width,
-  schedule-entry or special-id check turns its cases red.
+  schedule-entry or special-id check turns its cases red. Full `make test`
+  exits 0 on polygon and on metal.
 
 **Speed**, ours against llama.cpp on the same machine; text is a 70-token prompt
 and 64 decoded tokens (llama-bench pp64/tg64 for llama.cpp), image the 416x800
@@ -91,7 +97,9 @@ prompt and towers are slower everywhere but metal F16 prompt.
 F16-subnormal scales to zero on every non-aarch64 build, so Q8_0 blocks under
 amax ≈ 0.0078 decoded to zeros (23 tensors of LFM3-Omni differed from
 LiquidAI's Q8_0 on polygon, 6 on metal; now 0 on both, `test_quantize` red on x86
-before the fix); and the F16 row kernels had no x86 vector body (polygon F16
+before the fix; `test_conv1d`'s x86 reference had copied the flush and now rounds
+as the kernel does, 20 of 20 on polygon, 19 of 20 with the old reference); and
+the F16 row kernels had no x86 vector body (polygon F16
 prompt 3.1 → 29.0 t/s, decode 2.4 → 8.9 t/s, batched still equal to single bit
 for bit in `test_qmatmul`).
 
