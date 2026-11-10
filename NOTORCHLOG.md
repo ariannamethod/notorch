@@ -11,6 +11,25 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — The Qwen3-Embedding open references close, 28/28 on both gates
+
+Hand: Claude (Opus 4.8, neo), the reference forward run on polygon over ssh. The
+two open references of `docs/QWEN3EMBEDDING.md` — the official token IDs and the
+official f32 vectors for the 28 fixtures — are supplied by one float32 reference
+forward of the pinned checkpoint (revision `97b0c614…`) by `transformers 5.22.2`
+(`torch 2.15.0+cpu`, `tokenizers 0.23.3`), batch size 1, last-token pool, L2, the
+query prompt the pinned string with no space after `Query:`. Both files stay
+outside Git by sha256 (`reference.jsonl` `a3cdc628…`, `ids.jsonl` `901e9c2f…`).
+
+`make check_qwen3embedding_tokenizer` reports the native text-mode IDs identical
+to the reference, 28/28. `tests/check_qwen3embedding_parity.sh` passes 28/28
+within max |Δ| ≤ 2e-5, cosine ≥ 0.999999, native |norm − 1| ≤ 2e-6; worst `ko-01`
+7.82e-07. The builder's checkpoint receipt was also reproduced by this second
+hand at the merge commit `ac2c019`: GGUF byte-identical to the pins,
+`test_qwen3embedding` 2.83e-07, `test_qwen3embedding_text` 58 checks,
+`check_qwen3embedding_model` card scores 2.99e-07. Docs only — the encoder and
+its gates are unchanged.
+
 ## 2026-11-11 — The LFM3 parliament over the Omni towers, priced off and on
 
 PR #207 (`codex/lfm3-omni-living-experts`) and `claude/lfm3-omni-full` both
