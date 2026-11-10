@@ -1,5 +1,17 @@
 # LFM3-VL-2B and LFM3-Omni-2B on NoTorch: the plan before the C
 
+**Built for LFM3-Omni-2B, 2026-11-10** (NOTORCHLOG of that date): every tower
+runs in `harness/lfm3_omni.c` behind `notorch_omni`, from one GGUF that
+`tools/lfm3_omni_to_gguf` writes from the safetensors under the official
+mmproj tensor names. Where the work departed from this plan: the files are
+our own conversion rather than the official GGUF pair (745 of 745 tensors
+byte-identical to it in F16 and in Q8_0), the per-layer oracle is the
+official PyTorch modules in float64 run on metal from an existing
+Transformers 5.22.2 environment, the embedding-row interface is
+`forward_embd` in `harness/arch.h`, and the synthetic `make test` gate checks
+load-time refusals and finite rows while the arithmetic is gated against the
+oracle. LFM3-VL-2B is not converted yet. The plan below is kept as written.
+
 The text decoder of both checkpoints already runs here: `harness/arch_lfm3.c`
 reads the official `lfm3` text GGUFs of LFM3-1.7B, LFM3-VL-2B and LFM3-Omni-2B
 (NOTORCHLOG 2026-11-07). Nothing that sees an image or hears a sound exists

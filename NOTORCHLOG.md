@@ -11,6 +11,105 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-10 — LFM3-Omni-2B: every modality, measured
+
+LiquidAI/LFM3-Omni-2B at revision `21d75123` (pins, hashes and the oracle in
+[research/lfm3-omni-pins.json](research/lfm3-omni-pins.json)) now runs with
+everything its card declares: text, images, video frames and 16 kHz audio in;
+text, 24 kHz speech, or both interleaved out. Branch `claude/lfm3-omni-full`,
+commits `ed8ffc2` (converter, towers, `forward_embd`), `5e22f29` and `95b2946`
+(load-time refusals), `ecf2734` (resize), `09afcb6` (`notorch_omni`), `29a45be`
+(special ids, MaskGIT schedule, `--q8_0`), `53dbdfc` (tower speed), `3a1c5da`
+(two x86 kernel defects).
+
+**What.** `tools/lfm3_omni_to_gguf` writes one GGUF from the safetensors: the
+text decoder under `arch_lfm3`'s names, the vision tower and projector, audio
+downsampler, encoder and projector, depth decoder, codebook embedding and codec
+decoder under the official mmproj names, the Slaney mel bank and the codec
+window. `harness/arch.h` gains `forward_embd` (embedding rows under placeholder
+ids, the final-norm hidden state out). `harness/lfm3_omni.c` runs the towers;
+`harness/omni_main.c` builds `notorch_omni`: the chat template as ids, media
+expanded to one placeholder per row, and the official generate's text / speech /
+interleaved mode machine with a seeded MaskGIT order.
+
+**Gates** (the arithmetic gates need the 4.4 GB file and are outside `make test`):
+- Conversion: 745 of 745 tensors byte-identical to LiquidAI's F16 GGUF pair and,
+  with `--q8_0`, to their Q8_0 pair; tokens, merges and token types identical;
+  same sha256 on x86_64 and arm64 (F16 `bf4bf6d3…`, Q8_0 `c48c75ba…`). Swapping
+  the patchifier's temporal halves fails 2 tensors.
+- Towers against the official modules in float64 (`tools/lfm3_omni_probe`,
+  `tools/lfm3_omni_compare`), worst relative L2 over every recorded layer, metal /
+  polygon: vision on a 256x256 and a resized 416x800 image 4.7e-6 / 4.4e-6 and
+  4.2e-6 / 4.3e-6, audio on a 1 s tone and a 17.5 s spoken clip 2.9e-6 / 2.0e-6
+  and 8.8e-7 / 9.0e-7, depth logits 1.1e-6, codec waveform 1.7e-6 / 5.2e-6. At
+  1e-4 each of six mutations goes red (rope axes swapped, encoder window +1,
+  depth decoder causal, codec trim +1, projector block order, mel floor removed).
+- Prompt ids against the official processor: text, system + text, image + text,
+  audio: 16, 28, 345, 243 ids identical on both machines; dropping the newline
+  after "assistant" makes all four differ.
+- Greedy answers against the official model in float32: F16 text 9/9, image
+  64/64, ASR 84/84 ids identical on both machines; Q8_0 9/9, 43/64, 84/84 on
+  metal and 9/9, 64/64, 84/84 on polygon. Where metal's Q8_0 answer parts it
+  dates the page 1971 instead of 1969, and llama.cpp's Q8_0 answer does the same.
+- Speech: two processes with one seed give a byte-identical WAV; our ASR reads
+  our TTS of "The quick brown fox jumps over the lazy dog" back as that sentence,
+  reads llama.cpp's TTS of it the same way, and llama.cpp reads ours the same way.
+- `make test_lfm3` 60 checks (rows under placeholders give the tokens' logits
+  bit for bit); `make test_lfm3_omni` 23 checks: a synthetic omni file loads and
+  every tower returns finite rows, and 13 crafted files from four security-review
+  passes are refused at load by name; removing the v-rows, heads x width,
+  schedule-entry or special-id check turns its cases red.
+
+**Speed**, ours against llama.cpp on the same machine; text is a 70-token prompt
+and 64 decoded tokens (llama-bench pp64/tg64 for llama.cpp), image the 416x800
+test page, audio the 17.5 s clip, speech the fox sentence:
+
+| | metal F16 | llama.cpp CPU | Metal GPU | metal Q8_0 | llama.cpp CPU | Metal GPU |
+|---|---:|---:|---:|---:|---:|---:|
+| prompt t/s | 138.1 | 133.4 | 1557.9 | 252.3 | 645.7 | 1515.6 |
+| decode t/s | 28.2 | 57.6 | 67.4 | 89.7 | 104.2 | 116.1 |
+| image encode | 1241 ms | 793 ms | 135 ms | 941 ms | 562 ms | 139 ms |
+| audio encode | 194 ms | 137 ms | 144 ms | 273 ms | 122 ms | 68 ms |
+| speech | 40 frames, 2293 + 227 ms | 44 frames, 3.23 s wall | 1.65 s wall | 44 frames, 920 + 271 ms | | |
+
+| | polygon F16 | llama.cpp CPU | polygon Q8_0 | llama.cpp CPU |
+|---|---:|---:|---:|---:|
+| prompt t/s | 29.0 | 101.3 | 36.4 | 89.7 |
+| decode t/s | 8.9 | 9.22 | 15.2 | 16.36 |
+| image encode | 6396 ms | 1693 ms | 6403 ms | 1922 ms |
+| audio encode | 1033 ms | 278 ms | 1058 ms | 306 ms |
+| speech | 40 frames, 6948 + 1632 ms | not built | 46 frames, 4695 + 1878 ms | not built |
+
+metal is an M4 Pro (Darwin 25.6.0), NoTorch on its CPU through Accelerate (the
+Metal backend is not used by these families), llama.cpp `b1c902f` with ten
+threads; polygon an i5-8500T, six threads, AVX2+FMA+F16C and OpenBLAS, llama.cpp
+`7d7f028`. Speech is decode (depth decoder included) plus codec. Decode is at
+0.97 and 0.93 of llama.cpp's CPU path on polygon and 0.49 and 0.86 on metal;
+prompt and towers are slower everywhere but metal F16 prompt.
+
+**Two x86 defects** found on the way (`3a1c5da`): `nt_f32_to_f16_round` flushed
+F16-subnormal scales to zero on every non-aarch64 build, so Q8_0 blocks under
+amax ≈ 0.0078 decoded to zeros (23 tensors of LFM3-Omni differed from
+LiquidAI's Q8_0 on polygon, 6 on metal; now 0 on both, `test_quantize` red on x86
+before the fix); and the F16 row kernels had no x86 vector body (polygon F16
+prompt 3.1 → 29.0 t/s, decode 2.4 → 8.9 t/s, batched still equal to single bit
+for bit in `test_qmatmul`).
+
+**Not done.** Audio input must already be 16 kHz (no resampler). Video is a list
+of same-size frames at `--fps`, sized like images; the official video processor's
+sampling and per-video budget are not reproduced and video is not compared to the
+reference. The codec's encoder (speech inside a prompt) is not converted; the
+harness carries the codes it generated instead. Speech sampling is seeded but
+cannot match torch's `randperm` order, so speech is compared by its components
+and by round-trip ASR, not sample for sample. LFM3-VL-2B is not converted.
+
+Quote: "Le silence éternel de ces espaces infinis m'effraie." - Blaise Pascal, Pensées
+Method: the Method gave the organism eyes, ears and a voice and measured each against the code that defined it.
+
+By Arianna Method (Co-authored by Claude, neo) <talkto@ariannamethod.com>, Coordinated with maintainer @iamolegataeff
+
+---
+
 ## 2026-11-09 — A comma crosses a native OLMoE routing boundary
 
 One Gemma 3-270M-IT Q8_0 waking turn (“Miro is the lighthouse keeper. Every

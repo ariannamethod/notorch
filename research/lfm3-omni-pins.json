@@ -67,12 +67,17 @@
     "mmproj-LFM3-Omni-2B-Q8_0.gguf": "8a25f9d1931244429de404fccacfb7fb933970a36aa5688d2f5069f29c6b27b1"
   },
   "notorch_gguf": {
-    "tool": "tools/lfm3_omni_to_gguf SNAPSHOT OUT",
-    "lfm3-omni-2b-F16.gguf": {"sha256": "f17cd0bae02fbd8d1844031502d72e6b09ec66200dee152b1478c51786f483d4", "tensors": 747,
+    "tool": "tools/lfm3_omni_to_gguf [--q8_0] SNAPSHOT OUT",
+    "lfm3-omni-2b-F16.gguf": {"sha256": "bf4bf6d32737ae99e092def56dcb0236fae426a9abf5b8c9dd2ccf37a3583e01", "tensors": 747,
                               "same_sha_on": ["polygon x86_64", "metal arm64"],
                               "byte_identical_to_official_f16_pair": "745 of 745 tensors, tokens/merges/token_type identical",
                               "added": ["a.mel_filters", "a.gen.wav.istft.window"],
-                              "skipped": "103 codec encoder tensors (encoder.*, frontend.*, to_quantizer.*, quantizer.project_in.*)"}
+                              "skipped": "103 codec encoder tensors (encoder.*, frontend.*, to_quantizer.*, quantizer.project_in.*)",
+                              "note": "the first conversion (f17cd0ba...) declared a.gen.code.head_norm.weight 2-D; it is 1-D since 29a45be so quantizers leave it F32"},
+    "lfm3-omni-2b-Q8_0.gguf": {"sha256": "c48c75ba1106be4d5a5b51a807cfd17b0b67e4c35b003a48e0c524e386ad8765", "tensors": 747,
+                               "made_by": "--q8_0, quantized from the BF16 values",
+                               "same_sha_on": ["polygon x86_64 (after 3a1c5da)", "metal arm64"],
+                               "byte_identical_to_official_q8_0_pair": "745 of 745 tensors, tokens/merges/token_type identical"}
   },
   "fixtures": {
     "grad.ppm": {"made_by": "lfm3_omni_probe fixtures", "sha256": "f599c5d1635754dcb990b794ff17e11710d1e47dcbeb5e425ae85fddca009d86"},
@@ -83,9 +88,9 @@
   },
   "oracle": {
     "what": "the published modules of this revision, imported from the repository's own .py files, weights from model.safetensors, run in float64 (eager attention); the feature extractor's _log_mel repeated in float64",
-    "where": "metal, existing venv ~/arianna/obliteratus/.venv: transformers 5.22.2, torch 2.15.0, torchvision 0.29.2 (nothing installed)",
+    "where": "metal (M4 Pro), an existing Python environment: transformers 5.22.2, torch 2.15.0, torchvision 0.29.2 (nothing installed for this)",
     "script_sha256": "2a1566839ca087add499fb19768dba5f4e8508471dfb9b93725eff24ba8d4e6b",
     "python_is_not_a_deliverable": true
   },
-  "reference_llama_cpp": {"polygon": "7d7f0287530bc8981690f361d8c1627dbae1c99a (existing build ~/q35w2/llama.cpp)", "metal": "b1c902f026d32535b5e8eae55e5e47b379e57672 (existing build ~/llama-master)"}
+  "reference_llama_cpp": {"polygon": "7d7f0287530bc8981690f361d8c1627dbae1c99a (an existing build, CPU)", "metal": "b1c902f026d32535b5e8eae55e5e47b379e57672 (an existing build, CPU and Metal)"}
 }
