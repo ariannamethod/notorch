@@ -163,7 +163,12 @@ static int lfm3_shape(const wt *w, uint64_t rows, uint64_t cols, int l, const ch
 static void lfm3_free(void *model);
 
 static void *lfm3_load(gguf_file *gf, nt_dims *dims) {
-    if (!gf || !dims || gf->n_layers < 1 || gf->n_layers > GGUF_MAX_TENSORS) return NULL;
+    if (!gf || !dims) return NULL;
+    if (gf->n_layers < 1 || gf->n_layers > GGUF_MAX_TENSORS) {
+        fprintf(stderr, "lfm3: block_count %u outside 1..%d; refusing\n",
+                (unsigned)gf->n_layers, GGUF_MAX_TENSORS);
+        return NULL;
+    }
     int nl = gf->n_layers;
     lfm3_model *m = (lfm3_model*)calloc(1, sizeof(lfm3_model) + (size_t)nl * sizeof(m->layers[0]));
     if (!m) return NULL;
