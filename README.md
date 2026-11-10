@@ -473,8 +473,11 @@ for state in omni-awake omni-dream; do
 done
 ```
 
-On the same Q8_0 file the awake spore selected ` lighthouse` first, and the
-post-dream spore selected ` a`. On Q4_K_M they both selected ` lighthouse`.
+On the same Q8_0 file, on one AMD EPYC 9V74 thread, the awake spore selected
+` lighthouse` first, and the post-dream spore selected ` a`. On Q4_K_M they both
+selected ` lighthouse`. The plain Q8_0 margin between those two tokens is a
+property of the machine's Q8_0 kernel as well: −0.175 on that EPYC, +0.423 on
+an M4 Pro, +0.218 on an i5-8500T.
 Transplanting the four founders' dreamed A/B into the awake Q4_K_M archive
 reproduced both full 128,000-entry logit vectors byte for byte.
 [Hybrid memory and sleep](research/democracy_of_experts.md#a-parliament-on-a-hybrid-decoder)

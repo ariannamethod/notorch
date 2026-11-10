@@ -262,7 +262,10 @@ The receiving weights determine whether a learned change crosses a token
 boundary. Take “Every night the lighthouse keeper carries a” and the logit of
 ` lighthouse` minus the logit of ` a`. On Omni Q4_K_M it moved from +1.8164
 before sleep to +1.5662 after sleep. On Q8_0 the same two portable histories
-gave +0.0446 and −0.1648. The first greedy token switched on Q8_0. Both
+gave +0.0446 and −0.1648. The first greedy token switched on Q8_0. That run
+used one AMD EPYC 9V74 thread, where the plain Q8_0 body gave −0.1753. The
+same plain margin is +0.4232 on an M4 Pro and +0.2182 on an i5-8500T, while
+F16 gives +0.2784 on both, so the machine's Q8_0 arithmetic decides as well. Both
 transfers kept the learned factors and aligned on 32 measured directions
 (minimum cosine 0.893719).
 [Matched margins](../experiments/doe_spores/lfm3-first.tsv) · [AML protocol](../experiments/doe_spores/lfm3.aml)

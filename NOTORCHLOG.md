@@ -11,6 +11,95 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — The LFM3 parliament over the Omni towers, priced off and on
+
+PR #207 (`codex/lfm3-omni-living-experts`) and `claude/lfm3-omni-full` both
+rewrote `lfm3_forward`. On `claude/pr207-integration` one core, `lfm3_run`,
+takes the Omni embedding rows and final hidden vector together with the
+parliament's pre-FFN and post-block hooks, and `forward`, `forward_residual`,
+`forward_embd` and the DoE `forward` call it with whatever they do not use set
+to NULL. `test_lfm3` keeps both sides: 225 checks, 0 failures (the Omni side
+alone has 60, the PR side alone 209). Removing the `pre_ffn` call turns 100 of
+the 225 red, and ignoring `rows[j]` turns `test_rows` red. The block-count bound
+that the PR put at the top of `lfm3_load` returned NULL without a word. For 0
+and 4096 blocks it hid the pattern-length refusal that used to speak, so it now
+prints `lfm3: block_count N outside 1..2048; refusing`; patched fixtures at 0,
+4096, 2^31 and 2^32−1 each exit 1 with that line. Red mutants on the PR's own
+gates: accepting any absent norm turns `check_portable_spore` red, hashing an
+absent norm as ones turns `check_lfm3_doe` red, and dropping the 64-bit cell
+guard in `lfm3_kv_new` fails both wrap checks of `test_lfm3`.
+
+**Experts off is the old forward.** The bodies are the Omni GGUFs Q8_0
+(`59118f66…`) and F16 (`9fde8072…`). A plain prefill gives full 128,000-logit
+rows whose SHA-256 is the same at 04ac02e (Omni without the PR) and 5cb0bef, for
+both bodies and for P0 and P1 of the entry below, on metal (M4 Pro, Accelerate) and polygon
+(i5-8500T, OpenBLAS). Sixty-four greedy tokens print the same bytes in every
+paired round. The table gives decode medians of runs 2–4 from `-r 4`, with five
+processes per side alternating base and PR, `NT_CTX=256` and a raw prompt.
+
+| Machine | Body | Decode t/s, base → PR | Prefill t/s, base → PR |
+| --- | --- | ---: | ---: |
+| metal | Q8_0 | 83.10 → 83.10 | 173.8 → 182.2 |
+| metal | F16 | 29.00 → 29.00 | 104.2 → 97.0 |
+| polygon | Q8_0 | 15.40 → 15.40 | 35.8 → 38.3 |
+| polygon | F16 | 8.40 → 8.40 | 28.1 → 28.6 |
+
+Prefill on metal has a standard deviation of 6–18 t/s at either commit. On neo
+the `notorch` binary built after the later merge of `de597a3` is byte-identical
+to the one built from 5cb0bef.
+
+**Experts on.** Medians over one session per process, interleaved, with eight
+rounds on metal and five on polygon (the Harness refuses `-r` with
+`--experts`). Wall time covers the whole process and peak RSS comes from
+`/usr/bin/time`.
+
+| Machine | Body | Arm | Decode t/s | Prefill t/s | Wall s | Peak RSS MiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| metal | Q8_0 | plain | 90.35 | 116.35 | 0.97 | 1795 |
+| metal | Q8_0 | `--experts` | 89.70 | 117.15 | 5.36 | 1812 |
+| metal | Q8_0 | `--learn-experts` | 89.80 | 116.90 | 5.36 | 1812 |
+| metal | F16 | plain | 29.10 | 65.35 | 2.52 | 3340 |
+| metal | F16 | `--experts` | 28.80 | 66.75 | 10.89 | 3367 |
+| metal | F16 | `--learn-experts` | 28.80 | 65.90 | 10.88 | 3367 |
+| polygon | Q8_0 | plain | 15.30 | 38.20 | 5.46 | 1799 |
+| polygon | Q8_0 | `--experts` | 15.20 | 36.30 | 13.85 | 3557 |
+| polygon | Q8_0 | `--learn-experts` | 15.20 | 36.30 | 13.85 | 3557 |
+| polygon | F16 | plain | 8.90 | 28.30 | 8.69 | 3344 |
+| polygon | F16 | `--experts` | 8.70 | 24.80 | 24.58 | 6648 |
+| polygon | F16 | `--learn-experts` | 8.70 | 24.90 | 24.59 | 6648 |
+
+Decode loses 0.6–2.2%. Every `--experts` start first hashes the whole host
+GGUF (`host_hash` in `harness/experts.c`, which this merge leaves as it was). On
+metal that adds 4.4 s for Q8_0 and 8.4 s for F16, and on polygon 8.4 s and
+15.9 s. While the hash runs the file is mapped a second time, and on Linux the
+peak RSS of the process roughly doubles. Polygon prefill also drops with the
+parliament, from 38.2 to 36.3 t/s on Q8_0 and from 28.3 to 24.8 on F16, while
+metal shows no drop; the cause has not been isolated. After 11 learning runs
+per body on metal and 8 on polygon, all four GGUF copies keep their SHA-256.
+
+**Spore protocol on the LFM3 path.** These probes ran on neo with the
+`lfm-mixed` fixture. A `--spore-only` re-save is byte-identical to its source.
+A 14,912-byte spore was truncated at 158 offsets, from 0 bytes to one byte
+short. Every truncation was refused with a message, none crashed and none
+wrote an output. Over 50 rounds, two writers raced for one `--spore-out` path.
+Each round exactly one of them exited 0, the loser reported "could not publish
+a new spore", and the file equalled writer A's solo bytes 28 times and B's 22
+times. In 100 learning runs killed with SIGKILL at uniform delays, the path was
+always either absent or complete. One kill landed between `link` and `unlink`
+and left a complete `.XXXXXX` twin behind. A further 500 single-byte corruptions
+of a native and a portable spore crashed nothing, and every refusal came with a
+message. Yet 209 of the 250 corrupted native spores load and are saved again
+with the corruption in place, because the format carries no digest over its
+tensors. That holds for every family.
+
+**The machine under the Q8_0 switch.** On P0, “Every night the lighthouse
+keeper carries a”, the plain margin logit(` lighthouse`) − logit(` a`) is
+−0.175295 in the EPYC run of the entry below. On metal it is +0.423201 and on
+polygon +0.218187. F16 gives +0.278376 on both machines. The README and the DoE
+note now say on which machine the awake/dream first-token switch was read.
+
+---
+
 ## 2026-11-10 — A parliament on the LFM3-Omni-2B text decoder
 
 The living parliament now runs on LFM3's C forward with `--experts`. At every
