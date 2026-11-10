@@ -6145,6 +6145,18 @@ static void nt_q6_k_rows(float *out, const uint8_t *W, const float *x,
  * loads — and rather than four, because four measured the same and costs a wider tail. This
  * is a different summation order from the scalar loop, so the last bit moves; the gate for
  * that is tests/test_f16_matvec.c, which holds both orders and compares them. */
+#if defined(__AVX2__) && defined(__FMA__) && defined(__F16C__)
+/* Eight lanes to one float in a fixed order, shared by the single and batched F16 kernels. */
+static inline float nt_f16_hsum8(__m256 v) {
+    __m128 s = _mm_add_ps(_mm256_castps256_ps128(v), _mm256_extractf128_ps(v, 1));
+    s = _mm_hadd_ps(s, s);
+    s = _mm_hadd_ps(s, s);
+    return _mm_cvtss_f32(s);
+}
+#endif
+
+/* x86 had no vector path here: F16 decode and prefill ran one half at a time, 3.1 prompt
+ * tokens/s for LFM3-Omni-2B F16 on a six-core i5-8500T. */
 static void nt_f16_rows(float *out, const uint8_t *W, const float *x,
                         int r0, int r1, int k) {
     const uint16_t *Wh = (const uint16_t *)W;
@@ -6160,6 +6172,11 @@ static void nt_f16_rows(float *out, const uint8_t *W, const float *x,
             a1 = vfmaq_f32(a1, vcvt_f32_f16(vget_high_f16(h)), vld1q_f32(x + j + 4));
         }
         acc = vaddvq_f32(vaddq_f32(a0, a1));
+#elif defined(__AVX2__) && defined(__FMA__) && defined(__F16C__)
+        __m256 a = _mm256_setzero_ps();
+        for (; j + 8 <= k; j += 8)
+            a = _mm256_fmadd_ps(_mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(r + j))), _mm256_loadu_ps(x + j), a);
+        acc = nt_f16_hsum8(a);
 #endif
         for (; j < k; j++) acc += nt_f16_to_f32(r[j]) * x[j];
         out[row] = acc;
@@ -6735,15 +6752,26 @@ static float nt_f32_to_f16_round(float f, uint16_t *out) {
     memcpy(out, &h, sizeof(h));
     return (float)h;
 #else
-    /* Round-to-nearest-even in software, matching ggml's fallback. */
+    /* Round-to-nearest-even in software, subnormal halves included, as the aarch64 hardware
+     * rounds. This used to flush every result below 2^-14 to zero, so a Q8_0 block whose
+     * largest value was under about 0.0078 (scale amax/127 subnormal) got scale 0 on x86 and
+     * decoded to zeros, while the same block quantized on arm64 kept its values. */
     uint32_t bits; memcpy(&bits, &f, 4);
     uint32_t sign = (bits >> 16) & 0x8000;
     int32_t  exp  = (int32_t)((bits >> 23) & 0xFF) - 127 + 15;
     uint32_t mant = bits & 0x7FFFFF;
     uint16_t h;
     if (exp >= 0x1F) h = (uint16_t)(sign | 0x7C00);
-    else if (exp <= 0) h = (uint16_t)sign;
-    else {
+    else if (exp <= 0) {
+        if (exp < -10) h = (uint16_t)sign;                /* below half the smallest subnormal */
+        else {
+            mant |= 0x800000;                              /* the implicit one */
+            uint32_t shift = (uint32_t)(14 - exp);         /* 14..24 */
+            uint32_t r = mant >> shift, rem = mant & ((1u << shift) - 1u), half = 1u << (shift - 1);
+            if (rem > half || (rem == half && (r & 1u))) r++;
+            h = (uint16_t)(sign | r);                      /* r == 0x400 is the smallest normal */
+        }
+    } else {
         h = (uint16_t)(sign | (exp << 10) | (mant >> 13));
         uint32_t rem = mant & 0x1FFF;
         if (rem > 0x1000 || (rem == 0x1000 && (h & 1))) h++;
@@ -9919,6 +9947,17 @@ static void nt_f16_rows_n(float *out, int m, const uint8_t *W, const float *X,
                 }
             }
             for (int j = 0; j < jn; j++) acc[j] = vaddvq_f32(vaddq_f32(a0[j], a1[j]));
+#elif defined(__AVX2__) && defined(__FMA__) && defined(__F16C__)
+            /* nt_f16_rows' x86 arithmetic per (row, vector): one eight-lane accumulator,
+             * the same fixed horizontal sum, so batched equals single bit for bit */
+            __m256 a[NT_QMM_TILE_F];
+            for (int j = 0; j < jn; j++) a[j] = _mm256_setzero_ps();
+            for (; i + 8 <= k; i += 8) {
+                __m256 w = _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(r + i)));
+                for (int j = 0; j < jn; j++)
+                    a[j] = _mm256_fmadd_ps(w, _mm256_loadu_ps(X + (long)(j0 + j) * k + i), a[j]);
+            }
+            for (int j = 0; j < jn; j++) acc[j] = nt_f16_hsum8(a[j]);
 #endif
             for (int j = 0; j < jn; j++) {
                 const float *xj = X + (long)(j0 + j) * k;
