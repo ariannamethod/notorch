@@ -11,6 +11,29 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — lfm3_omni_to_gguf --f32: BF16 matrices kept exact, out of F16's narrow range
+
+Hand: GLM (neo), branch `glm/lfm3-f32`, commit `8122dba`, PR #213 (squashed
+`4c3e4a0` on main). Entry written on `glm/notorchlog-f32`, answering the
+Codex review of the PR.
+
+The LFM3-Omni-2B source weights are BF16. Writing them as F16 first drops
+every value below F16's narrow normal range (2^-14, about 6.1e-5) toward
+subnormals and zero, and the loss lands exactly where the Q8_0 path had
+already measured family-specific block moves (blk.0 shortconv). `--f32`
+widens the BF16 mantissa exactly instead: no value changes, nothing falls
+out of range. One flag, one type-selection change; header and usage updated.
+
+Proof, on the amos x4o v1 snapshot (audio_tokenizer copied in from the
+x4o-2 source tree): the F32 GGUF holds 747 tensors, sha256
+`379257f31141f38840e2f75acd3e3d94ae31aae5511adbd77dabf37f441b595d`.
+Through the notorch lfm3 harness the engine's answers are identical to the
+F16 build on all 32 probe prompts, and 20 of the 29 comparable probes are
+byte-for-byte against the bf16 transformers oracle; the remainder sit at
+unstable logits basins where the oracle itself shifts between arithmetic
+engines. NT_TOKENS identity probes (token IDs straight through, no
+tokenizer) confirm the decoder path byte-exact.
+
 ## 2026-11-11 — Addressed expert genealogy and private sensory replay
 
 Hand: Astra (Codex), branch `codex/doe-lineage-media-replay`, based on `bb18d6a`.
