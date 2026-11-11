@@ -1,4 +1,4 @@
-# Qwen3.5 dense text on NoTorch
+# Qwen3.5 text and vision on NoTorch
 
 The `qwen35` family implements the dense Qwen3.5 text decoder in C: full gated
 GQA with Q/K normalization and partial NEOX RoPE, recurrent GatedDeltaNet,
@@ -17,8 +17,8 @@ unchanged from `model.safetensors`, or from the shards
 matrix weights to F32 for CPU arithmetic; embedding rows remain mapped. Vision
 and MTP tensors stay in the original checkpoint and are excluded from this text
 pack. A GGUF written by llama.cpp also says `qwen35`; it is refused by name
-(`no qwen35.source_layout_version`). Packed quantized GGUFs, MoE, Metal and the
-vision forward path are future work.
+(`no qwen35.source_layout_version`). Packed quantized text GGUFs, MoE and Metal remain separate integration work.
+The native source-layout vision path is described below.
 
 ```sh
 make qwen35_to_gguf qwen35_tokenize qwen35_eval notorch
@@ -176,3 +176,71 @@ twice the bytes of BF16.
 heads, two key heads and two full-attention layers, 1124 checks. Reading the
 wrong KV head, the wrong key head or every full layer at slot 0 fails 832, 1056
 and 408 of them; the first fixture passes all three.
+
+## Native still images, 2026-11-11
+
+```sh
+make qwen35_to_gguf qwen35_vision_probe test_qwen35_vision
+./qwen35_to_gguf --vision /path/to/snapshot vision.gguf
+./qwen35_vision_probe vision.gguf image.png 262144 image-check
+```
+
+The snapshot also needs its original `processor_config.json` (nested
+`image_processor`) or `preprocessor_config.json`. The converter checks the
+processor's patch, merge, temporal, normalization and resize settings. The
+supported profile uses RGB, mean/std 0.5, bicubic resize, temporal patch size
+2, spatial merge 2 and no DeepStack outputs. A still image duplicates its
+frame in the temporal patch. The source `[out,3,2,patch,patch]` projection is
+flattened to a matrix without changing any tensor bytes.
+
+`harness/qwen35_vision.h` exposes image preparation, encoding, placeholder
+validation and T/H/W positions. `nt_qwen35_forward_3d` uses physical positions
+for cache state and explicit rotary positions for full attention. Each image
+run is surrounded by the checkpoint's vision markers; the run contains exactly
+one placeholder per merged feature row. Text following the image advances
+from the maximum image coordinate. Decoder chunks retain these coordinates.
+The shared RGB loader supports PNG, JPEG, BMP and PNM; the image encoder uses
+PIL's 22-bit resampling coefficients. LFM3 keeps its existing torchvision
+coefficient precision. Image attention works in 128-row tiles.
+
+The generic embedding-row API continues to use ordinary 1D positions. Qwen
+image inference uses the explicit 3D API. DOE's persisted media format currently
+carries embedding rows and physical offsets; Qwen image replay awaits persisted
+T/H/W positions. Existing Qwen text experts keep their current interface.
+
+The probe emits prepared patches, merged features and geometry. Supplying
+`TEXT.gguf IDS.i32 CHUNK STEPS` additionally records full logits and greedy IDs;
+the IDs must already contain the expanded image placeholders. `IMAGE=-` selects
+ordinary text. `tests/check_qwen35_vision.py` creates the independent inputs and
+runs both paths, using Transformers **5.15.0**, PyTorch **2.9.1+cpu**, eager/F32
+and the original OneJev revision listed above:
+
+```sh
+python tests/check_qwen35_vision.py --snapshot /path/to/snapshot \
+  --weights model.gguf --vision vision.gguf --out /tmp/qwen35-vision-check
+```
+
+Measured on x86_64 Linux / AMD EPYC 7763, OpenBLAS via
+`libcasadi-tp-openblas`, `OPENBLAS_NUM_THREADS=1 NT_ATTN_THREADS=2`:
+
+| Check | Fixed gate | Observed maximum |
+| --- | --- | --- |
+| Prepared patches, five images | absolute 1e-6 | 0, identical bytes |
+| Merged features | absolute 2e-4; relative L2 2e-5 | 1.55449e-4; 1.53579e-5 |
+| Full logits, six runs × four vectors | absolute 2e-4; relative L2 2e-5 | 3.29018e-5; 2.72524e-6 |
+| Three greedy tokens per run | identical IDs | 18/18 |
+
+Inputs include solid red/blue, non-square high-frequency RGB, enlargement and
+downsampling. The decoder checks image substitution, text-only input and
+chunks 1/7/32. The tiny frozen C fixture additionally checks invalid inputs,
+output preservation, restart and disconnected rows/removed spatial positions.
+
+The first resize attempt differed by one RGB level because it used the
+existing torchvision coefficient precision. PIL coefficients remove the
+mismatch. Sequential F32 softmax accumulation then exceeded the feature gate
+on the downsampled image (3.85046e-4 absolute); a double accumulator for the
+normalizer brings it to 1.55449e-4. Gates stayed fixed throughout.
+
+The original OneJev vision pack is **201,195,904 bytes**, 153 tensors, SHA-256
+`6fe19a97634273c53ca7f8e7dc242ff92a016f11f3b2dc57eb60d78affc1a0be`.
+Re-conversion preserves both text and tokenizer hashes listed above.

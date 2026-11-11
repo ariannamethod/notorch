@@ -26,6 +26,9 @@ SHAPES = {
     "base": dict(heads=2, kv=1, key_heads=1, value_heads=2,
                  layers=["linear_attention"] * 3 + ["full_attention"],
                  summary="E8 F12 H2 KV1 HD4 RoPE2; K-head1 V-head2 KD4 VD4 conv4; 3 delta+1 full."),
+    "visual_text": dict(heads=4, kv=2, key_heads=2, value_heads=4,
+                 layers=["linear_attention", "full_attention"] * 2,
+                 summary="E8 F12 H4 KV2 HD8 RoPE8; explicit 3-axis positions and embedding rows."),
     "gqa": dict(heads=4, kv=2, key_heads=2, value_heads=4,
                 layers=["linear_attention", "full_attention"] * 2,
                 summary="E8 F12 H4 KV2 HD4 RoPE2; K-head2 V-head4 KD4 VD4 conv4; delta,full,delta,full."),
@@ -42,14 +45,15 @@ def main():
         sys.exit("usage: qwen35_fixture_gen.py {base|gqa} OUT.h")
     kind, out = sys.argv[1], sys.argv[2]
     s, p = SHAPES[kind], "" if kind == "base" else kind + "_"
-    E, F, V, HD, ctx = 8, 12, 40, 4, 128
+    E, F, V, HD, ctx = 8, 12, 40, (8 if kind=="visual_text" else 4), 128
     cfg = Qwen3_5TextConfig(
         vocab_size=V, hidden_size=E, intermediate_size=F, num_hidden_layers=len(s["layers"]),
         num_attention_heads=s["heads"], num_key_value_heads=s["kv"], head_dim=HD,
         layer_types=s["layers"], linear_num_key_heads=s["key_heads"],
         linear_num_value_heads=s["value_heads"], linear_key_head_dim=4, linear_value_head_dim=4,
         linear_conv_kernel_dim=4, max_position_embeddings=ctx, rms_norm_eps=1e-6,
-        rope_parameters={"rope_type": "default", "rope_theta": 10000.0, "partial_rotary_factor": 0.5},
+        rope_parameters={"rope_type": "default", "rope_theta": 10000.0, "partial_rotary_factor": (1.0 if kind=="visual_text" else 0.5),
+                         "mrope_section": [2,1,1] if kind=="visual_text" else [11,11,10]},
         tie_word_embeddings=True, hidden_act="silu", attention_bias=False)
     cfg._attn_implementation = "eager"
     torch.manual_seed(0)
@@ -74,7 +78,13 @@ def main():
     for layer in model.model.layers:
         layer.register_forward_hook(keep)
     with torch.no_grad():
-        logits = model(torch.tensor([TOKENS])).logits[0, -1]
+        if kind=="visual_text":
+            inputs=model.get_input_embeddings()(torch.tensor([TOKENS]))
+            image_rows=(torch.arange(32).float()-16).reshape(4,8)/32
+            inputs[0,1:5]=image_rows
+            positions=torch.tensor([[0,0,0],[1,1,1],[1,1,2],[1,2,1],[1,2,2],[3,3,3],[4,4,4]]).T[:,None,:]
+            logits=model(inputs_embeds=inputs,position_ids=positions).logits[0,-1]
+        else:logits = model(torch.tensor([TOKENS])).logits[0, -1]
 
     names = ["lm_head.weight"] + sorted(k for k in state if k != "lm_head.weight")
     full = [t == "full_attention" for t in s["layers"]]
@@ -117,7 +127,7 @@ def main():
     kv = [("source_layout_version", 1), ("block_count", len(full)), ("embedding_length", E),
           ("feed_forward_length", F), ("vocab_size", V), ("context_length", ctx),
           ("attention.head_count", s["heads"]), ("attention.head_count_kv", s["kv"]),
-          ("attention.head_dim", HD), ("rope.dimension_count", HD // 2),
+          ("attention.head_dim", HD), ("rope.dimension_count", HD if kind=="visual_text" else HD // 2),
           ("linear.key_heads", s["key_heads"]), ("linear.value_heads", s["value_heads"]),
           ("linear.key_dim", 4), ("linear.value_dim", 4), ("linear.conv_kernel", 4)]
     kv += [(f"layer.{l}.full_attention", int(f)) for l, f in enumerate(full)]

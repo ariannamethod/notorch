@@ -5,24 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_JPEG
-#define STBI_ONLY_PNG
-#define STBI_ONLY_BMP
-#define STBI_ONLY_PNM
-#include "stb_image.h"
-
-uint8_t *lfm3_image_load(const char *path, int *h, int *w) {
-    int c = 0;
-    uint8_t *px = stbi_load(path, w, h, &c, 3);
-    if (!px) { fprintf(stderr, "image: cannot decode %s\n", path); return NULL; }
-    /* stb's buffer goes back through free() like every other buffer here */
-    size_t n = (size_t)*w * *h * 3;
-    uint8_t *own = malloc(n);
-    if (own) memcpy(own, px, n);
-    stbi_image_free(px);
-    return own;
-}
+#include "harness/image.h"
+uint8_t *lfm3_image_load(const char *path, int *h, int *w) { return nt_image_load(path,h,w); }
 
 static uint32_t le32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }

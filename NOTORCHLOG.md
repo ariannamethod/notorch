@@ -11,6 +11,37 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — Qwen3.5 sees through its original encoder
+
+Hand: Codex, branch `codex/qwen35-vision`.
+
+Added native source-layout vision conversion and C inference: RGB/PIL resize,
+3D patch projection, learned position interpolation, axial RoPE, image attention,
+merger and explicit T/H/W decoder positions. The existing LFM3 RGB implementation
+is shared while retaining its torchvision resize precision. Attention scratch
+is bounded by 128 query rows. Text conversion and NULL-media decoding retain
+identical bytes/results. Qwen text DOE remains unchanged; its image replay
+requires the axes to be represented in the persisted media format.
+
+Proof: original OneJev `c02e305b430b56c1e82f9675ba8c293a22646891`, unchanged
+source SHA `cb4b7456703baa26a0cfacf177067200b50021df5a6ba2a2cd1e6f6c868f2244`,
+Transformers 5.15.0 / PyTorch 2.9.1+cpu eager/F32, AMD EPYC 7763, Linux/OpenBLAS.
+Five images have byte-identical prepared patches, feature max absolute error
+1.55449e-4, relative L2 1.53579e-5. Six decoder runs compare 24 full-vocabulary
+logit vectors (maximum 3.29018e-5 absolute / 2.72524e-6 relative L2), 18 identical
+greedy IDs, image substitution, chunks 1/7/32 and plain text. The native gate
+is `tests/check_qwen35_vision.py`; exact commands and bounds are in the existing
+[family documentation](docs/qwen35.md#native-still-images-2026-11-11).
+
+Failures retained: torchvision resize coefficients differed by one byte;
+PIL coefficients fix it. F32 softmax summation exceeded the fixed feature
+bound at 3.85046e-4; double normalizer accumulation passes at 1.55449e-4.
+The 89-check frozen vision/3D fixture detects deliberately disconnected image
+rows and removed spatial positions. Qwen text/GQA (2580), tokenizer (62),
+LFM3-Omni (23), private dream and persisted-media replay regressions pass.
+Generic `test_harness` rebuilt its two sides and reported its optional model
+comparison skipped because no Llama fixture file was supplied.
+
 ## 2026-11-11 — lfm3_omni_to_gguf --f32: BF16 matrices kept exact, out of F16's narrow range
 
 Hand: GLM (neo), branch `glm/lfm3-f32`, commit `8122dba`, PR #213 (squashed

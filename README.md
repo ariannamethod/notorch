@@ -191,13 +191,19 @@ with the machine and the model beside them.
 
 ---
 
-### Qwen3.5 dense text
+### Qwen3.5 text and vision
 
 Native full attention + GatedDeltaNet inference, source-layout BF16/F32 loading,
 C safetensors conversion and explicit ASCII chat tokenization. The CPU path
 uses F32 matrix weights and owns recurrent/convolution state. Fourteen original
 OneJev prompts pass every-layer and full-logit comparison with Transformers;
 1,214 frozen-fixture checks exercise chunking and failures.
+The original checkpoint's vision encoder is native C too: `qwen35_to_gguf
+--vision` retains its BF16/F32 tensors in a separate GGUF. The image API runs
+PIL-compatible preprocessing, the vision transformer and merger, and explicit
+three-axis positions through the text decoder. Five original OneJev images
+match the independent encoder; full-vocabulary logits and greedy continuations
+match through image prefill and decoding. Text conversion remains byte-identical.
 See [commands, format boundaries and measured parity](docs/qwen35.md).
 
 ### LFM3-Omni: eyes, ears and a voice

@@ -1,3 +1,4 @@
+#include "harness/image.h"
 /* lfm3_omni.c — see lfm3_omni.h. The arithmetic follows LiquidAI's remote code at
  * revision 21d75123 (modeling_lfm3_omni.py, modeling_lfm3_vl.py, modeling_lfm3.py,
  * modeling_liquid_codec.py, feature_extraction_lfm3_omni.py, image_processing_lfm3_vl.py),
@@ -666,81 +667,15 @@ int lfm3_omni_image_size(const lfm3_omni *o, int h, int w, int *out_h, int *out_
     return 0;
 }
 
-/* Antialiased bicubic (a = -0.5) on bytes, one axis at a time, width first — the native
- * uint8 kernel torch runs for torchvision's BICUBIC resize on every CPU (PIL's algorithm):
- * normalized double weights per output, then the whole table rounded to int16 at the
- * largest precision its biggest weight allows, then integer sums rounded and shifted back
- * to bytes after each pass. */
-static double cubic(double x) {
-    const double a = -0.5;
-    x = fabs(x);
-    if (x < 1) return ((a + 2) * x - (a + 3)) * x * x + 1;
-    if (x < 2) return (((x - 5) * x + 8) * x - 4) * a;
-    return 0;
-}
-static int resample_axis(const uint8_t *src, uint8_t *dst, int n_in, int n_out, int lines, int stride_in,
-                         int stride_line_in, int stride_out, int stride_line_out) {
-    double scale = (double)n_in / n_out, support = 2.0 * (scale >= 1 ? scale : 1), inv = scale >= 1 ? 1.0 / scale : 1.0;
-    int ksize = (int)ceil(support) * 2 + 1;
-    double *k = malloc((size_t)n_out * ksize * sizeof(double));
-    int16_t *k16 = malloc((size_t)n_out * ksize * sizeof(int16_t));
-    int *lo = malloc((size_t)n_out * sizeof(int)), *len = malloc((size_t)n_out * sizeof(int));
-    if (!k || !k16 || !lo || !len) { free(k); free(k16); free(lo); free(len); return -1; }
-    double wmax = 0;
-    for (int i = 0; i < n_out; i++) {
-        double center = scale * (i + 0.5);
-        long a = (long)(center - support + 0.5); if (a < 0) a = 0;
-        long b = (long)(center + support + 0.5); if (b > n_in) b = n_in;
-        lo[i] = (int)a; len[i] = (int)(b - a);
-        if (len[i] > ksize) len[i] = ksize;
-        double *w = k + (size_t)i * ksize, total = 0;
-        for (int j = 0; j < len[i]; j++) { w[j] = cubic((j + a - center + 0.5) * inv); total += w[j]; }
-        for (int j = 0; j < len[i]; j++) { if (total != 0) w[j] /= total; if (w[j] > wmax) wmax = w[j]; }
-    }
-    int prec = 0;
-    for (prec = 0; prec < 22; prec++)
-        if ((int)(0.5 + wmax * (1 << (prec + 1))) >= (1 << 15)) break;
-    for (int i = 0; i < n_out; i++)
-        for (int j = 0; j < len[i]; j++) {
-            double v = k[(size_t)i * ksize + j] * (1 << prec);
-            k16[(size_t)i * ksize + j] = (int16_t)(v < 0 ? v - 0.5 : v + 0.5);
-        }
-    for (int i = 0; i < n_out; i++) {
-        const int16_t *w = k16 + (size_t)i * ksize;
-        for (int l = 0; l < lines; l++) {
-            long long t = prec ? 1LL << (prec - 1) : 0;
-            const uint8_t *s = src + (size_t)l * stride_line_in + (size_t)lo[i] * stride_in;
-            for (int j = 0; j < len[i]; j++) t += (long long)s[(size_t)j * stride_in] * w[j];
-            long long v = t >> prec;
-            dst[(size_t)l * stride_line_out + (size_t)i * stride_out] = (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
-        }
-    }
-    free(k); free(k16); free(lo); free(len);
-    return 0;
-}
 
 int lfm3_omni_image_prepare(const lfm3_omni *o, const uint8_t *rgb, int h, int w, float **out, int *oh, int *ow) {
-    int H, W;
-    if (lfm3_omni_image_size(o, h, w, &H, &W)) return -1;
-    uint8_t *tmp = malloc((size_t)h * W * 3), *res = malloc((size_t)H * W * 3);
-    float *px = malloc((size_t)3 * H * W * sizeof(float));
-    int rc = -1;
-    if (!tmp || !res || !px) goto done;
-    /* horizontal pass first, then vertical, per channel (interleaved RGB bytes) */
-    for (int c = 0; c < 3; c++) {
-        if (W == w) { for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) tmp[((size_t)y * W + x) * 3 + c] = rgb[((size_t)y * w + x) * 3 + c]; }
-        else if (resample_axis(rgb + c, tmp + c, w, W, h, 3, w * 3, 3, W * 3)) goto done;
-        if (H == h) { for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) res[((size_t)y * W + x) * 3 + c] = tmp[((size_t)y * W + x) * 3 + c]; }
-        else if (resample_axis(tmp + c, res + c, h, H, W, W * 3, 3, W * 3, 3)) goto done;
-    }
-    for (int c = 0; c < 3; c++)
-        for (size_t i = 0; i < (size_t)H * W; i++)
-            px[(size_t)c * H * W + i] = (res[i * 3 + c] * (float)(1.0 / 255.0) - 0.5f) / 0.5f;
-    *out = px; px = NULL; *oh = H; *ow = W;
-    rc = 0;
-done:
-    free(tmp); free(res); free(px);
-    return rc;
+    int H, W; uint8_t *res=NULL;
+    if(lfm3_omni_image_size(o,h,w,&H,&W) || nt_image_resize(rgb,h,w,H,W,&res)) return -1;
+    float *px=malloc((size_t)3*H*W*sizeof(float));
+    if(!px) { free(res); return -1; }
+    for(int c=0;c<3;c++) for(size_t i=0;i<(size_t)H*W;i++)
+        px[(size_t)c*H*W+i]=(res[i*3+c]*(float)(1.0/255.0)-0.5f)/0.5f;
+    free(res); *out=px; *oh=H; *ow=W; return 0;
 }
 
 /* The 3x3 depthwise convolution of B*x over the patch grid, times C: grid rows are
