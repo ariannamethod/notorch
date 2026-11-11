@@ -166,8 +166,8 @@ static void resonate(nt_experts *p, const float *x, float bias[SEATS]) {
     }
 }
 
-int nt_experts_attend(void *user, int layer, int pos, int n, int width, float *rows) {
-    nt_experts *p = user;
+int nt_experts_attend_measured(nt_experts *p, int layer, int pos, int n, int width,
+                               float *rows, nt_replay_measurement *stats) {
     if (layer != p->layer) return NT_OK;
     if (width != p->dim || n < 1 || !rows || n > INT32_MAX - p->count ||
         (uint64_t)n > UINT64_MAX - p->elections) return NT_E_STATE;
@@ -182,6 +182,24 @@ int nt_experts_attend(void *user, int layer, int pos, int n, int width, float *r
         p->consensus = result[SEATS];
         p->elections++;
         p->count++;
+        if (stats) {
+            double sum = 0, maximum = 0, entropy = 0;
+            int positive = 0;
+            for (int e = 0; e < SEATS; e++) sum += result[e];
+            for (int e = 0; e < SEATS; e++) if (result[e] > 0) {
+                double g = result[e] / sum;
+                stats->gate_mass[e] += g;
+                entropy -= g * log(g);
+                if (g > maximum) maximum = g;
+                positive++;
+            }
+            stats->positions++;
+            stats->mean_max_gate += maximum;
+            stats->mean_entropy += entropy;
+            stats->mean_effective_seats += positive ? exp(entropy) : 0;
+            stats->mean_selected += result[SEATS+1];
+            stats->mean_nonzero += positive;
+        }
         if (p->trace) {
             flockfile(p->trace);
             fprintf(p->trace, "doe %svote pos=%d k=%.0f consensus=%.9g gates=",
@@ -196,6 +214,10 @@ int nt_experts_attend(void *user, int layer, int pos, int n, int width, float *r
         memcpy(x, p->injected, (size_t)width * sizeof(float));
     }
     return NT_OK;
+}
+
+int nt_experts_attend(void *user, int layer, int pos, int n, int width, float *rows) {
+    return nt_experts_attend_measured(user, layer, pos, n, width, rows, NULL);
 }
 
 int nt_experts_observe(void *user, int layer, int pos, int n, int width, float *rows) {

@@ -263,7 +263,7 @@ test: test_spa_runtime
 # immutable PEN7 interface is also public in libnotorch, which reuses the same
 # PEN7/runtime objects. General harness consumers link both, harness first.
 HARNESS_LIB_OBJ = harness/image.o harness/arch_qwen35_vision.o \
-                  harness/tokenizer.o harness/dream.o harness/replay_episode.o harness/spore_frame.o harness/experts.o harness/expert_lineage.o harness/expert_recall.o \
+                  harness/tokenizer.o harness/dream.o harness/replay_episode.o harness/replay_measure.o harness/spore_frame.o harness/experts.o harness/expert_lineage.o harness/expert_recall.o harness/expert_vote.o \
                   harness/archs.o harness/runtime.o harness/arch_llama.o harness/arch_qwen35.o \
                   harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_embeddinggemma2.o harness/arch_qwen3embedding.o harness/arch_olmoe.o harness/arch_mamba.o \
                   harness/arch_resonance.o harness/arch_janus.o harness/arch_penelope.o harness/arch_lfm3.o examples/bpe.o
@@ -487,7 +487,7 @@ test: check_lfm3_doe
 # One binary, one command: ./notorch model.gguf "prompt". Architectures are a
 # table in harness/main.c; adding a family adds a file, not a branch.
 
-HARNESS_SRC = harness/tokenizer.c harness/dream.c harness/replay_episode.c harness/spore_frame.c harness/experts.c harness/expert_lineage.c harness/expert_recall.c sha256.c harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_qwen35.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c harness/arch_penelope.c harness/arch_lfm3.c examples/bpe.c gguf.c notorch.c
+HARNESS_SRC = harness/tokenizer.c harness/dream.c harness/replay_episode.c harness/replay_measure.c harness/spore_frame.c harness/experts.c harness/expert_lineage.c harness/expert_recall.c harness/expert_vote.c sha256.c harness/main.c harness/archs.c harness/runtime.c harness/arch_llama.c harness/arch_qwen35.c harness/arch_gemma3.c harness/arch_gemma4.c harness/arch_olmoe.c harness/arch_mamba.c harness/arch_resonance.c harness/arch_janus.c harness/arch_penelope.c harness/arch_lfm3.c examples/bpe.c gguf.c notorch.c
 
 # `harness` is phony because a directory of that name sits right there, and
 # make would otherwise call it up to date and build nothing.
@@ -678,6 +678,22 @@ check_text_replay: notorch libnotorch_harness.a libnotorch.a test_portable_spore
 	sh tests/test_text_replay.sh
 
 test: check_expert_recall check_text_replay
+
+test_expert_vote: tests/test_expert_vote.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
+
+test_replay_measure: tests/test_replay_measure.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
+
+.PHONY: check_expert_vote check_replay_measure
+check_expert_vote: notorch test_expert_vote test_portable_spore tests/test_expert_vote.sh tests/test_expert_vote_cli.sh
+	sh tests/test_expert_vote.sh
+	sh tests/test_expert_vote_cli.sh
+
+check_replay_measure: test_replay_measure test_portable_spore test_lfm3 tests/test_replay_measure.sh
+	sh tests/test_replay_measure.sh
+
+test: check_expert_vote check_replay_measure
 
 test_parliament_values: tests/test_parliament_values.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_parliament_values.c notorch.c -lm $(BLAS_LIBS)
@@ -1330,7 +1346,7 @@ clean:
 	rm -f test_numerical_values
 	rm -f test_sampling
 	rm -f qwen35_vision_probe test_qwen35_vision
-	rm -f doe_experience doe_probe test_expert_recall test_media_replay test_expert_lineage test_media_experts test_expert_dream test_portable_spore test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
+	rm -f doe_experience doe_probe test_expert_vote test_replay_measure test_expert_recall test_media_replay test_expert_lineage test_media_experts test_expert_dream test_portable_spore test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o

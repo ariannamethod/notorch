@@ -556,14 +556,121 @@ participation count, averaged per position as `exp(−Σ p log p)`, is
 across the parent probes, subsequent probes, waking turns and private sleep.
 Its mean waking mass is about 0.999707; the requested top-k and the number of
 positive gates are recorded separately. The current lifecycle measures
-participation by positive-gate occurrences. These readouts make receiving-body
-vote calibration and mass-aware lifecycle comparisons concrete next tuning
-experiments, alongside selection of episodes for sleep.
+participation by positive-gate occurrences. The implemented vote-calibration
+and episode-selection mechanisms below build on these readouts. Comparison
+with a lifecycle driven by accumulated gate mass remains a separate experiment.
 Copying only that expert's last-night A/B leaves maximum output residuals
 of 1.05–1.43e-5 across the four dream/replay probe rows; copying all living
 experts' A/B gives exact equality. The archive retains both interventions.
 [Vote mass and effective participation](../experiments/doe_spores/long-gates.tsv) ·
 [Probe trajectory](../experiments/doe_spores/long-gate-series.tsv)
+
+### Vote scale belongs to the receiving body
+
+The transferable frame records directions. The raw residuals that supplied
+those directions also carry a body's numerical scale. The receiving Gemma
+has a centered inter-expert score RMS of 45.392672 on the 32 anchor inputs;
+its turn-36 and turn-164 vote tensors are byte-identical. On those anchors
+and eight fixed held-out texts, the same slot wins every raw-dot comparison.
+The score's scale and its ordering are therefore separately observable.
+
+The Harness exposes an explicit operation on a completed population. For
+anchor residual \(x_k\), living expert set \(L\), and vote row \(v_e\), it computes
+
+\[
+z_{ke}=v_e^\top x_k,\qquad
+\bar z_k=\frac{1}{|L|}\sum_{e\in L}z_{ke},\qquad
+s^2=\frac{1}{32|L|}\sum_k\sum_{e\in L}(z_{ke}-\bar z_k)^2.
+\]
+
+`nt_experts_calibrate_votes` replaces every stored vote row with
+\(v_e'=v_e\,\tau/s\) for an explicitly supplied positive target \(\tau\).
+The inputs are the final raw pre-FFN residuals of the literal anchors, before
+QR. One common scale preserves raw-dot preferences while changing their
+softmax concentration and their contribution to the consensus calculation.
+The resonance bias retains its existing units. The operation stages all six
+rows, including vacant seats, and commits only finite, bounded values. The
+report contains both the original RMS and the measured RMS after F32 storage.
+An already matching scale within eight F32 epsilons is an exact no-op.
+
+This operation persists through the vote tensors in spore schemas 5/6; it
+introduces no hidden runtime setting. A/B, genealogy, lifecycle, RNG, history
+and consensus are unchanged. On returning to a body, the explicit order is
+frame transfer, optional local body recall, then optional vote calibration.
+Default imports and ordinary elections keep their existing behavior.
+
+On the late Gemma population, target one changes mean leader mass on the two
+fixed probes to 0.721146 and 0.699486; effective participation becomes 1.746674
+and 1.781973. The saved consensus starts at 0.999999523 and keeps k at two on
+these short probes. Calibrating the earlier parent gives masses 0.628539 and
+0.587928 with effective participation 2.478641 and 2.578196. The measurements
+also retain target 0.5/2, unit-vote-norm and cosine controls. In the present
+lifecycle, births inherit and perturb A/B; the slot's vote row persists.
+[Native scale audit](../experiments/doe_spores/vote_scale_audit.c) ·
+[Raw scores](../experiments/doe_spores/vote-scale-raw.tsv) ·
+[Applied gates](../experiments/doe_spores/vote-scale-gates.tsv)
+
+### Choosing an addressed experience for sleep
+
+A saved episode can be measured against the current parliament before it is
+chosen for consolidation. `nt_experts_measure_replay` loads its complete
+assembled prompt, including sparse sensory rows, into fresh private decoder
+state. It copies the current consensus and resonance history, owns its own
+scratch and collects the gates actually applied by the ordinary election
+kernel. Each candidate starts from the same completed living population.
+The read generates no continuation and makes no learning or clock update.
+Its result names the episode's content address and the living birth addresses.
+
+For each input residual x, the reader also computes every living expert's
+ungated proposal \(u_e=A_e(B_ex)\). With \(\bar u\) their unweighted mean,
+
+\[
+R(x)=\frac{1}{|L|\|x\|^2}\sum_{e\in L}\|u_e\|^2,\qquad
+D(x)=\frac{1}{|L|\|x\|^2}\sum_{e\in L}\|u_e-\bar u\|^2.
+\]
+
+Both values are zero for zero input and are averaged over all prompt
+positions. This normalizes input scale and episode length; the factor 0.1
+used for injection and vitality weights are excluded. Gate mass describes
+current participation, while D describes differences between the available
+expert proposals, including proposals receiving zero gate mass.
+
+The AML experiment maintains four immutable episode addresses and compares
+fixed early replay, rotation, and selection by descending D, then R. Scores
+used for selection are the recorded F32 AML values; full native doubles are
+retained alongside them. Equal scores use the lexicographic content address.
+Rotation and disagreement selection exclude an address until all four have
+been visited. The following round measures the current factors again.
+
+This policy lives outside the serialized parliament. Each night publishes
+its candidate readings, chosen address, previous/next round histories and
+completed spores in a single receipt linked to its predecessor. Resume
+verifies every ancestor's artifacts and recomputes every recorded choice
+before creating the continuation directory. The selected episode then enters
+the existing staged replay operation, synchronously or through its sole-owner
+worker. The same reader accepts host-bound text, image and audio embeddings.
+[C API](../harness/experts.h) ·
+[AML selection protocol](../experiments/doe_spores/vote_sleep.aml) ·
+[Controlled continuations](../experiments/doe_spores/vote-sleep.md)
+
+The six controlled histories continue the same Gemma turn-164 population for
+64 additional encounters. They reach turn 228 with 44 historical addresses
+and six living experts. The calibrated fixed and disagreement histories both
+end with the same lighthouse replay, after different earlier sleep schedules;
+their final full-logit rows retain maximum differences 0.198219/0.216997.
+Copying the final disagreement night's living A/B by identity into its
+pre-sleep state reproduces all 524,288 probe logits exactly. Interrupted
+worker continuation preserves all saved choices, 420 compared spore pairs
+and 126 reading checkpoints. On a fresh final lighthouse read, calibration
+changes mean leader mass from 0.999877 to 0.729265 at the same k=2.
+
+The receiving Qwen body supplies a different calibration condition: after
+transfer and local recall its raw anchor spread is 0.025481375. Target one
+increases its stored vote scale 39.244350375 times. Effective participation
+on its saved episode falls from 3.826892 to 1.905977. An explicit target and
+a report of the measured scale therefore remain part of the operation's
+contract across bodies. Local recall followed by calibration, ordinary
+restart and serial/worker replay retain their exact state boundaries.
 
 ### Several bodies, one continuing parliament
 

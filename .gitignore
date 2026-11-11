@@ -89,6 +89,8 @@ tests/bench_*
 /test_media_replay
 /test_expert_lineage
 /test_expert_recall
+/test_expert_vote
+/test_replay_measure
 /doe_experience
 /expert_fixtures
 !tests/test_expert_spores.py
