@@ -11,6 +11,16 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — Widen recall-test offsets before multiplication
+
+CodeQL review of PR #216 identified an `int` rank-by-dimension multiplication
+inside a `size_t` B-factor index in `tests/test_expert_recall.c`. The fixture
+writer and the independent factor oracle now promote each offset before
+multiplication, including the last-vector rollback offset. The native recall
+implementation and the recorded experiment sources are unchanged.
+`make check_expert_recall BLAS_FLAGS= BLAS_LIBS= BLAS_NAME=native` passes all
+568 checks with zero failures after the index correction.
+
 ## 2026-11-11 — Long expert histories, explicit body recall and a shared parliament
 
 Hand: Astra (Codex), branch `codex/doe-long-continuity`, based on `9389835`.

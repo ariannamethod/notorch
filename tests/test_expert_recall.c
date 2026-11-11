@@ -136,10 +136,10 @@ static void coordinate_oracle(const nt_experts *after, const snapshot *before,
         for (int e=0; e<SEATS; e++) {
             int from=matched_slot(after,local,e);
             for (int r=0; r<rank; r++) for (int x=0; x<d; x++) {
-                size_t dst=(size_t)e*d*rank + (field==0 ? x*rank+r : r*d+x);
+                size_t dst=(size_t)e*d*rank + (field==0 ? (size_t)x*rank+r : (size_t)r*d+x);
                 float expected=old[field][dst];
                 if (from>=0 && x>=NT_SPORE_ANCHORS) {
-                    size_t src=(size_t)from*d*rank + (field==0 ? x*rank+r : r*d+x);
+                    size_t src=(size_t)from*d*rank + (field==0 ? (size_t)x*rank+r : (size_t)r*d+x);
                     expected=saved[field][src];
                 }
                 if (actual[field][dst]!=expected) equal=0;
@@ -177,7 +177,7 @@ static void prepare_history(body *home, body *away) {
         local->vote[(size_t)e*local->dim+x]=0.03f*(e+1)+0.0001f*x;
         for (int r=0; r<RANK; r++) {
             local->a[((size_t)e*local->dim+x)*RANK+r]=0.02f*(e+1)+0.001f*r+0.0001f*x;
-            local->b[(size_t)e*local->dim*RANK+r*local->dim+x]=-0.025f*(e+1)-0.001f*r-0.0001f*x;
+            local->b[(size_t)e*local->dim*RANK+(size_t)r*local->dim+x]=-0.025f*(e+1)-0.001f*r-0.0001f*x;
         }
     }
     assert(!nt_experts_save(local,"recall-local-exact") &&
@@ -306,7 +306,7 @@ static void noops_and_refusals(body *home, body *away, body *aligned) {
     incoming->turns=old_turns;
     CHECK(metadata_same(incoming,&before) && weights_same(incoming,&before),"all refusals preserve the incoming state");
     /* Fail only after three earlier matching experts were staged. */
-    size_t at=(size_t)(FOUNDERS-1)*local->dim*RANK+(RANK-1)*local->dim+local->dim-1;
+    size_t at=(size_t)(FOUNDERS-1)*local->dim*RANK+(size_t)(RANK-1)*local->dim+local->dim-1;
     float old=local->b[at]; local->b[at]=NAN;
     CHECK(nt_experts_recall_body(incoming,local,&matched)==NT_E_STATE && matched==0 &&
           metadata_same(incoming,&before) && weights_same(incoming,&before),"late numerical rejection rolls back every staged expert");
