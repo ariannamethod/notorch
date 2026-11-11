@@ -36,6 +36,8 @@ is `tests/check_qwen35_vision.py`; exact commands and bounds are in the existing
 Failures retained: torchvision resize coefficients differed by one byte;
 PIL coefficients fix it. F32 softmax summation exceeded the fixed feature
 bound at 3.85046e-4; double normalizer accumulation passes at 1.55449e-4.
+CodeQL also requested promotion before index multiplication; Q/K/V offsets
+now use size_t operands throughout, preserving the measured feature bytes.
 The 89-check frozen vision/3D fixture detects deliberately disconnected image
 rows and removed spatial positions. Qwen text/GQA (2580), tokenizer (62),
 LFM3-Omni (23), private dream and persisted-media replay regressions pass.

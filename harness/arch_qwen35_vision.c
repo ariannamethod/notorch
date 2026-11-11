@@ -165,9 +165,10 @@ int nt_qwen35_vision_encode(const nt_qwen35_vision *v,const nt_qwen35_image *im,
         const block *b=&v->blocks[l];norm(xn,x,b->nw[0],b->nb[0],N,D);affine(qkv,xn,&b->qkv,N);
         for(int h=0;h<v->info.heads;h++) {
             for(int t=0;t<N;t++) {
-                memcpy(q+(size_t)t*HD,qkv+(size_t)t*3*D+h*HD,HD*sizeof(float));
-                memcpy(k+(size_t)t*HD,qkv+(size_t)t*3*D+D+h*HD,HD*sizeof(float));
-                for(int j=0;j<HD;j++)vt[(size_t)j*N+t]=qkv[(size_t)t*3*D+2*D+h*HD+j];
+                size_t offset=(size_t)t*3*(size_t)D+(size_t)h*(size_t)HD;
+                memcpy(q+(size_t)t*HD,qkv+offset,(size_t)HD*sizeof(float));
+                memcpy(k+(size_t)t*HD,qkv+offset+(size_t)D,(size_t)HD*sizeof(float));
+                for(int j=0;j<HD;j++)vt[(size_t)j*N+t]=qkv[offset+2*(size_t)D+(size_t)j];
                 int row=t/(4*(im->grid_w/2))*2+(t/2)%2,col=(t/4)%(im->grid_w/2)*2+t%2;
                 for(int j=0;j<HD/2;j++) {
                     float inv=1.0f/powf(v->theta,(float)(2*(j%(HD/4)))/(HD/2));
