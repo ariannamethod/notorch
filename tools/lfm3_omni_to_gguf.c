@@ -1,6 +1,6 @@
 /* lfm3_omni_to_gguf — LiquidAI's LFM3-Omni-2B checkpoint, every tower, into one GGUF.
  *
- *   lfm3_omni_to_gguf [--q8_0] SNAPSHOT OUT.gguf
+ *   lfm3_omni_to_gguf [--q8_0|--f32] SNAPSHOT OUT.gguf
  *
  * SNAPSHOT is the official repository as published: config.json, model.safetensors,
  * tokenizer.json, processor_config.json, generation_config.json and audio_tokenizer/
@@ -10,7 +10,8 @@
  * the codec decoder, under the names the official mmproj GGUF gives them, so a tensor here
  * and the same tensor there can be compared byte for byte. Matrices are F16 (BF16 widened
  * to F32 exactly, then rounded to nearest even); norms, biases, convolution kernels and the
- * tables computed here are F32. Two tensors the official files do not carry are added: the
+ * tables computed here are F32. --f32 keeps the matrices in F32 instead: the BF16 values
+ * widen exactly, and none of them falls below F16's narrower normal range. Two tensors the official files do not carry are added: the
  * Slaney mel bank the feature extractor builds at run time, and the codec's synthesis
  * window, which the codec checkpoint stores.
  *
@@ -221,6 +222,7 @@ static int mel_bank(double *out, int n_mel, int n_freq, double sr) {
  * values. Going through F16 first would round the BF16 values below F16's normal range and
  * move some blocks (measured on blk.0.shortconv.in_proj and v.blk.13.conv2d_in_proj). */
 static int g_q8;
+static int g_f32;   /* --f32: write the matrices as F32, not F16 */
 static int q8_0(const out_t *o) { return g_q8 && o->f16 && o->nd >= 2 && o->shape[0] % 32 == 0; }
 
 static int emit(gguf_writer *w, const out_t *o) {
@@ -388,7 +390,8 @@ static st_file M, C;
 
 int main(int argc, char **argv) {
     if (argc == 4 && !strcmp(argv[1], "--q8_0")) { g_q8 = 1; argv++; argc--; }
-    if (argc != 3) { fprintf(stderr, "usage: %s [--q8_0] SNAPSHOT OUT.gguf\n", argv[0]); return 2; }
+    if (argc == 4 && !strcmp(argv[1], "--f32")) { g_f32 = 1; argv++; argc--; }
+    if (argc != 3) { fprintf(stderr, "usage: %s [--q8_0|--f32] SNAPSHOT OUT.gguf\n", argv[0]); return 2; }
     const char *dir = argv[1], *out = argv[2];
     char path[4096], partial[4200];
     struct stat st;
@@ -786,7 +789,7 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < nplan; i++)
         gguf_write_tensor_decl(w, plan[i].dst, (uint32_t)plan[i].nd, plan[i].shape,
-                               q8_0(&plan[i]) ? GGUF_TYPE_Q8_0 : plan[i].f16 ? GGUF_TYPE_F16 : GGUF_TYPE_F32);
+                               q8_0(&plan[i]) ? GGUF_TYPE_Q8_0 : (plan[i].f16 && !g_f32) ? GGUF_TYPE_F16 : GGUF_TYPE_F32);
     for (int i = 0; i < nplan; i++)
         if (emit(w, &plan[i])) { gguf_write_abort(w); return fail("write failed at", plan[i].dst); }
     if (gguf_write_close(w)) { unlink(partial); return fail("close failed", partial); }
