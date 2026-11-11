@@ -1,0 +1,233 @@
+# Continue a saved parliament for 12 mixed visual/audio turns, replay each
+# episode privately, and cross Q8 -> F16 -> Q8. Native C owns all inference.
+# stdin: omni, notorch, doe_probe, Q8, F16, image-dir, WAV-dir, parent-spore,
+# parent completed-turn count, fresh output-dir. Paths are one per line.
+def cat(a, b):
+    return text_concat(a, b)
+
+def col(a, b):
+    return cat(cat(a, '\t'), b)
+
+def decimal(text):
+    value = 0
+    i = 0
+    assert(text_len(text) > 0, 'completed-turn count')
+    while i < text_len(text):
+        digit = text_codepoint(text, i)-48
+        assert(digit >= 0 and digit <= 9, 'decimal completed-turn count')
+        value = value*10+digit
+        i = i+1
+    return value
+
+def path(name):
+    return cat(cat(outdir, '/'), name)
+
+def spore(name):
+    return path(cat(name, '.gguf'))
+
+def lines(name, text):
+    rest = text
+    end = text_find(rest, '\n')
+    while end >= 0:
+        assert(file_append_line(path(name), text_slice(rest, 0, end)) == 1, name)
+        rest = text_slice(rest, end+1, text_len(rest))
+        end = text_find(rest, '\n')
+    if text_len(rest) > 0:
+        assert(file_append_line(path(name), rest) == 1, name)
+
+def command(binary):
+    a = list_new()
+    list_push(a, binary)
+    return a
+
+def run(a, name):
+    result = process_run(a, env, 600)
+    lines(cat(name, '.trace'), record_get(result, 'stderr'))
+    lines(cat(name, '.txt'), record_get(result, 'stdout'))
+    if record_get(result, 'status') != 0:
+        PRINT record_get(result, 'stderr')
+    assert(record_get(result, 'status') == 0, name)
+    return result
+
+def wake(host, parent, name, worker, capture, kind, object):
+    a = command(omni)
+    list_push(a, '--mode')
+    list_push(a, 'text')
+    list_push(a, '--experts')
+    list_push(a, '--learn-experts')
+    list_push(a, '--expert-trace')
+    if worker:
+        list_push(a, '--async-consolidation')
+    list_push(a, '--spore-in')
+    list_push(a, parent)
+    list_push(a, '--spore-out')
+    list_push(a, spore(name))
+    list_push(a, '--portable-spore')
+    if capture:
+        list_push(a, '--replay-out')
+        list_push(a, spore(cat(name, '-episode')))
+    prompt = 'Which color is on the left? Reply with one color.'
+    if text_equal(kind, 'image'):
+        list_push(a, '--image')
+        list_push(a, cat(cat(images, '/left-'), cat(object, '.ppm')))
+    else:
+        list_push(a, '--system')
+        list_push(a, 'Perform ASR in English.')
+        list_push(a, '--audio')
+        list_push(a, cat(cat(audio, '/spoken-'), cat(object, '.wav')))
+        prompt = ''
+    list_push(a, '-n')
+    list_push(a, '16')
+    list_push(a, host)
+    list_push(a, prompt)
+    r = run(a, name)
+    trace = record_get(r, 'stderr')
+    assert(text_find(trace, cat(cat('doe turn=', text_fixed(initial_turns+turn, 0)), ' elections=')) >= 0, 'waking clock')
+    return record_get(r, 'stdout')
+
+def replay(host, parent, episode, name, worker):
+    a = command(omni)
+    list_push(a, '--mode')
+    list_push(a, 'text')
+    list_push(a, '--experts')
+    list_push(a, '--learn-experts')
+    list_push(a, '--expert-trace')
+    if worker:
+        list_push(a, '--async-consolidation')
+    list_push(a, '--replay-only')
+    list_push(a, episode)
+    list_push(a, '--spore-in')
+    list_push(a, parent)
+    list_push(a, '--spore-out')
+    list_push(a, spore(name))
+    list_push(a, '--portable-spore')
+    list_push(a, '-n')
+    list_push(a, '12')
+    list_push(a, host)
+    r = run(a, name)
+    assert(text_len(record_get(r, 'stdout')) == 0, 'private replay stdout')
+    assert(text_find(record_get(r, 'stderr'), 'doe replay-end ') >= 0, 'complete replay')
+
+def score(host, state, name, kind):
+    a = command(omni)
+    list_push(a, '--mode')
+    list_push(a, 'text')
+    list_push(a, '--experts')
+    list_push(a, '--spore-in')
+    list_push(a, state)
+    list_push(a, '--logits-out')
+    list_push(a, path(cat(name, '.f32')))
+    list_push(a, '-n')
+    list_push(a, '1')
+    list_push(a, host)
+    left = 'Red'
+    right = 'Blue'
+    prompt = 'Earlier you saw a picture. Which color was on the left? Reply with one color.'
+    if text_equal(kind, 'object'):
+        left = 'key'
+        right = 'bell'
+        prompt = 'Which object did the lighthouse keeper carry? Reply with one noun.'
+    list_push(a, prompt)
+    run(a, name)
+    a = command(helper)
+    list_push(a, 'pack-logits')
+    list_push(a, host)
+    list_push(a, path(cat(name, '.f32')))
+    list_push(a, path(cat(name, '.amlck')))
+    list_push(a, left)
+    list_push(a, right)
+    run(a, cat(name, '-pack'))
+    data = checkpoint_load(path(cat(name, '.amlck')))
+    lg = record_get(data, 'probe0')
+    li = record_get(data, 'left_id')
+    ri = record_get(data, 'right_id')
+    probs = softmax(lg)
+    row = col(col(col(name, kind), text_fixed(li, 0)), text_fixed(ri, 0))
+    row = col(row, text_fixed(lg[li]-lg[ri], 9))
+    lines('scores.tsv', col(col(row, text_fixed(probs[li], 9)), text_fixed(probs[ri], 9)))
+
+def measure(host, state, name):
+    score(host, state, cat(name, '-color'), 'color')
+    score(host, state, cat(name, '-object'), 'object')
+    a = command(helper)
+    list_push(a, 'lineage')
+    list_push(a, host)
+    list_push(a, state)
+    r = run(a, cat(name, '-lineage'))
+    lines(cat(name, '-lineage.tsv'), record_get(r, 'stdout'))
+
+omni = list_get(read_line(), 0)
+cli = list_get(read_line(), 0)
+helper = list_get(read_line(), 0)
+q8 = list_get(read_line(), 0)
+f16 = list_get(read_line(), 0)
+images = list_get(read_line(), 0)
+audio = list_get(read_line(), 0)
+parent = list_get(read_line(), 0)
+initial_turns = decimal(list_get(read_line(), 0))
+outdir = list_get(read_line(), 0)
+assert(dir_claim(outdir) == 1, 'choose a fresh output directory')
+env = record_new()
+record_set(env, 'LC_ALL', 'C')
+record_set(env, 'NT_ATTN_THREADS', '1')
+record_set(env, 'NT_CHAT', '||')
+record_set(env, 'NT_TOKENS', '')
+record_set(env, 'NT_CTX', '128')
+lines('weights.tsv', col('q8', file_hash_sha256(q8)))
+lines('weights.tsv', col('f16', file_hash_sha256(f16)))
+lines('weights.tsv', col('parent', file_hash_sha256(parent)))
+lines('scores.tsv', 'state\tprobe\tleft_id\tright_id\tlog_odds_left_over_right\tp_left\tp_right')
+lines('generations.tsv', 'turn\tbody\tmodality\tcontent\tspore_sha256\tepisode_file_sha256')
+serial = parent
+worker = parent
+control = parent
+turn = 1
+phase = 0
+while turn <= 12:
+    host = q8
+    label = 'q8'
+    if turn > 4 and turn <= 8:
+        host = f16
+        label = 'f16'
+    kind = 'image'
+    object = 'red'
+    if phase == 1:
+        kind = 'audio'
+        object = 'key'
+    if phase == 2:
+        object = 'blue'
+    if phase == 3:
+        kind = 'audio'
+        object = 'bell'
+    num = text_fixed(turn, 0)
+    sa = cat('sync-awake-', num)
+    wa = cat('worker-awake-', num)
+    ca = cat('control-', num)
+    sr = cat('sync-replay-', num)
+    wr = cat('worker-replay-', num)
+    a = wake(host, serial, sa, 0, 1, kind, object)
+    b = wake(host, worker, wa, 1, 1, kind, object)
+    wake(host, control, ca, 0, 0, kind, object)
+    assert(text_equal(a, b), 'same waking answer')
+    assert(text_equal(file_hash_sha256(spore(sa)), file_hash_sha256(spore(wa))), 'same waking spore')
+    ep = spore(cat(sa, '-episode'))
+    assert(text_equal(file_hash_sha256(ep), file_hash_sha256(spore(cat(wa, '-episode')))), 'same captured episode')
+    replay(host, spore(sa), ep, sr, 0)
+    replay(host, spore(wa), ep, wr, 1)
+    digest = file_hash_sha256(spore(sr))
+    assert(text_equal(digest, file_hash_sha256(spore(wr))), 'same replay spore')
+    row = col(col(col(col(text_fixed(initial_turns+turn, 0), label), kind), object), digest)
+    lines('generations.tsv', col(row, file_hash_sha256(ep)))
+    if phase == 3:
+        measure(host, spore(sa), cat('before-', num))
+        measure(host, spore(sr), cat('after-', num))
+        measure(host, spore(ca), cat('control-', num))
+    serial = spore(sr)
+    worker = spore(wr)
+    control = spore(ca)
+    PRINT cat('OMNI_REPLAY_GENERATION_OK ', text_fixed(initial_turns+turn, 0))
+    turn = turn+1
+    phase = phase+1
+    if phase == 4:
+        phase = 0
+PRINT 'OMNI_REPLAY_EXPERIENCE_OK'

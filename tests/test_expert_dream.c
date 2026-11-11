@@ -75,7 +75,7 @@ static void check_episode(const char *parent, const char *child, const char *tra
         }
     }
     assert(!fclose(f) && choices == 6 && votes == 7 && cue >= 0 && cue < AXES);
-    assert(counter(d, "doe.version") == 4 && counter(d, "doe.dream.cycles") == 1);
+    assert(counter(d, "doe.version") == 6 && counter(d, "doe.dream.cycles") == 1);
     assert(counter(d, "doe.dream.seen") == (UINT32_C(1) << cue));
     assert(counter(d, "doe.dream.choices") == (unsigned)choices &&
            counter(d, "doe.dream.elections") == (unsigned)votes);
@@ -83,6 +83,16 @@ static void check_episode(const char *parent, const char *child, const char *tra
     assert(counter(p, "doe.elections") == counter(d, "doe.elections"));
     assert(gguf_get_kv(p, "doe.consensus")->val.f32 == gguf_get_kv(d, "doe.consensus")->val.f32);
     assert(counter(p, "doe.rng") != counter(d, "doe.rng"));
+    int np=0,nd=0;
+    char **lp=gguf_read_str_array(parent,"doe.lineage.entries",&np);
+    char **ld=gguf_read_str_array(child,"doe.lineage.entries",&nd);
+    assert(lp && ld && np==nd);
+    for(int i=0;i<np;i++) { assert(!strcmp(lp[i],ld[i])); free(lp[i]); free(ld[i]); }
+    free(lp); free(ld);
+    int32_t *sp=gguf_read_i32_array(parent,"doe.lineage.seats",&np);
+    int32_t *sd=gguf_read_i32_array(child,"doe.lineage.seats",&nd);
+    assert(sp && sd && np==SEATS && nd==SEATS && !memcmp(sp,sd,SEATS*sizeof(*sp)));
+    free(sp); free(sd);
     int width = (int)counter(p, "doe.width");
     expect_cue(p, width, cue, seat);
     for (uint64_t t = 0; t < p->n_tensors; t++) {

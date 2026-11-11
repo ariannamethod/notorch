@@ -11,11 +11,12 @@
 #include <unistd.h>
 
 static int transplant(gguf_file *host, const char *recipient, const char *donor,
-                      const char *out, int n, char **slots) {
+                      const char *out, int n, char **slots, int by_id) {
     nt_experts *dst = nt_experts_open(host, recipient, NULL);
     nt_experts *src = nt_experts_open(host, donor, NULL);
     int ok = dst && src;
     for (int i = 0; ok && i < n; i++) {
+        if (by_id) { ok = nt_experts_copy_factors_by_identity(dst,src,slots[i]) == NT_OK; continue; }
         if (slots[i][0] < '0' || slots[i][0] > '9' || slots[i][1]) { ok = 0; break; }
         ok = nt_experts_copy_factors(dst, src, slots[i][0] - '0') == NT_OK;
     }
@@ -23,6 +24,20 @@ static int transplant(gguf_file *host, const char *recipient, const char *donor,
     nt_experts_free(src);
     nt_experts_free(dst);
     return ok;
+}
+
+static int lineage(const char *host_path,const char *spore) {
+    gguf_file *host=gguf_open(host_path);
+    nt_experts *p=host ? nt_experts_open(host,spore,NULL) : NULL;
+    if(!p) { gguf_close(host); return 0; }
+    puts("identity\tparent\tsource_host\tturn\tdeath_turn\tkind\tliving_slot");
+    for(int i=0;i<nt_experts_ancestor_count(p);i++) {
+        nt_expert_identity e;
+        if(nt_experts_ancestor(p,i,&e)) { nt_experts_free(p); gguf_close(host); return 0; }
+        printf("%s\t%s\t%s\t%llu\t%llu\t%d\t%d\n",e.id,e.parent,e.source_host,
+            (unsigned long long)e.turn,(unsigned long long)e.death_turn,e.kind,nt_experts_find_identity(p,e.id));
+    }
+    nt_experts_free(p); gguf_close(host); return 1;
 }
 
 /* Both target surfaces must extend the literal prompt by exactly their own
@@ -192,6 +207,7 @@ static int compare_f32(const char *left, const char *right, int n, char **names)
 }
 
 int main(int argc, char **argv) {
+    if (argc == 4 && !strcmp(argv[1],"lineage")) return !lineage(argv[2],argv[3]);
     if (argc == 7 && !strcmp(argv[1],"pack-logits"))
         return !pack_logits(argv[2],argv[3],argv[4],argv+5);
     if (argc >= 5 && !strcmp(argv[1], "compare-f32"))
@@ -200,10 +216,12 @@ int main(int argc, char **argv) {
     if (argc > 3 && !strcmp(argv[1], "--tokenizer")) {
         tokenizer = argv[2]; argv += 2; argc -= 2;
     }
-    if (argc < 7 || (strcmp(argv[1], "transplant") && strcmp(argv[1], "score"))) {
+    if (argc < 7 || (strcmp(argv[1], "transplant") && strcmp(argv[1], "transplant-id") && strcmp(argv[1], "score"))) {
         fprintf(stderr, "doe_probe compare-f32 FILE1 FILE2 TENSOR...\n"
                         "doe_probe pack-logits HOST RAW_F32 CHECKPOINT LEFT RIGHT\n"
                         "doe_probe transplant HOST RECIPIENT DONOR NEW_SPORE SLOT...\n"
+                        "doe_probe transplant-id HOST RECIPIENT DONOR NEW_SPORE ID...\n"
+                        "doe_probe lineage HOST SPORE\n"
                         "doe_probe [--tokenizer FILE] score HOST SPORE|- CHECKPOINT LEFT RIGHT PROMPT...\n");
         return 1;
     }
@@ -211,8 +229,8 @@ int main(int argc, char **argv) {
     if (!host) return 1;
     const nt_arch *arch = nt_pick_arch(host->arch);
     int ok = arch && arch->doe;
-    if (ok && !strcmp(argv[1], "transplant"))
-        ok = !tokenizer && transplant(host, argv[3], argv[4], argv[5], argc-6, argv+6);
+    if (ok && (!strcmp(argv[1], "transplant") || !strcmp(argv[1], "transplant-id")))
+        ok = !tokenizer && transplant(host, argv[3], argv[4], argv[5], argc-6, argv+6,!strcmp(argv[1],"transplant-id"));
     else if (ok)
         ok = argc >= 8 && scores(host, arch, tokenizer, argv[3], argv[4], argv+5, argc-7, argv+7);
     if (!ok) fprintf(stderr, "doe_probe: %s failed for %s\n", argv[1], argv[2]);

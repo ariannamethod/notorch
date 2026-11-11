@@ -130,6 +130,16 @@ static void check(const char *src, const char *fresh, const char *dst) {
         const gguf_kv *a = gguf_get_kv(s, keys[i]), *b = gguf_get_kv(d, keys[i]);
         assert(a && b && !memcmp(&a->val, &b->val, a->type == 10 ? 8 : 4));
     }
+    int ns=0,nd=0;
+    char **ls=gguf_read_str_array(src,"doe.lineage.entries",&ns);
+    char **ld=gguf_read_str_array(dst,"doe.lineage.entries",&nd);
+    assert(ls && ld && ns==nd);
+    for(int i=0;i<ns;i++) { assert(!strcmp(ls[i],ld[i])); free(ls[i]); free(ld[i]); }
+    free(ls); free(ld);
+    int32_t *ss=gguf_read_i32_array(src,"doe.lineage.seats",&ns);
+    int32_t *ds=gguf_read_i32_array(dst,"doe.lineage.seats",&nd);
+    assert(ss && ds && ns==E && nd==E && !memcmp(ss,ds,E*sizeof(*ss)));
+    free(ss); free(ds);
     gguf_close(d); gguf_close(f); gguf_close(s);
 }
 
@@ -160,6 +170,51 @@ static void check_norm_change(const char *left, const char *right) {
     free(af); free(bf); gguf_close(a); gguf_close(b);
 }
 
+/* An imported population and a freshly seeded population can have identical
+ * arithmetic on aligned hosts while retaining different birth provenance. */
+static void same_state_different_origin(const char *left,const char *right) {
+    gguf_file *a=gguf_open(left),*b=gguf_open(right);
+    assert(a && b && a->n_tensors==b->n_tensors && a->n_kv==b->n_kv);
+    for(int i=0;i<a->n_kv_parsed;i++) {
+        const gguf_kv *x=a->kv+i;
+        if(!strncmp(x->key,"doe.lineage.",12)) continue;
+        const gguf_kv *y=gguf_get_kv(b,x->key);
+        assert(y && x->type==y->type);
+        if(x->type==8) assert(!strcmp(x->val.str,y->val.str));
+        else {
+            assert(x->type==4 || x->type==6 || x->type==10);
+            assert(!memcmp(&x->val,&y->val,x->type==10 ? 8 : 4));
+        }
+    }
+    for(uint64_t i=0;i<a->n_tensors;i++) {
+        const gguf_tensor_info *x=a->tensors+i;
+        int j=gguf_find_tensor(b,x->name);
+        assert(j>=0);
+        const gguf_tensor_info *y=b->tensors+j;
+        assert(x->dtype==GGUF_TYPE_F32 && y->dtype==x->dtype && x->ndim==y->ndim &&
+               !memcmp(x->shape,y->shape,x->ndim*sizeof(uint64_t)) && x->n_elements==y->n_elements);
+        assert(!memcmp(a->data+x->offset,b->data+y->offset,(size_t)x->n_elements*sizeof(float)));
+    }
+    int na=0,nb=0;
+    char **la=gguf_read_str_array(left,"doe.lineage.entries",&na);
+    char **lb=gguf_read_str_array(right,"doe.lineage.entries",&nb);
+    const gguf_kv *host=gguf_get_kv(b,"doe.host_sha256");
+    assert(la && lb && na==4 && nb==4 && host && host->type==8);
+    const char prefix[]="F 0000000000000000 0000000000000000 00000000 ";
+    for(int i=0;i<na;i++) {
+        assert(strlen(la[i])==174 && strlen(lb[i])==174 &&
+               !strncmp(la[i],prefix,sizeof prefix-1) && !strncmp(lb[i],prefix,sizeof prefix-1));
+        assert(memcmp(la[i]+45,lb[i]+45,64) && strcmp(la[i]+110,lb[i]+110) &&
+               !strcmp(lb[i]+110,host->val.str));
+        free(la[i]); free(lb[i]);
+    }
+    free(la); free(lb);
+    int32_t *sa=gguf_read_i32_array(left,"doe.lineage.seats",&na);
+    int32_t *sb=gguf_read_i32_array(right,"doe.lineage.seats",&nb);
+    assert(sa && sb && na==E && nb==E && !memcmp(sa,sb,E*sizeof(*sa)));
+    free(sa); free(sb); gguf_close(b); gguf_close(a);
+}
+
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "fixtures")) {
         body("source", "llama", 64, 0, 0, 0, 0);
@@ -184,6 +239,7 @@ int main(int argc, char **argv) {
         assert(!gguf_write_close(w));
     } else if (argc == 5 && !strcmp(argv[1], "check")) check(argv[2], argv[3], argv[4]);
     else if (argc == 4 && !strcmp(argv[1], "check-norm-change")) check_norm_change(argv[2],argv[3]);
+    else if (argc == 4 && !strcmp(argv[1], "same-state-different-origin")) same_state_different_origin(argv[2],argv[3]);
     else if (argc == 3 && !strcmp(argv[1], "break-frame")) set_first(argv[2], "doe.anchor_frame");
     else if (argc == 4 && !strcmp(argv[1], "set-first")) set_first(argv[2], argv[3]);
     else return 1;

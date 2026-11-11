@@ -11,6 +11,87 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — Addressed expert genealogy and private sensory replay
+
+Hand: Astra (Codex), branch `codex/doe-lineage-media-replay`, based on `bb18d6a`.
+DoE remains opt-in. The native C parliament now gives each birth a SHA-256
+address, retains parent/source-body/turn and retirement records after slot
+reuse, and exposes lookup and factor-copy by identity. Birth hashing draws no
+random numbers. Exact/portable schemas 5/6 carry the ledger; legacy 1–4 imports
+adopt used seats from the original donor file before projection. Their factors,
+RNG and clocks are preserved. The portable gate now compares numerical state
+separately when an imported and a freshly founded population have different
+provenance on otherwise aligned weights.
+
+`nt_replay_capture/save/load` owns assembled IDs, sparse copied F32 media rows
+and the suppression/stop policy in an addressed, exact-host episode GGUF.
+`nt_experts_replay` uses fresh decoder state and staged sleep-rate updates.
+`nt_experts_submit_replay` deep-copies the episode before transferring ownership
+to its worker, and consolidates a pending waking turn first. Replay commits
+A/B, cursors, RNG and its own clocks/last episode receipt together; it preserves
+waking lifecycle, genealogy and the text-cue mask. The invariant is
+`replay.elections = replay.prefill + replay.choices - replay.stops`.
+Omni exposes `--replay-out NEW.gguf` and `--replay-only EPISODE -n 1..32` with
+explicit `--experts --mode text`; another host re-encodes the raw image/WAV.
+
+**Continued real experience.** The same full Q8_0 and F16 Omni conversions used
+in the preceding entry continue its final 24-turn archive through turns 25–36.
+The [C/AML protocol](experiments/doe_spores/omni-replay.md) runs red-image,
+spoken-key, blue-image, spoken-bell blocks through Q8 → F16 → Q8. All 12 waking
+pairs, 12 replay pairs and 12 capture pairs are byte-identical between serial
+and worker execution. Turn 36 retains six living adoption identities, 3,348
+waking elections and the prior six text dreams; its 12 new replays have 66
+choices, 918 prefill positions, 972 elections and 12 stops. Returning to Q8
+reproduces the four original input-episode files exactly. The independent
+audit verifies each elected seat's A/B/cursor changes and preservation of every
+other tensor, waking clocks and lineage. The serial archive holds 24 spores
+and 16,980,960 bytes; all three arms and their 24 captures hold 84 GGUF files
+and 52,606,464 bytes. Its last portable population is 707,552 bytes.
+
+The final Q8 replay shifts Red/Blue log odds by −0.003292083 and key/bell by
++0.104731559 on the two fixed text probes. The corresponding F16 shifts at
+turn 32 are −0.000001908 and −0.000000953. Copying the last replay's A/B by the
+six full identity addresses into the pre-replay recipient reproduces both
+128,000-entry output rows exactly while retaining the recipient's clocks and
+genealogy. The [scores](experiments/doe_spores/omni-replay-scores.tsv),
+[clocks](experiments/doe_spores/omni-replay-clocks.tsv),
+[writes](experiments/doe_spores/omni-replay-writes.tsv) and
+[full-row changes](experiments/doe_spores/omni-replay-logits.tsv) include the
+parallel waking-only history. The protocol names the machine, flags, body
+hashes, prompts and targets. All eleven tensor payloads of the version-4 parent
+also match its adopted version-6 export exactly. A Q8 input episode is refused
+on F16 without publishing a child.
+
+The long orchestration handle became unavailable after all twelve new
+generations and the first two final probes had been saved. Six final readings
+were completed from those saved states in a fresh directory; both already
+saved rows matched their restarted copies. The raw bundle retains the partial
+run and recovery. An earlier protocol bring-up attempted arithmetic on a
+textual stdin turn count; its one completed wake is archived separately and
+was not used by the completed history.
+
+**Gates.** Native `make -j2 test notorch_omni doe_probe` passed with
+`BLAS_FLAGS= BLAS_LIBS= BLAS_NAME=native` and the recorded AML revision.
+Lineage has 306 checks covering birth, branch divergence, retire/reuse,
+projection/return, adoption and malformed metadata. The media gate spans 97
+persisted episodes, 96 worker restarts and 33 interleaved text dreams, plus
+sparse rows across prefill boundaries, deep-copy lifetime, bad receipts,
+late-failure rollback and overflow. Both gates passed ASan/UBSan with
+`detect_leaks=0`. Deliberately ignoring replay rows fails the changed-row
+learning assertion; admitting an unseated living ancestor gives 306 checks,
+one failure. Review found a NUL-suffixed lineage record admitted through the
+general string reader: its regression went red, and a bounded fixed-width
+string-array reader now rejects wrong lengths, embedded NUL, excessive counts
+and partial reads. Six plain probes on rebuilt baseline/current entries match
+all 768,000 logits and their output text exactly. The final added receipt
+cases passed the narrow native and sanitizer gates as well.
+
+Raw archive: `notorch-doe-lineage-media-replay.zip`, 79,582,055 bytes,
+SHA-256 `e2026f76fc228553ac0c80e6f2f68efa96f1a51059c9242629cd247912b7e97c`.
+README adds a capture → worker replay → new-body encounter example. The
+research article now describes implemented lineage/replay and connects the
+next multi-body composition to the inspected Dario and gowiththeflow sources.
+
 ## 2026-11-11 — Omni media enters the living parliament: 24 turns, six nights, two births
 
 Hand: Astra (Codex), branch `codex/omni-long-experience`, based on `3358958`.

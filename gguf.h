@@ -120,6 +120,12 @@ const gguf_kv* gguf_get_kv(const gguf_file* gf, const char* key);
 // of *out_n strdup'd strings, or NULL if absent. Caller frees each string + the array.
 char** gguf_read_str_array(const char* path, const char* key, int* out_n);
 
+/* Fixed-width records in a type-9 string array. Every declared string must be
+ * exactly record_bytes bytes, without embedded NUL. Returns all records or
+ * NULL with *out_n=0; the declared count is bounded by the remaining file.
+ * Caller frees each NUL-terminated record and the array. */
+char** gguf_read_fixed_str_array(const char* path, const char* key, int record_bytes, int* out_n);
+
 // One string metadata value by key, read without loading tensor data. Returns 0 on success.
 int gguf_read_str_kv(const char* path, const char* key, char* out, int cap);
 

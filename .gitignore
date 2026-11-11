@@ -75,11 +75,14 @@ tests/bench_*
 !tests/*.h
 !tests/*.sh
 /doe_probe
+/omni_audit
 /test_portable_spore
 /test_expert_dream
 /test_olmoe_doe
 /test_expert_consolidation
 /test_media_experts
+/test_media_replay
+/test_expert_lineage
 /expert_fixtures
 !tests/test_expert_spores.py
 !tests/test_sampling_mutations.py

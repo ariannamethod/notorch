@@ -59,15 +59,15 @@ static void summary(const char *path,const char *label,int slots) {
     if(slots) putchar('\n');
     gguf_close(g);
 }
-static void night(const char *before,const char *after,const char *trace,const char *label) {
+static void night(const char *before,const char *after,const char *trace,const char *label,int replay) {
     gguf_file *a=gguf_open(before), *b=gguf_open(after);
     FILE *f=fopen(trace,"r");
     assert(a && b && f && a->n_tensors==b->n_tensors);
     int hits[SEATS]={0}, elections=0, choices=0;
     char line[2048];
     while(fgets(line,sizeof line,f)) {
-        choices+=strstr(line,"doe dream-choice ")!=NULL;
-        if(!strstr(line,"doe dream-vote ")) continue;
+        choices+=strstr(line,replay ? "doe replay-choice " : "doe dream-choice ")!=NULL;
+        if(!strstr(line,replay ? "doe replay-vote " : "doe dream-vote ")) continue;
         char *g=strstr(line,"gates=");
         assert(g); g+=6; elections++;
         for(int e=0;e<SEATS;e++) {
@@ -80,9 +80,22 @@ static void night(const char *before,const char *after,const char *trace,const c
     assert(!ferror(f) && !fclose(f) && choices>0 && elections>0);
     assert(clock_value(a,"doe.turns")==clock_value(b,"doe.turns") &&
            clock_value(a,"doe.elections")==clock_value(b,"doe.elections"));
-    assert(clock_value(a,"doe.dream.cycles")+1==clock_value(b,"doe.dream.cycles"));
-    assert(clock_value(a,"doe.dream.choices")+(unsigned)choices==clock_value(b,"doe.dream.choices"));
-    assert(clock_value(a,"doe.dream.elections")+(unsigned)elections==clock_value(b,"doe.dream.elections"));
+    const char *cycles=replay ? "doe.replay.cycles" : "doe.dream.cycles";
+    const char *decisions=replay ? "doe.replay.choices" : "doe.dream.choices";
+    const char *ballots=replay ? "doe.replay.elections" : "doe.dream.elections";
+    assert(clock_value(a,cycles)+1==clock_value(b,cycles));
+    assert(clock_value(a,decisions)+(unsigned)choices==clock_value(b,decisions));
+    assert(clock_value(a,ballots)+(unsigned)elections==clock_value(b,ballots));
+    if(replay) {
+        assert(clock_value(a,"doe.dream.cycles")==clock_value(b,"doe.dream.cycles") &&
+               clock_value(a,"doe.dream.seen")==clock_value(b,"doe.dream.seen"));
+        int na=0,nb=0;
+        char **la=gguf_read_fixed_str_array(before,"doe.lineage.entries",174,&na);
+        char **lb=gguf_read_fixed_str_array(after,"doe.lineage.entries",174,&nb);
+        assert(la && lb && na==nb);
+        for(int i=0;i<na;i++) { assert(!strcmp(la[i],lb[i])); free(la[i]); free(lb[i]); }
+        free(la); free(lb);
+    }
     assert(gguf_get_kv(a,"doe.consensus")->val.f32==gguf_get_kv(b,"doe.consensus")->val.f32);
     for(uint64_t i=0;i<a->n_tensors;i++) {
         const char *name=a->tensors[i].name;
@@ -171,10 +184,26 @@ static void compare_logits(const char *left,const char *right,const char *label)
            label,n,changed,max,sqrt(ss),kl,first,second);
     free(b); free(a);
 }
+static void clocks(const char *path,const char *label) {
+    gguf_file *g=gguf_open(path); assert(g);
+    const char *keys[]={"doe.version","doe.turns","doe.elections","doe.dream.cycles",
+        "doe.dream.choices","doe.dream.elections","doe.dream.seen","doe.replay.cycles",
+        "doe.replay.choices","doe.replay.elections","doe.replay.prefill","doe.replay.stops","doe.rng"};
+    printf("%s",label);
+    for(size_t i=0;i<sizeof keys/sizeof keys[0];i++) printf("\t%llu",(unsigned long long)clock_value(g,keys[i]));
+    int count=0;
+    char **ledger=gguf_read_fixed_str_array(path,"doe.lineage.entries",174,&count);
+    assert(ledger); for(int i=0;i<count;i++) free(ledger[i]); free(ledger);
+    const gguf_kv *last=gguf_get_kv(g,"doe.replay.last");
+    printf("\t%d\t%s\n",count,last ? last->val.str : "");
+    gguf_close(g);
+}
 int main(int argc,char **argv) {
     if(argc==4 && !strcmp(argv[1],"summary")) summary(argv[2],argv[3],0);
+    else if(argc==4 && !strcmp(argv[1],"clocks")) clocks(argv[2],argv[3]);
     else if(argc==3 && !strcmp(argv[1],"slots")) summary(argv[2],"",1);
-    else if(argc==6 && !strcmp(argv[1],"night")) night(argv[2],argv[3],argv[4],argv[5]);
+    else if(argc==6 && !strcmp(argv[1],"night")) night(argv[2],argv[3],argv[4],argv[5],0);
+    else if(argc==6 && !strcmp(argv[1],"replay")) night(argv[2],argv[3],argv[4],argv[5],1);
     else if(argc==5 && !strcmp(argv[1],"distance")) factor_distance(argv[2],argv[3],argv[4]);
     else if(argc==5 && !strcmp(argv[1],"logits")) compare_logits(argv[2],argv[3],argv[4]);
     else { fprintf(stderr,"usage: %s summary SPORE LABEL | slots SPORE | night BEFORE AFTER TRACE LABEL | distance LEFT RIGHT LABEL | logits BEFORE_F32 AFTER_F32 LABEL\n",argv[0]); return 2; }
