@@ -1,0 +1,440 @@
+# Two alternating bodies, four histories and one frozen peer conversation.
+# Native C owns inference, projection, learning and private replay; AML owns
+# the schedule, measurements and immutable receipts. Experts remain opt-in.
+# stdin, one absolute path per line: notorch, doe_probe, Gemma, Qwen,
+# Qwen tokenizer, portable Gemma parent, new output directory, even steps 2..16.
+# Each receipt closes all four arms before their global/body banks advance.
+def cat(a, b):
+    return text_concat(a, b)
+
+def col(a, b):
+    return cat(cat(a, '\t'), b)
+
+def num(n):
+    return text_fixed(n, 0)
+
+def decimal(text):
+    assert(text_len(text) > 0, 'empty decimal')
+    value = 0
+    i = 0
+    while i < text_len(text):
+        d = text_codepoint(text, i)-48
+        assert(d >= 0 and d <= 9 and (value < 1677721 or (value == 1677721 and d <= 6)), 'bounded decimal')
+        value = value*10+d
+        i = i+1
+    return value
+
+def absolute(value):
+    assert(text_len(value) > 0 and text_find(value, '/') == 0, 'absolute external paths')
+
+def path(name):
+    return cat(cat(outdir, '/'), name)
+
+def lines(file, content):
+    rest = content
+    cut = text_find(rest, '\n')
+    while cut >= 0:
+        assert(file_append_line(file, text_slice(rest, 0, cut)) >= 1, 'append line')
+        rest = text_slice(rest, cut+1, text_len(rest))
+        cut = text_find(rest, '\n')
+    if text_len(rest) > 0:
+        assert(file_append_line(file, rest) >= 1, 'append tail')
+
+def tracked(file):
+    list_push(artifacts, file)
+    list_push(digests, file_hash_sha256(file))
+
+def command(binary):
+    a = list_new()
+    list_push(a, binary)
+    return a
+
+def run(a, name):
+    log = path(cat(name, '.trace'))
+    output = path(cat(name, '.txt'))
+    assert(file_exists(log) == 0 and file_exists(output) == 0, 'new process evidence')
+    r = process_run(a, env, 600)
+    lines(log, record_get(r, 'stderr'))
+    lines(output, record_get(r, 'stdout'))
+    if record_get(r, 'status') != 0:
+        PRINT record_get(r, 'stderr')
+    assert(record_get(r, 'status') == 0, name)
+    if file_exists(log):
+        tracked(log)
+    if file_exists(output):
+        tracked(output)
+    return r
+
+def body(step):
+    if step == floor(step/2)*2:
+        return 'qwen'
+    return 'gemma'
+
+def model(step):
+    if text_equal(body(step), 'qwen'):
+        return qwen
+    return gemma
+
+def native(step, tokens):
+    a = command(cli)
+    list_push(a, '-q')
+    list_push(a, '-t')
+    list_push(a, '0')
+    list_push(a, '-n')
+    list_push(a, num(tokens))
+    if text_equal(body(step), 'qwen'):
+        list_push(a, '--tokenizer')
+        list_push(a, qwen_tokenizer)
+    return a
+
+def label(arm):
+    if arm == 0:
+        return 'independent-sync'
+    if arm == 1:
+        return 'shared-sync'
+    if arm == 2:
+        return 'recall-sync'
+    return 'recall-worker'
+
+def evidence_name(arm, step, phase):
+    return cat(cat(cat(cat(label(arm), '-'), num(step)), '-'), phase)
+
+def hashes(files):
+    result = list_new()
+    i = 0
+    while i < list_len(files):
+        file = list_get(files, i)
+        digest = '-'
+        if text_equal(file, '-') == 0:
+            digest = file_hash_sha256(file)
+        list_push(result, digest)
+        i = i+1
+    return result
+
+def file_list(receipt, key, files):
+    record_set(receipt, key, files)
+    record_set(receipt, cat(key, '_hashes'), hashes(files))
+
+def identical(left, right, reason):
+    assert(text_equal(file_hash_sha256(left), file_hash_sha256(right)), reason)
+
+def provenance(receipt, schema):
+    record_set(receipt, 'schema', schema)
+    record_set(receipt, 'protocol', protocol_sha)
+    record_set(receipt, 'cli', cli_sha)
+    record_set(receipt, 'helper', helper_sha)
+    record_set(receipt, 'gemma', gemma_sha)
+    record_set(receipt, 'qwen', qwen_sha)
+    record_set(receipt, 'qwen_tokenizer', tokenizer_sha)
+    record_set(receipt, 'root', root_sha)
+    record_set(receipt, 'steps', limit)
+    record_set(receipt, 'arms', arm_labels)
+
+def publish(receipt, file):
+    assert(file_exists(file) == 0, 'new receipt path')
+    assert(checkpoint_save(receipt, file) >= 1, 'atomic receipt commit')
+
+# The CLI echoes its input before the generated text, then emits one LF.
+# Preserve every generated codepoint; remove only that verified framing.
+def utterance(output, prompt):
+    prefix = text_len(prompt)
+    size = text_len(output)
+    assert(size >= prefix+1, 'peer output framing')
+    assert(text_equal(text_slice(output, 0, prefix), prompt), 'peer prompt echo')
+    assert(text_equal(text_slice(output, size-1, size), '\n'), 'peer terminal LF')
+    return text_slice(output, prefix, size-1)
+
+def measure(state, arm, step, phase, receipt):
+    name = evidence_name(arm, step, phase)
+    a = command(helper)
+    if text_equal(body(step), 'qwen'):
+        list_push(a, '--tokenizer')
+        list_push(a, qwen_tokenizer)
+    list_push(a, 'score')
+    list_push(a, model(step))
+    list_push(a, state)
+    scored = path(cat(name, '-scores.amlck'))
+    assert(file_exists(scored) == 0, 'new score checkpoint')
+    list_push(a, scored)
+    list_push(a, ' key')
+    list_push(a, ' bell')
+    list_push(a, 'Every night the lighthouse keeper carries a')
+    list_push(a, 'At the lighthouse, Miro reaches for his')
+    run(a, cat(name, '-scores'))
+    tracked(scored)
+    data = checkpoint_load(scored)
+    li = record_get(data, 'left_id')
+    ri = record_get(data, 'right_id')
+    probe = 0
+    while probe < 2:
+        lg = record_get(data, cat('probe', num(probe)))
+        probabilities = softmax(lg)
+        margin = lg[li]-lg[ri]
+        record_set(receipt, cat(cat(name, '-p'), num(probe)), margin)
+        row = col(col(col(col(num(step), body(step)), label(arm)), phase), num(probe))
+        row = col(col(col(row, num(li)), num(ri)), text_fixed(margin, 9))
+        row = col(col(row, text_fixed(probabilities[li], 9)), text_fixed(probabilities[ri], 9))
+        lines(path('scores.tsv'), row)
+        probe = probe+1
+    a = command(helper)
+    list_push(a, 'inspect')
+    list_push(a, model(step))
+    list_push(a, state)
+    stats = path(cat(name, '-population.amlck'))
+    assert(file_exists(stats) == 0, 'new population checkpoint')
+    list_push(a, stats)
+    run(a, cat(name, '-population'))
+    tracked(stats)
+    population = checkpoint_load(stats)
+    visits = step
+    if arm == 0:
+        visits = floor((step+1)/2)
+    if text_equal(phase, 'entry'):
+        visits = visits-1
+    assert(decimal(record_get(population, 'turns')) == initial_turns+visits, 'waking continuity')
+    assert(decimal(record_get(population, 'replay_cycles')) == initial_replays+visits, 'replay continuity')
+    assert(decimal(record_get(population, 'dream_cycles')) == initial_dreams, 'dream clock preserved')
+    a = command(helper)
+    list_push(a, 'lineage')
+    list_push(a, model(step))
+    list_push(a, state)
+    run(a, cat(name, '-lineage'))
+
+cli = list_get(read_line(), 0)
+helper = list_get(read_line(), 0)
+gemma = list_get(read_line(), 0)
+qwen = list_get(read_line(), 0)
+qwen_tokenizer = list_get(read_line(), 0)
+root_spore = list_get(read_line(), 0)
+outdir = list_get(read_line(), 0)
+limit = decimal(list_get(read_line(), 0))
+absolute(cli)
+absolute(helper)
+absolute(gemma)
+absolute(qwen)
+absolute(qwen_tokenizer)
+absolute(root_spore)
+absolute(outdir)
+assert(limit >= 2 and limit <= 16 and limit == floor(limit/2)*2, 'even steps 2..16')
+protocol_sha = file_hash_sha256('shared_parliament.aml')
+cli_sha = file_hash_sha256(cli)
+helper_sha = file_hash_sha256(helper)
+gemma_sha = file_hash_sha256(gemma)
+qwen_sha = file_hash_sha256(qwen)
+tokenizer_sha = file_hash_sha256(qwen_tokenizer)
+root_sha = file_hash_sha256(root_spore)
+env = record_new()
+record_set(env, 'LC_ALL', 'C')
+record_set(env, 'NT_NO_I8', '1')
+record_set(env, 'NT_ATTN_THREADS', '1')
+record_set(env, 'NT_CHAT', '||')
+record_set(env, 'NT_TOKENS', '')
+record_set(env, 'NT_CTX', '128')
+arm_labels = list_new()
+arm = 0
+while arm < 4:
+    list_push(arm_labels, label(arm))
+    arm = arm+1
+assert(dir_claim(outdir) == 1, 'new shared parliament directory')
+artifacts = list_new()
+digests = list_new()
+a = command(helper)
+list_push(a, 'inspect')
+list_push(a, gemma)
+list_push(a, root_spore)
+list_push(a, path('initial.amlck'))
+run(a, 'initial')
+tracked(path('initial.amlck'))
+initial = checkpoint_load(path('initial.amlck'))
+initial_turns = decimal(record_get(initial, 'turns'))
+initial_replays = decimal(record_get(initial, 'replay_cycles'))
+initial_dreams = decimal(record_get(initial, 'dream_cycles'))
+
+# Generate the complete peer tape before opening any experimental history.
+prompts = list_new()
+prompt_hashes = list_new()
+utterances = list_new()
+utterance_hashes = list_new()
+seed = 'Miro is the lighthouse keeper. He carries a key.'
+previous_utterance = ''
+step = 1
+while step <= limit:
+    prompt = seed
+    if step > 1:
+        prompt = cat(cat(cat(seed, '\nThe previous body said:\n'), previous_utterance), '\nContinue the story:')
+    list_push(prompts, prompt)
+    list_push(prompt_hashes, text_hash_sha256(prompt))
+    name = cat('peer-', num(step))
+    input_file = path(cat(name, '-input.txt'))
+    lines(input_file, prompt)
+    tracked(input_file)
+    a = native(step, 6)
+    list_push(a, model(step))
+    list_push(a, prompt)
+    result = run(a, name)
+    previous_utterance = utterance(record_get(result, 'stdout'), prompt)
+    list_push(utterances, previous_utterance)
+    list_push(utterance_hashes, text_hash_sha256(previous_utterance))
+    step = step+1
+tape = record_new()
+provenance(tape, 'notorch-doe-peer-tape-v1')
+record_set(tape, 'prompts', prompts)
+record_set(tape, 'prompt_hashes', prompt_hashes)
+record_set(tape, 'utterances', utterances)
+record_set(tape, 'utterance_hashes', utterance_hashes)
+record_set(tape, 'artifacts', artifacts)
+record_set(tape, 'digests', digests)
+tape_file = path('peer-tape.amlck')
+publish(tape, tape_file)
+tape_sha = file_hash_sha256(tape_file)
+PRINT cat('SHARED_PARLIAMENT_TAPE ', tape_sha)
+
+globals = list_new()
+gemma_bank = list_new()
+qwen_bank = list_new()
+arm = 0
+while arm < 4:
+    list_push(globals, root_spore)
+    list_push(gemma_bank, '-')
+    list_push(qwen_bank, '-')
+    arm = arm+1
+previous = '-'
+previous_sha = '-'
+lines(path('scores.tsv'), 'ordinal\tbody\tarm\tphase\tprobe\tkey_id\tbell_id\tlog_odds_key_over_bell\tp_key\tp_bell')
+step = 1
+while step <= limit:
+    artifacts = list_new()
+    digests = list_new()
+    receipt = record_new()
+    prompt = list_get(prompts, step-1)
+    parents = list_new()
+    local_refs = list_new()
+    entries = list_new()
+    wakes = list_new()
+    episodes = list_new()
+    finals = list_new()
+    target_bank = gemma_bank
+    if text_equal(body(step), 'qwen'):
+        target_bank = qwen_bank
+    arm = 0
+    while arm < 4:
+        local = list_get(target_bank, arm)
+        parent = list_get(globals, arm)
+        if arm == 0:
+            parent = root_spore
+            if text_equal(local, '-') == 0:
+                parent = local
+        reference = '-'
+        if arm >= 2 and text_equal(local, '-') == 0:
+            reference = local
+        list_push(parents, parent)
+        list_push(local_refs, reference)
+        entry = path(cat(evidence_name(arm, step, 'entry'), '.gguf'))
+        wake = path(cat(evidence_name(arm, step, 'wake'), '.gguf'))
+        episode = path(cat(evidence_name(arm, step, 'episode'), '.gguf'))
+        final = path(cat(evidence_name(arm, step, 'final'), '.gguf'))
+        assert(file_exists(entry) == 0 and file_exists(wake) == 0 and file_exists(episode) == 0 and file_exists(final) == 0, 'new generation paths')
+        a = native(step, 1)
+        list_push(a, '--experts')
+        list_push(a, '--expert-trace')
+        list_push(a, '--spore-in')
+        list_push(a, parent)
+        list_push(a, '--spore-only')
+        list_push(a, '--portable-spore')
+        list_push(a, '--spore-out')
+        list_push(a, entry)
+        if text_equal(reference, '-') == 0:
+            list_push(a, '--body-memory')
+            list_push(a, reference)
+        list_push(a, model(step))
+        result = run(a, evidence_name(arm, step, 'entry'))
+        assert(text_len(record_get(result, 'stdout')) == 0, 'silent entry')
+        tracked(entry)
+        if step == 3 and (arm == 1 or arm == 2):
+            measure(entry, arm, step, 'entry', receipt)
+        a = native(step, 1)
+        list_push(a, '--experts')
+        list_push(a, '--learn-experts')
+        list_push(a, '--expert-trace')
+        if arm == 3:
+            list_push(a, '--async-consolidation')
+        list_push(a, '--spore-in')
+        list_push(a, entry)
+        list_push(a, '--portable-spore')
+        list_push(a, '--spore-out')
+        list_push(a, wake)
+        list_push(a, '--replay-out')
+        list_push(a, episode)
+        list_push(a, model(step))
+        list_push(a, prompt)
+        run(a, evidence_name(arm, step, 'wake'))
+        tracked(wake)
+        tracked(episode)
+        a = native(step, 6)
+        list_push(a, '--experts')
+        list_push(a, '--learn-experts')
+        list_push(a, '--expert-trace')
+        if arm == 3:
+            list_push(a, '--async-consolidation')
+        list_push(a, '--spore-in')
+        list_push(a, wake)
+        list_push(a, '--portable-spore')
+        list_push(a, '--spore-out')
+        list_push(a, final)
+        list_push(a, '--replay-only')
+        list_push(a, episode)
+        list_push(a, model(step))
+        result = run(a, evidence_name(arm, step, 'replay'))
+        assert(text_len(record_get(result, 'stdout')) == 0, 'private replay')
+        tracked(final)
+        list_push(entries, entry)
+        list_push(wakes, wake)
+        list_push(episodes, episode)
+        list_push(finals, final)
+        if step == 3 or step == 7 or step == 11 or step == limit:
+            measure(final, arm, step, 'final', receipt)
+        arm = arm+1
+    identical(list_get(entries, 2), list_get(entries, 3), 'recall sync/worker entry equality')
+    identical(list_get(wakes, 2), list_get(wakes, 3), 'recall sync/worker waking equality')
+    identical(list_get(finals, 2), list_get(finals, 3), 'recall sync/worker replay equality')
+    arm = 1
+    while arm < 4:
+        identical(list_get(episodes, 0), list_get(episodes, arm), 'four identical encounters')
+        arm = arm+1
+    next_gemma = gemma_bank
+    next_qwen = qwen_bank
+    if text_equal(body(step), 'qwen'):
+        next_qwen = finals
+    else:
+        next_gemma = finals
+    provenance(receipt, 'notorch-doe-shared-parliament-v1')
+    record_set(receipt, 'completed', step)
+    record_set(receipt, 'body', body(step))
+    record_set(receipt, 'parent_receipt', previous)
+    record_set(receipt, 'parent_hash', previous_sha)
+    record_set(receipt, 'tape', tape_file)
+    record_set(receipt, 'tape_hash', tape_sha)
+    record_set(receipt, 'prompt', prompt)
+    record_set(receipt, 'prompt_hash', text_hash_sha256(prompt))
+    file_list(receipt, 'globals_before', globals)
+    file_list(receipt, 'body_before', target_bank)
+    file_list(receipt, 'parents', parents)
+    file_list(receipt, 'local_refs', local_refs)
+    file_list(receipt, 'entries', entries)
+    file_list(receipt, 'wakes', wakes)
+    file_list(receipt, 'episodes', episodes)
+    file_list(receipt, 'finals', finals)
+    file_list(receipt, 'gemma_bank_after', next_gemma)
+    file_list(receipt, 'qwen_bank_after', next_qwen)
+    record_set(receipt, 'artifacts', artifacts)
+    record_set(receipt, 'digests', digests)
+    file = path(cat(cat('receipt-', num(step)), '.amlck'))
+    publish(receipt, file)
+    previous = file
+    previous_sha = file_hash_sha256(file)
+    globals = finals
+    gemma_bank = next_gemma
+    qwen_bank = next_qwen
+    PRINT cat(cat('SHARED_PARLIAMENT_COMMITTED ', num(step)), cat(' ', previous_sha))
+    step = step+1
+PRINT 'SHARED_PARLIAMENT_COMPLETE'

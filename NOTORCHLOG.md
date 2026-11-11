@@ -11,6 +11,147 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — Integrate native Qwen vision with long expert continuity
+
+Hand: Astra (Codex), branch `codex/doe-long-continuity`, PR #216.
+Merged main `d72c802` (Qwen vision, PR #215) into the expert branch with both
+histories retained. The two conflicts were the Harness archive/clean lists in
+`Makefile` and adjacent entries in this log. The archive now includes shared
+image loading, the Qwen vision encoder and expert body recall together.
+Vision implementation files match main exactly; the DoE implementation,
+protocols and recorded measurements match the pre-merge branch. README keeps
+both capability descriptions.
+
+Proof: the focused native gates pass 89 vision checks and 568 body-recall
+checks. Full `make -j2 test BLAS_FLAGS= BLAS_LIBS= BLAS_NAME=native` passes,
+including Qwen text, sensory replay and resident/CLI continuity. On the same
+Qwen3.5-0.8B BF16 body and floating-activation settings as the shared-parliament
+study, the merged Harness reproduces the prior plain output and all six
+choice IDs/selected logits/best logits. Repeating step 12 from the archived
+step-11 incoming population and step-10 local body reference reproduces the
+entry, worker-waking and worker-replay spores, plus the captured episode,
+byte for byte. The original experiment archive remains pinned to its recorded
+runtime; these checks exercise the merged runtime against those saved states.
+
+## 2026-11-11 — Widen recall-test offsets before multiplication
+
+CodeQL review of PR #216 identified an `int` rank-by-dimension multiplication
+inside a `size_t` B-factor index in `tests/test_expert_recall.c`. The fixture
+writer and the independent factor oracle now promote each offset before
+multiplication, including the last-vector rollback offset. The native recall
+implementation and the recorded experiment sources are unchanged.
+`make check_expert_recall BLAS_FLAGS= BLAS_LIBS= BLAS_NAME=native` passes all
+568 checks with zero failures after the index correction.
+
+## 2026-11-11 — Long expert histories, explicit body recall and a shared parliament
+
+Hand: Astra (Codex), branch `codex/doe-long-continuity`, based on `9389835`.
+The native C parliament now recalls a returning body's earlier A/B/vote
+components by living birth address. `--body-memory` explicitly names that
+same-host reference alongside the current `--spore-in`. For target frame Q,
+incoming v and local u, recall applies `u + Q(Qᵀv − Qᵀu)`. It stages all factor
+changes, leaves unmatched vectors unchanged, and preserves incoming membership,
+genealogy, lifecycle, cursors, RNG and clocks. Slot reuse cannot select a
+different expert's memory. Existing spore schemas 5/6 remain unchanged.
+
+The ordinary text CLI exposes immutable `--replay-out` capture of assembled
+IDs and stopping policy, and private `--replay-only` with 1–32 greedy choices.
+The existing native replay kernel supplies fresh decoder state and serial or
+worker consolidation. The resident C `doe_experience` runner holds one body
+for bounded blocks, resets decoder state per encounter, publishes each turn
+and follows the ordinary CLI's final non-stop token feedback. AML owns the
+long-run and shared-parliament schedules. DoE remains opt-in, and the Harness
+has no new AML dependency.
+
+**Long experience.** The exact turn-36 Omni parent from the preceding replay
+study was projected once into Gemma3-270M Q8_0. Six histories each completed
+128 additional encounters: key/bell early exposure crossed with waking-only,
+six-choice dreams every eighth encounter, or six-choice replay of the first
+input on that schedule. The four early inputs differ by key/bell; the next
+124 are common. Every final state reaches turn 164, 5,211 waking elections,
+30 birth addresses and six living experts, including two original Omni IDs.
+The histories archive 864 spore files and 123,375,648 bytes. The key-replay
+history has 144 generations and 20,562,304 bytes; the active exact generation
+is 145,376 bytes.
+
+On two fixed raw-text probes, the final key-minus-bell contrast is
+−0.000213623/−0.000146866 for waking-only, 0/0 for ordinary dreams, and
++0.062147141/+0.081848145 for spaced early replay. The ordinary-dream pair
+has exact full-row equality at every measured checkpoint from 80 onward;
+its final numerical tensors coincide while its historical birth addresses
+remain distinct. The final identity intervention copies living post-sleep
+A/B into pre-sleep recipients and reproduces all 524,288 logits for each of
+the dream and replay histories. Independent native audit verifies the
+elected-seat updates and preserved other tensors at all 64 sleeping boundaries.
+[Methods and body hashes](experiments/doe_spores/continuity.md) ·
+[Readings](experiments/doe_spores/long-scores.tsv) ·
+[Full-row comparisons](experiments/doe_spores/long-logits.tsv)
+
+The gate reader audits 13,979 recorded elections and finds the original seat 0
+winning every row, without ties. This concentration is already present in the
+imported parent: mean probe mass 0.999999945885, effective participation
+1.000000843948. At 128 the corresponding values are 0.999999948545 and
+1.000000804848. Waking mean mass is about 0.999707. The reader reports top-k,
+positive counts, entropy and per-seat mass separately; uniform-six and
+one-hot controls verify its formulas. These receiving-body and lifecycle
+measurements identify the next vote-calibration experiment.
+[Gate distribution](experiments/doe_spores/long-gates.tsv)
+
+**Completed history and restart.** Each AML receipt hashes all six arm heads,
+inputs, episodes, intermediate states and measurements, plus its predecessor.
+Resume validates the full chain before claiming a new directory. Real Gemma
+controls match 120 states and twelve complete score checkpoints across a
+before-receipt stop, an after-receipt stop/resume and fresh worker execution.
+Changing an early state or a parent receipt is rejected before directory
+creation. A late worker continuation matches all 48 states of ordinals
+121–128, six pre-sleep states and all 48 chosen IDs. uint64 population clocks
+are exported as decimal text so the measurement interface keeps their exact
+integer representation.
+
+**Returning bodies.** The AML composition freezes a plain Gemma/Qwen peer
+conversation, then compares separate per-body histories, one shared parliament,
+and a shared parliament with local recall, the last also using worker
+consolidation. All histories encode the same input and privately replay it.
+At the first Gemma return, the incoming shared histories match exactly.
+Independent audit finds six matching identities, unchanged population state,
+maximum shared-coordinate error 9.289242986e-10, local-orthogonal error
+1.711326736e-9 and formula error 1.839302585e-9. Before any new learning, recall
+changes the two selected margins by −0.004350662 and −0.004522324.
+[Recall audit](experiments/doe_spores/recall_audit.c)
+
+All twelve real Gemma/Qwen encounters complete. The shared histories reach
+turn 48, 3,703 waking elections and 24 replays; the independent Qwen history
+reaches turn 42, 3,532 elections and 18 replays. All six adoption identities
+remain alive. Worker recall matches all 36 entry/waking/final spore pairs and
+all eight scheduled full-logit rows. All 36 cross-arm episode comparisons
+match. An independent AML audit checks 973 hashes and every receipt predecessor,
+exact input, incoming population, local reference and body-bank successor.
+At Gemma's last visit, shared-minus-independent margins are +0.086055756 and
++0.099397659; recall-minus-shared margins are +0.019275665 and +0.025373459.
+[Shared readings](experiments/doe_spores/shared-scores.tsv) ·
+[Full rows and worker parity](experiments/doe_spores/shared-logits.tsv)
+
+**Proof.** Full native `make -j2 test BLAS_FLAGS= BLAS_LIBS= BLAS_NAME=native`
+passes. Recall has 568 checks, including displaced IDs, rollback, 256 repeated
+recalls and eight persisted A → B → A cycles. The text CLI gate compares a
+separate native API caller; the resident gate matches 48 CLI states and 48
+split states. Full text-CLI ASan/UBSan and the instrumented resident runner
+linked to native archives pass. LeakSanitizer cannot run under this executor's
+ptrace environment; its failure is retained and those runs disable leak
+detection. Targeted recall ASan/UBSan also passes. Mutants that discard local
+components, match numeric slots, omit saved chat stops, skip final feedback
+or corrupt the worker replay all fail their gates. A separate AML audit of
+the 16-step analytical shared fixture validates 1,273 artifact hashes and
+every receipt/parent/body-bank relation. Plain inference matches the rebuilt
+baseline on eight fixture cases/48 choices and on real Gemma/Qwen outputs
+and twelve choices, including selected and best logits.
+
+The machine is AMD EPYC 7763 with GCC 14.2.0, native AVX2/FMA/F16C and no BLAS.
+Both new real protocols fix `NT_NO_I8=1`, raw text input and one attention
+thread. The inherited parent was projected on the default activation path;
+an earlier eight-encounter bring-up also used default activations and retains
+its own protocol receipt. AML revision is `78caa5b15f732d7fb83c950e544c58d23735a615`.
+
 ## 2026-11-11 — Qwen3.5 sees through its original encoder
 
 Hand: Codex, branch `codex/qwen35-vision`.

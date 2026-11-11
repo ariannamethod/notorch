@@ -1,0 +1,348 @@
+# Six histories on one body: key/bell x awake/dream/spaced replay.
+# Native C owns inference. AML owns the schedule, measurements and receipts.
+# stdin: doe_experience, doe_probe, host, tokenizer|- , exact parent spore,
+# new output directory, final ordinal (1..4096), resume receipt|- , sync|worker,
+# planned stop ordinal (0=none), stop point: none|before-receipt|after-receipt.
+# Each immutable receipt commits at most eight turns for all six histories.
+def cat(a, b):
+    return text_concat(a, b)
+
+def col(a, b):
+    return cat(cat(a, '\t'), b)
+
+def num(n):
+    return text_fixed(n, 0)
+
+def decimal(text):
+    assert(text_len(text) > 0, 'empty decimal')
+    value = 0
+    i = 0
+    while i < text_len(text):
+        d = text_codepoint(text, i)-48
+        assert(d >= 0 and d <= 9 and (value < 1677721 or (value == 1677721 and d <= 6)), 'bounded decimal')
+        value = value*10+d
+        assert(value <= 16777216, 'exact AML integer')
+        i = i+1
+    return value
+
+def path(name):
+    return cat(cat(outdir, '/'), name)
+
+def absolute(value):
+    assert(text_len(value) > 0 and text_find(value, '/') == 0, 'absolute external paths')
+
+def lines(file, content):
+    rest = content
+    cut = text_find(rest, '\n')
+    while cut >= 0:
+        assert(file_append_line(file, text_slice(rest, 0, cut)) >= 1, 'append line')
+        rest = text_slice(rest, cut+1, text_len(rest))
+        cut = text_find(rest, '\n')
+    if text_len(rest) > 0:
+        assert(file_append_line(file, rest) >= 1, 'append tail')
+
+def mode(i):
+    if i >= 3:
+        i = i-3
+    if i == 0:
+        return 'awake'
+    if i == 1:
+        return 'dream'
+    return 'replay'
+
+def label(i):
+    word = 'key'
+    if i >= 3:
+        word = 'bell'
+    return cat(cat(word, '-'), mode(i))
+
+def encounter(step, i):
+    if step <= 4:
+        word = 'key'
+        if i >= 3:
+            word = 'bell'
+        return cat(cat('Miro is the lighthouse keeper. Every night Miro carries a ', word), '. At sunrise the lighthouse keeper returns home.')
+    k = step
+    while k >= 4:
+        k = k-4
+    if k == 0:
+        return 'The orchard has apple trees. In spring the trees bloom.'
+    if k == 1:
+        return 'A musician practices scales. The room has a wooden floor.'
+    if k == 2:
+        return 'Rain falls on the mountain. A stream runs through the valley.'
+    return 'The baker makes bread. The market opens in the morning.'
+
+def command(binary):
+    a = list_new()
+    list_push(a, binary)
+    return a
+
+def tracked(file):
+    list_push(artifacts, file)
+    list_push(digests, file_hash_sha256(file))
+
+def run(a, name):
+    r = process_run(a, env, 600)
+    lines(path(cat(name, '.trace')), record_get(r, 'stderr'))
+    lines(path(cat(name, '.txt')), record_get(r, 'stdout'))
+    if record_get(r, 'status') != 0:
+        PRINT record_get(r, 'stderr')
+    assert(record_get(r, 'status') == 0, name)
+    # Empty output is legal for helpers; only files that exist are tracked.
+    if file_exists(path(cat(name, '.trace'))):
+        tracked(path(cat(name, '.trace')))
+    if file_exists(path(cat(name, '.txt'))):
+        tracked(path(cat(name, '.txt')))
+    return r
+
+def check_list(files, hashes):
+    assert(list_len(files) == list_len(hashes), 'receipt digest count')
+    i = 0
+    while i < list_len(files):
+        assert(text_equal(file_hash_sha256(list_get(files, i)), list_get(hashes, i)), 'receipt artifact digest')
+        i = i+1
+
+def compatible(r):
+    assert(text_equal(record_get(r, 'schema'), 'notorch-doe-long-memory-v1'), 'receipt schema')
+    assert(text_equal(record_get(r, 'protocol'), protocol_sha), 'same protocol')
+    assert(text_equal(record_get(r, 'runner'), runner_sha), 'same native runner')
+    assert(text_equal(record_get(r, 'helper'), helper_sha), 'same measurement helper')
+    assert(text_equal(record_get(r, 'host'), host_sha), 'same body')
+    assert(text_equal(record_get(r, 'tokenizer'), tok_sha), 'same tokenizer')
+    assert(text_equal(record_get(r, 'root'), root_sha), 'same initial population')
+    assert(text_equal(record_get(r, 'worker'), worker), 'same consolidation mode')
+
+def verify_chain(head):
+    current = head
+    expected_hash = file_hash_sha256(head)
+    r = checkpoint_load(head)
+    expected = record_get(r, 'completed')
+    while text_equal(current, '-') == 0:
+        assert(text_equal(file_hash_sha256(current), expected_hash), 'parent receipt digest')
+        r = checkpoint_load(current)
+        compatible(r)
+        first = record_get(r, 'first')
+        last = record_get(r, 'completed')
+        assert(last == expected and first >= 1 and last >= first and last-first < 8, 'receipt interval')
+        assert(last <= 4096 and first == floor(first) and last == floor(last), 'receipt integer interval')
+        check_list(record_get(r, 'artifacts'), record_get(r, 'digests'))
+        check_list(record_get(r, 'states'), record_get(r, 'state_hashes'))
+        check_list(record_get(r, 'episodes'), record_get(r, 'episode_hashes'))
+        assert(list_len(record_get(r, 'states')) == 6 and list_len(record_get(r, 'episodes')) == 6, 'six histories')
+        expected = first-1
+        current = record_get(r, 'parent_receipt')
+        expected_hash = record_get(r, 'parent_hash')
+    assert(expected == 0 and text_equal(expected_hash, '-'), 'receipt root')
+
+def measure(state, arm, step, receipt):
+    name = cat(cat(label(arm), '-'), num(step))
+    a = command(helper)
+    if text_equal(tokenizer, '-') == 0:
+        list_push(a, '--tokenizer')
+        list_push(a, tokenizer)
+    list_push(a, 'score')
+    list_push(a, host)
+    list_push(a, state)
+    scored = path(cat(name, '-scores.amlck'))
+    list_push(a, scored)
+    list_push(a, ' key')
+    list_push(a, ' bell')
+    list_push(a, 'Every night the lighthouse keeper carries a')
+    list_push(a, 'At the lighthouse, Miro reaches for his')
+    run(a, cat(name, '-scores'))
+    tracked(scored)
+    data = checkpoint_load(scored)
+    li = record_get(data, 'left_id')
+    ri = record_get(data, 'right_id')
+    probe = 0
+    while probe < 2:
+        lg = record_get(data, cat('probe', num(probe)))
+        probabilities = softmax(lg)
+        margin = lg[li]-lg[ri]
+        key = cat(cat(label(arm), '-p'), num(probe))
+        record_set(receipt, key, margin)
+        row = col(col(col(num(step), label(arm)), num(probe)), num(li))
+        row = col(col(col(row, num(ri)), text_fixed(margin, 9)), text_fixed(probabilities[li], 9))
+        lines(path('scores.tsv'), col(row, text_fixed(probabilities[ri], 9)))
+        probe = probe+1
+    a = command(helper)
+    list_push(a, 'inspect')
+    list_push(a, host)
+    list_push(a, state)
+    stats = path(cat(name, '-population.amlck'))
+    list_push(a, stats)
+    run(a, cat(name, '-population'))
+    tracked(stats)
+    population = checkpoint_load(stats)
+    assert(decimal(record_get(population, 'turns')) == initial_turns+step, 'waking turns')
+    d = initial_dreams
+    r = initial_replays
+    if text_equal(mode(arm), 'dream'):
+        d = d+floor(step/8)
+    if text_equal(mode(arm), 'replay'):
+        r = r+floor(step/8)
+    assert(decimal(record_get(population, 'dream_cycles')) == d, 'dream cycles')
+    assert(decimal(record_get(population, 'replay_cycles')) == r, 'replay cycles')
+    a = command(helper)
+    list_push(a, 'lineage')
+    list_push(a, host)
+    list_push(a, state)
+    run(a, cat(name, '-lineage'))
+
+runner = list_get(read_line(), 0)
+helper = list_get(read_line(), 0)
+host = list_get(read_line(), 0)
+tokenizer = list_get(read_line(), 0)
+root_spore = list_get(read_line(), 0)
+outdir = list_get(read_line(), 0)
+limit = decimal(list_get(read_line(), 0))
+resume = list_get(read_line(), 0)
+worker = list_get(read_line(), 0)
+halt = decimal(list_get(read_line(), 0))
+halt_at = list_get(read_line(), 0)
+absolute(runner)
+absolute(helper)
+absolute(host)
+absolute(root_spore)
+absolute(outdir)
+if text_equal(tokenizer, '-') == 0:
+    absolute(tokenizer)
+if text_equal(resume, '-') == 0:
+    absolute(resume)
+assert(limit >= 1 and limit <= 4096, 'final ordinal 1..4096')
+assert(text_equal(worker, 'sync') or text_equal(worker, 'worker'), 'consolidation mode')
+assert(text_equal(halt_at, 'none') or text_equal(halt_at, 'before-receipt') or text_equal(halt_at, 'after-receipt'), 'stop point')
+assert((halt == 0 and text_equal(halt_at, 'none')) or (halt >= 1 and halt <= limit and text_equal(halt_at, 'none') == 0), 'planned stop in range')
+protocol_sha = file_hash_sha256('long_memory.aml')
+runner_sha = file_hash_sha256(runner)
+helper_sha = file_hash_sha256(helper)
+host_sha = file_hash_sha256(host)
+root_sha = file_hash_sha256(root_spore)
+tok_sha = '-'
+if text_equal(tokenizer, '-') == 0:
+    tok_sha = file_hash_sha256(tokenizer)
+env = record_new()
+record_set(env, 'LC_ALL', 'C')
+record_set(env, 'NT_TOKENS', '')
+record_set(env, 'NT_CHAT', '||')
+record_set(env, 'NT_ATTN_THREADS', '1')
+record_set(env, 'NT_NO_I8', '1')
+record_set(env, 'NT_CTX', '128')
+states = list_new()
+episodes = list_new()
+step = 0
+previous = '-'
+previous_sha = '-'
+if text_equal(resume, '-') == 0:
+    verify_chain(resume)
+    restored = checkpoint_load(resume)
+    states = record_get(restored, 'states')
+    episodes = record_get(restored, 'episodes')
+    step = record_get(restored, 'completed')
+    previous = resume
+    previous_sha = file_hash_sha256(resume)
+else:
+    i = 0
+    while i < 6:
+        list_push(states, root_spore)
+        list_push(episodes, '-')
+        i = i+1
+assert(step < limit, 'continuation extends the saved history')
+assert(halt == 0 or halt > step, 'planned stop after saved boundary')
+assert(dir_claim(outdir) == 1, 'new segment directory')
+artifacts = list_new()
+digests = list_new()
+a = command(helper)
+list_push(a, 'inspect')
+list_push(a, host)
+list_push(a, root_spore)
+list_push(a, path('initial.amlck'))
+run(a, 'initial')
+initial = checkpoint_load(path('initial.amlck'))
+initial_turns = decimal(record_get(initial, 'turns'))
+initial_dreams = decimal(record_get(initial, 'dream_cycles'))
+initial_replays = decimal(record_get(initial, 'replay_cycles'))
+lines(path('scores.tsv'), 'ordinal\tarm\tprobe\tkey_id\tbell_id\tlog_odds_key_over_bell\tp_key\tp_bell')
+while step < limit:
+    first = step+1
+    last = min(step+8, limit)
+    if halt > step and halt < last:
+        last = halt
+    artifacts = list_new()
+    digests = list_new()
+    next_states = list_new()
+    next_episodes = list_new()
+    state_hashes = list_new()
+    episode_hashes = list_new()
+    receipt = record_new()
+    arm = 0
+    while arm < 6:
+        name = cat(cat(label(arm), '-block-'), num(first))
+        folder = path(name)
+        assert(dir_claim(folder) == 1, 'new arm block')
+        inputs = path(cat(name, '-inputs.txt'))
+        n = first
+        while n <= last:
+            lines(inputs, encounter(n, arm))
+            n = n+1
+        tracked(inputs)
+        a = command(runner)
+        list_push(a, host)
+        list_push(a, tokenizer)
+        list_push(a, list_get(states, arm))
+        list_push(a, list_get(episodes, arm))
+        list_push(a, mode(arm))
+        list_push(a, worker)
+        list_push(a, num(first))
+        list_push(a, num(last))
+        list_push(a, folder)
+        list_push(a, inputs)
+        run(a, name)
+        n = first
+        while n <= last:
+            tracked(cat(cat(folder, '/state-'), cat(num(n), '.gguf')))
+            if n == floor(n/8)*8:
+                tracked(cat(cat(folder, '/wake-'), cat(num(n), '.gguf')))
+            n = n+1
+        child = cat(cat(folder, '/state-'), cat(num(last), '.gguf'))
+        ep = list_get(episodes, arm)
+        if text_equal(ep, '-'):
+            ep = cat(folder, '/episode.gguf')
+            tracked(ep)
+        list_push(next_states, child)
+        list_push(state_hashes, file_hash_sha256(child))
+        list_push(next_episodes, ep)
+        list_push(episode_hashes, file_hash_sha256(ep))
+        measure(child, arm, last, receipt)
+        arm = arm+1
+    assert(halt != last or text_equal(halt_at, 'before-receipt') == 0, 'PLANNED_STOP_BEFORE_RECEIPT')
+    record_set(receipt, 'schema', 'notorch-doe-long-memory-v1')
+    record_set(receipt, 'protocol', protocol_sha)
+    record_set(receipt, 'runner', runner_sha)
+    record_set(receipt, 'helper', helper_sha)
+    record_set(receipt, 'host', host_sha)
+    record_set(receipt, 'tokenizer', tok_sha)
+    record_set(receipt, 'root', root_sha)
+    record_set(receipt, 'worker', worker)
+    record_set(receipt, 'first', first)
+    record_set(receipt, 'completed', last)
+    record_set(receipt, 'parent_receipt', previous)
+    record_set(receipt, 'parent_hash', previous_sha)
+    record_set(receipt, 'states', next_states)
+    record_set(receipt, 'state_hashes', state_hashes)
+    record_set(receipt, 'episodes', next_episodes)
+    record_set(receipt, 'episode_hashes', episode_hashes)
+    record_set(receipt, 'artifacts', artifacts)
+    record_set(receipt, 'digests', digests)
+    file = path(cat(cat('receipt-', num(last)), '.amlck'))
+    assert(file_exists(file) == 0, 'new receipt path')
+    assert(checkpoint_save(receipt, file) >= 1, 'receipt commit')
+    previous = file
+    previous_sha = file_hash_sha256(file)
+    states = next_states
+    episodes = next_episodes
+    step = last
+    PRINT cat(cat('LONG_MEMORY_COMMITTED ', num(step)), cat(' ', previous_sha))
+    assert(halt != last or text_equal(halt_at, 'after-receipt') == 0, 'PLANNED_STOP_AFTER_RECEIPT')
+PRINT 'LONG_MEMORY_COMPLETE'

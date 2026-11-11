@@ -3,6 +3,7 @@
 #include "ariannamethod.h"
 #include "harness/archs.h"
 #include "harness/experts.h"
+#include "harness/experts_internal.h"
 #include "examples/bpe.h"
 #include <math.h>
 #include <stdio.h>
@@ -77,6 +78,56 @@ static int save_record(AM_Record *rec, const char *out) {
         free(tmp);
     }
     if (!ok) fprintf(stderr, "could not publish new AML checkpoint %s: %s\n", out, error);
+    return ok;
+}
+
+static int text_field(AM_Record *rec, const char *name, const char *text) {
+    AM_String *s = am_string_new(text);
+    int ok = s && field(rec, name, (AML_Var){.type=AML_TYPE_STRING, .string=s});
+    am_string_free(s);
+    return ok;
+}
+
+/* Counters are decimal text: an AML scalar is F32, and long-lived clocks
+ * must not round after 2^24. The experiment parses only its bounded schedule. */
+static int count_field(AM_Record *rec, const char *name, uint64_t value) {
+    char text[32];
+    snprintf(text, sizeof(text), "%llu", (unsigned long long)value);
+    return text_field(rec, name, text);
+}
+
+static int inspect(const char *host_path, const char *spore, const char *out) {
+    gguf_file *host = gguf_open(host_path);
+    nt_experts *p = host ? nt_experts_open(host, spore, NULL) : NULL;
+    AM_Record *rec = am_record_new();
+    AM_Array *row = am_array_new(SEATS);
+    int ok = p && rec && row;
+    if (ok) ok = text_field(rec,"host",p->host) &&
+        count_field(rec,"turns",p->turns) && count_field(rec,"elections",p->elections) &&
+        count_field(rec,"dream_cycles",p->sleep.cycles) && count_field(rec,"dream_choices",p->sleep.choices) &&
+        count_field(rec,"dream_elections",p->sleep.elections) && count_field(rec,"dream_seen",p->sleep.seen) &&
+        count_field(rec,"replay_cycles",p->replay.cycles) && count_field(rec,"replay_choices",p->replay.choices) &&
+        count_field(rec,"replay_elections",p->replay.elections) && count_field(rec,"replay_prefill",p->replay.prefill) &&
+        count_field(rec,"replay_stops",p->replay.stops) && text_field(rec,"replay_last",p->replay.last) &&
+        count_field(rec,"rng",p->rng) && count_field(rec,"ancestors",(uint64_t)p->ancestor_count);
+    if (ok) {
+        const char *names[]={"alive","vitality","frequency","age","low","cursor"};
+        const float *values[]={p->alive,p->vitality,p->frequency,p->age,p->low,p->cursor};
+        for (int k=0;ok && k<6;k++) {
+            memcpy(row->data,values[k],SEATS*sizeof(float));
+            ok=field(rec,names[k],(AML_Var){.type=AML_TYPE_ARRAY,.array=row});
+        }
+        for (int e=0;ok && e<SEATS;e++) {
+            nt_expert_identity id;
+            char key[24];
+            snprintf(key,sizeof(key),"identity%d",e);
+            int found=nt_experts_seat_identity(p,e,&id)==0;
+            ok=text_field(rec,key,found?id.id:"");
+        }
+    }
+    if(ok) ok=save_record(rec,out);
+    am_array_free(row); am_record_free(rec); nt_experts_free(p); gguf_close(host);
+    if(!ok) fprintf(stderr,"doe_probe: could not inspect exact-host spore\n");
     return ok;
 }
 
@@ -208,6 +259,7 @@ static int compare_f32(const char *left, const char *right, int n, char **names)
 
 int main(int argc, char **argv) {
     if (argc == 4 && !strcmp(argv[1],"lineage")) return !lineage(argv[2],argv[3]);
+    if (argc == 5 && !strcmp(argv[1],"inspect")) return !inspect(argv[2],argv[3],argv[4]);
     if (argc == 7 && !strcmp(argv[1],"pack-logits"))
         return !pack_logits(argv[2],argv[3],argv[4],argv+5);
     if (argc >= 5 && !strcmp(argv[1], "compare-f32"))
@@ -222,6 +274,7 @@ int main(int argc, char **argv) {
                         "doe_probe transplant HOST RECIPIENT DONOR NEW_SPORE SLOT...\n"
                         "doe_probe transplant-id HOST RECIPIENT DONOR NEW_SPORE ID...\n"
                         "doe_probe lineage HOST SPORE\n"
+                        "doe_probe inspect HOST SPORE CHECKPOINT\n"
                         "doe_probe [--tokenizer FILE] score HOST SPORE|- CHECKPOINT LEFT RIGHT PROMPT...\n");
         return 1;
     }

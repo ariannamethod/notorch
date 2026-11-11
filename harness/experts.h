@@ -26,6 +26,16 @@ int nt_experts_seat_identity(const nt_experts *p, int slot, nt_expert_identity *
 int nt_experts_find_identity(const nt_experts *p, const char *id);
 int nt_experts_copy_factors_by_identity(nt_experts *recipient,
                                        const nt_experts *donor, const char *id);
+/* Explicitly recall a selected earlier state of this exact body. Matching
+ * living birth IDs recover local A/B/vote outside the calibrated frame while
+ * retaining the incoming 32 coordinates. New identities are untouched.
+ * Both owners must be at completed boundaries; incoming needs open_on_body
+ * for calibration. The joint weight update is atomic; incoming clocks, RNG,
+ * cursors, lifecycle and genealogy remain authoritative. This operation does
+ * not infer checkpoint ancestry from birth IDs. matched may be NULL, otherwise
+ * receives the matching living count on success and zero on refusal.
+ * Self recall and no matching identities are successful numerical no-ops. */
+int nt_experts_recall_body(nt_experts *incoming, const nt_experts *local, int *matched);
 
 /* A fresh parliament starts at the middle decoder layer. A spore restores a
  * completed turn for these exact host bytes. Destroy the session after any
