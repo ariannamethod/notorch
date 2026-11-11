@@ -8,6 +8,25 @@
 
 typedef struct nt_experts nt_experts;
 
+enum { NT_EXPERT_SEATS = 6 };
+enum { NT_LINEAGE_FOUNDER = 1, NT_LINEAGE_BIRTH = 2, NT_LINEAGE_ADOPTED = 3 };
+/* An address belongs to a birth, not a storage slot or the current body.
+ * ADOPTED records the first known legacy checkpoint: turn is its observation
+ * turn and parent is empty. death_turn=UINT64_MAX means already retired at
+ * adoption, with an unknown retirement date. Entries remain after slot reuse. */
+typedef struct {
+    char id[65], parent[65], source_host[65];
+    uint64_t turn, death_turn;
+    int kind;
+} nt_expert_identity;
+int nt_experts_ancestor_count(const nt_experts *p);
+int nt_experts_ancestor(const nt_experts *p, int index, nt_expert_identity *out);
+int nt_experts_seat_identity(const nt_experts *p, int slot, nt_expert_identity *out);
+/* Return the living slot for this full identity, or -1 when absent. */
+int nt_experts_find_identity(const nt_experts *p, const char *id);
+int nt_experts_copy_factors_by_identity(nt_experts *recipient,
+                                       const nt_experts *donor, const char *id);
+
 /* A fresh parliament starts at the middle decoder layer. A spore restores a
  * completed turn for these exact host bytes. Destroy the session after any
  * nonzero hook/finish result; a failed turn must never be saved or continued. */
@@ -46,6 +65,30 @@ int nt_experts_dream(nt_experts *p, int tokens, int eos, int learn);
  * a pending waking turn, if present, then learns from one dream. The borrowed
  * model, tokenizer, host and trace must outlive await. */
 int nt_experts_submit_dream(nt_experts **owner, nt_consolidation **job, int tokens, int eos);
+/* Immutable snapshot of an assembled input, including sparse media rows.
+ * Capture copies all input buffers. Its SHA address and embeddings belong to
+ * these exact host bytes; another body must encode the source media again.
+ * Rows may be NULL for an entirely textual input. Policy IDs are sorted into
+ * canonical order; duplicates are refused.
+ * New-path save preserves existing files; load verifies the content address. */
+typedef struct nt_replay_episode nt_replay_episode;
+nt_replay_episode *nt_replay_capture(const nt_experts *p, const int *ids,
+                                    const float *const *rows, int n,
+                                    const int *suppressed, int n_suppressed,
+                                    const int *stops, int n_stops);
+nt_replay_episode *nt_replay_load(const nt_experts *p, const char *path);
+int nt_replay_save(const nt_replay_episode *episode, const char *path);
+const char *nt_replay_id(const nt_replay_episode *episode);
+void nt_replay_free(nt_replay_episode *episode);
+/* Private KV, 1..32 greedy text choices, staged learning. Preview (learn=0)
+ * and failed replay preserve factors, ancestry, RNG and all persistent clocks.
+ * Replay has its own clocks and leaves the text-dream cue mask untouched. */
+int nt_experts_replay(nt_experts *p, const nt_replay_episode *episode, int tokens, int learn);
+/* Deep-copies the episode before transferring the owner. The caller can free
+ * its episode immediately after successful submit. Pending waking learning
+ * precedes replay. Model, tokenizer, host and trace remain borrowed until await. */
+int nt_experts_submit_replay(nt_experts **owner, nt_consolidation **job,
+                            const nt_replay_episode *episode, int tokens);
 int nt_experts_await(nt_experts **owner, nt_consolidation **job);
 /* Replace only one living seat's A and B from the same host and slot. Both
  * parliaments must be at a completed turn boundary. Returns NT_OK or a refusal

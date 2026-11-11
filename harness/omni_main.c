@@ -15,6 +15,8 @@
  *     --experts --mode text  living parliament on the assembled media/text sequence
  *     --learn-experts [--async-consolidation] [--dream-tokens N]
  *     --spore-in F --spore-out NEW.gguf [--portable-spore] [--expert-trace]
+ *     --replay-out NEW.gguf  capture this assembled input for private replay
+ *     --replay-only F        replay a captured input; -n 1..32 (default 6)
  *     --logits-out F       first unsuppressed vocabulary row as native float32
  *     NT_ECHO_IDS=1        print every generated text id on stderr
  *
@@ -183,6 +185,8 @@ static void usage(const char *self) {
                     "  --experts --mode text  opt-in parliament on image, audio and text inputs\n"
                     "  --learn-experts [--async-consolidation] [--dream-tokens 1..32]\n"
                     "  --spore-in F --spore-out NEW.gguf [--portable-spore] [--expert-trace]\n"
+                    "  --replay-out NEW.gguf  capture input IDs and media rows on this body\n"
+                    "  --replay-only F  private replay from --spore-in; -n 1..32 (default 6)\n"
                     "  --logits-out F  write first unsuppressed vocabulary row as native float32\n", self);
 }
 
@@ -198,8 +202,9 @@ int main(int argc, char **argv) {
     const char *system = NULL, *images[MAX_MEDIA], *audios[MAX_MEDIA], *video = NULL, *mode_s = NULL;
     const char *speech_out = "omni_speech.wav";
     const char *spore_in = NULL, *spore_out = NULL, *logits_out = NULL;
+    const char *replay_out = NULL, *replay_in = NULL;
     int experts = 0, learn = 0, async = 0, portable = 0, trace = 0, dream = 0;
-    int n_img = 0, n_aud = 0, max_new = 256, print_ids = 0;
+    int n_img = 0, n_aud = 0, max_new = 256, print_ids = 0, explicit_n = 0;
     float temp = 0, audio_temp = -1, fps = 2;
     int ai = 1;
     while (ai < argc && argv[ai][0] == '-') {
@@ -219,13 +224,15 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--fps")) fps = (float)atof(argv[ai + 1]);
         else if (!strcmp(a, "--mode")) mode_s = argv[ai + 1];
         else if (!strcmp(a, "--speech-out")) speech_out = argv[ai + 1];
-        else if (!strcmp(a, "-n")) max_new = atoi(argv[ai + 1]);
+        else if (!strcmp(a, "-n")) { max_new = atoi(argv[ai + 1]); explicit_n = 1; }
         else if (!strcmp(a, "-t")) temp = (float)atof(argv[ai + 1]);
         else if (!strcmp(a, "--audio-temp")) audio_temp = (float)atof(argv[ai + 1]);
         else if (!strcmp(a, "--seed")) g_rng = strtoull(argv[ai + 1], NULL, 10);
         else if (!strcmp(a, "--spore-in")) spore_in = argv[ai + 1];
         else if (!strcmp(a, "--spore-out")) spore_out = argv[ai + 1];
         else if (!strcmp(a, "--logits-out")) logits_out = argv[ai + 1];
+        else if (!strcmp(a, "--replay-out")) replay_out = argv[ai + 1];
+        else if (!strcmp(a, "--replay-only")) replay_in = argv[ai + 1];
         else if (!strcmp(a, "--dream-tokens")) {
             char *end = NULL;
             long n = strtol(argv[ai + 1], &end, 10);
@@ -237,6 +244,7 @@ int main(int argc, char **argv) {
     }
     if (ai >= argc) { usage(argv[0]); return 2; }
     const char *path = argv[ai], *text = ai + 1 < argc ? argv[ai + 1] : "";
+    if (replay_in && !explicit_n) max_new = 6;
     enum { M_TEXT, M_AUDIO, M_MIXED } mode = M_TEXT;
     int forced = 0;
     if (mode_s) {
@@ -246,7 +254,7 @@ int main(int argc, char **argv) {
         else if (strcmp(mode_s, "text")) { usage(argv[0]); return 2; }
     }
     if (max_new < 1 || fps <= 0) { usage(argv[0]); return 2; }
-    if ((learn || async || portable || spore_in || spore_out || dream) && !experts) {
+    if ((learn || async || portable || spore_in || spore_out || dream || replay_out || replay_in) && !experts) {
         fprintf(stderr, "omni: expert state and learning options require --experts\n"); return 2;
     }
     if ((async || dream) && !learn) {
@@ -257,6 +265,11 @@ int main(int argc, char **argv) {
     }
     if (experts && (print_ids || !forced || mode != M_TEXT || !isfinite(temp))) {
         fprintf(stderr, "omni: --experts requires --mode text, finite temperature and an inference run\n"); return 2;
+    }
+    if (replay_in && (!learn || !spore_in || replay_out || dream || n_img || n_aud || video ||
+                      system || logits_out || ai + 1 < argc || temp != 0 || max_new > NT_DREAM_MAX_TOKENS)) {
+        fprintf(stderr, "omni: --replay-only requires --learn-experts --spore-in, greedy -n 1..32, and no new input or dream\n");
+        return 2;
     }
 
     double t_load = now_ms();
@@ -300,9 +313,21 @@ int main(int argc, char **argv) {
     int *frames = NULL, n_frames = 0, cap_frames = 0;
     kv_cache *kv = NULL;
     nt_experts *parliament = NULL;
+    nt_replay_episode *episode = NULL;
     nt_consolidation *pending = NULL;
     speech_t sp = {0};
     if (!hidden || !logits || !frame_row) goto done;
+    if (replay_in) {
+        nt_expert_body body = {model, tok};
+        parliament = nt_experts_open_on_body(gf, spore_in, trace ? stderr : NULL, &body);
+        episode = parliament ? nt_replay_load(parliament, replay_in) : NULL;
+        if (!episode) { fprintf(stderr, "omni: replay episode or expert state refused for this body\n"); goto done; }
+        int r = async ? nt_experts_submit_replay(&parliament, &pending, episode, max_new)
+                      : nt_experts_replay(parliament, episode, max_new, 1);
+        if (r) { fprintf(stderr, "omni: replay failed: %s\n", nt_strerror(r)); goto done; }
+        rc = 0;
+        goto done;
+    }
     for (int i = 0; i < n_img; i++) {
         int h, w, H, Wd;
         float *px = NULL;
@@ -422,6 +447,21 @@ int main(int argc, char **argv) {
         int nr = 0;
         for (int i = 0; i < p.n; i++) nr += p.rows[i] != NULL;
         if (trace) fprintf(stderr, "doe input positions=%d media=%d text=%d\n", p.n, nr, p.n - nr);
+        if (replay_out) {
+            const int suppressed[] = {I->tok_audio, I->tok_audio_out, I->tok_image, I->tok_video,
+                                      I->tok_mixed_start, I->tok_audio_start};
+            int stops[3] = {I->tok_im_end, I->tok_text_end, eos}, ns = 0;
+            for (int i = 0; i < 3; i++) {
+                int seen = stops[i] < 0;
+                for (int j = 0; j < ns; j++) seen |= stops[j] == stops[i];
+                if (!seen) stops[ns++] = stops[i];
+            }
+            episode = nt_replay_capture(parliament, p.ids, p.rows, p.n, suppressed, 6, stops, ns);
+            if (!episode || nt_replay_save(episode, replay_out)) {
+                fprintf(stderr, "omni: could not publish a new replay episode at %s\n", replay_out); goto done;
+            }
+            if (trace) fprintf(stderr, "doe replay-capture episode=%s\n", nt_replay_id(episode));
+        }
     }
 
     kv = nt_model_kv_new(arch, model, dims, p.n + max_new + 1);
@@ -555,6 +595,7 @@ done:
         fprintf(stderr, "omni: could not publish a new spore at %s\n", spore_out); rc = 1;
     }
     nt_experts_free(parliament);
+    nt_replay_free(episode);
     for (int m = 0; m < n_media; m++) free(media[m]);
     free(p.ids); free(p.rows); free(hidden); free(logits); free(frame_row); free(frames); free(sp.hist);
     if (kv) nt_model_kv_free(arch, model, kv);

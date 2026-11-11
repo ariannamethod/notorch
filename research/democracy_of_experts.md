@@ -153,6 +153,35 @@ The other components come from the recipient's own
 initialization. A seat keeps its history across this change of coordinates.
 [Calibration and projection](../harness/spore_frame.c) · [Cross-body AML experiment](../experiments/doe_spores/portable.aml)
 
+### An address belongs to a birth
+
+A population has a genealogy beyond its six current storage slots. Each
+founder and subsequent birth receives a SHA-256 address. A birth binds the
+parent's address, the source body, the completed-turn boundary, its ledger
+position and the child's initial A/B and voting factors. These inputs make
+identical serial and worker histories agree while letting descendants of
+divergent learned histories acquire distinct addresses. No extra random draw
+is introduced. Learning, sleep and a change of coordinates preserve the address.
+
+The spore carries an append-only birth ledger and the current slot-to-ancestor
+map. Retirement adds a death turn to the existing entry. Reusing that slot
+adds another birth; the earlier entry remains available as a parent or an
+ancestor. Reading the ledger checks that parents precede their children, that
+dates are consistent, and that every living identity occupies exactly one
+living slot. An intervention can consequently name the expert it is testing
+across checkpoints. Copying A/B by identity keeps the recipient's genealogy
+and clocks and requires both copies to be expressed in the same host.
+[Birth addresses and ledger](../harness/expert_lineage.c)
+
+Exact and portable spores now use schema versions 5 and 6. Versions 1–4
+retain their numerical state on import and acquire adoption records derived
+from the original donor archive's SHA and each used slot, before any coordinate
+projection. An adoption records the checkpoint where the expert was first
+identified and leaves its parent unknown. A retired legacy seat has an unknown
+retirement date. Future births from these adopted identities have explicit
+parents and dates. This gives an old population a durable continuation while
+preserving the provenance available in its actual archive.
+
 A dream uses these same axes. The parliament chooses an unused cue by the sum of its living
 seats' vitality-weighted response energies, `Σ vitality_e ‖A_e B_e q‖²`. The body decodes
 that cue with a private cache. A preview exposes its choices in the trace. Recording the
@@ -305,9 +334,61 @@ body generates a private continuation; its elected seats update at the sleep
 rate of 0.0025, against the waking rate of 0.01. The commit carries A/B, rank cursors, RNG and the separate sleep
 clock into the waking population. Membership, waking age, consensus, vote rows
 and waking oscillator history retain their pre-dream values. Thus a visual
-episode can affect a later text dream through the acquired expert state. A
-replay store of images or projected media rows would supply an additional source
-of dream episodes; the current cue mechanism draws from the calibrated literals.
+episode can affect a later text dream through the acquired expert state.
+
+Captured sensory inputs supply another source of private episodes. The native
+replay store contains the assembled input IDs, sorted positions of media rows,
+their copied F32 values and the suppression/stop policy for the continuation.
+Its content address binds all of these to the exact host SHA. Replaying the
+snapshot reconstructs a fresh sequence through the same decoder and both DoE
+hooks. The model generates 1–32 private greedy text choices. Elected seats
+learn from the resulting pre- and post-FFN means at the sleep rate. A staged
+commit publishes A/B, cursors, RNG and replay receipts together. Preview or a
+failed private sequence preserves the preceding population. The worker copies
+the immutable episode before accepting ownership, so the caller can release
+the original buffers while consolidation proceeds.
+[Episode capture and persistence](../harness/replay_episode.c) ·
+[Private replay and staged learning](../harness/dream.c)
+
+Replay has separate cumulative clocks for episodes, choices, prefill positions,
+elections and terminating choices. A nonterminal choice enters the decoder,
+including the last choice of a budget-limited episode. A terminating choice
+does not. Consequently `elections = prefill + choices − stops`. The spore
+records that identity and the last replayed episode address. The ordinary
+text-dream mask remains independent, so a long visual input does not consume
+the rotation of 32 anchor cues. Waking membership, ages and genealogy advance
+only at completed waking learning turns; both kinds of sleep keep them fixed.
+
+An embedding snapshot is bound to its source body. The portable parliament's
+frame measures residual coordinates at the middle block, while sensory rows
+enter before the first block. On a different GGUF the receiving towers encode
+the original image or WAV again, creating a new bound episode address. The
+expert identities and their ancestry travel in the portable spore. Keeping raw
+media and its content hash alongside the recipe makes the same encounter
+available to each receiving body without substituting one body's input basis
+for another's.
+
+The mixed continuation takes the earlier population from turn 24 to turn 36
+through Q8 → F16 → Q8, alternating the paired pictures and two spoken sentences.
+Twelve sensory replays add 66 private choices and 972 elections on 918 prefill
+positions; twelve final stop choices account for the difference. The six
+adopted identities remain alive and unchanged through both weight changes. Every
+waking and replay boundary has byte-identical serial and worker spores. The
+preceding six text dreams retain their clocks and cue mask. Re-encoding the
+four encounters after returning to Q8 reproduces their original episode bytes.
+[Protocol and probes](../experiments/doe_spores/omni-replay.md) ·
+[Replay clocks](../experiments/doe_spores/omni-replay-clocks.tsv)
+
+On the last Q8 replay, the text probe's Red/Blue log odds move by −0.003292083,
+and key/bell by +0.104731559. At the F16 boundary the corresponding changes are
+−0.000001908 and −0.000000953. Full-row comparisons record the changed vocabulary
+entries and their maximum absolute difference. Moving the last Q8 episode's A/B
+by the six identity addresses into its pre-replay recipient reproduces both
+128,000-entry output rows byte for byte. Its clocks and genealogy remain those
+of the recipient. This addresses the learned contribution directly across
+saved generations.
+[Selected probabilities](../experiments/doe_spores/omni-replay-scores.tsv) ·
+[Full-row changes](../experiments/doe_spores/omni-replay-logits.tsv)
 
 An active generation and its history occupy different scales. At width 2,048
 the current six-seat, rank-four population and its persistent state use 442,576
@@ -361,8 +442,9 @@ the same births, while their children acquired different factors. At turn 24,
 the joint A/B distance between histories was 0.00021–0.00038 for the four
 founders, and 1.80106 and 1.81632 for the children. The figure follows these
 distances from the first night through the births. Stable lineage identifiers
-and separate accounting of update noise and birth noise would make the
-contribution of each process accessible to subsequent experiments.
+now address these descendants independently of their slots. Update and birth
+noise still draw from the same persisted stream; separating those streams is
+an available intervention for measuring their individual contribution.
 [Factor distances](../experiments/doe_spores/omni-divergence.tsv)
 
 The receiving arithmetic is another part of continuity. The episode-8 spore's
@@ -377,6 +459,38 @@ the saved factors, the receiving arithmetic, elections and response together.
 [Activation control](../experiments/doe_spores/omni-activation.tsv) ·
 [Election control](../experiments/doe_spores/omni-gates.tsv) ·
 [Reproduction](../experiments/doe_spores/omni-long.md)
+
+### Several bodies, one continuing parliament
+
+The Method already has two useful precedents for a composition of voices.
+Dario's versioned knowledge kernel links each document version to a SHA and a
+previous version. Its chain dialogue also places a selected injection at the
+start of a model's answer. gowiththeflow passes a completed UTF-8 utterance
+among resident bodies; each body encodes it with its own vocabulary and
+responds through its own state. In the current flow loop, the previous utterance
+enters both the listener's field and its next prompt. Those paths offer
+separate experimental controls.
+[Dario paper](https://github.com/ariannamethod/dario/blob/8ccf9053298a8039e3d5e9df7fa053f4aed481e7/docs/dario_paper_v2.md) ·
+[Version lineage](https://github.com/ariannamethod/dario/blob/8ccf9053298a8039e3d5e9df7fa053f4aed481e7/kk_kernel.c#L625) ·
+[Flow between voices](https://github.com/ariannamethod/gowiththeflow/blob/1c3f8afc0409fefb0ba73e382546bb8661641038/gowiththeflow.c#L240)
+
+The next composition can use a portable population as the continuing owner of
+experience. Body A produces an utterance and saves its parliament; body B
+receives that population, encodes the utterance in its own input protocol,
+and consolidates a private episode before the next public answer. An A → B → A
+schedule gives each body a measurable return to its own baseline. Expert birth
+addresses connect the successive populations, while episode addresses identify
+what each body actually replayed. The native APIs now supply the lineage,
+coordinate transfer and private replay operations for that schedule.
+
+The first comparison should hold the peer utterances and turn schedule fixed:
+separate parliaments with peer text in context; a shared parliament with private
+peer replay; and a shared parliament with both routes. Subsequent live waves
+can choose the next speaker by its response to the preceding utterance, as
+flow does. A resident multi-body scheduler and a merged contribution policy
+are the next implementation layer. The current worker has one population
+owner and commits one generation at a time; this defines the serial reference
+against which concurrent proposals can be compared.
 
 ## 5. Claims and probes
 

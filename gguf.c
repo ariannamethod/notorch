@@ -416,6 +416,54 @@ char** gguf_read_str_array(const char* path, const char* key, int* out_n) {
     return result;
 }
 
+char** gguf_read_fixed_str_array(const char* path, const char* key, int record_bytes, int* out_n) {
+    if (out_n) *out_n = 0;
+    if (!path || !key || record_bytes < 1) return NULL;
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    uint32_t magic, version;
+    uint64_t n_tensors, n_kv, count = 0;
+    char** result = NULL;
+    if (!read_u32(f, &magic) || magic != GGUF_MAGIC ||
+        !read_u32(f, &version) || !read_u64(f, &n_tensors) || !read_u64(f, &n_kv)) goto fail;
+    for (uint64_t i = 0; i < n_kv; i++) {
+        char k[512] = {0};
+        uint32_t type;
+        if (!read_string(f, k, sizeof(k)) || !read_u32(f, &type)) goto fail;
+        if (strcmp(k, key)) {
+            if (!skip_value(f, type)) goto fail;
+            continue;
+        }
+        uint32_t element_type;
+        if (type != 9 || !read_u32(f, &element_type) || element_type != 8 ||
+            !read_u64(f, &count) || count > GGUF_MAX_STR_ARRAY ||
+            count > SIZE_MAX / sizeof(*result)) goto fail;
+        long start = ftell(f);
+        if (start < 0 || fseek(f, 0, SEEK_END)) goto fail;
+        long end = ftell(f);
+        if (end < start || fseek(f, start, SEEK_SET) ||
+            count > (uint64_t)(end-start) / (8 + (uint64_t)record_bytes)) goto fail;
+        result = calloc(count ? (size_t)count : 1, sizeof(*result));
+        if (!result) goto fail;
+        for (uint64_t j = 0; j < count; j++) {
+            uint64_t length;
+            if (!read_u64(f, &length) || length != (uint64_t)record_bytes) goto fail;
+            result[j] = malloc((size_t)record_bytes + 1);
+            if (!result[j] || fread(result[j], 1, (size_t)record_bytes, f) != (size_t)record_bytes ||
+                memchr(result[j], 0, (size_t)record_bytes)) goto fail;
+            result[j][record_bytes] = 0;
+        }
+        if (out_n) *out_n = (int)count;
+        fclose(f);
+        return result;
+    }
+fail:
+    if (result) for (uint64_t i = 0; i < count; i++) free(result[i]);
+    free(result);
+    fclose(f);
+    return NULL;
+}
+
 /* Same walk for an INT32 array. tokenizer.ggml.token_type is one, and without it there is
  * no way to tell an added token — a literal run of spaces, say — from an ordinary merge. */
 int32_t* gguf_read_i32_array(const char* path, const char* key, int* out_n) {

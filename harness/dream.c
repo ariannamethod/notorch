@@ -3,6 +3,8 @@
 #include "harness/experts_internal.h"
 #include "harness/spore_frame.h"
 #include "harness/tokenizer.h"
+#include "harness/replay_internal.h"
+#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,13 +44,13 @@ static int select_cue(const nt_experts *p, uint32_t seen, int *seat) {
     return selected;
 }
 
-static int trace_piece(FILE *out, const bpe_tokenizer *tok, int step, int id, int stop) {
+static int trace_piece(FILE *out, const bpe_tokenizer *tok, const char *kind, int step, int id, int stop) {
     int cap = bpe_decode_token_capacity(tok, id);
     char *piece = cap > 0 ? malloc((size_t)cap) : NULL;
     if (!piece) return cap > 0 ? NT_E_MEMORY : NT_E_TOKEN;
     int n = bpe_decode_token(tok, id, piece, cap);
     flockfile(out);
-    fprintf(out, "doe dream-choice step=%d id=%d stop=%d piece=\"", step, id, stop);
+    fprintf(out, "doe %s-choice step=%d id=%d stop=%d piece=\"", kind, step, id, stop);
     for (int i = 0; i < n; i++) {
         unsigned char c = (unsigned char)piece[i];
         if (c == '"' || c == '\\') fprintf(out, "\\%c", c);
@@ -90,7 +92,7 @@ static int generate(nt_experts *d, int cue, int limit, int eos) {
         int id = nt_sample_model_token(logits, d->dims.vocab, tok, 0);
         int stop = id == eos || bpe_is_eog(tok, id);
         nt_experts_choice(d, logits[id], logits[id]);
-        if (d->trace && (rc = trace_piece(d->trace, tok, t, id, stop))) break;
+        if (d->trace && (rc = trace_piece(d->trace, tok, "dream", t, id, stop))) break;
         if (stop) break;
         rc = dream_forward(d, kv, &id, 1, n+t, t+1 == limit ? NULL : logits);
     }
@@ -102,7 +104,7 @@ done:
 
 /* Stage the joint update. A late rejection on one seat must not publish the
  * factors, cursors or RNG of an earlier seat. */
-static int record_episode(nt_experts *p, nt_experts *d, uint32_t seen) {
+static int record_episode(nt_experts *p, nt_experts *d) {
     size_t n = (size_t)SEATS * d->dim * RANK;
     float *staged = malloc(2*n*sizeof(float));
     if (!staged) return NT_E_MEMORY;
@@ -116,10 +118,6 @@ static int record_episode(nt_experts *p, nt_experts *d, uint32_t seen) {
         memcpy(p->b, d->b, n*sizeof(float));
         memcpy(p->cursor, d->cursor, sizeof(p->cursor));
         p->rng = d->rng;
-        p->sleep.cycles++;
-        p->sleep.choices += d->choices;
-        p->sleep.elections += d->elections;
-        p->sleep.seen = seen;
     }
     free(staged);
     return rc;
@@ -147,10 +145,94 @@ int nt_experts_dream(nt_experts *p, int tokens, int eos, int learn) {
     if (!rc && (!d.choices || !d.count || d.observed != d.count ||
         (uint64_t)d.choices > UINT64_MAX - p->sleep.choices ||
         d.elections > UINT64_MAX - p->sleep.elections)) rc = NT_E_STATE;
-    if (!rc && learn) rc = record_episode(p, &d, seen | (UINT32_C(1) << cue));
+    if (!rc && learn) {
+        rc = record_episode(p, &d);
+        if (!rc) {
+            p->sleep.cycles++;
+            p->sleep.choices += d.choices;
+            p->sleep.elections += d.elections;
+            p->sleep.seen = seen | (UINT32_C(1) << cue);
+        }
+    }
     if (!rc && d.trace) fprintf(d.trace, "doe dream-end cycle=%llu choices=%d elections=%llu learn=%d\n",
                                (unsigned long long)d.sleep.cycles+1, d.choices,
                                (unsigned long long)d.elections, !!learn);
+    free(d.sum_in);
+    return rc;
+}
+
+static int replay_generate(nt_experts *d, const nt_replay_episode *e, int limit, int *stopped) {
+    const nt_arch *arch=d->decoder;
+    const bpe_tokenizer *tok=d->body.tokenizer;
+    if(e->n>INT_MAX-limit || (d->frame_host->ctx_len>0 && e->n+limit>d->frame_host->ctx_len))
+        return NT_E_CAPACITY;
+    if(e->n_media && (!arch->doe->forward_embd || d->dream_route)) return NT_E_STATE;
+    kv_cache *kv=nt_model_kv_new(arch,d->body.model,d->dims,e->n+limit);
+    float *logits=malloc((size_t)d->dims.vocab*sizeof(float));
+    int rc=NT_E_MEMORY, media=0;
+    if(!kv || !logits) goto done;
+    rc=NT_OK;
+    for(int pos=0;!rc && pos<e->n;) {
+        int n=e->n-pos<NT_PREFILL_CHUNK ? e->n-pos : NT_PREFILL_CHUNK;
+        float *out=pos+n==e->n ? logits : NULL;
+        if(e->n_media) {
+            const float *rows[NT_PREFILL_CHUNK]={0};
+            while(media<e->n_media && e->positions[media]<pos+n) {
+                rows[e->positions[media]-pos]=e->media+(size_t)media*e->width;
+                media++;
+            }
+            rc=arch->doe->forward_embd(d->body.model,kv,e->ids+pos,rows,n,pos,out,NULL,
+                                      nt_experts_attend,nt_experts_observe,d);
+        } else rc=dream_forward(d,kv,e->ids+pos,n,pos,out);
+        pos+=n;
+    }
+    for(int t=0;!rc && t<limit;t++) {
+        for(int i=0;i<d->dims.vocab;i++) if(!isfinite(logits[i])) { rc=NT_E_STATE; goto done; }
+        for(int i=0;i<e->n_suppressed;i++) logits[e->suppressed[i]]=-INFINITY;
+        int id=nt_sample_model_token(logits,d->dims.vocab,tok,0);
+        if(id<0 || id>=d->dims.vocab || !isfinite(logits[id])) { rc=NT_E_STATE; break; }
+        int stop=bpe_is_eog(tok,id);
+        for(int i=0;i<e->n_stops;i++) stop|=id==e->stops[i];
+        nt_experts_choice(d,logits[id],logits[id]);
+        if(d->trace && (rc=trace_piece(d->trace,tok,"replay",t,id,stop))) break;
+        if(stop) { *stopped=1; break; }
+        rc=dream_forward(d,kv,&id,1,e->n+t,t+1==limit ? NULL : logits);
+    }
+done:
+    free(logits); nt_model_kv_free(arch,d->body.model,kv);
+    return rc;
+}
+
+int nt_experts_replay(nt_experts *p,const nt_replay_episode *e,int tokens,int learn) {
+    if(!p || !e || tokens<1 || tokens>NT_DREAM_MAX_TOKENS) return NT_E_ARG;
+    if(!nt_replay_matches(p,e) || !p->turns || p->count || p->observed || p->choices ||
+       p->replay.cycles==UINT64_MAX) return NT_E_STATE;
+    /* The ledger, episode, model and factors are read-only in this private
+     * view. Only staged A/B, cursors, RNG and replay receipts can be committed. */
+    nt_experts d=*p;
+    d.dreaming=2; d.elections=0;
+    d.sum_in=calloc((size_t)2*d.dim,sizeof(float));
+    if(!d.sum_in) return NT_E_MEMORY;
+    d.sum_out=d.sum_in+d.dim;
+    if(d.trace) fprintf(d.trace,"doe replay-start cycle=%llu episode=%s positions=%d media=%d limit=%d\n",
+        (unsigned long long)d.replay.cycles+1,e->id,e->n,e->n_media,tokens);
+    int stopped=0, rc=replay_generate(&d,e,tokens,&stopped);
+    if(!rc && (!d.choices || !d.count || d.observed!=d.count ||
+       d.elections!=(uint64_t)e->n+(uint64_t)d.choices-(uint64_t)stopped ||
+       (uint64_t)d.choices>UINT64_MAX-p->replay.choices ||
+       d.elections>UINT64_MAX-p->replay.elections ||
+       (uint64_t)e->n>UINT64_MAX-p->replay.prefill ||
+       (uint64_t)stopped>UINT64_MAX-p->replay.stops)) rc=NT_E_STATE;
+    if(!rc && learn) {
+        rc=record_episode(p,&d);
+        if(!rc) {
+            p->replay.cycles++; p->replay.choices+=(uint64_t)d.choices;
+            p->replay.elections+=d.elections; p->replay.prefill+=(uint64_t)e->n;
+            p->replay.stops+=(uint64_t)stopped; memcpy(p->replay.last,e->id,65);
+        }
+    }
+    if(!rc && d.trace) fprintf(d.trace,"doe replay-end cycle=%llu episode=%s choices=%d elections=%llu stop=%d learn=%d\n",
+        (unsigned long long)d.replay.cycles+1,e->id,d.choices,(unsigned long long)d.elections,stopped,!!learn);
     free(d.sum_in);
     return rc;
 }

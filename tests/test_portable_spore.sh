@@ -24,7 +24,7 @@ mv source donor-offline
 bind --spore-in portable --spore-out aligned-exact aligned
 grep -q 'transfer mode=aligned ' trace
 learn --spore-out aligned-trained aligned ' exposure'
-cmp aligned-exact aligned-trained
+"$root/test_portable_spore" same-state-different-origin aligned-exact aligned-trained
 learn --spore-in aligned-exact --spore-out restart aligned ' probe'
 learn --spore-in portable --spore-out direct aligned ' probe'
 cmp restart direct

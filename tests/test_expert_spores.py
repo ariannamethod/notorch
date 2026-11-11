@@ -31,13 +31,21 @@ def read_spore(path):
         pos += n
         return data
 
+    def value(kind):
+        if kind == 8:
+            return string()
+        if kind == 9:
+            element, count = unpack("IQ")
+            return [value(element) for _ in range(count)]
+        return unpack({4: "I", 5: "i", 6: "f", 10: "Q"}[kind])[0]
+
     magic, version, nt, nk = unpack("4sIQQ")
     assert (magic, version) == (b"GGUF", 3)
     meta = {}
     for _ in range(nk):
         name = string()
         kind, = unpack("I")
-        meta[name] = string() if kind == 8 else unpack({4: "I", 6: "f", 10: "Q"}[kind])[0]
+        meta[name] = value(kind)
     directory = {}
     for _ in range(nt):
         name = string()

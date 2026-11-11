@@ -2,6 +2,7 @@
  * nt_parliament_*_values. Each turn collects residuals; Oja runs at its end. */
 #include "harness/spore_frame.h"
 #include "harness/experts_internal.h"
+#include "harness/replay_internal.h"
 #include "harness/archs.h"
 #include "sha256.h"
 #include <fcntl.h>
@@ -117,6 +118,7 @@ nt_experts *nt_experts_open_on_body(const gguf_file *host, const char *spore, FI
             p->vitality[e] = 0.7f;
             p->frequency[e] = TAU * e / FOUNDERS;
         }
+        if (nt_lineage_founders(p)) goto fail;
     }
     return p;
 fail:
@@ -127,6 +129,7 @@ fail:
 void nt_experts_free(nt_experts *p) {
     if (!p) return;
     free(p->a); free(p->b); free(p->vote); free(p->frame);
+    free(p->ancestors);
     free(p->sum_in); free(p->sum_out); free(p->injected); free(p->update);
     free(p);
 }
@@ -182,7 +185,7 @@ int nt_experts_attend(void *user, int layer, int pos, int n, int width, float *r
         if (p->trace) {
             flockfile(p->trace);
             fprintf(p->trace, "doe %svote pos=%d k=%.0f consensus=%.9g gates=",
-                    p->dreaming ? "dream-" : "", pos+j, result[SEATS+1], p->consensus);
+                    p->dreaming==2 ? "replay-" : p->dreaming ? "dream-" : "", pos+j, result[SEATS+1], p->consensus);
         }
         for (int e = 0; e < SEATS; e++) {
             p->hits[e] += result[e] > 0;
@@ -215,7 +218,7 @@ void nt_experts_choice(nt_experts *p, float best_logit, float chosen_logit) {
 
 /* DOE vitality thresholds. Age is counted in completed turns; its only
  * threshold is 20. Bounded counters stay exact in the spore's F32 tensors. */
-static void lifecycle(nt_experts *p) {
+static int lifecycle(nt_experts *p) {
     int alive = 0, parent = -1, child = -1, retire = -1;
     for (int e = 0; e < SEATS; e++) alive += (int)p->alive[e];
     for (int e = 0; e < SEATS; e++) {
@@ -241,13 +244,17 @@ static void lifecycle(nt_experts *p) {
         p->age[child] = p->low[child] = p->cursor[child] = 0;
         p->vitality[child] = 0.5f;
         p->vitality[parent] *= 0.8f;
+        int rc=nt_lineage_birth(p,parent,child);
+        if(rc) return rc;
         alive++;
         if (p->trace) fprintf(p->trace, "doe birth parent=%d child=%d\n", parent, child);
     }
     if (retire >= 0 && alive > 2) {
+        nt_lineage_retire(p,retire);
         p->alive[retire] = p->vitality[retire] = 0;
         if (p->trace) fprintf(p->trace, "doe death slot=%d\n", retire);
     }
+    return NT_OK;
 }
 
 /* SmolLM2 has large residual outliers at the middle block. On raw means an
@@ -289,7 +296,7 @@ int nt_experts_finish(nt_experts *p, int learn) {
         p->turns == UINT64_MAX) return NT_E_STATE;
     float signal = (float)(p->signal / p->choices);
     if (learn && nt_experts_update_factors(p, 0.01f, signal)) return NT_E_STATE;
-    if (learn) lifecycle(p);
+    if (learn) { int rc=lifecycle(p); if(rc) return rc; }
     p->turns++;
     if (p->trace) fprintf(p->trace, "doe turn=%llu elections=%llu signal=%.9g\n",
                           (unsigned long long)p->turns, (unsigned long long)p->elections, signal);
@@ -305,6 +312,8 @@ struct nt_consolidation {
     pthread_t thread;
     nt_experts *state;
     int finish_turn, dream_tokens, eos, result;
+    nt_replay_episode *episode;
+    int replay_tokens;
 };
 
 static void *consolidate_turn(void *arg) {
@@ -312,18 +321,25 @@ static void *consolidate_turn(void *arg) {
     job->result = job->finish_turn ? nt_experts_finish(job->state, 1) : NT_OK;
     if (job->result == NT_OK && job->dream_tokens)
         job->result = nt_experts_dream(job->state, job->dream_tokens, job->eos, 1);
+    if (job->result == NT_OK && job->episode)
+        job->result = nt_experts_replay(job->state, job->episode, job->replay_tokens, 1);
     return NULL;
 }
 
-static int submit(nt_experts **owner, nt_consolidation **job, int tokens, int eos) {
+static int submit(nt_experts **owner, nt_consolidation **job, int tokens, int eos,
+                   const nt_replay_episode *episode, int replay_tokens) {
     if (!owner || !*owner || !job || *job) return NT_E_ARG;
-    nt_consolidation *next = malloc(sizeof(*next));
+    if (episode && !nt_replay_matches(*owner,episode)) return NT_E_STATE;
+    nt_consolidation *next = calloc(1,sizeof(*next));
     if (!next) return NT_E_MEMORY;
+    if (episode && !(next->episode=nt_replay_clone(episode))) { free(next); return NT_E_MEMORY; }
+    next->replay_tokens=replay_tokens;
     next->state = *owner;
-    next->finish_turn = !tokens || next->state->count != 0;
+    next->finish_turn = (!tokens && !episode) || next->state->count != 0;
     next->dream_tokens = tokens;
     next->eos = eos;
     if (pthread_create(&next->thread, NULL, consolidate_turn, next)) {
+        nt_replay_free(next->episode);
         free(next);
         return NT_E_STATE;
     }
@@ -333,12 +349,18 @@ static int submit(nt_experts **owner, nt_consolidation **job, int tokens, int eo
 }
 
 int nt_experts_submit(nt_experts **owner, nt_consolidation **job) {
-    return submit(owner, job, 0, -1);
+    return submit(owner, job, 0, -1, NULL, 0);
 }
 
 int nt_experts_submit_dream(nt_experts **owner, nt_consolidation **job, int tokens, int eos) {
     if (tokens < 1 || tokens > NT_DREAM_MAX_TOKENS || eos < -1) return NT_E_ARG;
-    return submit(owner, job, tokens, eos);
+    return submit(owner, job, tokens, eos, NULL, 0);
+}
+
+int nt_experts_submit_replay(nt_experts **owner,nt_consolidation **job,
+                             const nt_replay_episode *episode,int tokens) {
+    if(!episode || tokens<1 || tokens>NT_DREAM_MAX_TOKENS) return NT_E_ARG;
+    return submit(owner,job,0,-1,episode,tokens);
 }
 
 int nt_experts_await(nt_experts **owner, nt_consolidation **job) {
@@ -349,6 +371,7 @@ int nt_experts_await(nt_experts **owner, nt_consolidation **job) {
     int result = pending->result;
     if (result == NT_OK) *owner = pending->state;
     else nt_experts_free(pending->state);
+    nt_replay_free(pending->episode);
     free(pending);
     *job = NULL;
     return result;
@@ -414,8 +437,7 @@ static int save_spore(nt_experts *p, const char *path, int portable) {
     if (!w) goto done;
     gguf_write_kv_str(w, "general.architecture", "notorch-doe-spore");
     gguf_write_kv_str(w, "doe.host_sha256", p->host);
-    unsigned version = portable ? 2 : 1;
-    gguf_write_kv_u32(w, "doe.version", p->sleep.cycles ? version + 2 : version);
+    gguf_write_kv_u32(w, "doe.version", portable ? 6 : 5);
     gguf_write_kv_u32(w, "doe.layer", (uint32_t)p->layer);
     gguf_write_kv_u32(w, "doe.rng", p->rng);
     gguf_write_kv_u64(w, "doe.turns", p->turns);
@@ -427,6 +449,15 @@ static int save_spore(nt_experts *p, const char *path, int portable) {
         gguf_write_kv_u64(w, "doe.dream.elections", p->sleep.elections);
         gguf_write_kv_u32(w, "doe.dream.seen", p->sleep.seen);
     }
+    if (p->replay.cycles) {
+        gguf_write_kv_u64(w, "doe.replay.cycles", p->replay.cycles);
+        gguf_write_kv_u64(w, "doe.replay.choices", p->replay.choices);
+        gguf_write_kv_u64(w, "doe.replay.elections", p->replay.elections);
+        gguf_write_kv_u64(w, "doe.replay.prefill", p->replay.prefill);
+        gguf_write_kv_u64(w, "doe.replay.stops", p->replay.stops);
+        gguf_write_kv_str(w, "doe.replay.last", p->replay.last);
+    }
+    if (nt_lineage_write(p,w)) { gguf_write_close(w); goto done; }
     spore_tensor t[TENSORS+1];
     directory(p, p->dim, t);
     if (portable) {
@@ -549,6 +580,25 @@ static int is_digest(const gguf_kv *v) {
     return v && strlen(v->val.str) == 64 && strspn(v->val.str, "0123456789abcdef") == 64;
 }
 
+static int restore_replay(nt_experts *p,const gguf_file *g,int modern) {
+    const char *names[]={"doe.replay.cycles","doe.replay.choices","doe.replay.elections",
+                         "doe.replay.prefill","doe.replay.stops","doe.replay.last"};
+    const gguf_kv *v[6]; int present=0;
+    for(int i=0;i<6;i++) { v[i]=gguf_get_kv(g,names[i]); present+=v[i]!=NULL; }
+    if(!present) return 0;
+    if(!modern || present!=6 || v[5]->type!=8 || !is_digest(v[5])) return -1;
+    for(int i=0;i<5;i++) if(v[i]->type!=10) return -1;
+    uint64_t n=v[0]->val.u64,c=v[1]->val.u64,e=v[2]->val.u64,
+             f=v[3]->val.u64,s=v[4]->val.u64;
+    /* Every cycle has a nonempty prefix and 1..32 choices; a final stop does
+     * not enter the decoder. Subtraction keeps the clock identity overflow-free. */
+    if(!n || c<n || (c-1)/NT_DREAM_MAX_TOKENS>=n || f<n || s>n ||
+       e<f || e-f!=c-s) return -1;
+    p->replay.cycles=n; p->replay.choices=c; p->replay.elections=e;
+    p->replay.prefill=f; p->replay.stops=s; memcpy(p->replay.last,v[5]->val.str,65);
+    return 0;
+}
+
 static int restore(nt_experts *p, const char *path) {
     struct stat st;
     if (stat(path, &st) || st.st_size <= 0) return -1;
@@ -563,15 +613,20 @@ static int restore(nt_experts *p, const char *path) {
     const gguf_kv *elections = field(g, "doe.elections", 10);
     const gguf_kv *consensus = field(g, "doe.consensus", 6);
     if (strcmp(g->arch, "notorch-doe-spore") || g->version != 3 ||
-        !version || version->val.u32 < 1 || version->val.u32 > 4 ||
+        !version || version->val.u32 < 1 || version->val.u32 > 6 ||
         !is_digest(host) ||
         !layer || !rng || !rng->val.u32 || !turns || !turns->val.u64 ||
         !elections || elections->val.u64 < turns->val.u64 ||
         !consensus || !isfinite(consensus->val.f32) ||
         consensus->val.f32 < 0 || consensus->val.f32 > 1 ||
         g->data_offset > (uint64_t)st.st_size) goto done;
-    if (restore_sleep(p, g, version->val.u32 >= 3)) goto done;
-    int portable = version->val.u32 == 2 || version->val.u32 == 4;
+    int modern=version->val.u32>=5;
+    if (!modern && (gguf_get_kv(g,"doe.lineage.version") ||
+                    gguf_get_kv(g,"doe.lineage.entries") || gguf_get_kv(g,"doe.lineage.seats"))) goto done;
+    int slept=modern ? gguf_get_kv(g,"doe.dream.cycles")!=NULL : version->val.u32>=3;
+    if (restore_sleep(p, g, slept)) goto done;
+    if (restore_replay(p, g, modern)) goto done;
+    int portable = (version->val.u32 & 1)==0;
     int same_host = !strcmp(host->val.str, p->host);
     if (g->n_tensors != (uint64_t)(TENSORS + portable) ||
         (!same_host && !portable) || (same_host && layer->val.u32 != (unsigned)p->layer))
@@ -603,6 +658,13 @@ static int restore(nt_experts *p, const char *path) {
     for (int i = 3; i < TENSORS; i++)
         memcpy(t[i].data, values[i], (size_t)elements(&t[i])*sizeof(float));
     if (!valid_lifecycle(p)) goto done;
+    if (modern) {
+        if (nt_lineage_read(p,g,turns->val.u64)) goto done;
+    } else {
+        char digest[65];
+        if (host_hash(path,digest) || nt_lineage_adopt(p,digest,host->val.str,
+            turns->val.u64,width,values[0],values[1])) goto done;
+    }
     int copy_weights = 1;
     if (!same_host) {
         if (nt_experts_calibrate(p)) goto done;

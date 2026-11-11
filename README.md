@@ -260,6 +260,17 @@ consensus, oscillator input history, RNG and clocks. In chat, `/reset` clears
 the KV while the parliament lives on. `--expert-trace` prints per-token gates,
 chosen logits, births, deaths and turn boundaries to stderr.
 
+Each expert also has a permanent SHA-256 birth address and a parent address.
+The ancestry ledger stays inside the spore after death and slot reuse, and
+travels with the population when weights change. New spores use version 5
+(exact) or 6 (portable). Versions 1–4 are adopted on import: their existing
+seats receive addresses derived from the original archive, with unknown
+parents recorded explicitly. A second save is stable. The native API can find
+and transplant factors by identity; `doe_probe lineage HOST SPORE` prints the
+ledger, including retired ancestors.
+The optional audit helper builds with `make doe_probe AML_ROOT=/path/to/aml`;
+the Harness and replay API themselves are C and require no AML runtime.
+
 Add `--async-consolidation` to `--experts --learn-experts` to hand each
 completed turn to a C worker. Chat can accept input while it updates the
 elected experts. The next forward receives the committed parliament. EOF and
@@ -520,6 +531,48 @@ Both audio transcription controls also preserved exact serial/worker spores.
 The [measured protocol](experiments/doe_spores/omni-long.md) includes the body
 hashes, population history, sleep effects and activation-path comparison.
 See [media, consolidation and continuity](research/democracy_of_experts.md#media-experience-and-consolidation).
+
+#### Replay a sight or a sound while asleep
+
+An input can now become an addressed episode: its assembled IDs, copied media
+rows and output-token policy are saved in a separate GGUF. Replay starts private
+convolution/KV state, generates a greedy continuation and consolidates elected
+experts at the sleep learning rate. Its receipts have their own clocks;
+ordinary dreams keep their 32-cue rotation.
+
+```sh
+# Encounter, remember the population, and preserve the sensory input.
+./notorch_omni --mode text --experts --learn-experts --image scene.png \
+  --replay-out seen.gguf --portable-spore --spore-out awake.gguf \
+  omni-q8.gguf "Which color is on the left? Reply with one color."
+
+# Replay that very input in a worker. No new user turn or public answer.
+./notorch_omni --mode text --experts --learn-experts --async-consolidation \
+  --replay-only seen.gguf -n 12 --spore-in awake.gguf \
+  --portable-spore --spore-out after-replay.gguf omni-q8.gguf
+
+# Let another body inherit the parliament and encode its next encounter.
+./notorch_omni --mode text --experts --learn-experts --image scene.png \
+  --spore-in after-replay.gguf --replay-out seen-f16.gguf \
+  --portable-spore --spore-out next-body.gguf omni-f16.gguf "What do you see?"
+```
+
+Use `--audio clip16k.wav --system "Perform ASR in English."` to capture an
+auditory episode. The captured rows belong to the exact host SHA: on another
+GGUF, encode the original image or WAV again, as in the third command. Expert
+identities survive that change. The content address covers input IDs, rows,
+host and policy; every replay records its last episode ID and cumulative
+cycles, choices, prefill positions, elections and stops. Capturing an episode
+publishes an input artifact independently of the later generation's spore.
+[Native replay API](harness/experts.h) ·
+[Mixed experience in AML](experiments/doe_spores/omni_replay.aml) ·
+[Measured continuation](experiments/doe_spores/omni-replay.md)
+
+The continuation reached turn 36 with six living identities, 12 new sensory
+replays and unchanged prior text-dream clocks. All 12 waking and replay
+boundaries preserved exact serial/worker spores through Q8 → F16 → Q8.
+Transplanting the last replay's A/B by identity reproduced all 256,000 logits
+of two fresh probes while retaining the recipient's clocks and genealogy.
 
 The [SmolLM2-360M experiment](experiments/doe_spores/transplant.aml) moves a
 single seat's A/B between two GGUF spores and probes fresh conversations.
