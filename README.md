@@ -140,6 +140,13 @@ through NoTorch's own decoders. Each family declares its architecture names; an
 unknown architecture is refused by name. File-level verification and reference
 runs live in the [harness record](NOTORCHLOG.md#readme-run-a-model).
 
+**Janus v4** exports can select `janus.forward_graph="pytorch-v4-prefix"`
+to execute the published Python graph in native C: historical Echo attention,
+simultaneous token smear, complete-block backout and the global low-rank
+RRPRAM reduction. Independent per-cache token histories support exact prefix
+recomputation across chunked prefill and decode. Existing exports retain the
+incremental profile. [Metadata, cache contract and numerical proof](docs/JANUS_V4_PREFIX.md).
+
 **LFM3** is the registry's first hybrid: gated short convolutions and attention
 share one body, per-head sigmoid gates ride the attention output, and the
 sliding-versus-full split is read from the file's `sliding_window_pattern`

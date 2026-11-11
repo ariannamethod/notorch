@@ -14,7 +14,11 @@
  * snapshot subtracted at the end (backout); and a soft cap on the logits,
  * 15·tanh(l/15).
  *
- * Ported from ~/arianna-shared/arianna.c/tools/yent_forward.h. Equality with
+ * The default incremental profile was ported from arianna.c/tools/yent_forward.h.
+ * janus.forward_graph="pytorch-v4-prefix" selects the published Python graph;
+ * it recomputes each available prefix and owns input history per cache. See
+ * docs/JANUS_V4_PREFIX.md for the arithmetic and profile metadata.
+ * Equality with
  * that forward is the goal and not an assumption: nothing here establishes it,
  * and the gate that does is separate from it.
  *
@@ -28,12 +32,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <float.h>
+#include <limits.h>
 
 #define JANUS_MAX_BLOCKS 32
 #define JANUS_SMEAR_DIMS 24
 
+typedef struct janus_prefix_cache {
+    kv_cache base;
+    struct janus_prefix_cache *next;
+    int *tokens, len;
+    float sentinel;
+} janus_prefix_cache;
+
 typedef struct {
     int vocab, embed, heads, head_dim, blocks, ffn, ctx, rank;
+    int prefix_graph;
+    float prefix_eps;
+    janus_prefix_cache *prefix_caches;
 
     gguf_file *gf;
     float *resid_l, *x0_l, *smear_l, *backout_l, *smear_g;
@@ -96,9 +112,12 @@ static void jqk_norm(float *q, float *k, int dim) {
 
 static float jsilu(float x) { return x > -20 ? x / (1 + expf(-x)) : 0; }
 
-static float *jdense(gguf_file *gf, const char *name) {
+static float *jdense(gguf_file *gf, const char *name, uint64_t elements) {
     int ti = gguf_find_tensor(gf, name);
     if (ti < 0) { fprintf(stderr, "janus: tensor '%s' missing\n", name); return NULL; }
+    if (gf->tensors[ti].n_elements != elements) {
+        fprintf(stderr, "janus: tensor '%s' has an incompatible size\n", name); return NULL;
+    }
     float *p = gguf_dequant(gf, ti);
     if (!p) fprintf(stderr, "janus: dequant '%s' failed\n", name);
     return p;
@@ -146,6 +165,8 @@ static int jpacked(wt *w, gguf_file *gf, const char *name, int rows, int cols) {
     return (w->q || w->f32) ? 1 : 0;
 }
 
+static void janus_free(void *model);
+
 static void *janus_load(gguf_file *gf, nt_dims *dims) {
     janus_model *m = (janus_model*)calloc(1, sizeof(janus_model));
     if (!m) return NULL;
@@ -167,40 +188,58 @@ static void *janus_load(gguf_file *gf, nt_dims *dims) {
 #undef KV
     if (!ok) { free(m); return NULL; }
 
-    if (m->heads * m->head_dim != m->embed || m->blocks < 1 ||
+    if (m->vocab < 1 || m->heads < 1 || m->head_dim < 2 ||
+        m->head_dim % 2 || m->embed % m->heads || m->embed / m->heads != m->head_dim ||
+        m->ffn < 1 || m->ctx < 1 || m->rank < 1 || m->blocks < 1 ||
         m->blocks > JANUS_MAX_BLOCKS || m->embed < JANUS_SMEAR_DIMS) {
         fprintf(stderr, "janus: arch refused — V=%d E=%d H=%d D=%d B=%d M=%d T=%d R=%d\n",
                 m->vocab, m->embed, m->heads, m->head_dim, m->blocks, m->ffn, m->ctx, m->rank);
         free(m);
         return NULL;
     }
+    const gguf_kv *graph = gguf_get_kv(gf, "janus.forward_graph");
+    if (graph) {
+        if (graph->type != 8 || (strcmp(graph->val.str, "pytorch-v4-prefix") &&
+                                  strcmp(graph->val.str, "arianna-v4-incremental"))) {
+            fprintf(stderr, "janus: unknown forward_graph\n"); free(m); return NULL;
+        }
+        m->prefix_graph = !strcmp(graph->val.str, "pytorch-v4-prefix");
+    }
+    m->prefix_eps = FLT_EPSILON;
+    const gguf_kv *eps = gguf_get_kv(gf, "janus.rms_norm_epsilon");
+    if (m->prefix_graph && eps) {
+        if (eps->type != 6 || !isfinite(eps->val.f32) || eps->val.f32 <= 0) {
+            fprintf(stderr, "janus: invalid rms_norm_epsilon\n"); free(m); return NULL;
+        }
+        m->prefix_eps = eps->val.f32;
+    }
     fprintf(stderr, "janus: E=%d H=%d D=%d FFN=%d V=%d B=%d ctx=%d rrpram_rank=%d\n",
             m->embed, m->heads, m->head_dim, m->ffn, m->vocab, m->blocks, m->ctx, m->rank);
 
     const int E = m->embed, FFN = m->ffn;
     m->gf = gf;
-    m->resid_l   = jdense(gf, "resid_lambdas");
-    m->x0_l      = jdense(gf, "x0_lambdas");
-    m->smear_l   = jdense(gf, "smear_lambda");
-    m->backout_l = jdense(gf, "backout_lambda");
-    m->smear_g   = jdense(gf, "smear_gate.weight");
-    m->wte       = jdense(gf, "transformer.wte.weight");
+    m->resid_l   = jdense(gf, "resid_lambdas", m->blocks);
+    m->x0_l      = jdense(gf, "x0_lambdas", m->blocks);
+    m->smear_l   = jdense(gf, "smear_lambda", 1);
+    m->backout_l = jdense(gf, "backout_lambda", 1);
+    m->smear_g   = jdense(gf, "smear_gate.weight", JANUS_SMEAR_DIMS);
+    m->wte       = jdense(gf, "transformer.wte.weight", (uint64_t)m->vocab * E);
     if (!jpacked(&m->head, gf, "lm_head.weight", m->vocab, E)) ok = 0;
 
     char nm[128];
     for (int l = 0; l < m->blocks && ok; l++) {
-        #define L(field, suffix) do { \
+        #define L(field, suffix, count) do { \
             snprintf(nm, sizeof(nm), "transformer.h.%d." suffix, l); \
-            m->b[l].field = jdense(gf, nm); \
+            m->b[l].field = jdense(gf, nm, count); \
             if (!m->b[l].field) ok = 0; \
         } while (0)
         #define W(field, suffix, r, c) do { \
             snprintf(nm, sizeof(nm), "transformer.h.%d." suffix, l); \
             if (!jpacked(&m->b[l].field, gf, nm, (r), (c))) ok = 0; \
         } while (0)
-        L(wr_a,  "attn.wr_a");
-        L(wr_b,  "attn.wr_b");
-        L(gate,  "attn.gate");
+        L(wr_a,  "attn.wr_a", (uint64_t)m->heads * E * m->rank);
+        L(wr_b,  "attn.wr_b", (uint64_t)m->heads * m->rank * m->ctx);
+        L(gate,  "attn.gate", (uint64_t)m->heads * 3);
         W(cq,    "attn.c_q.weight",    E,   E);
         W(ck,    "attn.c_k.weight",    E,   E);
         W(cv,    "attn.c_v.weight",    E,   E);
@@ -217,13 +256,23 @@ static void *janus_load(gguf_file *gf, nt_dims *dims) {
     if (!ok || !m->resid_l || !m->x0_l || !m->smear_l || !m->backout_l ||
         !m->smear_g || !m->wte) {
         fprintf(stderr, "janus: missing critical weights\n");
-        free(m);
+        janus_free(m);
         return NULL;
     }
 
     dims->n_layers = m->blocks;
     dims->kv_dim   = m->embed;
     dims->vocab    = m->vocab;
+    if (m->prefix_graph) {
+        /* This profile compares floating activations with the published graph. */
+        m->head.use_i8 = 0;
+        for (int l = 0; l < m->blocks; l++) {
+            m->b[l].cq.use_i8 = m->b[l].ck.use_i8 = m->b[l].cv.use_i8 = 0;
+            m->b[l].wvr.use_i8 = m->b[l].wj.use_i8 = m->b[l].cproj.use_i8 = 0;
+            m->b[l].wg.use_i8 = m->b[l].wu.use_i8 = m->b[l].wd.use_i8 = 0;
+        }
+        fprintf(stderr, "janus: pytorch-v4-prefix, eps=%.9g, prefix recomputation\n", m->prefix_eps);
+    }
     return m;
 }
 
@@ -239,6 +288,10 @@ static void janus_free(void *model) {
         free(m->b[l].wg.f32); free(m->b[l].wu.f32); free(m->b[l].wd.f32);
     }
     free(m->vr); free(m->mid);
+    while (m->prefix_caches) {
+        janus_prefix_cache *p = m->prefix_caches;
+        m->prefix_caches = p->next; free(p->tokens); free(p);
+    }
     free(m);
 }
 
@@ -418,7 +471,7 @@ static void janus_step(janus_model *m, kv_cache *kv, const float *xin, int pos,
     }
 }
 
-static int janus_forward(void *model, kv_cache *kv, const int *tokens, int n,
+static int janus_legacy_forward(void *model, kv_cache *kv, const int *tokens, int n,
                          int pos0, float *logits) {
     janus_model *m = (janus_model*)model;
     int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->blocks, m->embed);
@@ -470,6 +523,151 @@ static int janus_forward(void *model, kv_cache *kv, const int *tokens, int n,
     return NT_OK;
 }
 
+/* The published low-rank graph reduces the entire supplied sequence before
+ * broadcasting RRPRAM scores. Appending a token therefore changes earlier
+ * hidden rows. Retain input IDs per cache and recompute the available prefix;
+ * a frozen per-layer KV history would execute a different graph. Files opt in
+ * through janus.forward_graph so existing incremental exports keep their ABI. */
+static kv_cache *janus_kv_new(void *model, int capacity) {
+    janus_model *m = model;
+    if (!m->prefix_graph) return kv_new(m->blocks, capacity, m->embed);
+    if (capacity < 1 || capacity > m->ctx) return NULL;
+    janus_prefix_cache *p = calloc(1, sizeof(*p));
+    if (!p) return NULL;
+    p->tokens = calloc((size_t)capacity, sizeof(int));
+    if (!p->tokens) { free(p); return NULL; }
+    p->base = (kv_cache){ &p->sentinel, &p->sentinel, capacity, m->blocks, m->embed };
+    p->next = m->prefix_caches; m->prefix_caches = p;
+    return &p->base;
+}
+
+static void janus_kv_free(void *model, kv_cache *kv) {
+    janus_model *m = model;
+    if (!m->prefix_graph) { kv_free(kv); return; }
+    janus_prefix_cache **link = &m->prefix_caches;
+    while (*link && &(*link)->base != kv) link = &(*link)->next;
+    if (*link) {
+        janus_prefix_cache *p = *link;
+        *link = p->next; free(p->tokens); free(p);
+    }
+}
+
+static void jnorm_eps(float *out, const float *x, int n, float eps) {
+    float ss = dot_f32(x, x, n);
+    float inv = 1.0f / sqrtf(ss / n + eps);
+    for (int i = 0; i < n; i++) out[i] = x[i] * inv;
+}
+
+static int janus_prefix_forward(janus_model *m, kv_cache *kv, const int *tokens,
+                                int n, int pos0, float *logits) {
+    /* Find the allocation before reading an extended cache: a caller may hand
+     * us a plain kv_cache, or a cache owned by a different model. */
+    janus_prefix_cache *p = m->prefix_caches;
+    while (p && &p->base != kv) p = p->next;
+    if (!p) return NT_E_CACHE;
+    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->blocks, m->embed);
+    if (rc) return rc;
+    if (pos0 != 0 && pos0 != p->len) return NT_E_STATE;
+    int N = pos0 + n;
+    if (N > m->ctx) return NT_E_CAPACITY;
+    const int E = m->embed, H = m->heads, D = m->head_dim, R = m->rank, M = m->ffn;
+    memcpy(p->tokens + pos0, tokens, (size_t)n * sizeof(int));
+    /* A prefill with no requested logits only needs to retain its IDs. */
+    if (!logits) { p->len = N; return NT_OK; }
+
+    size_t row = (size_t)11 * E + (size_t)2 * M + H + 2;
+    if (row > SIZE_MAX / sizeof(float) / (size_t)N ||
+        (size_t)H > SIZE_MAX / sizeof(float) / (size_t)R) { p->len = 0; return NT_E_MEMORY; }
+    float *buf = malloc(row * (size_t)N * sizeof(float));
+    float *mid = calloc((size_t)H * R, sizeof(float));
+    if (!buf || !mid) { free(buf); free(mid); p->len = 0; return NT_E_MEMORY; }
+    size_t ne = (size_t)N * E;
+    float *x = buf, *x0 = x + ne, *rn = x0 + ne;
+    float *q = rn + ne, *k = q + ne, *v = k + ne, *vr = v + ne;
+    float *echo = vr + ne, *cat = echo + ne, *proj = cat + ne, *back = proj + ne;
+    float *mg = back + ne, *mu = mg + (size_t)N * M;
+    float *rs = mu + (size_t)N * M, *es = rs + (size_t)N * H, *att = es + N;
+    const float scale = 1.0f / sqrtf((float)D);
+
+    for (int i = 0; i < N; i++)
+        jnorm_eps(x0 + (size_t)i * E, m->wte + (size_t)p->tokens[i] * E, E, m->prefix_eps);
+    memcpy(x, x0, ne * sizeof(float));
+    for (int i = 1; i < N; i++) {
+        float gate = *m->smear_l / (1.0f + expf(-dot_f32(m->smear_g, x0 + (size_t)i * E, JANUS_SMEAR_DIMS)));
+        axpy_f32(x + (size_t)i * E, gate, x0 + (size_t)(i - 1) * E, E);
+    }
+    memcpy(x0, x, ne * sizeof(float));
+
+    for (int l = 0; l < m->blocks; l++) {
+        for (size_t z = 0; z < ne; z++) x[z] = m->resid_l[l] * x[z] + m->x0_l[l] * x0[z];
+        for (int i = 0; i < N; i++) jnorm_eps(rn + (size_t)i * E, x + (size_t)i * E, E, m->prefix_eps);
+        qmm(q, &m->b[l].cq, rn, N); qmm(k, &m->b[l].ck, rn, N);
+        qmm(v, &m->b[l].cv, rn, N); qmm(vr, &m->b[l].wvr, rn, N);
+        qmm(echo, &m->b[l].wj, rn, N);
+        for (int i = 0; i < N; i++) {
+            for (int h = 0; h < H; h++) {
+                float *qi = q + (size_t)i * E + h * D, *ki = k + (size_t)i * E + h * D;
+                jrope(qi, ki, i, D);
+                jnorm_eps(qi, qi, D, m->prefix_eps); jnorm_eps(ki, ki, D, m->prefix_eps);
+                for (int d = 0; d < D; d++) { qi[d] *= JANUS_QK_SCALE; ki[d] *= JANUS_QK_SCALE; }
+            }
+            /* x·(Wj^T Wj x) = ||Wj x||². The PyTorch fixture evaluates the
+             * explicit back-projection and checks this identity numerically. */
+            float s = dot_f32(echo + (size_t)i * E, echo + (size_t)i * E, E) / sqrtf((float)E);
+            es[i] = 15.0f * tanhf(s / 15.0f);
+        }
+        /* einsum('bte,her->bhr'): reduce sequence, then contract embedding. */
+        memset(proj, 0, (size_t)E * sizeof(float));
+        for (int i = 0; i < N; i++) axpy_f32(proj, 1, rn + (size_t)i * E, E);
+        for (int h = 0; h < H; h++) {
+            for (int r = 0; r < R; r++) {
+                float sum = 0;
+                for (int e = 0; e < E; e++) sum += proj[e] * m->b[l].wr_a[((size_t)h * E + e) * R + r];
+                mid[(size_t)h * R + r] = sum;
+            }
+            for (int j = 0; j < N; j++) {
+                float sum = 0;
+                for (int r = 0; r < R; r++) sum += mid[(size_t)h * R + r] * m->b[l].wr_b[((size_t)h * R + r) * m->ctx + j];
+                rs[(size_t)h * N + j] = sum * scale;
+            }
+        }
+        memset(cat, 0, ne * sizeof(float));
+        for (int i = 0; i < N; i++) {
+            for (int h = 0; h < H; h++) {
+                float g[3]; memcpy(g, m->b[l].gate + h * 3, sizeof(g)); softmax(g, 3);
+                float *out = cat + (size_t)i * E + h * D;
+                for (int j = 0; j <= i; j++) att[j] = dot_f32(q + (size_t)i * E + h * D, k + (size_t)j * E + h * D, D) * scale;
+                softmax(att, i + 1);
+                for (int j = 0; j <= i; j++) axpy_f32(out, g[0] * att[j], v + (size_t)j * E + h * D, D);
+                memcpy(att, rs + (size_t)h * N, (size_t)(i + 1) * sizeof(float)); softmax(att, i + 1);
+                for (int j = 0; j <= i; j++) axpy_f32(out, g[1] * att[j], vr + (size_t)j * E + h * D, D);
+                for (int j = 0; j <= i; j++) att[j] = es[i] * es[j];
+                softmax(att, i + 1);
+                for (int j = 0; j <= i; j++) axpy_f32(out, g[2] * att[j], echo + (size_t)j * E + h * D, D);
+            }
+        }
+        qmm(proj, &m->b[l].cproj, cat, N);
+        for (size_t z = 0; z < ne; z++) x[z] += proj[z];
+        for (int i = 0; i < N; i++) jnorm_eps(rn + (size_t)i * E, x + (size_t)i * E, E, m->prefix_eps);
+        qmm(mg, &m->b[l].wg, rn, N); qmm(mu, &m->b[l].wu, rn, N);
+        for (size_t z = 0; z < (size_t)N * M; z++) mg[z] = (mg[z] / (1.0f + expf(-mg[z]))) * mu[z];
+        qmm(proj, &m->b[l].wd, mg, N);
+        for (size_t z = 0; z < ne; z++) x[z] += proj[z];
+        if (l == m->blocks / 2) memcpy(back, x, ne * sizeof(float));
+    }
+    float *last = x + (size_t)(N - 1) * E;
+    for (int e = 0; e < E; e++) last[e] -= *m->backout_l * back[(size_t)(N - 1) * E + e];
+    jnorm_eps(rn, last, E, m->prefix_eps); qmv(logits, &m->head, rn);
+    for (int i = 0; i < m->vocab; i++) logits[i] = 15.0f * tanhf(logits[i] / 15.0f);
+    p->len = N; free(buf); free(mid); return NT_OK;
+}
+
+static int janus_forward(void *model, kv_cache *kv, const int *tokens, int n, int pos0, float *logits) {
+    janus_model *m = model;
+    return m->prefix_graph ? janus_prefix_forward(m, kv, tokens, n, pos0, logits)
+                           : janus_legacy_forward(model, kv, tokens, n, pos0, logits);
+}
+
 static const char *const JANUS_NAMES[] = { "janus", NULL };
 
 const nt_arch nt_arch_janus = {
@@ -477,4 +675,6 @@ const nt_arch nt_arch_janus = {
     .load = janus_load,
     .free = janus_free,
     .forward = janus_forward,
+    .kv_new = janus_kv_new,
+    .kv_free = janus_kv_free,
 };

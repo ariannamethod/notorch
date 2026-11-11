@@ -745,6 +745,16 @@ test_repeat:
 test_janus:
 	./harness/test_janus.sh $(MODEL)
 
+test_janus_prefix: tests/test_janus_prefix.c tests/janus_prefix_fixture.h harness/arch_janus.c harness/runtime.c gguf.c notorch.c $(HARNESS_HDR)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_janus_prefix.c harness/arch_janus.c harness/runtime.c gguf.c notorch.c -lm $(BLAS_LIBS)
+
+check_janus_prefix: test_janus_prefix
+	./test_janus_prefix
+
+test: check_janus_prefix
+
+.PHONY: check_janus_prefix
+
 # Resonance against the forward it was ported from. The reference stays in
 # arianna.c; what lives here is its answer, frozen in tests/resonance_golden_v3.txt.
 test_resonance:
@@ -1346,7 +1356,7 @@ clean:
 	rm -f test_numerical_values
 	rm -f test_sampling
 	rm -f qwen35_vision_probe test_qwen35_vision
-	rm -f doe_experience doe_probe test_expert_vote test_replay_measure test_expert_recall test_media_replay test_expert_lineage test_media_experts test_expert_dream test_portable_spore test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
+	rm -f test_janus_prefix doe_experience doe_probe test_expert_vote test_replay_measure test_expert_recall test_media_replay test_expert_lineage test_media_experts test_expert_dream test_portable_spore test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o

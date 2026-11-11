@@ -11,6 +11,30 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — Restore the published Janus v4 prefix graph
+
+Hand: Astra (Codex), branch `codex/janus-reference-forward`, based on `e2ba52a`.
+New exports select `janus.forward_graph="pytorch-v4-prefix"` to execute the
+published Janus graph: historical Echo attention, simultaneous embedding smear,
+complete-block backout, explicit normalization epsilon and the global RRPRAM
+sequence reduction. Input history belongs to each family-owned cache. Full,
+chunked and single-token input recompute the same available prefix; deferred
+prefill retains IDs until output is requested. Existing exports retain the
+incremental profile. Tensor sizes and profile metadata are validated at load.
+
+Proof: the synthetic PyTorch oracle gate passes 58 checks, including negative
+smear, epsilon selection, interleaved caches, restart and rejected calls. The
+old graph differs by 0.0262018, while the native prefix graph is within 4.76837e-7
+of the frozen full-logit oracle. On the unchanged Janus4 base22k F32 checkpoint,
+all 12 next-token choices agree across three prompts and three continuation
+steps per prompt; maximum logit error is 4.38690e-5. Prefix lengths 32, 128 and
+1024 also agree on argmax, with worst error 2.62260e-5. The old export profile
+remains bit-identical to a rebuilt pre-patch decoder on two prompts.
+
+Full `make -j2 test BLAS_FLAGS= BLAS_LIBS= BLAS_NAME=native` passes. The focused
+test passes ASan/UBSan with leak scanning disabled for this ptrace-based host.
+[Graph, metadata and cache contract](docs/JANUS_V4_PREFIX.md).
+
 ## 2026-11-11 — Explicit vote calibration and addressed sleep selection
 
 Hand: Astra (Codex), branch `codex/doe-vote-sleep-tuning`, based on `9685dd1`.

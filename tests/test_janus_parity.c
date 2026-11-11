@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
 
     /* One position per call, the way decode drives it, so this exercises the
      * same path a generation does rather than a prefill-only shape. */
-    kv_cache *kv = kv_new(dims.n_layers, n + 1, dims.kv_dim);
+    kv_cache *kv = nt_model_kv_new(&nt_arch_janus, model, dims, n + 1);
     float *logits = (float*)calloc(dims.vocab, sizeof(float));
     for (int i = 0; i < n; i++) {
         int rc = nt_arch_janus.forward(model, kv, &ids[i], 1, i, logits);
@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "port: argmax=%d logit=%.9g\n", best, logits[best]);
 
     free(logits); free(ids);
-    kv_free(kv);
+    nt_model_kv_free(&nt_arch_janus, model, kv);
     nt_arch_janus.free(model);
     gguf_close(gf);
     return 0;
