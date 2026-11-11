@@ -483,6 +483,44 @@ reproduced both full 128,000-entry logit vectors byte for byte.
 [Hybrid memory and sleep](research/democracy_of_experts.md#a-parliament-on-a-hybrid-decoder)
 · [Measurements and commands](NOTORCHLOG.md#2026-11-10--a-parliament-on-the-lfm3-omni-2b-text-decoder)
 
+#### Let the parliament see and hear
+
+`notorch_omni --experts --mode text` runs the same living seats on image,
+video, audio and text inputs. Every projected media row reaches the middle
+block's election and the completed-block observation. With `--learn-experts`,
+the whole turn supplies one consolidation update to each elected seat. Expert
+mode currently returns text; the ordinary Omni entry retains its speech and
+interleaved output modes.
+
+```sh
+./notorch_omni --mode text --image scene.png --experts --learn-experts \
+  --async-consolidation --dream-tokens 6 --portable-spore \
+  --spore-out scene-memory.gguf omni-q8.gguf "Describe the scene."
+./notorch_omni --mode text --image next-scene.png --experts \
+  --spore-in scene-memory.gguf omni-f16.gguf "What changed?"
+```
+
+The second command starts with fresh convolution windows and KV. The spore
+carries the parliament's acquired state into the receiving weights. Add
+`--learn-experts` and a new `--spore-out` path to record the next generation.
+An audio episode uses `--audio clip16k.wav` and, for transcription,
+`--system "Perform ASR in English."` with the same expert options.
+
+Sleep selects a text cue through the current experts, generates on private
+hybrid state, and commits the elected seats' factors, cursors, RNG and sleep
+clock. Visual and auditory experience can therefore change the parliament that
+chooses its next dream. The [long-experience AML protocol](experiments/doe_spores/omni_long.aml)
+compares learning without sleep, serial sleep and worker sleep over 24 visual
+turns, crossing Q8 → F16 → Q8 and archiving every generation. Its probes restore
+their own copies so measurement never becomes the next training episode.
+The completed run preserved exact serial/worker spores at all 24 boundaries,
+grew from four to six living seats, and retained 21.18 MB in the serial history.
+The final night's A/B alone reproduced all 384,000 logits of three fresh probes.
+Both audio transcription controls also preserved exact serial/worker spores.
+The [measured protocol](experiments/doe_spores/omni-long.md) includes the body
+hashes, population history, sleep effects and activation-path comparison.
+See [media, consolidation and continuity](research/democracy_of_experts.md#media-experience-and-consolidation).
+
 The [SmolLM2-360M experiment](experiments/doe_spores/transplant.aml) moves a
 single seat's A/B between two GGUF spores and probes fresh conversations.
 AML runs the protocol and reads full-vocabulary logits from the C Harness.

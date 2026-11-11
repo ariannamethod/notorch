@@ -64,7 +64,7 @@ typedef int nt_moe_forward(void *model, kv_cache *kv, const int *tokens, int n,
                            nt_residual_fn post_block, void *user,
                            nt_moe_route_fn route, void *route_user);
 
-#define NT_DOE_DECODER_API 1
+#define NT_DOE_DECODER_API 2
 
 /* CPU decoders offering DOE expose both sides of the FFN. Calibration hashes
  * the full residual-width norms in block execution order, then the final norm.
@@ -78,6 +78,13 @@ typedef struct {
     /* A NULL at one of these within-block slots denotes an absent optional
      * normalization. The final output norm is always required. */
     uint32_t optional_norm_slots;
+    /* Optional media-row counterpart of forward, with the same two hooks.
+     * rows and hidden obey nt_arch.forward_embd's contract. A NULL callback
+     * pair is exactly the family's plain embedding-row forward. */
+    int (*forward_embd)(void *model, kv_cache *kv, const int *tokens,
+                        const float *const *rows, int n, int pos0,
+                        float *logits, float *hidden, nt_residual_fn post_attention,
+                        nt_residual_fn post_block, void *user);
 } nt_doe_decoder;
 
 typedef struct {

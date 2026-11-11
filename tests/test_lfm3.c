@@ -360,7 +360,7 @@ static void test_doe(M *x) {
     if (!kv) return;
     float plain[V], logits[V], sentinel[V], active[V];
     CHECK(run(x,seq_a,N,N,plain)==NT_OK,"independent plain cache");
-    for (int target=-1; target<=2; target++) {
+    for (int target=-1; target<NL; target++) {
         for (int chunk=1; chunk<=N; chunk+=N-1) {
             probe p = {.m=m, .intervening_layer=target};
             for (int pos=0; pos<N; pos+=chunk) {
@@ -373,7 +373,7 @@ static void test_doe(M *x) {
             else CHECK(!memcmp(active,logits,sizeof active),"active grouped and scalar paths agree");
         }
     }
-    for (int stop=1; stop<=2; stop++) for (int target=1; target<=2; target++) {
+    for (int stop=1; stop<=2; stop++) for (int target=0; target<NL; target++) {
         probe p = {.m=m, .pos=1, .n=2, .intervening_layer=target, .stop=stop};
         CHECK(nt_arch_lfm3.forward(m,kv,seq_a,1,0,NULL)==NT_OK,"init prefix before interruption");
         for (int i=0; i<V; i++) sentinel[i]=logits[i]=-1234;
@@ -385,6 +385,78 @@ static void test_doe(M *x) {
         CHECK(nt_arch_lfm3.forward(m,kv,seq_a,N-1,0,NULL)==NT_OK &&
               nt_arch_lfm3.forward(m,kv,seq_a+N-1,1,N-1,logits)==NT_OK && !memcmp(plain,logits,sizeof plain),
               "restart at zero and subsequent decode reproduce fresh-cache logits");
+    }
+    cache_free(x,kv);
+}
+
+/* Mixed media rows and ordinary ids must reach both sides of every FFN. Use
+ * token embeddings as an independent input oracle, then change one media row.
+ * This also prices the final hidden vector consumed by the speech decoder. */
+static void test_doe_rows(M *x) {
+    const nt_doe_decoder *d = nt_arch_lfm3.doe;
+    CHECK(d && d->forward_embd, "the hybrid exposes media rows to DoE");
+    if (!d || !d->forward_embd) return;
+    lfm3_model *m = x->m;
+    float emb[N][E], plain[V], hplain[E], logits[V], hidden[E], head[V], scalar[V], hs[E];
+    const float *rows[N];
+    int ids[N];
+    for (int j=0; j<N; j++) {
+        CHECK(!gguf_dequant_row(x->gf,m->emb_ti,(uint64_t)seq_a[j],emb[j]), "read media oracle row");
+        rows[j] = j%2 ? emb[j] : NULL;
+        ids[j] = rows[j] ? 0 : seq_a[j];
+    }
+    kv_cache *kv = cache_new(x,16);
+    CHECK(kv, "allocate media cache");
+    if (!kv) return;
+    CHECK(nt_arch_lfm3.forward_embd(m,kv,ids,rows,N,0,plain,hplain)==NT_OK &&
+          d->forward_embd(m,kv,ids,rows,N,0,logits,hidden,NULL,NULL,NULL)==NT_OK &&
+          !memcmp(plain,logits,sizeof plain) && !memcmp(hplain,hidden,sizeof hidden),
+          "NULL hooks preserve plain media logits and final hidden exactly");
+    for (int target=-1; target<NL; target++) {
+        probe p = {.m=m, .pos=0, .n=N, .intervening_layer=target};
+        CHECK(d->forward(m,kv,seq_a,N,0,plain,before_ffn,after_ffn,&p)==NT_OK,
+              "token-only oracle for an active media intervention");
+        for (int chunk=1; chunk<=N; chunk+=N-1) {
+            p.events=0;
+            for (int pos=0; pos<N; pos+=chunk) {
+                p.pos=pos; p.n=chunk; p.events=0;
+                CHECK(d->forward_embd(m,kv,ids+pos,rows+pos,chunk,pos,logits,hidden,
+                                     before_ffn,after_ffn,&p)==NT_OK && p.events==2*NL,
+                      "media callbacks enclose every exact FFN");
+            }
+            CHECK(!memcmp(plain,logits,sizeof plain), "active media rows equal the independent token path");
+            qmv(head,&m->tok_emb,hidden);
+            CHECK(!memcmp(head,logits,sizeof head), "expert hidden produces expert logits");
+            if (chunk==1) { memcpy(scalar,logits,sizeof scalar); memcpy(hs,hidden,sizeof hs); }
+            else CHECK(!memcmp(scalar,logits,sizeof scalar) && !memcmp(hs,hidden,sizeof hs),
+                       "active media chunks preserve logits and hidden bit for bit");
+        }
+    }
+    emb[3][0] += 0.5f;
+    CHECK(d->forward_embd(m,kv,ids,rows,N,0,plain,hplain,NULL,NULL,NULL)==NT_OK &&
+          nt_arch_lfm3.forward_embd(m,kv,seq_a,NULL,N,0,logits,hidden)==NT_OK &&
+          memcmp(plain,logits,sizeof plain), "changed media reaches the DoE path");
+    CHECK(d->forward_embd(m,kv,ids,rows,N-1,0,NULL,NULL,NULL,NULL,NULL)==NT_OK &&
+          d->forward_embd(m,kv,ids+N-1,rows+N-1,1,N-1,logits,hidden,NULL,NULL,NULL)==NT_OK &&
+          !memcmp(plain,logits,sizeof plain) && !memcmp(hplain,hidden,sizeof hidden),
+          "media prefix continuation equals fresh full replay");
+    for (int stop=1; stop<=2; stop++) for (int target=0; target<NL; target++) {
+        probe p = {.m=m, .pos=1, .n=2, .intervening_layer=target, .stop=stop};
+        CHECK(d->forward_embd(m,kv,ids,rows,1,0,NULL,NULL,NULL,NULL,NULL)==NT_OK,
+              "media prefix before an abort");
+        for (int i=0; i<V; i++) logits[i]=-1234;
+        for (int i=0; i<E; i++) hidden[i]=-1234;
+        int r=d->forward_embd(m,kv,ids+1,rows+1,2,1,logits,hidden,before_ffn,after_ffn,&p);
+        int untouched=1;
+        for (int i=0; i<V; i++) untouched &= logits[i]==-1234;
+        for (int i=0; i<E; i++) untouched &= hidden[i]==-1234;
+        CHECK(r==70+stop && untouched, "media callback abort preserves status and both output buffers");
+        CHECK(d->forward_embd(m,kv,ids+1,rows+1,1,1,NULL,NULL,NULL,NULL,NULL)==NT_E_STATE &&
+              d->forward_embd(m,kv,ids+3,rows+3,1,3,NULL,NULL,NULL,NULL,NULL)==NT_E_STATE,
+              "aborted media cache refuses continuation");
+        CHECK(d->forward_embd(m,kv,ids,rows,N,0,logits,hidden,NULL,NULL,NULL)==NT_OK &&
+              !memcmp(plain,logits,sizeof plain) && !memcmp(hplain,hidden,sizeof hidden),
+              "media restart restores fresh logits and hidden");
     }
     cache_free(x,kv);
 }
@@ -410,10 +482,11 @@ int main(int argc, char **argv) {
     test_rows(&x, one);
     test_caches(&x, dec);
     test_doe(&x);
+    test_doe_rows(&x);
     close_model(&x);
     M mixed = {0};
     CHECK(open_model(&mixed,(opts){.omit_post_mask=1<<2}), "mixed sandwich and pre-norm blocks load");
-    if (mixed.m) test_doe(&mixed);
+    if (mixed.m) { test_doe(&mixed); test_doe_rows(&mixed); }
     close_model(&mixed);
 
     test_rope();

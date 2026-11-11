@@ -1,0 +1,86 @@
+# Discarded three-probe reading of a saved generation. stdin: omni, doe_probe,
+# host, spore path (or -), fixture directory, fresh output directory.
+def cat(a, b):
+    return text_concat(a, b)
+
+def path(a):
+    return cat(cat(outdir, '/'), a)
+
+def lines(name, text):
+    rest = text
+    end = text_find(rest, '\n')
+    while end >= 0:
+        assert(file_append_line(path(name), text_slice(rest, 0, end)) == 1, name)
+        rest = text_slice(rest, end+1, text_len(rest))
+        end = text_find(rest, '\n')
+    if text_len(rest) > 0:
+        assert(file_append_line(path(name), rest) == 1, name)
+
+def cmd(binary):
+    a = list_new()
+    list_push(a, binary)
+    return a
+
+def run(a, name):
+    r = process_run(a, env, 600)
+    lines(cat(name, '.trace'), record_get(r, 'stderr'))
+    lines(cat(name, '.txt'), record_get(r, 'stdout'))
+    assert(record_get(r, 'status') == 0, name)
+
+omni = list_get(read_line(), 0)
+helper = list_get(read_line(), 0)
+host = list_get(read_line(), 0)
+spore = list_get(read_line(), 0)
+fixtures = list_get(read_line(), 0)
+outdir = list_get(read_line(), 0)
+assert(dir_claim(outdir) == 1, 'fresh measurement directory')
+env = record_new()
+record_set(env, 'LC_ALL', 'C')
+record_set(env, 'NT_ATTN_THREADS', '1')
+images = list_new()
+list_push(images, 'red')
+list_push(images, 'blue')
+list_push(images, 'text')
+lines('scores.tsv', 'probe\tlog_odds_red_over_blue\tp_red\tp_blue')
+i = 0
+while i < 3:
+    name = list_get(images, i)
+    a = cmd(omni)
+    list_push(a, '--mode')
+    list_push(a, 'text')
+    list_push(a, '--expert-trace')
+    if text_equal(spore, '-') == 0:
+        list_push(a, '--experts')
+        list_push(a, '--spore-in')
+        list_push(a, spore)
+    if i < 2:
+        list_push(a, '--image')
+        list_push(a, cat(cat(fixtures, '/left-'), cat(name, '.ppm')))
+    list_push(a, '--logits-out')
+    list_push(a, path(cat(name, '.f32')))
+    list_push(a, '-n')
+    list_push(a, '3')
+    list_push(a, host)
+    if i < 2:
+        list_push(a, 'Which color is on the left? Reply with one color.')
+    else:
+        list_push(a, 'Earlier you saw a picture. Which color was on the left? Reply with one color.')
+    run(a, name)
+    a = cmd(helper)
+    list_push(a, 'pack-logits')
+    list_push(a, host)
+    list_push(a, path(cat(name, '.f32')))
+    list_push(a, path(cat(name, '.amlck')))
+    list_push(a, 'Red')
+    list_push(a, 'Blue')
+    run(a, cat(name, '-pack'))
+    data = checkpoint_load(path(cat(name, '.amlck')))
+    lg = record_get(data, 'probe0')
+    l = record_get(data, 'left_id')
+    r = record_get(data, 'right_id')
+    p = softmax(lg)
+    row = cat(cat(name, '\t'), text_fixed(lg[l]-lg[r], 9))
+    row = cat(cat(row, '\t'), text_fixed(p[l], 9))
+    lines('scores.tsv', cat(cat(row, '\t'), text_fixed(p[r], 9)))
+    i = i + 1
+PRINT 'OMNI_MEASUREMENT_OK'

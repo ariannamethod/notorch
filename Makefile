@@ -621,6 +621,15 @@ check_expert_dream: notorch test_expert_dream test_portable_spore tests/test_exp
 
 test: check_expert_spores check_expert_consolidation check_portable_spore check_expert_dream
 
+test_media_experts: tests/test_media_experts.c libnotorch_harness.a libnotorch.a Makefile
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ $< ./libnotorch_harness.a ./libnotorch.a -lm $(BLAS_LIBS)
+
+.PHONY: check_media_experts
+check_media_experts: test_media_experts test_lfm3 test_portable_spore tests/test_media_experts.sh
+	sh tests/test_media_experts.sh
+
+test: check_media_experts
+
 test_parliament_values: tests/test_parliament_values.c notorch.c notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_parliament_values.c notorch.c -lm $(BLAS_LIBS)
 
@@ -1271,7 +1280,7 @@ clean:
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
 	rm -f test_sampling
-	rm -f doe_probe test_expert_dream test_portable_spore test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
+	rm -f doe_probe test_media_experts test_expert_dream test_portable_spore test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o

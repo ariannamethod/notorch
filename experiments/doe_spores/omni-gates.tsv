@@ -1,0 +1,7 @@
+comparison	probe	prefix_positions	matched_vote_rows	changed_gate_rows	changed_elected_sets	max_abs_gate_delta	changed_prefill_positions
+q8-i8_vs_q8-float	red	98	99	99	3	0.324877232	38,39,52
+q8-float_vs_f16	red	98	99	99	3	0.327033609	38,39,70
+q8-i8_vs_q8-float	blue	98	99	99	2	0.331898689	51,70
+q8-float_vs_f16	blue	98	99	99	0	0.004693925	-
+q8-i8_vs_q8-float	text	30	31	31	0	0.000448674	-
+q8-float_vs_f16	text	30	31	31	2	0.329881757	22,29

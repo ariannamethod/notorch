@@ -1,4 +1,4 @@
-/* Two native operations for transplant.aml. The protocol, interventions and
+/* Native operations for the spore experiments. The protocol, interventions and
  * statistics belong to AML. Scoring returns the full pre-sampling logits. */
 #include "ariannamethod.h"
 #include "harness/archs.h"
@@ -44,6 +44,51 @@ static int field(AM_Record *rec, const char *name, AML_Var value) {
     AM_String *key = am_string_new(name);
     int ok = key && am_record_set(rec, key, &value) == 0;
     am_string_free(key);
+    return ok;
+}
+
+static int save_record(AM_Record *rec, const char *out) {
+    char error[256] = {0};
+    char *tmp = malloc(strlen(out) + sizeof(".XXXXXX"));
+    int ok = 0;
+    if (tmp) {
+        sprintf(tmp, "%s.XXXXXX", out);
+        int fd = mkstemp(tmp);
+        if (fd >= 0) {
+            close(fd);
+            ok = am_checkpoint_save(rec, tmp, error, sizeof error) == 1 && link(tmp, out) == 0;
+            unlink(tmp);
+        }
+        free(tmp);
+    }
+    if (!ok) fprintf(stderr, "could not publish new AML checkpoint %s: %s\n", out, error);
+    return ok;
+}
+
+/* notorch_omni writes the first raw vocabulary row before modality suppression.
+ * This adapter transports it to AML without replaying a different text template. */
+static int pack_logits(const char *host, const char *raw, const char *out, char **targets) {
+    bpe_tokenizer *tok = bpe_load(host);
+    int n = tok ? bpe_n_vocab(tok) : 0;
+    FILE *f = fopen(raw,"rb");
+    AM_Array *a = n > 0 ? am_array_new(n) : NULL;
+    AM_Record *rec = am_record_new();
+    int ok = f && a && rec;
+    if (ok) ok = fread(a->data,sizeof(float),(size_t)n,f)==(size_t)n && fgetc(f)==EOF && !ferror(f);
+    for (int i=0; ok && i<n; i++) ok = isfinite(a->data[i]);
+    int cand[2] = {-1,-1};
+    for (int i=0; ok && i<2; i++) {
+        int ids[2];
+        ok = bpe_encode_raw(tok,targets[i],ids,2)==1 && ids[0]>=0 && ids[0]<n;
+        if (ok) {
+            cand[i]=ids[0];
+            ok=field(rec,i ? "right_id" : "left_id",(AML_Var){.type=AML_TYPE_FLOAT,.value=(float)cand[i]});
+        }
+    }
+    if (ok) ok = cand[0]!=cand[1] && field(rec,"probe0",(AML_Var){.type=AML_TYPE_ARRAY,.array=a}) && save_record(rec,out);
+    if (f && fclose(f)) ok=0;
+    am_array_free(a); am_record_free(rec); bpe_free(tok);
+    if (!ok) fprintf(stderr,"doe_probe: invalid full vocabulary row or candidate tokens\n");
     return ok;
 }
 
@@ -109,23 +154,7 @@ static int scores(gguf_file *host, const nt_arch *arch, const char *tokenizer,
             ok = field(rec, name, (AML_Var){.type=AML_TYPE_ARRAY, .array=logits});
         }
     }
-    if (ok) {
-        char error[256] = {0};
-        char *tmp = malloc(strlen(out) + sizeof(".XXXXXX"));
-        ok = 0;
-        if (tmp) {
-            sprintf(tmp, "%s.XXXXXX", out);
-            int fd = mkstemp(tmp);
-            if (fd >= 0) {
-                close(fd);
-                ok = am_checkpoint_save(rec, tmp, error, sizeof(error)) == 1 &&
-                     link(tmp, out) == 0;
-                unlink(tmp);
-            }
-            free(tmp);
-        }
-        if (!ok) fprintf(stderr, "could not publish new AML checkpoint %s: %s\n", out, error);
-    }
+    if (ok) ok = save_record(rec,out);
     am_array_free(logits);
     am_record_free(rec);
     bpe_free(tok);
@@ -163,6 +192,8 @@ static int compare_f32(const char *left, const char *right, int n, char **names)
 }
 
 int main(int argc, char **argv) {
+    if (argc == 7 && !strcmp(argv[1],"pack-logits"))
+        return !pack_logits(argv[2],argv[3],argv[4],argv+5);
     if (argc >= 5 && !strcmp(argv[1], "compare-f32"))
         return !compare_f32(argv[2], argv[3], argc-4, argv+4);
     const char *tokenizer = NULL;
@@ -171,6 +202,7 @@ int main(int argc, char **argv) {
     }
     if (argc < 7 || (strcmp(argv[1], "transplant") && strcmp(argv[1], "score"))) {
         fprintf(stderr, "doe_probe compare-f32 FILE1 FILE2 TENSOR...\n"
+                        "doe_probe pack-logits HOST RAW_F32 CHECKPOINT LEFT RIGHT\n"
                         "doe_probe transplant HOST RECIPIENT DONOR NEW_SPORE SLOT...\n"
                         "doe_probe [--tokenizer FILE] score HOST SPORE|- CHECKPOINT LEFT RIGHT PROMPT...\n");
         return 1;

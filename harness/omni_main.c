@@ -12,6 +12,10 @@
  *     --audio-temp T       speech temperature (default from the file: 0.4)
  *     --seed S             seed of the speech sampler and the codebook order (default 1)
  *     --ids                print the prompt ids on stderr and stop
+ *     --experts --mode text  living parliament on the assembled media/text sequence
+ *     --learn-experts [--async-consolidation] [--dream-tokens N]
+ *     --spore-in F --spore-out NEW.gguf [--portable-spore] [--expert-trace]
+ *     --logits-out F       first unsuppressed vocabulary row as native float32
  *     NT_ECHO_IDS=1        print every generated text id on stderr
  *
  * The prompt is the checkpoint's chat template rendered as ids: <|startoftext|>, an
@@ -30,6 +34,7 @@
 #include "harness/tokenizer.h"
 #include "harness/lfm3_omni.h"
 #include "harness/lfm3_omni_io.h"
+#include "harness/experts.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -159,15 +164,41 @@ static void remember(speech_t *s, const int *codes) {
     memcpy(s->hist + (size_t)(s->window - 1) * NC, codes, NC * sizeof(int));
 }
 
+static int emit_text(const bpe_tokenizer *tok, int id) {
+    char local[256];
+    int cap = bpe_decode_token_capacity(tok, id);
+    if (cap <= 0) return 0;
+    char *piece = (size_t)cap <= sizeof local ? local : malloc((size_t)cap);
+    if (!piece) return 0;
+    int n = bpe_decode_token(tok, id, piece, cap);
+    int ok = n >= 0 && fwrite(piece, 1, (size_t)n, stdout) == (size_t)n;
+    if (piece != local) free(piece);
+    return ok && fflush(stdout) == 0;
+}
+
 static void usage(const char *self) {
     fprintf(stderr, "usage: %s [--system T] [--image F]... [--audio F.wav]... [--video F1,F2,...] [--fps N]\n"
                     "          [--mode text|audio|interleaved] [--speech-out F.wav] [-n N] [-t T] [--audio-temp T]\n"
-                    "          [--seed S] [--ids] MODEL.gguf [prompt]\n", self);
+                    "          [--seed S] [--ids] [--logits-out F] MODEL.gguf [prompt]\n"
+                    "  --experts --mode text  opt-in parliament on image, audio and text inputs\n"
+                    "  --learn-experts [--async-consolidation] [--dream-tokens 1..32]\n"
+                    "  --spore-in F --spore-out NEW.gguf [--portable-spore] [--expert-trace]\n"
+                    "  --logits-out F  write first unsuppressed vocabulary row as native float32\n", self);
+}
+
+static int forward(const nt_arch *arch, void *model, kv_cache *kv,
+                   const int *ids, const float *const *rows, int n, int pos,
+                   float *logits, float *hidden, nt_experts *p) {
+    if (p) return arch->doe->forward_embd(model, kv, ids, rows, n, pos, logits, hidden,
+                                         nt_experts_attend, nt_experts_observe, p);
+    return arch->forward_embd(model, kv, ids, rows, n, pos, logits, hidden);
 }
 
 int main(int argc, char **argv) {
     const char *system = NULL, *images[MAX_MEDIA], *audios[MAX_MEDIA], *video = NULL, *mode_s = NULL;
     const char *speech_out = "omni_speech.wav";
+    const char *spore_in = NULL, *spore_out = NULL, *logits_out = NULL;
+    int experts = 0, learn = 0, async = 0, portable = 0, trace = 0, dream = 0;
     int n_img = 0, n_aud = 0, max_new = 256, print_ids = 0;
     float temp = 0, audio_temp = -1, fps = 2;
     int ai = 1;
@@ -175,6 +206,11 @@ int main(int argc, char **argv) {
         const char *a = argv[ai];
         int has = ai + 1 < argc;
         if (!strcmp(a, "--ids")) { print_ids = 1; ai++; continue; }
+        if (!strcmp(a, "--experts")) { experts = 1; ai++; continue; }
+        if (!strcmp(a, "--learn-experts")) { learn = 1; ai++; continue; }
+        if (!strcmp(a, "--async-consolidation")) { async = 1; ai++; continue; }
+        if (!strcmp(a, "--portable-spore")) { portable = 1; ai++; continue; }
+        if (!strcmp(a, "--expert-trace")) { trace = 1; ai++; continue; }
         if (!has) { usage(argv[0]); return 2; }
         if (!strcmp(a, "--system")) system = argv[ai + 1];
         else if (!strcmp(a, "--image") && n_img < MAX_MEDIA) images[n_img++] = argv[ai + 1];
@@ -187,6 +223,15 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "-t")) temp = (float)atof(argv[ai + 1]);
         else if (!strcmp(a, "--audio-temp")) audio_temp = (float)atof(argv[ai + 1]);
         else if (!strcmp(a, "--seed")) g_rng = strtoull(argv[ai + 1], NULL, 10);
+        else if (!strcmp(a, "--spore-in")) spore_in = argv[ai + 1];
+        else if (!strcmp(a, "--spore-out")) spore_out = argv[ai + 1];
+        else if (!strcmp(a, "--logits-out")) logits_out = argv[ai + 1];
+        else if (!strcmp(a, "--dream-tokens")) {
+            char *end = NULL;
+            long n = strtol(argv[ai + 1], &end, 10);
+            if (!*argv[ai + 1] || *end || n < 1 || n > NT_DREAM_MAX_TOKENS) { usage(argv[0]); return 2; }
+            dream = (int)n;
+        }
         else { usage(argv[0]); return 2; }
         ai += 2;
     }
@@ -201,6 +246,18 @@ int main(int argc, char **argv) {
         else if (strcmp(mode_s, "text")) { usage(argv[0]); return 2; }
     }
     if (max_new < 1 || fps <= 0) { usage(argv[0]); return 2; }
+    if ((learn || async || portable || spore_in || spore_out || dream) && !experts) {
+        fprintf(stderr, "omni: expert state and learning options require --experts\n"); return 2;
+    }
+    if ((async || dream) && !learn) {
+        fprintf(stderr, "omni: consolidation and recorded dreams require --learn-experts\n"); return 2;
+    }
+    if (portable && !spore_out) {
+        fprintf(stderr, "omni: --portable-spore requires --spore-out\n"); return 2;
+    }
+    if (experts && (print_ids || !forced || mode != M_TEXT || !isfinite(temp))) {
+        fprintf(stderr, "omni: --experts requires --mode text, finite temperature and an inference run\n"); return 2;
+    }
 
     double t_load = now_ms();
     gguf_file *gf = gguf_open(path);
@@ -210,6 +267,10 @@ int main(int argc, char **argv) {
         fprintf(stderr, "omni: %s has no family that reads embedding rows (architecture '%s')\n", path, gf->arch);
         gguf_close(gf);
         return 1;
+    }
+    if (experts && (!arch->doe || !arch->doe->forward_embd)) {
+        fprintf(stderr, "omni: %s has no expert embedding-row interface\n", gf->arch);
+        gguf_close(gf); return 1;
     }
     nt_dims dims = {0};
     void *model = arch->load(gf, &dims);
@@ -238,6 +299,8 @@ int main(int argc, char **argv) {
     float *frame_row = malloc((size_t)W * sizeof(float));
     int *frames = NULL, n_frames = 0, cap_frames = 0;
     kv_cache *kv = NULL;
+    nt_experts *parliament = NULL;
+    nt_consolidation *pending = NULL;
     speech_t sp = {0};
     if (!hidden || !logits || !frame_row) goto done;
     for (int i = 0; i < n_img; i++) {
@@ -352,16 +415,33 @@ int main(int argc, char **argv) {
         goto done;
     }
 
+    if (experts) {
+        nt_expert_body body = {model, tok};
+        parliament = nt_experts_open_on_body(gf, spore_in, trace ? stderr : NULL, &body);
+        if (!parliament) { fprintf(stderr, "omni: could not open expert state\n"); goto done; }
+        int nr = 0;
+        for (int i = 0; i < p.n; i++) nr += p.rows[i] != NULL;
+        if (trace) fprintf(stderr, "doe input positions=%d media=%d text=%d\n", p.n, nr, p.n - nr);
+    }
+
     kv = nt_model_kv_new(arch, model, dims, p.n + max_new + 1);
     if (!kv) { fprintf(stderr, "omni: no cache for %d positions\n", p.n + max_new + 1); goto done; }
     double t_pre = now_ms();
     for (int i = 0; i < p.n; i += NT_PREFILL_CHUNK) {
         int cn = p.n - i < NT_PREFILL_CHUNK ? p.n - i : NT_PREFILL_CHUNK;
         int last = i + cn == p.n;
-        int r = arch->forward_embd(model, kv, p.ids + i, p.rows + i, cn, i, last ? logits : NULL, last ? hidden : NULL);
+        int r = forward(arch, model, kv, p.ids + i, p.rows + i, cn, i,
+                        last ? logits : NULL, last ? hidden : NULL, parliament);
         if (r != NT_OK) { fprintf(stderr, "omni: prefill refused at %d: %s\n", i, nt_strerror(r)); goto done; }
     }
     t_pre = now_ms() - t_pre;
+    if (logits_out) {
+        FILE *f = fopen(logits_out, "wbx");
+        if (!f) { perror(logits_out); goto done; }
+        int ok = fwrite(logits, sizeof(float), (size_t)V, f) == (size_t)V;
+        if (fclose(f)) ok = 0;
+        if (!ok) { fprintf(stderr, "omni: could not write first logits\n"); goto done; }
+    }
 
     sp.o = o; sp.I = I;
     sp.temp = audio_temp >= 0 ? audio_temp : I->audio_temperature;
@@ -405,6 +485,12 @@ int main(int argc, char **argv) {
             for (size_t k = 0; k < 4; k++) forbid(logits, V, sup[k]);
             if (text_only) { forbid(logits, V, I->tok_mixed_start); forbid(logits, V, I->tok_audio_start); }
             id = draw(logits, V, temp);
+            if (parliament || trace) {
+                int best = draw(logits, V, 0);
+                if (parliament) nt_experts_choice(parliament, logits[best], logits[id]);
+                if (trace) fprintf(stderr, "doe choice step=%d id=%d logit=%.9g best=%d best_logit=%.9g\n",
+                                   step, id, logits[id], best, logits[best]);
+            }
             n_text++;
             if (echo_ids) fprintf(stderr, "[id %d]", id);
             if (id == I->tok_text_end) {
@@ -414,27 +500,22 @@ int main(int argc, char **argv) {
             else if (mode != M_MIXED && id == I->tok_audio_start) mode = M_AUDIO;
             else if (mode != M_MIXED && id == I->tok_mixed_start) {
                 mode = M_MIXED; slots = I->interleave_text; speaking = 0; text_done = 0;
-            } else {
-                char buf[256];
-                int cap = bpe_decode_token_capacity(tok, id);
-                if (cap > 0 && cap <= (int)sizeof buf) {
-                    int nb = bpe_decode_token(tok, id, buf, cap);
-                    fwrite(buf, 1, (size_t)nb, stdout);
-                    fflush(stdout);
-                }
+            } else if (!emit_text(tok, id)) {
+                fprintf(stderr, "omni: text output failed\n"); goto done;
             }
         }
         if (mode == M_MIXED && !text_done) {
             if (--slots == 0) { speaking = !speaking; slots = speaking ? I->interleave_audio : I->interleave_text; }
         }
         if (finished || step == max_new - 1) break;
-        int r = arch->forward_embd(model, kv, &id, &row, 1, pos, logits, hidden);
+        int r = forward(arch, model, kv, &id, &row, 1, pos, logits, hidden, parliament);
         if (r != NT_OK) { fprintf(stderr, "\nomni: decode refused at %d: %s\n", pos, nt_strerror(r)); goto done; }
         pos++;
     }
     t_dec = now_ms() - t_dec;
-    putchar('\n');
-    fflush(stdout);
+    if (putchar('\n') == EOF || fflush(stdout)) {
+        fprintf(stderr, "omni: text output failed\n"); goto done;
+    }
     int slots_done = n_text + n_frames;
     fprintf(stderr, "omni: vision %.0f ms, audio %.0f ms | prefill %d tok %.0f ms (%.1f t/s) | "
                     "decode %d text + %d frames %.0f ms (%.2f slots/s, depth %.0f ms)\n",
@@ -453,8 +534,27 @@ int main(int argc, char **argv) {
                 (double)ns / I->codec_rate, I->codec_rate, now_ms() - t0, speech_out);
         free(pcm);
     }
+    if (parliament) {
+        int r;
+        if (async) {
+            r = dream ? nt_experts_submit_dream(&parliament, &pending, dream, eos)
+                      : nt_experts_submit(&parliament, &pending);
+        } else {
+            r = nt_experts_finish(parliament, learn);
+            if (!r && dream) r = nt_experts_dream(parliament, dream, eos, 1);
+        }
+        if (r) { fprintf(stderr, "omni: expert consolidation failed: %s\n", nt_strerror(r)); goto done; }
+    }
     rc = 0;
 done:
+    if (pending && nt_experts_await(&parliament, &pending)) {
+        fprintf(stderr, "omni: background consolidation failed\n"); rc = 1;
+    }
+    if (!rc && spore_out && (portable ? nt_experts_save_portable(parliament, spore_out)
+                                     : nt_experts_save(parliament, spore_out))) {
+        fprintf(stderr, "omni: could not publish a new spore at %s\n", spore_out); rc = 1;
+    }
+    nt_experts_free(parliament);
     for (int m = 0; m < n_media; m++) free(media[m]);
     free(p.ids); free(p.rows); free(hidden); free(logits); free(frame_row); free(frames); free(sp.hist);
     if (kv) nt_model_kv_free(arch, model, kv);
