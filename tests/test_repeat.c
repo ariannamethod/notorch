@@ -48,18 +48,18 @@ int main(int argc, char **argv) {
 
     /* Two runs share a cache, the third gets a new one — a body may or may not
      * reuse the cache between turns, and the model's own state must not care. */
-    kv_cache *kv = kv_new(dims.n_layers, n + 8, dims.kv_dim);
+    kv_cache *kv = nt_model_kv_new(arch, model, dims, n + 8);
     if (!kv) return 1;
     int rc = arch->forward(model, kv, ids, n, 0, a);
     if (rc == NT_OK) rc = arch->forward(model, kv, ids, n, 0, b);
     if (rc != NT_OK) { fprintf(stderr, "forward refused: %s\n", nt_strerror(rc)); return 3; }
-    kv_free(kv);
+    nt_model_kv_free(arch, model, kv);
 
-    kv_cache *kv2 = kv_new(dims.n_layers, n + 8, dims.kv_dim);
+    kv_cache *kv2 = nt_model_kv_new(arch, model, dims, n + 8);
     if (!kv2) return 1;
     rc = arch->forward(model, kv2, ids, n, 0, c);
     if (rc != NT_OK) { fprintf(stderr, "forward refused: %s\n", nt_strerror(rc)); return 3; }
-    kv_free(kv2);
+    nt_model_kv_free(arch, model, kv2);
 
     double w_same = 0, w_new = 0;
     int at_same = -1, at_new = -1;
