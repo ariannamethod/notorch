@@ -149,8 +149,10 @@ orthogonalizes them in order. The resulting 32 axes span part of each body's res
 When family, width, depth and the digest of the normalization weights match, and each axis
 turns less than 45 degrees, the recipient copies the expert weights. Otherwise it transfers
 the 32 measured components of each vote row, A column and B row into the receiving frame.
-The other components come from the recipient's own
-initialization. A seat keeps its history across this change of coordinates.
+The other components initially come from the recipient's own initialization.
+A seat keeps its history across this change of coordinates. Returning to a
+previously visited body can also recall that body's saved components, using
+the explicit operation described below.
 [Calibration and projection](../harness/spore_frame.c) · [Cross-body AML experiment](../experiments/doe_spores/portable.aml)
 
 ### An address belongs to a birth
@@ -181,6 +183,36 @@ identified and leaves its parent unknown. A retired legacy seat has an unknown
 retirement date. Future births from these adopted identities have explicit
 parents and dates. This gives an old population a durable continuation while
 preserving the provenance available in its actual archive.
+
+### Returning to a body's own memory
+
+A repeated A → B → A path gives the parliament two kinds of acquired state to
+carry: coordinates that cross the measured common frame, and the components
+learned in A outside that frame. A projected import supplies the first and
+initializes the second. `nt_experts_recall_body` can instead take A's earlier
+spore as the local reference. For each living birth address present in both
+populations, it starts from that saved A/B/vote vector and replaces its 32
+frame coefficients with the incoming ones. With target frame Q, incoming
+vector v and selected local vector u, the operation is
+
+`u + Q (Qᵀv − Qᵀu)`.
+
+The current parliament supplies membership, genealogy, vitality, cursors,
+consensus, random stream and all waking/sleep clocks. The selected reference
+supplies the matching expert's local components. Unmatched living identities
+retain their incoming vectors unchanged. A retired address
+does not donate the memory of a later occupant of its old slot. The native
+operation stages all A/B/vote changes before committing them together.
+
+This makes a body-memory collection useful with a single continuing population.
+The caller keeps the latest global spore and a selected earlier spore for each
+visited body. On returning, `--body-memory` names the receiving body's reference
+alongside `--spore-in` for the current parliament. The reference must match
+the exact host SHA. Birth addresses identify the participants; the experiment's
+receipt records the exact incoming, local-reference and resulting file hashes.
+Exact and portable spore schemas remain 5 and 6.
+[Native recall](../harness/expert_recall.c) ·
+[Coordinate and identity oracles](../tests/test_expert_recall.c)
 
 A dream uses these same axes. The parliament chooses an unused cue by the sum of its living
 seats' vitality-weighted response energies, `Σ vitality_e ‖A_e B_e q‖²`. The body decodes
@@ -395,10 +427,11 @@ the current six-seat, rank-four population and its persistent state use 442,576
 tensor bytes; the portable 32-direction frame adds 262,144. Every saved
 generation preserves a complete point in the population's history. A long
 archive can hold tens of megabytes while the active generation remains small.
-Making that archive available for selective recall is a next architectural
-step: choose a prior population or a group of seats, calibrate it to the
-current body, and measure how its reactivation changes the present elections.
-The distinction gives consolidation a concrete objective across body changes:
+The archive now supplies explicit body recall: a returning body names its
+earlier generation, matches living birth addresses and restores its local
+orthogonal components alongside the current parliament's shared coordinates.
+Identity-based factor transplants also select a named expert's contribution
+from a saved generation. These operations give consolidation a concrete objective across body changes:
 retain useful acquired influence while allowing new encounters to reorganize
 which experts participate.
 
@@ -460,6 +493,78 @@ the saved factors, the receiving arithmetic, elections and response together.
 [Election control](../experiments/doe_spores/omni-gates.tsv) ·
 [Reproduction](../experiments/doe_spores/omni-long.md)
 
+### Early experience across successive generations
+
+An episode's address makes the content of sleep selectable. This matters over
+many later encounters: the population's current cue selection and a recorded
+early encounter ask different things of consolidation. The first follows the
+current parliament's dream dynamics. The second repeatedly gives the current
+parliament access to one particular earlier input, even after some of its
+original experts have retired.
+
+The turn-36 Omni population continues on Gemma3-270M Q8_0 through 128 new
+encounters in six histories. Four early inputs differ by `key` versus `bell`;
+124 later inputs are shared. Each pair either stays awake, dreams every eighth
+encounter or replays its first input on that schedule. Every encounter starts
+fresh decoder state. Every eighth boundary retains two full 262,144-entry
+probe rows, the clocks, living seats and complete birth ledger.
+
+At turn 164 every ledger has 30 identities: six living and 24 retired. Two
+of the six original Omni adoption identities remain alive. The final
+key-minus-bell differences in selected log odds are:
+
+| Consolidation schedule | Keeper carries a… | Miro reaches for his… |
+|---|---:|---:|
+| Waking only | −0.000213623 | −0.000146866 |
+| Ordinary dream every eight encounters | 0 | 0 |
+| Replay the early encounter every eight | +0.062147141 | +0.081848145 |
+
+The two ordinary-dream histories produce identical full logit rows at every
+measured checkpoint from 80 onward; their final A/B and vote tensors also
+match. Their saved birth ledgers retain the distinct earlier paths. Spaced
+replay keeps the early content available to the current generation: at 128,
+every entry of both paired output rows still differs. The archive records the
+whole trajectory, including early changes of sign and subsequent convergence.
+[Selected readings](../experiments/doe_spores/long-scores.tsv) ·
+[Full-row comparisons](../experiments/doe_spores/long-logits.tsv) ·
+[Final genealogy](../experiments/doe_spores/long-lineage.tsv)
+
+The final night's intervention selects living experts by birth address.
+Copying their post-sleep A/B into the corresponding pre-sleep population
+reproduces all 524,288 output values in both the ordinary-dream and replay
+experiments. The recipient retains its clocks and genealogy. An independent
+reader checks the elected seats' writes and the preservation of all other
+tensors over all 64 scheduled sleeping boundaries. One replaying trajectory
+holds 144 spore generations and 20,562,304 bytes; the six histories together
+hold 864 generations and 123,375,648 bytes.
+
+Durable continuity also has a publication boundary. The AML protocol commits
+all six completed histories in one immutable receipt after saving their
+artifacts. Each receipt names the preceding one and hashes its state, inputs,
+episodes and measurements. Resume validates the complete chain before
+advancing. The real split at encounter 4 reproduces the uninterrupted history
+through 8; worker execution reproduces both the first and last eight
+encounters. Altering an early state or a parent receipt is detected before a
+new output directory is created.
+[Protocol and recovery](../experiments/doe_spores/continuity.md)
+
+The same archive also measures how strongly each expert participates. In the
+inherited Gemma state, before these 128 encounters, seat 0 already carries
+mean normalized gate mass 0.999999946 across the two probes. Its effective
+participation count, averaged per position as `exp(−Σ p log p)`, is
+1.000000844. That original Omni identity wins all 13,979 recorded positions
+across the parent probes, subsequent probes, waking turns and private sleep.
+Its mean waking mass is about 0.999707; the requested top-k and the number of
+positive gates are recorded separately. The current lifecycle measures
+participation by positive-gate occurrences. These readouts make receiving-body
+vote calibration and mass-aware lifecycle comparisons concrete next tuning
+experiments, alongside selection of episodes for sleep.
+Copying only that expert's last-night A/B leaves maximum output residuals
+of 1.05–1.43e-5 across the four dream/replay probe rows; copying all living
+experts' A/B gives exact equality. The archive retains both interventions.
+[Vote mass and effective participation](../experiments/doe_spores/long-gates.tsv) ·
+[Probe trajectory](../experiments/doe_spores/long-gate-series.tsv)
+
 ### Several bodies, one continuing parliament
 
 The Method already has two useful precedents for a composition of voices.
@@ -474,18 +579,32 @@ separate experimental controls.
 [Version lineage](https://github.com/ariannamethod/dario/blob/8ccf9053298a8039e3d5e9df7fa053f4aed481e7/kk_kernel.c#L625) ·
 [Flow between voices](https://github.com/ariannamethod/gowiththeflow/blob/1c3f8afc0409fefb0ba73e382546bb8661641038/gowiththeflow.c#L240)
 
-The next composition can use a portable population as the continuing owner of
-experience. Body A produces an utterance and saves its parliament; body B
-receives that population, encodes the utterance in its own input protocol,
-and consolidates a private episode before the next public answer. An A → B → A
-schedule gives each body a measurable return to its own baseline. Expert birth
-addresses connect the successive populations, while episode addresses identify
-what each body actually replayed. The native APIs now supply the lineage,
-coordinate transfer and private replay operations for that schedule.
+The native C/AML composition now alternates Gemma3-270M and Qwen3.5-0.8B
+through one portable population. A plain alternating conversation first
+produces a frozen peer tape. Each receiving body encodes the preceding UTF-8
+utterance with its own tokenizer, learns one waking turn and privately
+replays that input. The identical tape drives separate per-body populations,
+a shared population, and a shared population with explicit body recall;
+the recall arm also runs with worker consolidation. The first return to Gemma
+has a pre-learning comparison that isolates recall from subsequent learning.
 
-The first comparison should hold the peer utterances and turn schedule fixed:
-separate parliaments with peer text in context; a shared parliament with private
-peer replay; and a shared parliament with both routes. Subsequent live waves
+Expert birth addresses connect successive populations while each step's
+receipt names the exact incoming state and local body reference. Separate
+episode addresses identify what each receiving body actually replayed.
+Entry, waking and replay generations remain inspectable; the body banks
+advance together after the step's receipt is published.
+Across twelve completed encounters the shared population reaches turn 48
+and 24 replay cycles, while each separate body reaches turn 42 and 18 cycles.
+All six inherited identities survive this alternation. At Gemma's last visit,
+the shared-versus-separate history changes the two selected key/bell margins
+by +0.086056 and +0.099398; body recall changes them by a further +0.019276
+and +0.025373. The Qwen readings and the complete distributions are retained
+with the same comparison boundaries. Worker recall reproduces all 36 saved
+entry/waking/replay states and all eight measured full rows exactly.
+[Shared parliament protocol](../experiments/doe_spores/continuity.md#two-bodies-four-histories)
+· [Full-row comparisons](../experiments/doe_spores/shared-logits.tsv)
+
+Subsequent live waves
 can choose the next speaker by its response to the preceding utterance, as
 flow does. A resident multi-body scheduler and a merged contribution policy
 are the next implementation layer. The current worker has one population

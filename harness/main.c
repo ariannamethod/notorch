@@ -17,6 +17,7 @@
 #include "harness/logo.h"
 #include "harness/experts.h"
 #include "examples/bpe.h"
+#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -165,6 +166,20 @@ static int encode_prompt(const session *s, const char *text, int *tokens, int ca
 
     for (int i = 0; i < g_chat.n_after && n < cap; i++) tokens[n++] = g_chat.after[i];
     return n;
+}
+
+/* Capture the same assembled prompt and stopping rules as the waking turn.
+ * EOG is already supplied by the tokenizer in the replay kernel. */
+static nt_replay_episode *capture_text(const session *s, const int *ids, int n) {
+    int stops[NT_CHAT_MAX + 1], count = 0;
+    if (s->eos >= 0 && s->eos < s->vocab) stops[count++] = s->eos;
+    for (int i = 0; i < g_chat.n_stop; i++) {
+        int id = g_chat.stop[i], seen = 0;
+        if (id < 0 || id >= s->vocab) return NULL;
+        for (int j = 0; j < count; j++) seen |= stops[j] == id;
+        if (!seen) stops[count++] = id;
+    }
+    return nt_replay_capture(s->experts, ids, NULL, n, NULL, 0, stops, count);
 }
 
 static int emit(const session *s, int id) {
@@ -401,9 +416,12 @@ static void usage(const char *self) {
         "  --dream N        generate 1..32 private choices after each learned turn\n"
         "  --dream-only N   dream from --spore-in without a user turn (preview unless learning)\n"
         "  --spore-in FILE  restore an exact or portable parliament (requires --experts)\n"
+        "  --body-memory FILE  recall this body's saved factors by identity after --spore-in\n"
         "  --spore-only     convert --spore-in to --spore-out before the first turn\n"
         "  --portable-spore include a residual frame in --spore-out for switching bodies\n"
         "  --spore-out FILE write a new GGUF spore on success (requires --experts)\n"
+        "  --replay-out NEW.gguf  capture a one-shot prompt and its stop policy\n"
+        "  --replay-only FILE  private replay from --spore-in; -n 1..32 (default 6)\n"
         "  --expert-trace   print elections, waking logits and private dream pieces on stderr\n"
         "  --moe-trace      print native sparse FFN choices and weights for waking and dream tokens\n"
         "  -q               no banner\n"
@@ -481,13 +499,16 @@ int main(int argc, char **argv) {
     if (blas_threads_from_env()) return 1;
     int quiet = 0, ai = 1;
     int flag_n = -1; float flag_t = -1.0f;
+    const char *flag_n_text = NULL, *flag_t_text = NULL;
     /* The positional form is what examples/infer_llama.c takes and what the
      * parity gate drives; the flags are for chat, which has no prompt to hang
      * positional arguments behind. */
     int tokenize_only = 0, arch_only = 0, repeats = 1;
     int experts = 0, learn = 0, trace = 0, moe_trace = 0, async = 0, portable = 0, spore_only = 0;
     int dream_tokens = 0, dream_only = 0;
-    const char *spore_in = NULL, *spore_out = NULL, *tok_path = NULL;
+    const char *spore_in = NULL, *spore_out = NULL, *tok_path = NULL, *body_memory = NULL;
+    const char *replay_out = NULL, *replay_in = NULL;
+    int replay_tokens = 6;
     while (ai < argc && argv[ai][0] == '-' && argv[ai][1]) {
         const char *arg = argv[ai];
         if (!strcmp(arg, "--experts")) { experts = 1; ai++; continue; }
@@ -508,6 +529,16 @@ int main(int argc, char **argv) {
         if (!strcmp(arg, "--portable-spore")) { portable = 1; ai++; continue; }
         if (!strcmp(arg, "--expert-trace")) { trace = 1; ai++; continue; }
         if (!strcmp(arg, "--moe-trace")) { moe_trace = 1; ai++; continue; }
+        if (!strcmp(arg, "--replay-out") || !strcmp(arg, "--replay-only") ||
+            !strcmp(arg, "--body-memory")) {
+            const char **value = !strcmp(arg, "--replay-out") ? &replay_out :
+                                 !strcmp(arg, "--replay-only") ? &replay_in : &body_memory;
+            if (*value || ai+1 >= argc || !*argv[ai+1]) {
+                fprintf(stderr, "notorch: %s needs one file\n", arg);
+                return 1;
+            }
+            *value = argv[ai+1]; ai += 2; continue;
+        }
         if (!strcmp(arg, "--spore-in") || !strcmp(arg, "--spore-out")) {
             if (++ai >= argc) { usage(argv[0]); return 1; }
             if (!strcmp(arg, "--spore-in")) spore_in = argv[ai++];
@@ -541,8 +572,8 @@ int main(int argc, char **argv) {
                 return 1;
             }
             if (f == 'r') repeats = atoi(argv[ai + 1]);
-            else if (f == 'n') flag_n = atoi(argv[ai + 1]);
-            else flag_t = (float)atof(argv[ai + 1]);
+            else if (f == 'n') { flag_n_text = argv[ai+1]; flag_n = atoi(flag_n_text); }
+            else { flag_t_text = argv[ai+1]; flag_t = (float)atof(flag_t_text); }
             ai += 2; continue;
         }
         /* -T prints the ids and stops. A family arrives with two ways to be wrong and this
@@ -559,6 +590,48 @@ int main(int argc, char **argv) {
         break;
     }
     if (ai >= argc) { nt_logo(quiet); usage(argv[0]); return 1; }
+
+    if (replay_in) {
+        char *end = NULL;
+        errno = 0;
+        long n = flag_n_text ? strtol(flag_n_text, &end, 10) : 6;
+        int bad_n = flag_n_text && (errno || end == flag_n_text || *end);
+        errno = 0;
+        double t = flag_t_text ? strtod(flag_t_text, &end) : 0;
+        int bad_t = flag_t_text && (errno || end == flag_t_text || *end);
+        const char *raw = getenv("NT_TOKENS");
+        if (!experts || !learn || !spore_in || replay_out || dream_tokens || spore_only ||
+            ai+1 != argc || repeats != 1 || bad_n || n<1 || n>NT_DREAM_MAX_TOKENS ||
+            bad_t || !isfinite(t) || t!=0 || (raw && *raw)) {
+            fprintf(stderr, "notorch: --replay-only requires --experts --learn-experts --spore-in, "
+                            "greedy -n 1..32, and no new input or dream\n");
+            return 1;
+        }
+        replay_tokens = (int)n;
+    }
+    if (replay_out && (!experts || spore_only || dream_only || ai+1 >= argc || ai+4 < argc)) {
+        fprintf(stderr, "notorch: --replay-out requires --experts and one prompt\n");
+        return 1;
+    }
+    if (replay_out) {
+        const char *ns = flag_n_text ? flag_n_text : ai+2 < argc ? argv[ai+2] : NULL;
+        const char *ts = flag_t_text ? flag_t_text : ai+3 < argc ? argv[ai+3] : NULL;
+        char *end = NULL;
+        errno = 0;
+        long n = ns ? strtol(ns, &end, 10) : 50;
+        int bad_n = ns && (errno || end == ns || *end);
+        errno = 0;
+        double t = ts ? strtod(ts, &end) : 0.8;
+        int bad_t = ts && (errno || end == ts || *end);
+        if (bad_n || n<1 || n>=8191 || bad_t || !isfinite(t) || t<0) {
+            fprintf(stderr, "notorch: captured text requires -n 1..8190 and a finite nonnegative temperature\n");
+            return 1;
+        }
+    }
+    if (body_memory && (!experts || !spore_in)) {
+        fprintf(stderr, "notorch: --body-memory requires --experts --spore-in\n");
+        return 1;
+    }
 
     if (dream_tokens && (!experts || spore_only || (!dream_only && !learn) ||
         (dream_only && (!spore_in || ai+1 != argc || (learn && !spore_out))))) {
@@ -578,7 +651,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "notorch: --portable-spore requires --spore-out\n");
         return 1;
     }
-    if ((learn || spore_in || spore_out) && !experts) {
+    if ((learn || spore_in || spore_out || replay_in || replay_out || body_memory) && !experts) {
         fprintf(stderr, "notorch: expert learning and spore I/O require --experts\n");
         return 1;
     }
@@ -668,6 +741,7 @@ int main(int argc, char **argv) {
 
     pf_on = getenv("NT_PROFILE") != NULL;
     int rc = 1;
+    nt_replay_episode *episode = NULL;
     if (experts) {
         nt_expert_body body = {model, s.tok};
         s.experts = nt_experts_open_on_body(gf, spore_in, trace ? stderr : NULL, &body);
@@ -676,13 +750,35 @@ int main(int argc, char **argv) {
                     spore_in ? " from " : "", spore_in ? spore_in : "");
             goto done;
         }
-        if (moe_trace && dream_tokens &&
-            nt_experts_set_dream_route(s.experts, print_moe_route, "dream-route")) {
+        if (body_memory) {
+            nt_experts *local = nt_experts_open(gf, body_memory, NULL);
+            int matched = 0;
+            int result = local ? nt_experts_recall_body(s.experts, local, &matched) : NT_E_STATE;
+            nt_experts_free(local);
+            if (result) {
+                fprintf(stderr, "notorch: body memory refused: %s\n", nt_strerror(result));
+                goto done;
+            }
+            fprintf(stderr, "doe body-memory matched=%d\n", matched);
+        }
+        if (moe_trace && (dream_tokens || replay_in) &&
+            nt_experts_set_dream_route(s.experts, print_moe_route, replay_in ? "replay-route" : "dream-route")) {
             fprintf(stderr, "notorch: could not observe native routes on the private dream body\n");
             goto done;
         }
     }
     if (spore_only) { rc = 0; goto done; }
+    if (replay_in) {
+        episode = nt_replay_load(s.experts, replay_in);
+        if (!episode) {
+            fprintf(stderr, "notorch: replay episode refused for this body\n");
+            goto done;
+        }
+        rc = async ? nt_experts_submit_replay(&s.experts, &s.pending, episode, replay_tokens)
+                   : nt_experts_replay(s.experts, episode, replay_tokens, 1);
+        if (rc) fprintf(stderr, "notorch: private replay failed: %s\n", nt_strerror(rc));
+        goto done;
+    }
     if (dream_only) {
         rc = consolidate(&s, 0);
         if (rc) fprintf(stderr, "notorch: private dream failed: %s\n", nt_strerror(rc));
@@ -712,7 +808,14 @@ int main(int argc, char **argv) {
             s.kv = nt_model_kv_new(arch, model, dims, s.max_seq);
             if (!s.kv) { fprintf(stderr, "notorch: could not make a cache for %d positions\n", s.max_seq); rc = 1; }
         }
-        if (s.kv) {
+        if (s.kv && replay_out) {
+            episode = capture_text(&s, tokens, n_tok);
+            if (!episode || nt_replay_save(episode, replay_out)) {
+                fprintf(stderr, "notorch: could not publish a new replay episode at %s\n", replay_out);
+                rc = 1;
+            }
+        }
+        if (s.kv && !rc) {
             fprintf(stderr, "\nprompt: \"%s\" (%d tokens, temp=%.2f)\n", prompt, n_tok, temp);
             if (repeats < 1) repeats = 1;
             for (int rep = 0; rep < repeats; rep++) {
@@ -754,6 +857,7 @@ done:
         rc = 1;
     }
     nt_experts_free(s.experts);
+    nt_replay_free(episode);
     free(s.sampling_copy);
     if (s.tok) bpe_free(s.tok);
     free(s.logits);

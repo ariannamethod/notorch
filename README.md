@@ -271,6 +271,25 @@ ledger, including retired ancestors.
 The optional audit helper builds with `make doe_probe AML_ROOT=/path/to/aml`;
 the Harness and replay API themselves are C and require no AML runtime.
 
+On a return to a previously visited body, `--body-memory` can recall the
+components that body learned outside the 32 transferable directions. It matches
+living expert addresses in the selected earlier same-host spore, takes its
+local A/B/vote components and keeps the incoming parliament's shared coordinates,
+membership, genealogy, RNG and clocks. Unmatched identities retain their
+incoming vectors unchanged. Both the incoming parliament and the selected
+local reference are explicit:
+
+```sh
+./notorch --experts --spore-only --spore-in latest-from-b.gguf \
+  --body-memory last-on-a.gguf --portable-spore \
+  --spore-out returned-to-a.gguf model-a.gguf
+```
+
+Keep `latest-from-b.gguf` portable and `last-on-a.gguf` from these exact A
+weights. The latter supplies local expert memory by birth address; the latest
+global population continues to own its lifecycle. [How recall combines the
+coordinates](research/democracy_of_experts.md#returning-to-a-bodys-own-memory).
+
 Add `--async-consolidation` to `--experts --learn-experts` to hand each
 completed turn to a C worker. Chat can accept input while it updates the
 elected experts. The next forward receives the committed parliament. EOF and
@@ -532,7 +551,25 @@ The [measured protocol](experiments/doe_spores/omni-long.md) includes the body
 hashes, population history, sleep effects and activation-path comparison.
 See [media, consolidation and continuity](research/democracy_of_experts.md#media-experience-and-consolidation).
 
-#### Replay a sight or a sound while asleep
+#### Replay an encounter while asleep
+
+The ordinary text Harness can also capture and replay its exact assembled
+prompt, including its stop-token policy. A replay has fresh private decoder
+state and uses the same native sleep-rate update as sensory replay:
+
+```sh
+./notorch -n 1 -t 0 --experts --learn-experts \
+  --replay-out early.gguf --spore-out awake.gguf model.gguf \
+  "Miro is the lighthouse keeper. Every night Miro carries a key."
+./notorch --experts --learn-experts --async-consolidation \
+  --spore-in awake.gguf --replay-only early.gguf -n 6 \
+  --spore-out remembered.gguf model.gguf
+```
+
+`--replay-out` takes a one-shot encounter. `--replay-only` generates no public
+answer, takes a budget of 1–32 choices (default 6), and uses the saved input
+and policy. The receiving model and tokenizer encode a peer's UTF-8 utterance
+before it becomes that body's episode.
 
 An input can now become an addressed episode: its assembled IDs, copied media
 rows and output-token policy are saved in a separate GGUF. Replay starts private
@@ -573,6 +610,46 @@ replays and unchanged prior text-dream clocks. All 12 waking and replay
 boundaries preserved exact serial/worker spores through Q8 → F16 → Q8.
 Transplanting the last replay's A/B by identity reproduced all 256,000 logits
 of two fresh probes while retaining the recipient's clocks and genealogy.
+
+#### A parliament over a longer life
+
+The same turn-36 Omni population now continues through **128 additional Gemma
+encounters** in six histories: early key/bell experience, each followed by
+waking alone, ordinary dreams or spaced replay of its first encounter. At
+turn 164, each ledger contains 30 birth addresses, six living experts and 24
+retired ancestors. Two original Omni identities remain alive. One replaying
+history retains 20.56 MB across its 144 saved generations; all six retain
+123.38 MB while each current exact spore occupies 145,376 bytes.
+
+On the two fixed probes, replay preserves a key-minus-bell log-odds difference
+of **+0.062147 and +0.081848** after the 124 common later encounters. The ordinary
+dream histories have identical full logit rows from checkpoint 80 onward.
+Copying the last night's A/B by living identity reproduces all 524,288 logits
+for both the dream and replay interventions. A receipt chain makes interrupted
+experience resumable: split/restarted and worker runs preserve exact spores,
+including the final eight encounters after repeated births and retirements.
+[C/AML protocol and recovery commands](experiments/doe_spores/continuity.md) ·
+[Full-row measurements](experiments/doe_spores/long-logits.tsv) ·
+[Population genealogy](experiments/doe_spores/long-lineage.tsv)
+
+#### Several small bodies, one parliament
+
+Gemma3-270M and Qwen3.5-0.8B now alternate through **one portable parliament**.
+The C/AML experiment completes twelve encounters on a frozen peer conversation,
+comparing independent per-body histories, a shared history and a shared history
+with `--body-memory` on every return. The shared population reaches turn 48
+and 24 replay cycles; each independent body reaches turn 42 and 18 cycles.
+All six inherited identities remain alive across the twelve encounters.
+
+The worker version of body recall matches all 36 entry, waking and replay
+generations byte for byte, together with every scheduled full-logit reading.
+On Gemma's final visit, the shared history changes the two selected key/bell
+margins by +0.086056 and +0.099398 relative to its separate history; local
+recall adds +0.019276 and +0.025373. Each receipt names the exact global parent,
+local body memory, captured episode and next body-bank states.
+[Shared-parliament protocol and commands](experiments/doe_spores/continuity.md#two-bodies-four-histories) ·
+[Scores across both bodies](experiments/doe_spores/shared-scores.tsv) ·
+[Full-row comparisons](experiments/doe_spores/shared-logits.tsv)
 
 The [SmolLM2-360M experiment](experiments/doe_spores/transplant.aml) moves a
 single seat's A/B between two GGUF spores and probes fresh conversations.

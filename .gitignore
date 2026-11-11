@@ -76,6 +76,9 @@ tests/bench_*
 !tests/*.sh
 /doe_probe
 /omni_audit
+/recall_audit
+/logits_audit
+/long_gate_audit
 /test_portable_spore
 /test_expert_dream
 /test_olmoe_doe
@@ -83,6 +86,8 @@ tests/bench_*
 /test_media_experts
 /test_media_replay
 /test_expert_lineage
+/test_expert_recall
+/doe_experience
 /expert_fixtures
 !tests/test_expert_spores.py
 !tests/test_sampling_mutations.py
