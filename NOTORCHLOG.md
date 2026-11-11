@@ -11,6 +11,28 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — Integrate native Qwen vision with long expert continuity
+
+Hand: Astra (Codex), branch `codex/doe-long-continuity`, PR #216.
+Merged main `d72c802` (Qwen vision, PR #215) into the expert branch with both
+histories retained. The two conflicts were the Harness archive/clean lists in
+`Makefile` and adjacent entries in this log. The archive now includes shared
+image loading, the Qwen vision encoder and expert body recall together.
+Vision implementation files match main exactly; the DoE implementation,
+protocols and recorded measurements match the pre-merge branch. README keeps
+both capability descriptions.
+
+Proof: the focused native gates pass 89 vision checks and 568 body-recall
+checks. Full `make -j2 test BLAS_FLAGS= BLAS_LIBS= BLAS_NAME=native` passes,
+including Qwen text, sensory replay and resident/CLI continuity. On the same
+Qwen3.5-0.8B BF16 body and floating-activation settings as the shared-parliament
+study, the merged Harness reproduces the prior plain output and all six
+choice IDs/selected logits/best logits. Repeating step 12 from the archived
+step-11 incoming population and step-10 local body reference reproduces the
+entry, worker-waking and worker-replay spores, plus the captured episode,
+byte for byte. The original experiment archive remains pinned to its recorded
+runtime; these checks exercise the merged runtime against those saved states.
+
 ## 2026-11-11 — Widen recall-test offsets before multiplication
 
 CodeQL review of PR #216 identified an `int` rank-by-dimension multiplication
@@ -129,6 +151,39 @@ Both new real protocols fix `NT_NO_I8=1`, raw text input and one attention
 thread. The inherited parent was projected on the default activation path;
 an earlier eight-encounter bring-up also used default activations and retains
 its own protocol receipt. AML revision is `78caa5b15f732d7fb83c950e544c58d23735a615`.
+
+## 2026-11-11 — Qwen3.5 sees through its original encoder
+
+Hand: Codex, branch `codex/qwen35-vision`.
+
+Added native source-layout vision conversion and C inference: RGB/PIL resize,
+3D patch projection, learned position interpolation, axial RoPE, image attention,
+merger and explicit T/H/W decoder positions. The existing LFM3 RGB implementation
+is shared while retaining its torchvision resize precision. Attention scratch
+is bounded by 128 query rows. Text conversion and NULL-media decoding retain
+identical bytes/results. Qwen text DOE remains unchanged; its image replay
+requires the axes to be represented in the persisted media format.
+
+Proof: original OneJev `c02e305b430b56c1e82f9675ba8c293a22646891`, unchanged
+source SHA `cb4b7456703baa26a0cfacf177067200b50021df5a6ba2a2cd1e6f6c868f2244`,
+Transformers 5.15.0 / PyTorch 2.9.1+cpu eager/F32, AMD EPYC 7763, Linux/OpenBLAS.
+Five images have byte-identical prepared patches, feature max absolute error
+1.55449e-4, relative L2 1.53579e-5. Six decoder runs compare 24 full-vocabulary
+logit vectors (maximum 3.29018e-5 absolute / 2.72524e-6 relative L2), 18 identical
+greedy IDs, image substitution, chunks 1/7/32 and plain text. The native gate
+is `tests/check_qwen35_vision.py`; exact commands and bounds are in the existing
+[family documentation](docs/qwen35.md#native-still-images-2026-11-11).
+
+Failures retained: torchvision resize coefficients differed by one byte;
+PIL coefficients fix it. F32 softmax summation exceeded the fixed feature
+bound at 3.85046e-4; double normalizer accumulation passes at 1.55449e-4.
+CodeQL also requested promotion before index multiplication; Q/K/V offsets
+now use size_t operands throughout, preserving the measured feature bytes.
+The 89-check frozen vision/3D fixture detects deliberately disconnected image
+rows and removed spatial positions. Qwen text/GQA (2580), tokenizer (62),
+LFM3-Omni (23), private dream and persisted-media replay regressions pass.
+Generic `test_harness` rebuilt its two sides and reported its optional model
+comparison skipped because no Llama fixture file was supplied.
 
 ## 2026-11-11 — lfm3_omni_to_gguf --f32: BF16 matrices kept exact, out of F16's narrow range
 

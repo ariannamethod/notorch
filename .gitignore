@@ -1,3 +1,5 @@
+/qwen35_vision_probe
+/test_qwen35_vision
 # binaries
 /qwen35_eval
 /qwen35_to_gguf
