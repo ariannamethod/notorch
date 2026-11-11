@@ -1,9 +1,9 @@
 /* Qwen3.5 dense text decoder: gated attention + recurrent GatedDeltaNet.
  * Equations/layout: Qwen and Transformers modeling_qwen3_5.py (Apache-2.0).
  * The source-layout GGUF made by tools/qwen35_to_gguf.c retains BF16/F32
- * bytes. CPU arithmetic is F32; vision and quantized GGUF layouts are separate
- * integration boundaries. No external model runtime is called here. */
-#include "harness/arch.h"
+ * bytes. CPU arithmetic is F32; explicit image rows and 3-axis positions
+ * preserve the ordinary text path. No external model runtime is called here. */
+#include "harness/qwen35_vision.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -222,10 +222,31 @@ static void attention_heads(void *ptr,int h0,int h1) {
         }
     }
 }
-static int q35_forward_hooks(void *ptr,kv_cache *kv,const int *tokens,int n,int pos,
-                             float *logits,nt_residual_fn post_attention,nt_residual_fn post_block,void *user) {
+static void q35_rope(float *x,int physical,int dim,float base,const int *p,const int *s) {
+    if(!p){rope(x,physical,dim,base,1);return;}
+    int half=dim/2;
+    for(int i=0;i<half;i++) {
+        int axis=i%3;
+        if(axis==1 && i>=s[1]*3)axis=0;
+        if(axis==2 && i>=s[2]*3)axis=0;
+        float inv=1.0f/powf(base,(float)(2*i)/dim);
+        float angle=(float)p[axis]*inv,c=cosf(angle),sn=sinf(angle);
+        float a=x[i],b=x[i+half];x[i]=a*c-b*sn;x[i+half]=b*c+a*sn;
+    }
+}
+static int q35_forward_all(void *ptr,kv_cache *kv,const int *tokens,const float *const *rows,
+    const int (*positions)[3],const int *sections,int n,int pos,float *logits,float *hidden,
+    nt_residual_fn post_attention,nt_residual_fn post_block,void *user) {
     q35_model *m=ptr;if(!m)return NT_E_ARG;
     int rc=nt_check_call(kv,tokens,n,pos,m->V,m->L,0);if(rc)return rc;
+    if(positions) {
+        int half=m->R/2;
+        if(!sections || sections[0]<0 || sections[1]<0 || sections[2]<0 ||
+           sections[1]>(half+1)/3 || sections[2]>half/3 ||
+           sections[0]+sections[1]+sections[2]!=half)return NT_E_ARG;
+        for(int t=0;t<n;t++)for(int a=0;a<3;a++)if(positions[t][a]<0 || positions[t][a]>=m->ctx)return NT_E_ARG;
+    }
+    if(rows)for(int t=0;t<n;t++)if(rows[t])for(int i=0;i<m->E;i++)if(!isfinite(rows[t][i]))return NT_E_ARG;
     if(kv->kv_dim!=-35)return NT_E_CACHE;
     q35_cache *cache=(q35_cache*)kv;if(cache->owner!=m)return NT_E_CACHE;
     if(pos && pos!=cache->next)return NT_E_STATE;
@@ -240,7 +261,10 @@ static int q35_forward_hooks(void *ptr,kv_cache *kv,const int *tokens,int n,int 
         memset(cache->state,0,(size_t)m->linear_count*m->VH*m->KD*m->VD*sizeof(float));
     }
     cache->next=-1;
-    for(int t=0;t<n;t++)if(gguf_dequant_row(m->gf,m->emb,tokens[t],x+(size_t)t*E)){rc=NT_E_STATE;goto done;}
+    for(int t=0;t<n;t++) {
+        if(rows && rows[t])memcpy(x+(size_t)t*E,rows[t],(size_t)E*sizeof(float));
+        else if(gguf_dequant_row(m->gf,m->emb,tokens[t],x+(size_t)t*E)){rc=NT_E_STATE;goto done;}
+    }
     for(int l=0;l<m->L;l++) {
         q35_layer *a=&m->layers[l];
         for(int t=0;t<n;t++)rmsnorm(norm+(size_t)t*E,x+(size_t)t*E,a->in_norm,E,m->eps);
@@ -250,11 +274,11 @@ static int q35_forward_hooks(void *ptr,kv_cache *kv,const int *tokens,int n,int 
             for(int t=0;t<n;t++) {
                 for(int h=0;h<m->H;h++) {
                     float *qh=q+(size_t)t*2*Q+h*2*m->HD;
-                    rmsnorm(qh,qh,a->q_norm,m->HD,m->eps);rope(qh,pos+t,m->R,m->rope_base,1);
+                    rmsnorm(qh,qh,a->q_norm,m->HD,m->eps);q35_rope(qh,pos+t,m->R,m->rope_base,positions?positions[t]:NULL,sections);
                 }
                 for(int h=0;h<m->KV;h++) {
                     float *kh=k+(size_t)t*K+h*m->HD;
-                    rmsnorm(kh,kh,a->k_norm,m->HD,m->eps);rope(kh,pos+t,m->R,m->rope_base,1);
+                    rmsnorm(kh,kh,a->k_norm,m->HD,m->eps);q35_rope(kh,pos+t,m->R,m->rope_base,positions?positions[t]:NULL,sections);
                 }
                 size_t off=((size_t)a->index*kv->max_seq+pos+t)*K;
                 memcpy(kv->k+off,k+(size_t)t*K,(size_t)K*sizeof(float));
@@ -281,11 +305,28 @@ static int q35_forward_hooks(void *ptr,kv_cache *kv,const int *tokens,int n,int 
         for(size_t i=0;i<(size_t)n*E;i++)x[i]+=tmp[i];
         if(post_block && (rc=post_block(user,l,pos,n,E,x)))goto done;
     }
-    if(logits){rmsnorm(norm,x+(size_t)(n-1)*E,m->norm,E,m->eps);mm(logits,&m->head,norm,1);}
+    if(logits || hidden)rmsnorm(norm,x+(size_t)(n-1)*E,m->norm,E,m->eps);
+    if(logits)mm(logits,&m->head,norm,1);
+    if(hidden)memcpy(hidden,norm,(size_t)E*sizeof(float));
     cache->next=pos+n;
 done:
     free(x);free(norm);free(q);free(z);free(k);free(aa);free(bb);free(out);free(tmp);free(gate);free(up);free(scores);
     return rc;
+}
+static int q35_forward_hooks(void *m,kv_cache *kv,const int *tokens,int n,int pos,
+    float *logits,nt_residual_fn pa,nt_residual_fn pb,void *user) {
+    return q35_forward_all(m,kv,tokens,NULL,NULL,NULL,n,pos,logits,NULL,pa,pb,user);
+}
+static int q35_embd_hooks(void *m,kv_cache *kv,const int *tokens,const float *const *rows,int n,int pos,
+    float *logits,float *hidden,nt_residual_fn pa,nt_residual_fn pb,void *user) {
+    return q35_forward_all(m,kv,tokens,rows,NULL,NULL,n,pos,logits,hidden,pa,pb,user);
+}
+static int q35_embd(void *m,kv_cache *kv,const int *tokens,const float *const *rows,int n,int pos,float *logits,float *hidden) {
+    return q35_embd_hooks(m,kv,tokens,rows,n,pos,logits,hidden,NULL,NULL,NULL);
+}
+int nt_qwen35_forward_3d(void *m,kv_cache *kv,const int *tokens,const float *const *rows,
+    const int (*positions)[3],const int sections[3],int n,int pos,float *logits,nt_residual_fn cb,void *user) {
+    return q35_forward_all(m,kv,tokens,rows,positions,sections,n,pos,logits,NULL,NULL,cb,user);
 }
 static int q35_forward_residual(void *m,kv_cache *kv,const int *tokens,int n,int pos,
                                 float *logits,nt_residual_fn callback,void *user) {
@@ -304,6 +345,9 @@ static const float *q35_doe_norm(const void *model,int index) {
     if(index==2*m->L)return m->norm;
     return index%2 ? m->layers[index/2].ffn_norm : m->layers[index/2].in_norm;
 }
+/* Generic media replay currently stores rows and physical offsets, not 3D
+ * positions. Keep Qwen image replay unavailable until that contract carries
+ * the axes; plain text DOE remains unchanged. */
 static const nt_doe_decoder q35_doe={q35_forward_hooks,q35_describe,q35_doe_norm,2,0,NULL};
 static int q35_forward(void *m,kv_cache *kv,const int *tokens,int n,int pos,float *logits) {
     return q35_forward_residual(m,kv,tokens,n,pos,logits,NULL,NULL);
@@ -311,4 +355,4 @@ static int q35_forward(void *m,kv_cache *kv,const int *tokens,int n,int pos,floa
 static const char *const names[]={"qwen35",NULL};
 const nt_arch nt_arch_qwen35={.names=names,.load=q35_load,.free=q35_free,
     .forward=q35_forward,.forward_residual=q35_forward_residual,
-    .kv_new=q35_kv_new,.kv_free=q35_kv_free,.doe=&q35_doe};
+    .kv_new=q35_kv_new,.kv_free=q35_kv_free,.doe=&q35_doe,.forward_embd=q35_embd};

@@ -48,15 +48,72 @@ static int publish(const char *partial, const char *out, int tensors) {
     return 0;
 }
 
-typedef struct {char *name;const char *logical;uint64_t lo,hi,shape[3];uint32_t ndim,dtype;int shard;} tensor;
+typedef struct {char *name;const char *logical;uint64_t lo,hi,shape[5];uint32_t ndim,dtype;int shard;} tensor;
 #define MAX_SHARDS 64
 static int by_name(const void *a,const void *b){return strcmp(((const tensor*)a)->name,((const tensor*)b)->name);}
-static int convert_model(const char *snapshot,const char *out) {
+static int convert_model(const char *snapshot,const char *out,int vision) {
     char path[4096],partial[4200],key[128];char *config=NULL,*header=NULL,*index=NULL,*shards[MAX_SHARDS]={0};
     gguf_writer *w=NULL;FILE *src[MAX_SHARDS]={0};uint64_t data_at[MAX_SHARDS]={0};tensor *ts=NULL;
     int nt=0,bad=0,rc=1,head=0,expected=2,ns=0;
     snprintf(path,sizeof(path),"%s/config.json",snapshot);config=nj_load(path,NULL);if(!config)goto done;
     const char *c=nj_get(config,"text_config");if(!c)c=config;
+    if(vision) {
+        const char *v=nj_get(config,"vision_config"),*r=nj_get(c,"rope_parameters");
+        const char *from[]={"depth","hidden_size","intermediate_size","num_heads","out_hidden_size","patch_size",
+            "temporal_patch_size","spatial_merge_size","num_position_embeddings","in_channels"};
+        const char *to[]={"block_count","embedding_length","feed_forward_length","attention.head_count","output_length","patch_size",
+            "temporal_patch_size","merge_size","position_count","channels"};
+        uint32_t vals[10],width,hd,ids[3]; double frac;
+        if(!nj_is(nj_get(config,"model_type"),"qwen3_5") || !nj_is(nj_get(v,"hidden_act"),"gelu_pytorch_tanh") ||
+           !nj_is(nj_get(r,"rope_type"),"default") || !nj_get(r,"mrope_interleaved") ||
+           strncmp(nj_get(r,"mrope_interleaved"),"true",4))goto done;
+        for(int i=0;i<10;i++)if(u32_at(v,from[i],&vals[i]) || !vals[i])goto done;
+        if(vals[0]>128 || vals[9]!=3 || vals[6]!=2 || vals[7]!=2 ||
+           u32_at(c,"hidden_size",&width) || width!=vals[4] || u32_at(c,"head_dim",&hd) ||
+           nj_number(nj_get(r,"partial_rotary_factor"),&frac) || !isfinite(frac) || frac<=0 || frac>1 ||
+           u32_at(config,"image_token_id",&ids[0]) || u32_at(config,"vision_start_token_id",&ids[1]) ||
+           u32_at(config,"vision_end_token_id",&ids[2]))goto done;
+        const char *ds=nj_get(v,"deepstack_visual_indexes");
+        if(ds && (nj_first(ds,&bad) || bad))goto done;
+        snprintf(path,sizeof(path),"%s/processor_config.json",snapshot);
+        char *processor=access(path,F_OK)?NULL:nj_load(path,NULL);
+        if(!processor){snprintf(path,sizeof(path),"%s/preprocessor_config.json",snapshot);processor=nj_load(path,NULL);}
+        const char *ip=nj_get(processor,"image_processor");if(!ip)ip=processor;
+        uint32_t minpx,maxpx,patch,merge,temp,resample; double scale;
+        int valid=ip && !u32_at(nj_get(ip,"size"),"shortest_edge",&minpx) &&
+            !u32_at(nj_get(ip,"size"),"longest_edge",&maxpx) && !u32_at(ip,"patch_size",&patch) &&
+            !u32_at(ip,"merge_size",&merge) && !u32_at(ip,"temporal_patch_size",&temp) &&
+            !u32_at(ip,"resample",&resample) && resample==3 && patch==vals[5] && merge==2 && temp==2 &&
+            minpx>0 && maxpx>=minpx && !nj_number(nj_get(ip,"rescale_factor"),&scale) && fabs(scale-1.0/255.0)<1e-12;
+        const char *flags[]={"do_resize","do_rescale","do_normalize","do_convert_rgb"};
+        for(int i=0;i<4;i++) { const char *f=nj_get(ip,flags[i]); if(!f || strncmp(f,"true",4))valid=0; }
+        const char *stats[]={"image_mean","image_std"};
+        for(int i=0;i<2;i++) { int n=0,b=0; double x;
+            for(const char *a=nj_first(nj_get(ip,stats[i]),&b);a;a=nj_next(a,']',&b),n++)
+                if(nj_number(a,&x) || x!=0.5)valid=0;
+            if(n!=3 || b)valid=0;
+        }
+        free(processor); if(!valid || !(w=start(out,partial,sizeof(partial))))goto done;
+        gguf_write_kv_str(w,"general.architecture","qwen35_vision");
+        gguf_write_kv_str(w,"general.name","Qwen3.5 vision, source tensor layout");
+        gguf_write_kv_u32(w,"qwen35_vision.source_layout_version",1);
+        for(int i=0;i<10;i++){snprintf(key,sizeof(key),"qwen35_vision.%s",to[i]);gguf_write_kv_u32(w,key,vals[i]);}
+        gguf_write_kv_u32(w,"qwen35_vision.min_pixels",minpx);gguf_write_kv_u32(w,"qwen35_vision.max_pixels",maxpx);
+        gguf_write_kv_u32(w,"qwen35_vision.text_rope_dim",(uint32_t)(hd*frac));
+        const char *keys[]={"image_token_id","vision_start_token_id","vision_end_token_id"};
+        for(int i=0;i<3;i++){snprintf(key,sizeof(key),"qwen35_vision.%s",keys[i]);gguf_write_kv_u32(w,key,ids[i]);}
+        int count=0; uint32_t section;
+        for(const char *a=nj_first(nj_get(r,"mrope_section"),&bad);a;a=nj_next(a,']',&bad),count++) {
+            long long x;if(count>=3 || nj_int(a,&x) || x<0 || x>256)goto done;section=(uint32_t)x;
+            snprintf(key,sizeof(key),"qwen35_vision.mrope_section.%d",count);gguf_write_kv_u32(w,key,section);
+        }
+        if(bad || count!=3)goto done;
+        double theta=10000; const char *vr=nj_get(v,"rope_parameters");
+        if(vr && (!nj_is(nj_get(vr,"rope_type"),"axial") || nj_number(nj_get(vr,"rope_theta"),&theta)))goto done;
+        if(!isfinite(theta) || theta<=0)goto done;
+        gguf_write_kv_f32(w,"qwen35_vision.rope.freq_base",(float)theta);
+        expected=9+12*(int)vals[0];
+    } else {
     const char *bias=nj_get(c,"attention_bias"),*rope=nj_get(c,"rope_parameters");
     if(!nj_is(nj_get(c,"model_type"),"qwen3_5_text") || !nj_is(nj_get(c,"hidden_act"),"silu") ||
        !bias || strncmp(bias,"false",5) || !nj_is(nj_get(rope,"rope_type"),"default"))goto done;
@@ -87,6 +144,7 @@ static int convert_model(const char *snapshot,const char *out) {
     }
     if(bad || l!=(int)vals[0])goto done;
     gguf_write_kv_f32(w,"qwen35.rms_epsilon",(float)eps);gguf_write_kv_f32(w,"qwen35.rope.freq_base",(float)base);
+    }
     /* model.safetensors, or the shards model.safetensors.index.json names: Qwen's own
      * 0.8B and 2B ship one shard called -00001-of-00001, 4B and 9B several. With an
      * index, every text tensor must be found in the shard the index puts it in. */
@@ -115,9 +173,9 @@ static int convert_model(const char *snapshot,const char *out) {
     header[hs]=0;data_at[s]=8+hs;
     for(const char *k=nj_first(header,&bad),*v;k && (v=nj_value(k,&bad));k=nj_next(v,'}',&bad)) {
         char *name=nj_string(k);if(!name)goto done;
-        int skip=!strncmp(name,"model.language_model.",21)?21:
+        int skip=vision ? (!strncmp(name,"model.visual.",13)?13:0) : !strncmp(name,"model.language_model.",21)?21:
             (nj_is(nj_get(config,"model_type"),"qwen3_5_text") && !strncmp(name,"model.",6)?6:0);
-        if(!skip && strcmp(name,"lm_head.weight")){free(name);continue;}
+        if(!skip && (vision || strcmp(name,"lm_head.weight"))){free(name);continue;}
         if(map){char *where=nj_string(nj_get(map,name));int here=where && !strcmp(where,shards[s]);free(where);if(!here){free(name);goto done;}}
         if(!strcmp(name,"lm_head.weight"))head++;
         tensor *next=realloc(ts,(size_t)(nt+1)*sizeof(*ts));if(!next){free(name);goto done;}ts=next;
@@ -128,21 +186,30 @@ static int convert_model(const char *snapshot,const char *out) {
         if(!width)goto done;
         int b=0;long long dim,lo,hi;
         for(const char *s=nj_first(nj_get(v,"shape"),&b);s;s=nj_next(s,']',&b)) {
-            if(t->ndim==3 || nj_int(s,&dim) || dim<1 || count>UINT64_MAX/(uint64_t)dim)goto done;
+            if(t->ndim==(vision?5u:3u) || nj_int(s,&dim) || dim<1 || count>UINT64_MAX/(uint64_t)dim)goto done;
             t->shape[t->ndim++]=(uint64_t)dim;count*=dim;
         }
         const char *o=nj_first(nj_get(v,"data_offsets"),&b),*end=o?nj_next(o,']',&b):NULL;
         if(b || !t->ndim || !end || nj_int(o,&lo) || nj_int(end,&hi) || nj_next(end,']',&b) || b || lo<0 || hi<lo ||
            count>UINT64_MAX/width || (uint64_t)(hi-lo)!=count*width || (uint64_t)hi>(uint64_t)st.st_size-8-hs)goto done;
+        if(vision && !strcmp(t->logical,"patch_embed.proj.weight")) {
+            uint32_t patch,temp,channels; const char *v=nj_get(config,"vision_config");
+            if(u32_at(v,"patch_size",&patch) || u32_at(v,"temporal_patch_size",&temp) ||
+               u32_at(v,"in_channels",&channels) || t->ndim!=5 || t->shape[1]!=channels ||
+               t->shape[2]!=temp || t->shape[3]!=patch || t->shape[4]!=patch)goto done;
+            t->shape[1]=count/t->shape[0];t->ndim=2;
+        }
+        if(t->ndim>4)goto done;
         t->lo=lo;t->hi=hi;
     }
     if(bad)goto done;
     }
     if(head>1 || nt!=expected+head)goto done;
-    if(!head){const char *tied=nj_get(config,"tie_word_embeddings");if(!tied)tied=nj_get(c,"tie_word_embeddings");if(!tied || strncmp(tied,"true",4))goto done;}
+    if(!vision && !head){const char *tied=nj_get(config,"tie_word_embeddings");if(!tied)tied=nj_get(c,"tie_word_embeddings");if(!tied || strncmp(tied,"true",4))goto done;}
     qsort(ts,(size_t)nt,sizeof(*ts),by_name);
     for(int i=0;i<nt;i++) {
-        uint64_t shape[3];for(uint32_t d=0;d<ts[i].ndim;d++)shape[d]=ts[i].shape[ts[i].ndim-1-d];
+        uint64_t shape[4];for(uint32_t d=0;d<ts[i].ndim;d++)shape[d]=ts[i].shape[ts[i].ndim-1-d];
+        if(i && !strcmp(ts[i-1].logical,ts[i].logical))goto done;
         gguf_write_tensor_decl(w,ts[i].logical,ts[i].ndim,shape,ts[i].dtype);
     }
     char buf[65536];
@@ -155,7 +222,7 @@ static int convert_model(const char *snapshot,const char *out) {
     }
     {int closed=gguf_write_close(w);w=NULL;if(!closed)rc=publish(partial,out,nt);}
 done:
-    if(rc)fail("conversion failed; expected a dense Qwen3.5 text checkpoint (model.safetensors, or an index and its shards)",snapshot);
+    if(rc)fail("conversion failed; expected a supported Qwen3.5 source checkpoint (model.safetensors, or an index and its shards)",snapshot);
     if(w)gguf_write_abort(w);
     for(int s=0;s<MAX_SHARDS;s++){if(src[s])fclose(src[s]);free(shards[s]);}
     for(int i=0;i<nt;i++)free(ts[i].name);
@@ -230,6 +297,7 @@ done:
 }
 int main(int argc,char **argv) {
     if(argc==4 && !strcmp(argv[1],"--tokenizer"))return convert_tokenizer(argv[2],argv[3]);
-    if(argc==3)return convert_model(argv[1],argv[2]);
-    fprintf(stderr,"Usage: %s SNAPSHOT MODEL.gguf | --tokenizer tokenizer.json TOKENIZER.gguf\n",argv[0]);return 2;
+    if(argc==4 && !strcmp(argv[1],"--vision"))return convert_model(argv[2],argv[3],1);
+    if(argc==3)return convert_model(argv[1],argv[2],0);
+    fprintf(stderr,"Usage: %s SNAPSHOT MODEL.gguf | --vision SNAPSHOT VISION.gguf | --tokenizer tokenizer.json TOKENIZER.gguf\n",argv[0]);return 2;
 }

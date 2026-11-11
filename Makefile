@@ -182,7 +182,7 @@ PEN7_LIB_OBJ = pen7.o harness/arch_penelope.o harness/runtime.o
 
 harness/arch_penelope.o: harness/penelope_internal.h
 
-HARNESS_HDR = harness/tokenizer.h harness/experts_internal.h harness/replay_internal.h harness/spore_frame.h harness/experts.h sha256.h harness/arch.h harness/arch_models.h harness/archs.h harness/runtime.h harness/logo.h harness/penelope_internal.h examples/bpe.h gguf.h notorch.h
+HARNESS_HDR = harness/image.h harness/qwen35_vision.h harness/tokenizer.h harness/experts_internal.h harness/replay_internal.h harness/spore_frame.h harness/experts.h sha256.h harness/arch.h harness/arch_models.h harness/archs.h harness/runtime.h harness/logo.h harness/penelope_internal.h examples/bpe.h gguf.h notorch.h
 
 libnotorch.a: $(PEN7_LIB_OBJ) notorch.c notorch.h gguf.c gguf.h spa_agent.o spa_binding.o sentencepiece.o sha256.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
@@ -262,7 +262,7 @@ test: test_spa_runtime
 # The general family registry and tokenizer stay in libnotorch_harness. The
 # immutable PEN7 interface is also public in libnotorch, which reuses the same
 # PEN7/runtime objects. General harness consumers link both, harness first.
-HARNESS_LIB_OBJ = harness/tokenizer.o harness/dream.o harness/replay_episode.o harness/spore_frame.o harness/experts.o harness/expert_lineage.o harness/archs.o harness/runtime.o harness/arch_llama.o harness/arch_qwen35.o \
+HARNESS_LIB_OBJ = harness/image.o harness/arch_qwen35_vision.o harness/tokenizer.o harness/dream.o harness/replay_episode.o harness/spore_frame.o harness/experts.o harness/expert_lineage.o harness/archs.o harness/runtime.o harness/arch_llama.o harness/arch_qwen35.o \
                   harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_embeddinggemma2.o harness/arch_qwen3embedding.o harness/arch_olmoe.o harness/arch_mamba.o \
                   harness/arch_resonance.o harness/arch_janus.o harness/arch_penelope.o harness/arch_lfm3.o examples/bpe.o
 
@@ -431,6 +431,17 @@ test_qwen35: tests/test_qwen35.c tests/qwen35_fixture.h tests/qwen35_gqa_fixture
 
 test: test_qwen35
 
+QWEN35_VISION_SRC = harness/arch_qwen35_vision.c harness/image.c
+qwen35_vision_probe: tools/qwen35_vision_probe.c $(QWEN35_VISION_SRC) $(QWEN35_SRC) harness/qwen35_vision.h harness/image.h $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tools/qwen35_vision_probe.c $(QWEN35_VISION_SRC) $(QWEN35_SRC) -lm $(BLAS_LIBS)
+
+.PHONY: test_qwen35_vision
+test_qwen35_vision: tests/test_qwen35_vision.c tests/qwen35_vision_fixture.h tests/qwen35_visual_text_fixture.h $(QWEN35_VISION_SRC) $(QWEN35_SRC) harness/qwen35_vision.h harness/image.h sha256.c $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_qwen35_vision.c $(QWEN35_VISION_SRC) $(QWEN35_SRC) sha256.c -lm $(BLAS_LIBS)
+	./$@
+
+test: test_qwen35_vision
+
 test_qwen35_text: tests/test_qwen35_text.c examples/bpe.c examples/bpe.h gguf.c notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) -o $@ tests/test_qwen35_text.c examples/bpe.c gguf.c notorch.c -lm
 	./test_qwen35_text
@@ -443,8 +454,8 @@ lfm3_omni_to_gguf: tools/lfm3_omni_to_gguf.c tools/narrow_json.h gguf.c gguf.h s
 gguf_tensor_diff: tools/gguf_tensor_diff.c gguf.c gguf.h notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) -o $@ tools/gguf_tensor_diff.c gguf.c notorch.c -lm
 
-LFM3_OMNI_SRC = harness/lfm3_omni.c harness/lfm3_omni_io.c harness/runtime.c gguf.c notorch.c
-LFM3_OMNI_HDR = harness/lfm3_omni.h harness/lfm3_omni_io.h harness/runtime.h gguf.h notorch.h stb_image.h $(CHUCK_HEADERS)
+LFM3_OMNI_SRC = harness/image.c harness/lfm3_omni.c harness/lfm3_omni_io.c harness/runtime.c gguf.c notorch.c
+LFM3_OMNI_HDR = harness/image.h harness/lfm3_omni.h harness/lfm3_omni_io.h harness/runtime.h gguf.h notorch.h stb_image.h $(CHUCK_HEADERS)
 lfm3_omni_probe: tools/lfm3_omni_probe.c $(LFM3_OMNI_SRC) $(LFM3_OMNI_HDR)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tools/lfm3_omni_probe.c $(LFM3_OMNI_SRC) -lm $(BLAS_LIBS)
 
@@ -487,7 +498,7 @@ notorch: $(HARNESS_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
 	@echo "Compiled: notorch (harness — GGUF in, text out, $(BLAS_NAME))"
 
 # LFM3-Omni with every modality: the harness families plus the omni towers, its own door.
-OMNI_SRC = $(filter-out harness/main.c,$(HARNESS_SRC)) harness/omni_main.c harness/lfm3_omni.c harness/lfm3_omni_io.c
+OMNI_SRC = $(filter-out harness/main.c,$(HARNESS_SRC)) harness/omni_main.c harness/image.c harness/lfm3_omni.c harness/lfm3_omni_io.c
 notorch_omni: $(OMNI_SRC) $(HARNESS_HDR) harness/lfm3_omni.h harness/lfm3_omni_io.h stb_image.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o notorch_omni $(OMNI_SRC) -lm $(BLAS_LIBS)
 	@echo "Compiled: notorch_omni (LFM3-Omni: text, image, video, audio in; text and speech out, $(BLAS_NAME))"
@@ -1295,7 +1306,7 @@ clean:
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
 	rm -f test_sampling
-	rm -f doe_probe test_media_replay test_expert_lineage test_media_experts test_expert_dream test_portable_spore test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
+	rm -f qwen35_vision_probe test_qwen35_vision doe_probe test_media_replay test_expert_lineage test_media_experts test_expert_dream test_portable_spore test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o
 	rm -f test_spa_agent test_spa_agent_state test_spa_agent_durability test_bitnet_ops spa_agent_demo spa_agent.o tests/spa_state_notorch.o tests/spa_durability_agent.o
