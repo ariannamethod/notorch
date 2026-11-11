@@ -510,7 +510,7 @@ static const float *llama_doe_norm(const void *model, int index) {
            m->gf->tensors[ti].shape[0] == (unsigned)m->embed ? norm : NULL;
 }
 
-static const nt_doe_decoder llama_doe = {nt_llama_forward_hooks, llama_describe, llama_doe_norm, 2, 0};
+static const nt_doe_decoder llama_doe = {nt_llama_forward_hooks, llama_describe, llama_doe_norm, 2, 0, NULL};
 
 static const char *const llama_names[] = { "llama", "mistral3", "qwen2", "qwen3", NULL };
 

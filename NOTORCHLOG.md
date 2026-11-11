@@ -11,6 +11,115 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — Omni media enters the living parliament: 24 turns, six nights, two births
+
+Hand: Astra (Codex), branch `codex/omni-long-experience`, based on `3358958`.
+`NT_DOE_DECODER_API` is now 2: the optional `forward_embd` entry carries mixed
+media/text rows, final hidden output and both residual callbacks through the
+existing LFM3 core. The other DoE families leave this optional entry NULL.
+`notorch_omni --experts --mode text` elects and observes on every projected row
+and every text position. Learning, worker consolidation, portable spores and
+private dreams use the existing native parliament. All remain opt-in. Speech
+and interleaved output retain their ordinary entry; expert output currently
+requires explicit text mode. `--logits-out` writes the first unsuppressed
+vocabulary row, and `doe_probe pack-logits` packages it for AML.
+
+**A real long experience.** The native C converter built full Q8_0 and F16
+Omni files (747 tensors each) from `LiquidAI/LFM3-Omni-2B` revision
+`21d75123f86c1f7ffb4bef1ea202710c4e7ebe67`. Their hashes, native fixture
+generator, commands and complete small tables are in
+[`experiments/doe_spores/omni-long.md`](experiments/doe_spores/omni-long.md).
+AMD EPYC 9V74, GCC 14.2.0, `-O2 -mavx2 -mfma -mf16c`, no external BLAS,
+`NT_ATTN_THREADS=1`, nine automatically selected packed-matvec workers. AML
+revision `78caa5b15f732d7fb83c950e544c58d23735a615` runs the protocol and computes
+the probabilities. These are correctness measurements, with concurrent jobs;
+the trace timings are retained as run context.
+
+Three histories receive the same 24 images: Q8/red for turns 1–8, F16/blue for
+9–16, then Q8/alternating red and blue for 17–24. Every turn starts a new process
+and a fresh hybrid cache. One history learns without sleep, one sleeps in a
+separate process after every fourth turn, and one performs the same learning
+and sleep in its worker. Each image gives 72 media and 26 text prefill positions;
+the Red/Blue answer plus stop choice makes 99 waking elections. All 24 paired
+serial/worker spores and answers match byte for byte. Sixty discarded-copy
+probes retain full 128,000-entry logits and AML checkpoints. Visual probes
+answer Red/Blue throughout; the text-only question answers Blue throughout.
+Both host GGUF hashes are unchanged after the experiment.
+
+The process stopped after writing the three turn-20 spore files. Resuming
+from the three saved turn-19 parents reproduced all three turn-20 spores
+exactly and completed turns 20–24, ending with `OMNI_LONG_EXPERIENCE_OK`.
+The recovery script, original files and equality receipt accompany the data.
+
+**Population and sleep.** Parent 0 produced seat 4 at turn 21 and seat 5 at turn
+22 in both histories; no seat died. Turn 24 has six living seats, 2,376 waking
+elections, and six nights containing 36 private choices and 42 private
+elections. The independent C tensor audit checks all six seats: each night
+preserves waking clocks, consensus and every tensor except elected seats' A/B
+and cursors. The last night elects seats 0, 1, 3, 4 and 5; seat 2 is unchanged.
+Its Red/Blue log-odds shifts are +0.074014664, +0.061040879 and −0.205901146 on
+the red, blue and text probes. Transplanting only the six seats' post-dream A/B
+into the pre-dream recipient reproduces all three full logit rows exactly
+(384,000 floats). The full-array comparisons include max error, L2, KL and
+argmax; the causal transplant has zero error throughout.
+
+The waking-only and sleeping histories share their birth times, with different
+children. Their final joint A/B distances are 0.00021–0.00038 for the founders,
+1.801064451 and 1.816320153 for the children. Factor updates and birth noise use
+the same persisted RNG; sleep advances that stream. The C audit retains RNG
+and the per-seat factor distances at every turn. The serial history occupies
+21,180,800 bytes in 30 GGUF spores; all three arms occupy 55,066,784 bytes in 78.
+The final portable spore is 706,048 bytes. The research article now describes
+these mechanisms and contains the measured four-panel figure.
+
+**Transfer and arithmetic controls.** Before further waking exposure, the
+post-dream turn-8 spore imports into F16 and the post-dream turn-16 spore into Q8 in
+aligned mode (`min_cos=0.997980002`), preserving all A/B, vote, membership,
+vitality, age and cursor floats exactly. Three probes of each transfer are
+saved. Holding the post-dream turn-8 spore and Q8 weights fixed, `NT_NO_I8=1` changes
+the whole body's activation path. Restored-spore minus plain Red/Blue log odds:
+
+| Probe | Q8 / int8 activations | Q8 weights / float activations | F16 |
+| --- | ---: | ---: | ---: |
+| Red image | −0.020292283 | +0.000473022 | +0.000474929 |
+| Blue image | −0.054560662 | +0.000426293 | +0.000486374 |
+| Text question | −0.016044616 | −0.001474381 | −0.001631737 |
+
+Every output remains Red/Blue/Blue. The first activation-path switch changes
+elected sets at 3 red and 2 blue positions, and none of the 31 text positions;
+all mixture-weight rows change. These tables record each mode's own plain
+baseline, restored-population reading and difference.
+
+**Sensory controls.** With `-n 1`, neither generated color is fed back. Both
+images have identical token IDs and 98 observed positions. Their learned A/B
+differ while votes and cursors are equal; without learning, A/B are equal.
+Two audio forks restore the post-dream turn-4 visual spore. Plain, synchronous and
+worker outputs all transcribe `The lighthouse keeper carries a key.` or
+`The lighthouse keeper carries a bell.` exactly. Sync/worker spores match for
+each. Key has 30 audio + 24 text positions; bell has 32 + 24. Both write A/B.
+
+**Regression gates.** `make -j2 test BLAS_FLAGS= BLAS_LIBS=` passes. The LFM3
+suite has 549 checks, zero failures, including mixed media/null rows, hidden
+output, both callbacks, all four fixture blocks (convolution, full and sliding
+attention), grouped/scalar continuation, optional norms and callback-abort restart. Red mutants removing
+hooks, ignoring rows or omitting hidden output fail 158, 22 and 38 checks.
+`check_media_experts` runs 24 disk-restored turns and six dreams on a small
+native fixture with exact serial/worker generations and a changed-row control.
+The installed consumer passes all three checks on the full Omni Q8 file.
+ASan/UBSan pass both suites with `detect_leaks=0`; LeakSanitizer itself cannot
+run under this environment's ptrace setup. Six experts-off probes match the
+baseline `3358958` binary in all 768,000 logits and outputs; its sole diagnostic
+patch dumps the raw prefill row. The final rebuilt binary again matches the
+three last-night readings in all 384,000 logits and outputs.
+
+Output publication now checks every text write and flush before consolidation.
+Both serial and worker runs sent to `/dev/full` exit 1 and publish no spore.
+Long tokenizer entries use a heap fallback: pinned IDs 96102 and 120382 emit
+all 321 decoded spaces together (capacities 257 and 387); invalid IDs and a
+failed flush are refused. NaN and truncated logit inputs cannot produce an
+AML checkpoint. All generated model files and experiment checkpoints stay
+outside Git; the complete experiment archive accompanies the PR.
+
 ## 2026-11-11 — The Qwen3-Embedding open references close, 28/28 on both gates
 
 Hand: Claude (Opus 4.8, neo), the reference forward run on polygon over ssh. The

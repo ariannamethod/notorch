@@ -729,6 +729,13 @@ static int lfm3_forward_embd(void *model, kv_cache *kv, const int *tokens,
     return lfm3_run(model, kv, tokens, rows, n, pos0, logits, hidden, NULL, NULL, NULL);
 }
 
+static int lfm3_forward_embd_hooks(void *model, kv_cache *kv, const int *tokens,
+                                   const float *const *rows, int n, int pos0,
+                                   float *logits, float *hidden, nt_residual_fn pre_ffn,
+                                   nt_residual_fn post_block, void *user) {
+    return lfm3_run(model, kv, tokens, rows, n, pos0, logits, hidden, pre_ffn, post_block, user);
+}
+
 static void lfm3_kv_free(void *model, kv_cache *kv) {
     (void)model;
     if (!kv) return;
@@ -767,7 +774,8 @@ static const char *const lfm3_names[] = { "lfm3", NULL };
 static const nt_doe_decoder lfm3_doe = {
     .forward = lfm3_forward_hooks, .describe = lfm3_describe,
     .norm = lfm3_doe_norm, .norms_per_layer = LFM3_RESIDUAL_NORMS,
-    .optional_norm_slots = (1u << 1) | (1u << 3)
+    .optional_norm_slots = (1u << 1) | (1u << 3),
+    .forward_embd = lfm3_forward_embd_hooks
 };
 
 const nt_arch nt_arch_lfm3 = {

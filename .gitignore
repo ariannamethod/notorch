@@ -79,6 +79,7 @@ tests/bench_*
 /test_expert_dream
 /test_olmoe_doe
 /test_expert_consolidation
+/test_media_experts
 /expert_fixtures
 !tests/test_expert_spores.py
 !tests/test_sampling_mutations.py

@@ -278,6 +278,106 @@ by −0.349787 on the first prefix and +0.098080 on the second. The archive stil
 held one waking turn, 24 waking elections, eight dreams and 56 private elections.
 [Transferred histories](../experiments/doe_spores/lfm3-olmoe-sleep.tsv)
 
+### Media experience and consolidation
+
+Omni's towers turn a picture, a video group or an audio interval into rows in
+the decoder's embedding space. The decoder advances its hybrid state through
+those rows in the same sequence as text. Its DoE interface accepts both the
+rows and the two residual callbacks. At block 12 a media position elects living
+seats, receives their correction before the FFN, and contributes its completed
+residual to the turn's post-FFN learning mean. The language head reads the resulting
+final hidden vector. The same core runs with the callbacks absent when expert
+mode is off.
+[Media interface](../harness/arch.h) · [Omni entry](../harness/omni_main.c)
+
+Consolidation gives this sequence a second timescale. The current rule averages
+the pre- and post-FFN residuals over the observed positions, bounds the learning
+means' RMS, and updates each elected seat once at the completed turn. The
+number of projected rows is therefore part of the experience: equal-sized
+images with identical question tokens give a controlled comparison of visual
+content. The worker takes sole ownership of this pending update. The next
+forward and the generation's publication wait for its completion. A restarted
+process restores the learned population and begins a new convolution/KV sequence.
+
+Dreaming acts on the population formed by these encounters. Its cue is selected
+from the 32 calibrated text directions by the current experts' response. The
+body generates a private continuation; its elected seats update at the sleep
+rate of 0.0025, against the waking rate of 0.01. The commit carries A/B, rank cursors, RNG and the separate sleep
+clock into the waking population. Membership, waking age, consensus, vote rows
+and waking oscillator history retain their pre-dream values. Thus a visual
+episode can affect a later text dream through the acquired expert state. A
+replay store of images or projected media rows would supply an additional source
+of dream episodes; the current cue mechanism draws from the calibrated literals.
+
+An active generation and its history occupy different scales. At width 2,048
+the current six-seat, rank-four population and its persistent state use 442,576
+tensor bytes; the portable 32-direction frame adds 262,144. Every saved
+generation preserves a complete point in the population's history. A long
+archive can hold tens of megabytes while the active generation remains small.
+Making that archive available for selective recall is a next architectural
+step: choose a prior population or a group of seats, calibrate it to the
+current body, and measure how its reactivation changes the present elections.
+The distinction gives consolidation a concrete objective across body changes:
+retain useful acquired influence while allowing new encounters to reorganize
+which experts participate.
+
+The [24-turn AML protocol](../experiments/doe_spores/omni_long.aml) records this
+history in three arms. Each starts from the same founders. One learns while
+awake; one additionally sleeps every fourth turn; the third executes the same
+sleep schedule in a worker. Paired images share all question tokens and media
+geometry. Each episode starts a new process. The body changes Q8 → F16 → Q8.
+Immediate pre-/post-dream readings isolate each night's change, and a parallel
+waking history measures cumulative divergence. Byte equality between serial
+and worker generations tests the ownership and commit boundary throughout the
+journey. Restored measurement copies are discarded after their reading.
+
+The completed experience retained 24 byte-identical serial/worker generations.
+Seats 4 and 5 were born from seat 0 at turns 21 and 22 in both the sleeping and
+waking-only histories. All six seats remained alive at turn 24. The serial
+history contains 30 spores and 21,180,800 bytes; the three arms together contain
+78 spores and 55,066,784 bytes. Its last portable generation occupies 706,048
+bytes. These files preserve the successive populations through both changes of
+weights and every process restart.
+[Generation digests](../experiments/doe_spores/omni-generations.tsv) ·
+[Population and RNG](../experiments/doe_spores/omni-seats.tsv)
+
+![Visual experience, six nights, population growth and receiving arithmetic](omni-long-experience.svg)
+
+The last night changed Red/Blue log odds by +0.074014664 on the red image,
++0.061040879 on the blue image and −0.205901146 on the text question. Copying
+only all six seats' A/B from the post-dream spore into its pre-dream recipient
+reproduced the three full 128,000-entry logit vectors byte for byte. Across all
+six nights, the independent tensor audit found changes only in elected seats'
+A/B and cursors; the waking clocks and the other tensors were preserved. Seat 2
+received no vote during the last dream and its factors remained unchanged.
+[Night effects](../experiments/doe_spores/omni-nights.tsv) ·
+[Full-vocabulary comparisons](../experiments/doe_spores/omni-logits.tsv) ·
+[Sleep writes](../experiments/doe_spores/omni-sleep-writes.tsv)
+
+Sleep and birth also meet through the population's random stream. Both waking
+and sleeping factor updates draw their noise from the persisted RNG; a later
+birth draws its perturbation from that same stream. The two histories reached
+the same births, while their children acquired different factors. At turn 24,
+the joint A/B distance between histories was 0.00021–0.00038 for the four
+founders, and 1.80106 and 1.81632 for the children. The figure follows these
+distances from the first night through the births. Stable lineage identifiers
+and separate accounting of update noise and birth noise would make the
+contribution of each process accessible to subsequent experiments.
+[Factor distances](../experiments/doe_spores/omni-divergence.tsv)
+
+The receiving arithmetic is another part of continuity. The episode-8 spore's
+A/B and vote rows transferred unchanged to F16. On the red-image probe, its
+restored-population-minus-plain log-odds effect was −0.020292283 on default Q8,
++0.000473022 with the same Q8 weights and floating activations, and +0.000474929
+on F16. `NT_NO_I8` switches the path throughout the native body, including the
+towers, decoder and head. On the text probe that switch changed the effect from
+−0.016044616 to −0.001474381 while preserving the elected set at all 31 observed
+positions; the mixture weights changed. A transfer record therefore contains
+the saved factors, the receiving arithmetic, elections and response together.
+[Activation control](../experiments/doe_spores/omni-activation.tsv) ·
+[Election control](../experiments/doe_spores/omni-gates.tsv) ·
+[Reproduction](../experiments/doe_spores/omni-long.md)
+
 ## 5. Claims and probes
 
 These twenty probes retain the original questions about standalone DoE, its parity with the
