@@ -26,6 +26,19 @@ int nt_experts_seat_identity(const nt_experts *p, int slot, nt_expert_identity *
 int nt_experts_find_identity(const nt_experts *p, const char *id);
 int nt_experts_copy_factors_by_identity(nt_experts *recipient,
                                        const nt_experts *donor, const char *id);
+typedef struct {
+    int anchors, living;
+    double before_rms, after_rms, scale;
+} nt_vote_calibration;
+/* Explicit one-time vote scaling at a completed boundary. Measure the RMS
+ * spread across living experts' raw dot products on 32 private anchor inputs,
+ * then apply one positive scale to every stored vote row. A/B, frame, lineage,
+ * clocks, RNG, consensus and lifecycle remain unchanged. Requires a borrowed
+ * decoder/tokenizer and at least two living experts. The staged update refuses
+ * nonfinite values and the spore's 1e4 weight bound without changing the owner.
+ * Scales within 8*FLT_EPSILON of one are exact no-ops. out is optional, zero on
+ * refusal, and reports the actual applied scale and measured F32 dot RMS. */
+int nt_experts_calibrate_votes(nt_experts *p, double target_rms, nt_vote_calibration *out);
 /* Explicitly recall a selected earlier state of this exact body. Matching
  * living birth IDs recover local A/B/vote outside the calibrated frame while
  * retaining the incoming 32 coordinates. New identities are untouched.
@@ -82,6 +95,25 @@ int nt_experts_submit_dream(nt_experts **owner, nt_consolidation **job, int toke
  * canonical order; duplicates are refused.
  * New-path save preserves existing files; load verifies the content address. */
 typedef struct nt_replay_episode nt_replay_episode;
+/* Read the current parliament's response to an immutable prompt using private
+ * KV. No generation, learning, calibration or persistent clock update occurs.
+ * Metrics are position means; gate_mass uses normalized applied gates.
+ * response[e] is ||A_e(B_e x)||^2/||x||^2 before injection. mean_response and
+ * mean_disagreement respectively average energy and squared deviation from
+ * the living experts' mean response. A zero input contributes zero energy.
+ * The 0.1 injection factor and vitality are excluded from response metrics.
+ * Output is replaced only on success. Birth addresses bind results to experts,
+ * independently of subsequent slot reuse. Caller retains the sole owner. */
+typedef struct {
+    char episode[65], identities[NT_EXPERT_SEATS][65];
+    uint32_t alive_mask;
+    uint64_t positions;
+    double gate_mass[NT_EXPERT_SEATS], response[NT_EXPERT_SEATS];
+    double mean_max_gate, mean_entropy, mean_effective_seats;
+    double mean_selected, mean_nonzero, mean_response, mean_disagreement;
+} nt_replay_measurement;
+int nt_experts_measure_replay(const nt_experts *p, const nt_replay_episode *episode,
+                              nt_replay_measurement *out);
 nt_replay_episode *nt_replay_capture(const nt_experts *p, const int *ids,
                                     const float *const *rows, int n,
                                     const int *suppressed, int n_suppressed,

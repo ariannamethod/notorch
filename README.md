@@ -296,6 +296,20 @@ weights. The latter supplies local expert memory by birth address; the latest
 global population continues to own its lifecycle. [How recall combines the
 coordinates](research/democracy_of_experts.md#returning-to-a-bodys-own-memory).
 
+An incoming body can also explicitly calibrate the scale of its stored votes:
+
+```sh
+./notorch --experts --spore-only --spore-in incoming-portable.gguf \
+  --expert-vote-rms 1 --spore-out calibrated.gguf receiving-model.gguf
+```
+
+This samples the 32 raw anchor residuals, measures the centered spread of the
+living experts' dot scores and applies one common positive scale to all six
+vote rows. The calibrated rows persist in the existing GGUF format. A/B,
+identities, consensus, RNG and clocks keep their values. With `--body-memory`,
+the order is import, local recall, then explicit vote calibration. The default
+election path and default import perform no vote rescaling.
+
 Add `--async-consolidation` to `--experts --learn-experts` to hand each
 completed turn to a C worker. Chat can accept input while it updates the
 elected experts. The next forward receives the committed parliament. EOF and
@@ -637,6 +651,33 @@ including the final eight encounters after repeated births and retirements.
 [C/AML protocol and recovery commands](experiments/doe_spores/continuity.md) ·
 [Full-row measurements](experiments/doe_spores/long-logits.tsv) ·
 [Population genealogy](experiments/doe_spores/long-lineage.tsv)
+
+#### Votes and the choice of sleep episodes
+
+`nt_experts_measure_replay` reads a saved text or sensory episode on private
+decoder state. It reports the applied vote mass, entropy, effective number of
+participants and each living expert's normalized A(Bx) response, addressed by
+birth ID. It also measures how those responses differ from their living mean.
+This read changes no expert factors, histories, clocks, RNG or saved episode.
+
+[`vote_sleep.aml`](experiments/doe_spores/vote_sleep.aml) uses this API to choose
+from a bank of four sealed episodes. It compares fixed early replay, a rotating
+queue and current response disagreement, each with original votes or explicit
+RMS-one calibration. Queue and disagreement selection visit every address
+before beginning another round. Each completed night commits the selected
+address, candidate measurements, round history and all six populations in a
+hash-linked receipt. Resume verifies the full chain and recomputes its choices;
+serial and worker consolidation use the same replay API.
+
+The six continuations add **64 encounters** to the existing turn-164 Gemma
+history and reach turn 228 with 44 birth addresses. On the saved lighthouse
+episode, RMS-one calibration keeps the leader's mean mass near **0.729**
+instead of **0.999877**, with the same top-k of two. Rotation and disagreement
+each replay every bank entry twice in different orders. Stopping at night 32
+and resuming with the worker reproduces the uninterrupted scores, selections
+and spores. On the receiving Qwen body the same target increases concentration;
+both measured responses are retained with the explicit calibration target.
+[Mechanism and measurements](experiments/doe_spores/vote-sleep.md)
 
 #### Several small bodies, one parliament
 

@@ -11,6 +11,73 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-11 — Explicit vote calibration and addressed sleep selection
+
+Hand: Astra (Codex), branch `codex/doe-vote-sleep-tuning`, based on `9685dd1`.
+The native C Harness now exposes `nt_experts_calibrate_votes` and
+`--expert-vote-rms`. It samples the 32 raw anchor residuals before QR, measures
+the centered living-expert score RMS and stages one common positive scale
+for all six saved vote rows. A/B, history, consensus, lifecycle, genealogy,
+RNG and clocks remain unchanged. Exact/portable schemas 5/6 already persist
+the result. Import and local recall precede explicit calibration; default
+imports and elections retain their arithmetic.
+
+`nt_experts_measure_replay` reads a sealed text or sensory prompt with private
+KV and owned scratch. It collects the actual applied gates, normalized
+ungated A(Bx) energy and centered proposal disagreement, with the episode
+address and living birth IDs. The read generates no continuation and changes
+no owner state. A new AML protocol compares original/calibrated votes crossed
+with fixed replay, rotation or current disagreement across a four-address
+bank. The two bounded policies exclude visited episodes until a round ends.
+Receipts retain every candidate reading and both round histories, hash all
+artifacts and recompute choices during complete-chain recovery. The Harness
+has no new AML dependency and experts remain opt-in.
+
+**Scale measurement.** Early and late Gemma vote tensors are byte-identical;
+the raw anchor score RMS is 45.3926721746. Target one uses scale
+0.0220299874868. On the late population's two probes, mean leader mass changes
+from approximately one to 0.721146/0.699486; effective participation becomes
+1.746674/1.781973. A separate native audit retains targets 0.5/2, vote-norm and
+cosine controls, and reproduces all three committed TSV files byte for byte.
+
+**Long continuation.** Six histories add 64 encounters to turn 164 and reach
+turn 228, 6,123 waking elections, 36 replay cycles and 44 birth addresses
+(six living). Rotation chooses 0,1,2,3 twice; disagreement chooses 3,2,1,0
+twice. Final calibrated fixed/disagreement histories both replay the same
+lighthouse episode, while their full rows differ by maxima 0.198219/0.216997.
+On a fresh final lighthouse read, raw fixed leader mass/effective seats are
+0.999877/1.000852; RMS-one gives 0.729265/1.761267 at the same k=2. The independent
+reader verifies elected-factor writes at all 48 sleep boundaries. Transplanting
+the last calibrated disagreement night's living A/B by identity reproduces
+all 524,288 logits; that sleep changes the selected margins by
++0.142668/+0.097111. Stops before and after publication at 32 were exercised.
+Worker continuation through 64 reproduces 420 spore pairs, 126 reading
+checkpoints, 42 choice tapes and the complete score/selection tables. Four
+corrupted receipt/artifact variants fail before directory creation, including
+an early state reached through all eight receipts; 997 original hashes remain
+unchanged.
+
+**Other body.** Gemma's late population transfers into Qwen3.5-0.8B and recalls
+two living addresses from its local reference. Its raw score RMS is
+0.025481375; target one scales upward 39.244350375 times. On its saved episode,
+mean maximum mass changes 0.300254→0.611641 and effective participation
+3.826892→1.905977. These opposite receiving-body responses are retained with
+the explicit target. Staged/direct recall-calibration, restart and six-choice
+serial/worker replay are byte-identical. Default Qwen plain output/logit
+traces, recall, captured input, waking and worker replay reproduce the prior
+merged runtime; original Gemma waking/replay states also reproduce exactly.
+
+Proof: full `make -j2 test BLAS_FLAGS= BLAS_LIBS= BLAS_NAME=native` passes.
+New focused gates pass 110 calibration and 517 replay-reader checks plus CLI
+transfer/restart/worker/flag tests. Fully instrumented native libraries pass
+the same 110/517 checks under ASan/UBSan (`detect_leaks=0`). Red-hand mutants
+fail 70 checks for omitted vote publication, 6 for replacing disagreement by
+energy, and 11 for shared live injection scratch. AML selection controls cover
+54 choices and reject a repeat-within-round mutant. Probe output to `/dev/full`
+now returns failure; a failed measurement transcript publishes no checkpoint.
+[Protocol, bodies, measurements and reproduction](experiments/doe_spores/vote-sleep.md) ·
+[Conceptual engineering description](research/democracy_of_experts.md#vote-scale-belongs-to-the-receiving-body)
+
 ## 2026-11-11 — Integrate native Qwen vision with long expert continuity
 
 Hand: Astra (Codex), branch `codex/doe-long-continuity`, PR #216.

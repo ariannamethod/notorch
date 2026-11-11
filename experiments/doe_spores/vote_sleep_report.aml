@@ -1,0 +1,96 @@
+# Read committed vote_sleep receipts and their F32 AML measurements.
+# stdin: final receipt, new report directory. No inference or state mutation.
+def cat(a, b):
+    return text_concat(a, b)
+def col(a, b):
+    return cat(cat(a, '\t'), b)
+def num(n):
+    return text_fixed(n, 0)
+def real(n):
+    return text_fixed(n, 9)
+def path(s):
+    return cat(cat(outdir, '/'), s)
+def metric(m, i, key):
+    return record_get(m, cat(cat(cat('e', num(i)), '_'), key))
+def label(arm):
+    scale = 'raw'
+    if arm >= 3:
+        scale = 'rms1'
+        arm = arm-3
+    name = 'fixed'
+    if arm == 1:
+        name = 'round'
+    if arm == 2:
+        name = 'disagreement'
+    return cat(cat(scale, '-'), name)
+def check(files, hashes):
+    assert(list_len(files) == list_len(hashes), 'digest count')
+    i = 0
+    while i < list_len(files):
+        assert(text_equal(file_hash_sha256(list_get(files, i)), list_get(hashes, i)), 'artifact digest')
+        i = i+1
+
+head = list_get(read_line(), 0)
+outdir = list_get(read_line(), 0)
+chain = list_new()
+file = head
+sha = file_hash_sha256(file)
+while text_equal(file, '-') == 0:
+    assert(text_equal(file_hash_sha256(file), sha), 'receipt chain')
+    r = checkpoint_load(file)
+    assert(text_equal(record_get(r, 'schema'), 'notorch-doe-vote-sleep-v1'), 'schema')
+    check(record_get(r, 'artifacts'), record_get(r, 'digests'))
+    check(record_get(r, 'states'), record_get(r, 'state_hashes'))
+    check(record_get(r, 'bank'), record_get(r, 'bank_hashes'))
+    list_push(chain, file)
+    file = record_get(r, 'parent_receipt')
+    sha = record_get(r, 'parent_hash')
+assert(dir_claim(outdir) == 1, 'new report directory')
+keys = list_new()
+list_push(keys, 'max_gate')
+list_push(keys, 'effective')
+list_push(keys, 'selected')
+list_push(keys, 'nonzero')
+list_push(keys, 'response')
+list_push(keys, 'disagreement')
+list_push(keys, 'gate0')
+list_push(keys, 'gate1')
+list_push(keys, 'gate2')
+list_push(keys, 'gate3')
+list_push(keys, 'gate4')
+list_push(keys, 'gate5')
+file_append_line(path('scores.tsv'), 'ordinal\tarm\tselected\tkey_over_bell_probe0\tkey_over_bell_probe1\tturns\telections\treplay_cycles\tancestors')
+file_append_line(path('selection.tsv'), 'ordinal\tarm\tindex\tselected\tepisode\tpositions\tmean_max_gate\tmean_effective_seats\tmean_selected\tmean_nonzero\tmean_response\tmean_disagreement\tgate0\tgate1\tgate2\tgate3\tgate4\tgate5')
+c = list_len(chain)-1
+while c >= 0:
+    r = checkpoint_load(list_get(chain, c))
+    step = record_get(r, 'completed')
+    arm = 0
+    while arm < 6:
+        mp = list_get(record_get(r, 'measurements'), arm)
+        prefix = text_slice(mp, 0, text_len(mp)-text_len('-bank.amlck'))
+        m = checkpoint_load(mp)
+        scores = checkpoint_load(cat(prefix, '-scores.amlck'))
+        p = checkpoint_load(cat(prefix, '-population.amlck'))
+        li = record_get(scores, 'left_id')
+        ri = record_get(scores, 'right_id')
+        a = record_get(scores, 'probe0')
+        b = record_get(scores, 'probe1')
+        pick = list_get(record_get(r, 'selected'), arm)
+        row = col(col(col(num(step), label(arm)), pick), real(a[li]-a[ri]))
+        row = col(col(col(row, real(b[li]-b[ri])), record_get(p, 'turns')), record_get(p, 'elections'))
+        row = col(col(row, record_get(p, 'replay_cycles')), record_get(p, 'ancestors'))
+        file_append_line(path('scores.tsv'), row)
+        i = 0
+        while i < 4:
+            row = col(col(col(num(step), label(arm)), num(i)), num(text_equal(num(i), pick)))
+            row = col(col(row, metric(m, i, 'id')), num(metric(m, i, 'positions')))
+            k = 0
+            while k < list_len(keys):
+                row = col(row, real(metric(m, i, list_get(keys, k))))
+                k = k+1
+            file_append_line(path('selection.tsv'), row)
+            i = i+1
+        arm = arm+1
+    c = c-1
+PRINT 'VOTE_SLEEP_REPORT_COMPLETE'

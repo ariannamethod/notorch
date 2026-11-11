@@ -3,6 +3,11 @@
 #define NT_EXPERTS_INTERNAL_H
 #include "harness/experts.h"
 
+/* Accumulate raw per-position sums only; the public replay reader finalizes
+ * the means. The ordinary hook passes NULL and keeps its arithmetic intact. */
+int nt_experts_attend_measured(nt_experts *p, int layer, int pos, int n, int width,
+                               float *rows, nt_replay_measurement *stats);
+
 enum { SEATS = NT_EXPERT_SEATS, FOUNDERS = 4, RANK = 4, WINDOW = 2, HISTORY = 16 };
 #define TAU 6.28318530718f
 

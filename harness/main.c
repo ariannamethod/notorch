@@ -417,6 +417,7 @@ static void usage(const char *self) {
         "  --dream-only N   dream from --spore-in without a user turn (preview unless learning)\n"
         "  --spore-in FILE  restore an exact or portable parliament (requires --experts)\n"
         "  --body-memory FILE  recall this body's saved factors by identity after --spore-in\n"
+        "  --expert-vote-rms R  explicitly calibrate saved vote scale on 32 body anchors\n"
         "  --spore-only     convert --spore-in to --spore-out before the first turn\n"
         "  --portable-spore include a residual frame in --spore-out for switching bodies\n"
         "  --spore-out FILE write a new GGUF spore on success (requires --experts)\n"
@@ -509,11 +510,21 @@ int main(int argc, char **argv) {
     const char *spore_in = NULL, *spore_out = NULL, *tok_path = NULL, *body_memory = NULL;
     const char *replay_out = NULL, *replay_in = NULL;
     int replay_tokens = 6;
+    double vote_rms = 0;
     while (ai < argc && argv[ai][0] == '-' && argv[ai][1]) {
         const char *arg = argv[ai];
         if (!strcmp(arg, "--experts")) { experts = 1; ai++; continue; }
         if (!strcmp(arg, "--learn-experts")) { learn = 1; ai++; continue; }
         if (!strcmp(arg, "--async-consolidation")) { async = 1; ai++; continue; }
+        if (!strcmp(arg, "--expert-vote-rms")) {
+            char *end = NULL;
+            double value = ai+1 < argc ? strtod(argv[ai+1], &end) : 0;
+            if (vote_rms || !end || end == argv[ai+1] || *end || !isfinite(value) || value <= 0) {
+                fprintf(stderr, "notorch: --expert-vote-rms needs one finite positive target\n");
+                return 1;
+            }
+            vote_rms = value; ai += 2; continue;
+        }
         if (!strcmp(arg, "--dream") || !strcmp(arg, "--dream-only")) {
             char *end = NULL;
             long n = ai+1 < argc ? strtol(argv[ai+1], &end, 10) : 0;
@@ -632,6 +643,10 @@ int main(int argc, char **argv) {
         fprintf(stderr, "notorch: --body-memory requires --experts --spore-in\n");
         return 1;
     }
+    if (vote_rms && (!experts || !spore_in)) {
+        fprintf(stderr, "notorch: --expert-vote-rms requires --experts --spore-in\n");
+        return 1;
+    }
 
     if (dream_tokens && (!experts || spore_only || (!dream_only && !learn) ||
         (dream_only && (!spore_in || ai+1 != argc || (learn && !spore_out))))) {
@@ -651,7 +666,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "notorch: --portable-spore requires --spore-out\n");
         return 1;
     }
-    if ((learn || spore_in || spore_out || replay_in || replay_out || body_memory) && !experts) {
+    if ((learn || spore_in || spore_out || replay_in || replay_out || body_memory || vote_rms) && !experts) {
         fprintf(stderr, "notorch: expert learning and spore I/O require --experts\n");
         return 1;
     }
@@ -760,6 +775,16 @@ int main(int argc, char **argv) {
                 goto done;
             }
             fprintf(stderr, "doe body-memory matched=%d\n", matched);
+        }
+        if (vote_rms) {
+            nt_vote_calibration report;
+            int result = nt_experts_calibrate_votes(s.experts, vote_rms, &report);
+            if (result) {
+                fprintf(stderr, "notorch: vote calibration refused: %s\n", nt_strerror(result));
+                goto done;
+            }
+            fprintf(stderr, "doe vote-calibration anchors=%d living=%d before=%.17g after=%.17g scale=%.17g\n",
+                    report.anchors, report.living, report.before_rms, report.after_rms, report.scale);
         }
         if (moe_trace && (dream_tokens || replay_in) &&
             nt_experts_set_dream_route(s.experts, print_moe_route, replay_in ? "replay-route" : "dream-route")) {

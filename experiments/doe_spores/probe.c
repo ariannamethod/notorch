@@ -4,7 +4,9 @@
 #include "harness/archs.h"
 #include "harness/experts.h"
 #include "harness/experts_internal.h"
+#include "harness/tokenizer.h"
 #include "examples/bpe.h"
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -94,6 +96,97 @@ static int count_field(AM_Record *rec, const char *name, uint64_t value) {
     char text[32];
     snprintf(text, sizeof(text), "%llu", (unsigned long long)value);
     return text_field(rec, name, text);
+}
+
+/* Capture the same raw text input and stop policy as the resident driver,
+ * without waking or learning. The numerical operation lives in the Harness. */
+static int capture_text(gguf_file *host, const nt_arch *arch, const char *tokenizer,
+                        const char *spore, const char *out, const char *prompt) {
+    nt_dims dims = {0};
+    void *model = arch->load(host, &dims);
+    bpe_tokenizer *tok = NULL;
+    int eos = -1, ok = 0;
+    nt_experts *p = NULL;
+    nt_replay_episode *episode = NULL;
+    if (!model || nt_model_tokenizer_open(host, host->path, dims.vocab, tokenizer, &tok, &eos)) goto done;
+    nt_expert_body body = {model, tok};
+    p = nt_experts_open_on_body(host, spore, NULL, &body);
+    int ids[CAP+1];
+    int n = tok ? bpe_encode(tok, prompt, ids, CAP+1) : 0;
+    if (!p || n < 1 || n > CAP) goto done;
+    episode = nt_replay_capture(p, ids, NULL, n, NULL, 0, &eos, eos >= 0 ? 1 : 0);
+    ok = episode && !nt_replay_save(episode, out);
+    if (ok) ok = printf("%s\n", nt_replay_id(episode)) >= 0 && fflush(stdout) == 0;
+done:
+    nt_replay_free(episode); nt_experts_free(p); bpe_free(tok);
+    if (model) arch->free(model);
+    return ok;
+}
+
+static int metric_field(AM_Record *rec, int index, const char *suffix, double value) {
+    char key[80];
+    snprintf(key, sizeof(key), "e%d_%s", index, suffix);
+    return isfinite(value) && fabs(value) <= FLT_MAX &&
+        field(rec, key, (AML_Var){.type=AML_TYPE_FLOAT, .value=(float)value});
+}
+
+/* The checkpoint exposes F32 selection scores to AML. The TSV preserves the
+ * native double measurements; equal AML scores use the episode address. */
+static int measure_replays(gguf_file *host, const nt_arch *arch, const char *tokenizer,
+                           const char *spore, const char *out, int count, char **paths) {
+    if (count < 1 || count > 32) return 0;
+    nt_dims dims = {0};
+    void *model = arch->load(host, &dims);
+    bpe_tokenizer *tok = NULL;
+    int eos = -1, ok = 0;
+    nt_experts *p = NULL;
+    AM_Record *rec = am_record_new();
+    if (!model || !rec || nt_model_tokenizer_open(host, host->path, dims.vocab, tokenizer, &tok, &eos)) goto done;
+    nt_expert_body body = {model, tok};
+    p = nt_experts_open_on_body(host, spore, NULL, &body);
+    if (!p || !field(rec, "count", (AML_Var){.type=AML_TYPE_FLOAT, .value=(float)count})) goto done;
+    puts("index\tepisode\tpositions\talive_mask\tmax_gate\tentropy\teffective_seats\tselected\tnonzero\tresponse\tdisagreement\tgate0\tgate1\tgate2\tgate3\tgate4\tgate5\tresponse0\tresponse1\tresponse2\tresponse3\tresponse4\tresponse5");
+    ok = 1;
+    for (int i = 0; ok && i < count; i++) {
+        nt_replay_episode *e = nt_replay_load(p, paths[i]);
+        nt_replay_measurement m;
+        ok = e && !nt_experts_measure_replay(p, e, &m);
+        nt_replay_free(e);
+        if (!ok) break;
+        char key[80];
+        snprintf(key, sizeof(key), "e%d_id", i);
+        ok = text_field(rec, key, m.episode) &&
+             metric_field(rec, i, "positions", (double)m.positions) &&
+             metric_field(rec, i, "alive", m.alive_mask) &&
+             metric_field(rec, i, "max_gate", m.mean_max_gate) &&
+             metric_field(rec, i, "entropy", m.mean_entropy) &&
+             metric_field(rec, i, "effective", m.mean_effective_seats) &&
+             metric_field(rec, i, "selected", m.mean_selected) &&
+             metric_field(rec, i, "nonzero", m.mean_nonzero) &&
+             metric_field(rec, i, "response", m.mean_response) &&
+             metric_field(rec, i, "disagreement", m.mean_disagreement);
+        printf("%d\t%s\t%llu\t%u\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g",
+               i, m.episode, (unsigned long long)m.positions, m.alive_mask, m.mean_max_gate,
+               m.mean_entropy, m.mean_effective_seats, m.mean_selected, m.mean_nonzero,
+               m.mean_response, m.mean_disagreement);
+        for (int seat = 0; ok && seat < SEATS; seat++) {
+            char suffix[32];
+            snprintf(suffix, sizeof(suffix), "gate%d", seat);
+            ok = metric_field(rec, i, suffix, m.gate_mass[seat]);
+            snprintf(suffix, sizeof(suffix), "response%d", seat);
+            ok = ok && metric_field(rec, i, suffix, m.response[seat]);
+            snprintf(key, sizeof(key), "e%d_identity%d", i, seat);
+            ok = ok && text_field(rec, key, m.identities[seat]);
+        }
+        for (int seat = 0; seat < SEATS; seat++) printf("\t%.17g", m.gate_mass[seat]);
+        for (int seat = 0; seat < SEATS; seat++) printf("\t%.17g", m.response[seat]);
+        putchar('\n');
+    }
+    if (ok) ok = fflush(stdout) == 0 && !ferror(stdout) && save_record(rec, out);
+done:
+    am_record_free(rec); nt_experts_free(p); bpe_free(tok);
+    if (model) arch->free(model);
+    return ok;
 }
 
 static int inspect(const char *host_path, const char *spore, const char *out) {
@@ -268,6 +361,18 @@ int main(int argc, char **argv) {
     if (argc > 3 && !strcmp(argv[1], "--tokenizer")) {
         tokenizer = argv[2]; argv += 2; argc -= 2;
     }
+    if (argc >= 6 && (!strcmp(argv[1], "capture") || !strcmp(argv[1], "measure-replay"))) {
+        gguf_file *host = gguf_open(argv[2]);
+        const nt_arch *arch = host ? nt_pick_arch(host->arch) : NULL;
+        int ok = arch && arch->doe;
+        if (ok && !strcmp(argv[1], "capture"))
+            ok = argc == 6 && capture_text(host, arch, tokenizer, argv[3], argv[4], argv[5]);
+        else if (ok)
+            ok = measure_replays(host, arch, tokenizer, argv[3], argv[4], argc-5, argv+5);
+        gguf_close(host);
+        if (!ok) fprintf(stderr, "doe_probe: %s failed\n", argv[1]);
+        return !ok;
+    }
     if (argc < 7 || (strcmp(argv[1], "transplant") && strcmp(argv[1], "transplant-id") && strcmp(argv[1], "score"))) {
         fprintf(stderr, "doe_probe compare-f32 FILE1 FILE2 TENSOR...\n"
                         "doe_probe pack-logits HOST RAW_F32 CHECKPOINT LEFT RIGHT\n"
@@ -275,6 +380,8 @@ int main(int argc, char **argv) {
                         "doe_probe transplant-id HOST RECIPIENT DONOR NEW_SPORE ID...\n"
                         "doe_probe lineage HOST SPORE\n"
                         "doe_probe inspect HOST SPORE CHECKPOINT\n"
+                        "doe_probe [--tokenizer FILE] capture HOST SPORE NEW_EPISODE PROMPT\n"
+                        "doe_probe [--tokenizer FILE] measure-replay HOST SPORE CHECKPOINT EPISODE...\n"
                         "doe_probe [--tokenizer FILE] score HOST SPORE|- CHECKPOINT LEFT RIGHT PROMPT...\n");
         return 1;
     }

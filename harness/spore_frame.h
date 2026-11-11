@@ -9,6 +9,11 @@ const char *nt_spore_cue_text(int index);
 int nt_spore_cue_ids(const bpe_tokenizer *tok, int index, int ids[NT_SPORE_CUE_CAP]);
 #define NT_SPORE_FRAME_ID "mid-attention-literals-qr-v1"
 
+/* The same ordered literals, hook and private decoder state used by frame
+ * calibration, retaining each literal's last residual before QR normalization.
+ * rows holds NT_SPORE_ANCHORS * host->embed_dim floats. */
+int nt_spore_anchor_rows(const nt_expert_body *body, const gguf_file *host,
+                         const nt_arch *arch, nt_dims dims, float *rows);
 int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host,
                          const nt_arch *arch, nt_dims dims, float *frame,
                          char norm_sha[65]);

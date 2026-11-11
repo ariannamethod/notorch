@@ -68,11 +68,43 @@ int nt_spore_cue_ids(const bpe_tokenizer *tok, int index, int ids[NT_SPORE_CUE_C
     return (size_t)used == strlen(literal) && !memcmp(bytes, literal, used) ? n : 0;
 }
 
+static int anchor_forward(const nt_expert_body *body, const gguf_file *host,
+                           const nt_arch *arch, nt_dims dims, kv_cache *kv,
+                           int index, float *row) {
+    int ids[NT_SPORE_CUE_CAP];
+    int n = nt_spore_cue_ids(body->tokenizer, index, ids);
+    capture c = {dims.n_layers / 2, host->embed_dim, row};
+    return !n || (host->ctx_len > 0 && n > host->ctx_len) ||
+        arch->doe->forward(body->model, kv, ids, n, 0, NULL,
+                           capture_last, NULL, &c) != CAPTURED ? -1 : 0;
+}
+
+int nt_spore_anchor_rows(const nt_expert_body *body, const gguf_file *host,
+                         const nt_arch *arch, nt_dims dims, float *rows) {
+    if (!body || !body->model || !body->tokenizer || !host || !arch ||
+        !arch->doe || !arch->doe->forward || !rows || dims.n_layers < 1 ||
+        host->embed_dim < 1 || host->embed_dim > NT_MAX_ELEMENTS / NT_SPORE_ANCHORS)
+        return -1;
+    int capacity = host->ctx_len > 0 && host->ctx_len < NT_SPORE_CUE_CAP ? host->ctx_len : NT_SPORE_CUE_CAP;
+    kv_cache *kv = nt_model_kv_new(arch, body->model, dims, capacity);
+    if (!kv) return -1;
+    int rc = -1;
+    for (int k = 0; k < NT_SPORE_ANCHORS; k++) {
+        float *row = rows + (size_t)k * host->embed_dim;
+        if (anchor_forward(body, host, arch, dims, kv, k, row)) goto done;
+        for (int i = 0; i < host->embed_dim; i++) if (!isfinite(row[i])) goto done;
+    }
+    rc = 0;
+done:
+    nt_model_kv_free(arch, body->model, kv);
+    return rc;
+}
+
 /* Preserve the v1 fingerprint of the effective, ordered f32 weights. */
 int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host,
                          const nt_arch *arch, nt_dims dims, float *frame, char norm_sha[65]) {
     if (!body->tokenizer) return -1;
-    int width = host->embed_dim, layer = dims.n_layers / 2;
+    int width = host->embed_dim;
     unsigned char chain[64] = {0};
     int per_layer = arch->doe->norms_per_layer ? arch->doe->norms_per_layer : 2;
     if (per_layer < 1 || dims.n_layers < 1 || dims.n_layers > (INT_MAX-1)/per_layer) return -1;
@@ -96,12 +128,7 @@ int nt_spore_frame_build(const nt_expert_body *body, const gguf_file *host,
     if (!kv) return -1;
     int rc = -1;
     for (int k = 0; k < NT_SPORE_ANCHORS; k++) {
-        int ids[NT_SPORE_CUE_CAP];
-        int n = nt_spore_cue_ids(body->tokenizer, k, ids);
-        capture c = {layer, width, frame + (size_t)k * width};
-        if (!n || (host->ctx_len > 0 && n > host->ctx_len) ||
-            arch->doe->forward(body->model, kv, ids, n, 0, NULL,
-                                   capture_last, NULL, &c) != CAPTURED ||
+        if (anchor_forward(body, host, arch, dims, kv, k, frame + (size_t)k * width) ||
             orthogonalize(frame, k, width)) goto done;
     }
     rc = nt_spore_frame_valid(frame, width) ? 0 : -1;
