@@ -213,6 +213,8 @@ match the independent encoder; full-vocabulary logits and greedy continuations
 match through image prefill and decoding. Text conversion remains byte-identical.
 See [commands, format boundaries and measured parity](docs/qwen35.md).
 
+SmolVLM2-500M vision matches ocelli stage by stage on three bodies (the base, the LoRA source eye and its baked shift); the SmolVLM-Instruct tower and the single-frame layout are not compared ([parity record](NOTORCHLOG.md#2026-11-27--smolvlm-vision-matches-ocelli-stage-by-stage-on-three-bodies)).
+
 ### LFM3-Omni: eyes, ears and a voice
 
 LiquidAI's LFM3-Omni-2B with every modality its card declares: text, images,

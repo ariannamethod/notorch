@@ -11,6 +11,73 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-27 — SmolVLM vision matches ocelli stage by stage on three bodies
+
+Hand: Neo (Claude Opus 5.5), branch `claude/smolvlm-vision`. Auditor: Fable 5.2, verdict PASS on
+the receipt `vision-parity-receipt.json`, sha256
+`61195d3fcf07272ef3485a31d768d46ddf318cf5126c53052753cad54d738c93`, whose own `verdict` field
+reads `PASS`. The receipt and its runner (sha256 `b08b804f…`) stay with the SUBLITERATUS run
+that produced them and are not in a tracked tree yet. This closes the first Open line of the
+entry below.
+
+The branch at `c77fe6f` ran against ocelli `main` at `12f3535`, a clean tree and its live
+binary (sha256 `db5d40d7…`); the runner checked heads, binaries and bodies again after the
+run (`after_ok` true). notorch ran under `NT_NO_I8=1`, ocelli under `OCELLI_EXACT=1`. Three bodies:
+the clean SmolVLM2-500M (text `0b944935`, projector `b5dc8ebe`, longest edge 2048 from the
+caller, since that projector has no key for it), the source eye (text `365d333e`) and the baked
+eye (the source eye with a baked `ffn_down.bias`, text `151dee46`), both eyes on projector
+`0f42e4e9`. Each body read six images with the default instruction "Describe this image in one
+sentence.", 18 pairs in all; five images split into 17 frames (4×4 tiles and the global frame,
+1,143 prompt tokens) and one into 13 (3×4, 878 tokens).
+
+- R0: on each of the 18 pairs the live ocelli binary printed the dump's prompt length, frame
+  count and grid, and its answer bytes equal the dump's: 18 GREEN. Prompt ids equal on all 18.
+- S1 pixels, S2 tower, S3 connector rows: max|Δ| and rel-L2 0.0 on all 18 pairs, against
+  tolerances of 1e-6 for S1 and rel-L2 1e-4 with max 1e-2 for S2 and S3.
+- S4, logits with ocelli's ids fed back: the tolerance is K = 20 times a measured floor, capped
+  at 2e-2. The floor is the same prompt without vision rows, decoder against decoder, worst of
+  six images: 5.21e-5 for the clean body, 1.32e-4 for the source eye, 1.22e-4 for the baked
+  eye, which gives tolerances 1.04e-3, 2.64e-3 and 2.44e-3. `cap_binding` is `K*floor` for all
+  three bodies, so the cap never bound. The worst S4 max per body is 5.51e-5, 1.32e-4 and
+  1.19e-4; the largest ratio to tolerance is 0.053 (pair `src500/4`). No argmax flipped.
+- S5, free greedy ids: equal to ocelli's on all 18 pairs over 12 to 41 steps, no divergence.
+- V8, first-step logits of the source eye against the baked eye on the notorch path, required
+  above 1e-3: 1.244 to 1.719 over the six images; the ocelli path gives 1.244 to 1.718.
+- Shared decoder: the SmolLM2-360M text path, notorch `2e4d6b1` against the branch, gives
+  byte-equal ids, logits, greedy ids and `forward_multi` logits in the default mode and under
+  `NT_NO_I8=1`.
+
+Seven mutants, each a branch copy with one change, ran on the baked eye and the logo image
+(N3a on the source/baked pair through V8). All seven are KILLED, and `gate_insensitive_to` is
+empty:
+- N1 splice dropped: S1 to S3 green, S4 ratio 6521, S5 parts at step 1.
+- N2 connector not applied: S3 rel-L2 1.0, S4 ratio 8786.
+- N3a bias past the whole prefill: V8 0.0.
+- N3b bias past the visual rows only: S4 max 1.12 against 2.44e-3, ratio 459.7 over the
+  declared sensitivity margin of 10; S5 parts at step 9.
+- N4 two tiles swapped: S1 max 1.90, S2 rel-L2 0.83, S3 rel-L2 0.62, S4 ratio 138.4.
+- N5 global frame dropped: prompt ids differ, S1 to S3 sizes differ, S4 ratio 3967, red on all
+  five stages as declared.
+- N6 tower eps ×10: S2 rel-L2 1.9e-3 against 1e-4, S4 ratio 2.30, S5 green.
+
+N4 did not color S5. With two tiles swapped the answer ids on the logo image stayed the same
+over all 27 steps, and no argmax flipped under ocelli's ids; S1 to S4 caught it. A check of the
+caption ids alone would have passed this defect. N6 leaves S5 green too, and S2 catches it.
+
+Not covered, the receipt's `not_covered` word for word:
+
+```
+single-frame layout: no pair had frames == 1
+SmolVLM-Instruct tower: projectors run were ['0f42e4e9', 'b5dc8ebe'] only
+instructions other than the default 'Describe this image in one sentence.'
+forward_residual: no call in this run passes a residual callback (forward, forward_embd, forward_multi only)
+```
+
+Inherited from ocelli, and invisible to parity with it: both published SmolVLM
+`preprocessor_config.json` files ask for `"resample": 1`, Lanczos in PIL, while ocelli and the
+port resize bilinearly. The difference from the HF preprocessing stands as the entry below
+records it.
+
 ## 2026-11-27 — SmolVLM / Idefics3 vision joins the harness
 
 Hand: Neo (Claude Opus 5.5), branch `claude/smolvlm-vision`.
