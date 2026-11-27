@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static const char *gate;
 static unsigned checks;
@@ -478,7 +479,7 @@ static int test_persistence(void) {
     c=comparison(&e,4);
     CHECK(nt_spa_agent_fit_comparison(&a,&e,&c,.03f,&first)==NT_SPA_OK,"fit before save");
     CHECK(only_policy_changed(&initial,&a),"comparison adds no schema counters");
-    (void)snprintf(path,sizeof(path),"/tmp/notorch-spa-future-%ld.bin",(long)getpid());
+    (void)snprintf(path,sizeof(path),"%s/notorch-spa-future-%ld.bin",nt_test_tmpdir(),(long)getpid());
     CHECK(nt_spa_agent_save(&a,path)==NT_SPA_OK,"save acquired life");
     f=fopen(path,"rb"); CHECK(f!=NULL,"open canonical file");
     CHECK(fread(magic,1,sizeof(magic),f)==sizeof(magic) && !memcmp(magic,"NTSPA001",8),

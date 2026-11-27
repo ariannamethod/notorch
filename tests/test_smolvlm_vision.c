@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "smolvlm_vision_fixture.h"
+#include "nt_test_tmp.h"
 static int checks,failed;
 #define CHECK(c,s) do{checks++;if(!(c)){fprintf(stderr,"FAIL: %s\n",s);failed++;}}while(0)
 static float difference(const float *a,const float *b,size_t n){float d=0;for(size_t j=0;j<n;j++)if(fabsf(a[j]-b[j])>d)d=fabsf(a[j]-b[j]);return d;}
@@ -55,7 +56,7 @@ static int text_fixture(const char *path,const char *drop) {
 }
 
 int main(void) {
-    char path[]="/tmp/notorch-smolvlm-XXXXXX",tpath[]="/tmp/notorch-smolvlm-text-XXXXXX";
+    char path[NT_TMP_MAX],tpath[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"notorch-smolvlm-XXXXXX");nt_test_tmp(tpath,sizeof tpath,"notorch-smolvlm-text-XXXXXX");
     int fd=mkstemp(path);if(fd<0)return 1;close(fd);
     fd=mkstemp(tpath);if(fd<0){unlink(path);return 1;}close(fd);
     CHECK(!smolvlm_vision_fixture(path,0),"write vision fixture");gguf_file *g=gguf_open(path);

@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 typedef struct {const char *name;int rows,cols,rank;const float *data;} tensor;
 static const float ones[]={1,1},zero[]={0,0,0,0},identity[]={1,0,0,1};
@@ -87,7 +88,7 @@ static int cb(void *user,nt_encode_site site,int layer,int n,int width,float *x)
 }
 static void close_to(double a,double b){if(fabs(a-b)>3e-6){fprintf(stderr,"%.9g != %.9g\n",a,b);abort();}}
 int main(void) {
-    char path[]="/tmp/notorch-eg2-XXXXXX";int fd=mkstemp(path);assert(fd>=0);close(fd);
+    char path[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"notorch-eg2-XXXXXX");int fd=mkstemp(path);assert(fd>=0);close(fd);
     for(int window=0;window<=1;window++) {
         write_model(path,window);gguf_file *gf=gguf_open(path);assert(gf);nt_encode_dims d;
         void *m=nt_encoder_embeddinggemma2.load(gf,&d);assert(m);assert(d.width==2&&d.output_dim==2&&d.n_layers==1);

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static const char *group;
 static int checks;
@@ -134,7 +135,7 @@ static int unselected_resume(void) {
           a.prev_loss == before && a.prev_reward == r.reward && a.prev_trend == observation.loss_trend &&
           a.pending_decision.action.kind == NT_CHUCK_ACTION_BRAKE && r.predicted == scores[1],
           "completed cache names the actual action and temporal history receives its actual consequence");
-    char path[] = "/tmp/notorch-lived-life-XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "notorch-lived-life-XXXXXX");
     int fd = mkstemp(path); CHECK(fd >= 0, "allocate persisted intervention life"); close(fd);
     nt_chuck_architect resumed;
     CHECK(nt_chuck_architect_save(&a, path) == 0 && nt_chuck_architect_load(&resumed, path) == 0 &&

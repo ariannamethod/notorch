@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "sentencepiece_reference.h"
+#include "nt_test_tmp.h"
 
 static unsigned checks;
 #define CHECK(x) do { checks++; if (!(x)) { \
@@ -245,7 +246,7 @@ static void concurrent_and_file(void) {
         CHECK(pthread_join(threads[i], NULL) == 0); CHECK(!cases[i].failed);
     }
     nt_spm_free(m);
-    char path[] = "/tmp/notorch-spm-XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "notorch-spm-XXXXXX");
     int fd = mkstemp(path); CHECK(fd >= 0);
     CHECK(write(fd, sp_model_0, sizeof(sp_model_0)) == sizeof(sp_model_0));
     CHECK(close(fd) == 0);

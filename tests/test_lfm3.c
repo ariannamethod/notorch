@@ -7,6 +7,7 @@
 #include "harness/arch_lfm3.c"
 #include <stdint.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 enum { E = 64, V = 34, HD = 8, H = 2, KVH = 1, LC = 3, F = 24, NL = 4, SWA = 4, N = 10 };
 
@@ -117,7 +118,7 @@ static int write_model(const char *path, opts o) {
 
 typedef struct { gguf_file *gf; void *m; nt_dims d; } M;
 static int open_model(M *x, opts o) {
-    char path[] = "/tmp/notorch-lfm3-XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "notorch-lfm3-XXXXXX");
     int fd = mkstemp(path);
     if (fd < 0) return 0;
     close(fd);

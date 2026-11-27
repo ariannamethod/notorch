@@ -5,6 +5,7 @@
 #undef main
 #include "tools/pen7_bpe.h"
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static int checks, failed;
 #define CHECK(c,s) do { checks++; if (!(c)) { fprintf(stderr,"FAIL: %s\n",s); failed++; } } while (0)
@@ -50,7 +51,7 @@ static void actual_pen7(const char *path) {
     bpe_free(t);
 }
 int main(int argc,char **argv) {
-    char path[]="/tmp/nt_emit_XXXXXX";int fd=mkstemp(path);if(fd<0)return 1;close(fd);
+    char path[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"nt_emit_XXXXXX");int fd=mkstemp(path);if(fd<0)return 1;close(fd);
     char long_utf8[901];for(int i=0;i<150;i++)memcpy(long_utf8+6*i,"\xe4\xb8\x96\xe7\x95\x8c",6);long_utf8[900]=0;
     CHECK(fixture(path,long_utf8)==0,"write long UTF8 tokenizer fixture");
     bpe_tokenizer *t=bpe_load(path);CHECK(t!=NULL,"load long UTF8 tokenizer");

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 enum { E = 4, V = 5, L = 2, FF = 8 };
 static int failed, checks;
@@ -87,7 +88,7 @@ static int close_logits(const float *a, const float *b) {
 }
 
 int main(void) {
-    char path[] = "/tmp/nt_residual_XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "nt_residual_XXXXXX");
     int fd = mkstemp(path);
     if (fd < 0) return 1;
     close(fd);

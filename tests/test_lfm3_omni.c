@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static int checks, failed;
 #define CHECK(c, s) do { checks++; if (!(c)) { fprintf(stderr, "FAIL: %s\n", s); failed++; } } while (0)
@@ -193,7 +194,7 @@ static int write_file(const char *path, breaks b) {
 }
 
 static lfm3_omni *open_omni(breaks b, gguf_file **gf) {
-    char path[] = "/tmp/notorch-lfm3omni-XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "notorch-lfm3omni-XXXXXX");
     int fd = mkstemp(path);
     *gf = NULL;
     if (fd < 0) return NULL;

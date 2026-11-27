@@ -5,6 +5,7 @@
 #include <math.h>
 #include <unistd.h>
 #include "janus_prefix_fixture.h"
+#include "nt_test_tmp.h"
 
 static int checks, failures;
 #define CHECK(expr, label) do { checks++; if (!(expr)) { failures++; fprintf(stderr, "FAIL: %s (line %d)\n", label, __LINE__); } } while (0)
@@ -54,7 +55,7 @@ static float worst(const float *a, const float *b) {
 }
 
 int main(void) {
-    char path[] = "/tmp/nt-janus-prefix-XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "nt-janus-prefix-XXXXXX");
     int fd = mkstemp(path); if (fd < 0) return 1; close(fd);
     CHECK(fixture(path, 1, .375f, 0) == 0, "fixture written");
     gguf_file *gf = gguf_open(path); if (!gf) return 1;

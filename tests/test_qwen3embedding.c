@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 enum { V = 7, E = 8, H = 4, KV = 2, HD = 4, F = 6, L = 2, MAXT = 8 };
 #define EPS 1e-6f
@@ -164,7 +165,7 @@ static int cb(void *user, nt_encode_site site, int layer, int n, int width, floa
     return 0;
 }
 int main(void) {
-    char path[] = "/tmp/notorch-qe-XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "notorch-qe-XXXXXX");
     int fd = mkstemp(path); assert(fd >= 0); close(fd);
     build();
     write_model(path, "embeddinggemma2", -1);

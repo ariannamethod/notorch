@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static const char *gate;
 static unsigned checks;
@@ -418,7 +419,7 @@ static int test_persistence(void) {
     initial_policy=a;
     CHECK(nt_spa_agent_set_policy(&initial_policy,&before.policy)==NT_SPA_OK && SAME(initial_policy,before),
         "reset acquired weights alone restores entire original life");
-    (void)snprintf(path,sizeof(path),"/tmp/notorch-spa-conditioned-%ld.bin",(long)getpid());
+    (void)snprintf(path,sizeof(path),"%s/notorch-spa-conditioned-%ld.bin",nt_test_tmpdir(),(long)getpid());
     CHECK(nt_spa_agent_save(&a,path)==NT_SPA_OK && nt_spa_agent_load(&b,path)==NT_SPA_OK && SAME(a,b),
         "canonical v1 save/resume preserves acquired conditioned policy");
     for(i=0;i<16;++i)

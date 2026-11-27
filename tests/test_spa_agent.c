@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static const char *gate;
 static unsigned checks;
@@ -469,7 +470,7 @@ static int equal_files(const char *x,const char *y) {
 }
 
 static int test_persistence(void) {
-    char path[]="/tmp/notorch-spa-life-XXXXXX",other[]="/tmp/notorch-spa-copy-XXXXXX";
+    char path[NT_TMP_MAX],other[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"notorch-spa-life-XXXXXX");nt_test_tmp(other,sizeof other,"notorch-spa-copy-XXXXXX");
     int fd=mkstemp(path),fd2=mkstemp(other);
     CHECK(fd>=0 && fd2>=0,"temporary lives created"); close(fd); close(fd2);
     nt_spa_agent a,b;

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static const char *gate;
 static unsigned checks;
@@ -304,7 +305,7 @@ static int test_persistence(void) {
     before=a;
     CHECK(nt_spa_agent_fit_repeated(&a,&e,c,3,.03f,&r1)==NT_SPA_OK && only_policy(&before,&a),
         "repeated update preserves populated ring, EMA, RNG and all counters");
-    (void)snprintf(path,sizeof(path),"/tmp/notorch-spa-repeated-%ld.bin",(long)getpid());
+    (void)snprintf(path,sizeof(path),"%s/notorch-spa-repeated-%ld.bin",nt_test_tmpdir(),(long)getpid());
     CHECK(nt_spa_agent_save(&a,path)==NT_SPA_OK && nt_spa_agent_load(&b,path)==NT_SPA_OK && SAME(a,b),
         "existing canonical save/resume retains acquired repeated policy exactly");
     for(i=0;i<16;++i) {

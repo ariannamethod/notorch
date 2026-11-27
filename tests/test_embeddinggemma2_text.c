@@ -17,6 +17,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static int failures;
 #define CHECK(c, what) do { if (!(c)) { failures++; fprintf(stderr, "FAIL %s (line %d)\n", what, __LINE__); } } while (0)
@@ -162,7 +163,7 @@ static char *field(const char *jsonl, int row, const char *key) {
 int main(int argc, char **argv) {
     if (argc == 5) return gate(argv);
     if (argc != 1) { fprintf(stderr, "usage: %s [TOKENIZER.gguf ENCODED.jsonl GOLDEN.json FIXTURE_TOKENS.tsv]\n", argv[0]); return 2; }
-    char dir[] = "/tmp/notorch-eg2-text-XXXXXX", path[256], cmd[1024], convert[512], tsv[256];
+    char dir[NT_TMP_MAX], path[256], cmd[1024], convert[512], tsv[256]; nt_test_tmp(dir, sizeof dir, "notorch-eg2-text-XXXXXX");
     if (!mkdtemp(dir)) { perror("mkdtemp"); return 1; }
     snprintf(path, sizeof(path), "%s/tokenizer.json", dir);
     snprintf(convert, sizeof(convert), "./embeddinggemma2_to_gguf --tokenizer %s %s/tok.gguf >/dev/null 2>&1", path, dir);

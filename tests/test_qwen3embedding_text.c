@@ -19,6 +19,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static int failures, checks;
 #define CHECK(c, what) do { checks++; if (!(c)) { failures++; fprintf(stderr, "FAIL %s (line %d)\n", what, __LINE__); } } while (0)
@@ -183,7 +184,7 @@ int main(int argc, char **argv) {
         if (cp < 128) sym[b][0] = (char)cp;
         else { sym[b][0] = (char)(0xc0 | (cp >> 6)); sym[b][1] = (char)(0x80 | (cp & 63)); }
     }
-    char dir[] = "/tmp/notorch-qe-text-XXXXXX", path[256], cmd[1024], convert[512], tsv[256];
+    char dir[NT_TMP_MAX], path[256], cmd[1024], convert[512], tsv[256]; nt_test_tmp(dir, sizeof dir, "notorch-qe-text-XXXXXX");
     if (!mkdtemp(dir)) { perror("mkdtemp"); return 1; }
     snprintf(path, sizeof(path), "%s/tokenizer.json", dir);
     snprintf(convert, sizeof(convert), "./qwen3embedding_to_gguf --tokenizer %s %s/tok.gguf >/dev/null 2>&1", path, dir);

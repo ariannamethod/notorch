@@ -11,6 +11,26 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-27 — Tests make their fixtures under `$TMPDIR`
+
+Hand: Defender (Claude, phone-1), branch `claude/termux-tmpdir`, based on `da510e7`.
+Android has no `/tmp`; Termux points `TMPDIR` at `$PREFIX/tmp`. Every test that spelled its
+fixture template `"/tmp/..."` failed in `mkstemp` or `mkdtemp` before reaching the code it is
+about. That was the 12 targets left open in the entry "Spores and episodes publish in
+Termux" below, and because they are prerequisites, make never ran the `test` recipe itself.
+`tests/nt_test_tmp.h` gives `nt_test_tmpdir()` (`$TMPDIR` when set, else `/tmp`) and
+`nt_test_tmp(buf, n, name)`, which stops the test on a path that does not fit instead of
+handing `mkstemp` a cut-off template. 39 test sources build their templates through it.
+`test_gguf_write` keeps its own `NT_TEST_DIR` first and falls back to the same directory.
+`check_qwen3embedding_{model,parity}.sh` and `test_libnotorch_lib.sh` now take
+`${TMPDIR:-/tmp}`, as the other scripts already did. `test_cuda_decode` and the build lines in
+comments are untouched.
+
+Proof, Galaxy A56: in the chroot, `test_gemma3`, `test_vision` and `test_spa_agent_state`
+return 0, and with `TMPDIR=/nonexistent` they return 1, 139 and 1, so the path really comes
+from the variable. `test_vision` segfaults there because it does not check `fopen`; that was
+already so before this change.
+
 ## 2026-11-27 — SmolVLM vision matches ocelli stage by stage on three bodies
 
 Hand: Neo (Claude Opus 5.5), branch `claude/smolvlm-vision`. Auditor: Fable 5.2, verdict PASS on

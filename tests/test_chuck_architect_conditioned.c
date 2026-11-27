@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static const char *group;
 static int checks;
@@ -243,7 +244,7 @@ static void body_restore(const body_image *im) {
 static int frozen_feedback(void) {
     nt_chuck_architect a; CHECK(new_life(&a) == 0, "initialize frozen execution life");
     nt_chuck_architect initial = a, resumed = a;
-    char path[] = "/tmp/notorch-conditioned-XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "notorch-conditioned-XXXXXX");
     int fd = mkstemp(path); CHECK(fd >= 0, "allocate checkpoint path"); close(fd);
     body_open();
     for (int step = 0; step < 32; step++) {
@@ -331,7 +332,7 @@ static int deterministic_fit_resume(void) {
               nt_chuck_architect_fit_conditioned(&b, &s, &q) == 0 &&
               !memcmp(&a, &b, sizeof a) && !memcmp(&r, &q, sizeof r), "deterministic complete fit and receipt bytes");
     }
-    char path[] = "/tmp/notorch-conditioned-fit-XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "notorch-conditioned-fit-XXXXXX");
     int fd = mkstemp(path); CHECK(fd >= 0, "allocate fit checkpoint path"); close(fd);
     CHECK(nt_chuck_architect_save(&a, path) == 0 && nt_chuck_architect_load(&b, path) == 0 &&
           !memcmp(&a, &b, sizeof a), "conditioned weights preserve the existing v1 life schema");

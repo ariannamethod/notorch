@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 static int checks, failed;
 #define CHECK(c,s) do { checks++; if (!(c)) { fprintf(stderr,"FAIL: %s\n",s); failed++; } } while (0)
 static int enc(int cp, char *s) {
@@ -43,7 +44,7 @@ static int fixture(const char *path, const char *pre) {
     return gguf_write_close(w);
 }
 int main(void) {
-    char path[]="/tmp/notorch-smollm-XXXXXX";int fd=mkstemp(path);if(fd<0)return 1;close(fd);
+    char path[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"notorch-smollm-XXXXXX");int fd=mkstemp(path);if(fd<0)return 1;close(fd);
     const char *numbers[]={"0","٠","१","９","Ⅷ","²","½","𐄇","𝟡","𞥐"};
     const char *pre[]={"smollm","qwen2","gpt2"};
     for(int family=0;family<3;family++) {

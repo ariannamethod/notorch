@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static const char *group;
 static int checks;
@@ -286,7 +287,7 @@ static int save_resume(void) {
     nt_chuck_architect_comparison s = reversal();
     for (int i = 0; i < 19; i++) CHECK(nt_chuck_architect_fit_comparison(&a, &s, NULL) == 0,
                                      "fit before checkpoint");
-    char path[] = "/tmp/notorch-future-life-XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "notorch-future-life-XXXXXX");
     int fd = mkstemp(path); CHECK(fd >= 0, "allocate checkpoint path"); close(fd);
     CHECK(nt_chuck_architect_save(&a, path) == 0, "save fitted life in v1 format");
     nt_chuck_architect restored;

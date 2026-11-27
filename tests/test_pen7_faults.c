@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static size_t calls, fail_at, live, fired, guard_errors;
 static int armed, checks, failed;
@@ -137,7 +138,7 @@ static void sweep(const char*path,int q8){
     printf("PEN7_FAULT_SWEEP %s %zu allocation sites\n",q8?"Q8":"F32",allocations);
 }
 int main(void){
-    char path[]="/tmp/nt_pen7_fault_XXXXXX";int fd=mkstemp(path);if(fd<0)return 1;close(fd);
+    char path[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"nt_pen7_fault_XXXXXX");int fd=mkstemp(path);if(fd<0)return 1;close(fd);
     sweep(path,0);sweep(path,1);unlink(path);
     printf("PEN7_FAULTS_%s (%d checks)\n",failed?"FAIL":"OK",checks);return !!failed;
 }

@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include "qwen35_fixture.h"
 #include "qwen35_gqa_fixture.h"
+#include "nt_test_tmp.h"
 static int checks,failed;
 #define CHECK(c,s) do{checks++;if(!(c)){fprintf(stderr,"FAIL: %s\n",s);failed++;}}while(0)
 static int inspect(void *user,int layer,int pos,int n,int width,float *x) {
@@ -35,7 +36,7 @@ static int observe_erased(void *user,int layer,int pos,int n,int width,float *x)
     return NT_OK;
 }
 int main(void) {
-    char path[]="/tmp/notorch-qwen35-XXXXXX";int fd=mkstemp(path);if(fd<0)return 1;close(fd);
+    char path[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"notorch-qwen35-XXXXXX");int fd=mkstemp(path);if(fd<0)return 1;close(fd);
     CHECK(!fixture(path,0),"fixture written");gguf_file *g=gguf_open(path);nt_dims d={0};
     void *m=g?nt_arch_qwen35.load(g,&d):NULL;CHECK(m!=NULL,"fixture loads");if(!m){unlink(path);return 1;}
     int ids[]={0,3,5,12,2,6,7};float out[40];

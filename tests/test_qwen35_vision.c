@@ -7,12 +7,13 @@
 #include <unistd.h>
 #include "qwen35_vision_fixture.h"
 #include "qwen35_visual_text_fixture.h"
+#include "nt_test_tmp.h"
 static int checks,failed;
 #define CHECK(c,s) do{checks++;if(!(c)){fprintf(stderr,"FAIL: %s\n",s);failed++;}}while(0)
 static float difference(const float *a,const float *b,int n){float d=0;for(int j=0;j<n;j++)if(fabsf(a[j]-b[j])>d)d=fabsf(a[j]-b[j]);return d;}
 static int stop(void *u,int l,int p,int n,int e,float *x){(void)u;(void)l;(void)p;(void)n;(void)e;(void)x;return 37;}
 int main(void) {
-    char path[]="/tmp/notorch-vision-XXXXXX";int fd=mkstemp(path);if(fd<0)return 1;close(fd);
+    char path[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"notorch-vision-XXXXXX");int fd=mkstemp(path);if(fd<0)return 1;close(fd);
     CHECK(!vision_fixture(path,0),"write vision fixture");gguf_file *g=gguf_open(path);
     nt_qwen35_vision *v=nt_qwen35_vision_load(g);CHECK(v!=NULL,"vision load");if(!v){gguf_close(g);unlink(path);return 1;}
     uint8_t rgb[7*11*3];for(int j=0;j<(int)sizeof(rgb);j++)rgb[j]=(uint8_t)(j*7+3);

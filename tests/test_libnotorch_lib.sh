@@ -16,10 +16,11 @@ cd "$(dirname "$0")/.."
 
 echo "== test_libnotorch_lib =="
 
-make lib >/tmp/notorch_lib_build.log 2>&1
+log="${TMPDIR:-/tmp}/notorch_lib_build.log"
+make lib >"$log" 2>&1
 if [ ! -f libnotorch.a ]; then
     echo "  FAIL: make lib did not produce libnotorch.a"
-    cat /tmp/notorch_lib_build.log
+    cat "$log"
     exit 1
 fi
 

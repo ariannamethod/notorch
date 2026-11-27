@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 enum {E=4,V=5,L=6,FF=8,N=5};
 static int checks,failed;
 #define CHECK(c,s) do{checks++;if(!(c)){fprintf(stderr,"FAIL: %s\n",s);failed++;}}while(0)
@@ -125,7 +126,7 @@ static void expert_boundaries(const nt_arch *a, void *m, kv_cache *kv,
                              const int *ids, const float *plain) {
     CHECK(a->doe != NULL, "Gemma3 registers expert hooks");
     if (!a->doe) return;
-    char path[] = "/tmp/nt_gemma3_boundary_XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "nt_gemma3_boundary_XXXXXX");
     int fd = mkstemp(path);
     if (fd < 0) { CHECK(0, "create boundary fixture"); return; }
     close(fd);
@@ -162,7 +163,7 @@ static void expert_boundaries(const nt_arch *a, void *m, kv_cache *kv,
           "fresh forward after expert abort");
 }
 int main(void){
-    char path[]="/tmp/nt_gemma3_XXXXXX";int fd=mkstemp(path);if(fd<0)return 1;close(fd);
+    char path[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"nt_gemma3_XXXXXX");int fd=mkstemp(path);if(fd<0)return 1;close(fd);
     CHECK(fixture(path,0,-1)==0,"write tiny Gemma3 GGUF");
     gguf_file*gf=gguf_open(path);nt_dims dims;
     const nt_arch*a=nt_pick_arch("gemma3");

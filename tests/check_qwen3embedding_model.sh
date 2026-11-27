@@ -14,7 +14,7 @@ if [ $# -ne 2 ] || [ ! -f "$1" ] || [ ! -f "$2" ]; then
     echo "usage: $0 MODEL.gguf TOKENIZER.gguf" >&2; exit 2
 fi
 MODEL=$1 TOK=$2 WIDTH=1024
-DIR=$(mktemp -d /tmp/notorch-qe-model-XXXXXX)
+DIR=$(mktemp -d "${TMPDIR:-/tmp}/notorch-qe-model-XXXXXX")
 trap 'rm -rf "$DIR"' EXIT
 printf 'q1\tWhat is the capital of China?\nq2\tExplain gravity\n' > "$DIR/queries.tsv"
 printf 'd1\tThe capital of China is Beijing.\nd2\tGravity is a force that attracts two bodies towards each other. It gives weight to physical objects and is responsible for the movement of planets around the sun.\n' > "$DIR/documents.tsv"

@@ -15,10 +15,11 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static const char *gate;
 static unsigned checks;
-static char directory[]="/tmp/notorch-spa-state-XXXXXX";
+static char directory[NT_TMP_MAX];
 static int fail_next_calloc, intercepted_failures;
 #define CHECK(c,msg) do { ++checks; if(!(c)) { \
     fprintf(stderr,"FAIL %s:%d: %s\n",gate,__LINE__,msg); return 0; } } while(0)
@@ -289,6 +290,7 @@ int main(void) {
     DIR *dir;
     struct dirent *entry;
     char path[512];
+    nt_test_tmp(directory,sizeof directory,"notorch-spa-state-XXXXXX");
     if(!mkdtemp(directory)) { perror("mkdtemp"); return 1; }
     for(i=0;i<sizeof groups/sizeof groups[0];++i) {
         int result;

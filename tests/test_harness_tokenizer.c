@@ -7,6 +7,7 @@
 #include "qwen35_fixture.h"
 #include <math.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static int checks, failed;
 #define CHECK(c,s) do { checks++; if (!(c)) { fprintf(stderr,"FAIL: %s\n",s); failed++; } } while (0)
@@ -38,7 +39,7 @@ static int tokenizer_file(const char *path, const char *arch, int n, int eos) {
 }
 
 int main(void) {
-    char dir[] = "/tmp/nt_cli_model_XXXXXX", model[128], tok[128], sibling[128];
+    char dir[NT_TMP_MAX], model[128], tok[128], sibling[128]; nt_test_tmp(dir, sizeof dir, "nt_cli_model_XXXXXX");
     if (!mkdtemp(dir)) return 1;
     snprintf(model, sizeof(model), "%s/model.gguf", dir);
     snprintf(tok, sizeof(tok), "%s/named.gguf", dir);
