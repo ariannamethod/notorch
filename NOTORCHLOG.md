@@ -37,7 +37,13 @@ is carried operation for operation.
 
 `arch_llama` gains `forward_embd`. `rows[j]` stands in place of the embedding of `tokens[j]`,
 `hidden` returns the final-norm output of the last row, and a non-finite row is refused before
-the cache is touched. With `rows` NULL the result is `forward` bit for bit.
+the cache is touched. With `rows` NULL the result is `forward` bit for bit. `forward_embd` takes
+no residual callback, so a live SUBLITERATUS direction cannot be applied on the image path yet;
+only a baked `ffn_down.bias` reaches it. The `omni_main` path that now accepts llama with media
+rows is not covered by a test.
+
+The tower is expanded to F32: about 400 MB for SmolVLM2-500M, twice its 199,470,624-byte F16
+projector. That rules out a 4 GB node; the eye that runs on the phone stays in ocelli.
 
 Proof, Neo (A18 Pro, Accelerate): `make test_smolvlm_vision` gives 42 checks and 0 failures.
 The pixels, the tower and the connector are compared against the fixture. The prompt ids are
@@ -66,6 +72,16 @@ Open: parity with ocelli on real bodies (pixels, tower, rows, forced-id logits, 
 a separate run. The SmolVLM-Instruct tower follows the same metadata-driven path, but its parity
 reference is the measurement-only llama.cpp check, not ocelli; its projector was not on this
 machine and has not been loaded. The full `make test` was not run.
+
+Open: the published `preprocessor_config.json` of SmolVLM2-500M-Video-Instruct and of
+SmolVLM-Instruct both say `"resample": 1`, which is Lanczos in PIL. ocelli and this port resize
+bilinearly. The difference from the HF preprocessing comes with ocelli, and parity with ocelli
+cannot see it.
+
+Open: the global-only layout keeps ocelli's form for parity. It puts a `\n` between the closing
+`<fake_token_around_image>` and the instruction. The model's own `tokenizer.chat_template` puts
+the text right after `<image>`. The measurement check on SmolVLM-Instruct decides which form
+stays.
 
 ## 2026-11-27 — Spores and episodes publish in Termux; the replay check links its BLAS
 
