@@ -262,7 +262,7 @@ test: test_spa_runtime
 # The general family registry and tokenizer stay in libnotorch_harness. The
 # immutable PEN7 interface is also public in libnotorch, which reuses the same
 # PEN7/runtime objects. General harness consumers link both, harness first.
-HARNESS_LIB_OBJ = harness/image.o harness/arch_qwen35_vision.o \
+HARNESS_LIB_OBJ = harness/image.o harness/arch_qwen35_vision.o harness/arch_smolvlm_vision.o \
                   harness/tokenizer.o harness/dream.o harness/replay_episode.o harness/replay_measure.o harness/spore_frame.o harness/experts.o harness/expert_lineage.o harness/expert_recall.o harness/expert_vote.o \
                   harness/archs.o harness/runtime.o harness/arch_llama.o harness/arch_qwen35.o \
                   harness/arch_gemma3.o harness/arch_gemma4.o harness/arch_embeddinggemma2.o harness/arch_qwen3embedding.o harness/arch_olmoe.o harness/arch_mamba.o \
@@ -443,6 +443,17 @@ test_qwen35_vision: tests/test_qwen35_vision.c tests/qwen35_vision_fixture.h tes
 	./$@
 
 test: test_qwen35_vision
+
+SMOLVLM_VISION_SRC = harness/arch_smolvlm_vision.c harness/arch_llama.c harness/runtime.c examples/bpe.c gguf.c notorch.c
+smolvlm_vision_probe: tools/smolvlm_vision_probe.c harness/image.c $(SMOLVLM_VISION_SRC) harness/smolvlm_vision.h harness/image.h $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tools/smolvlm_vision_probe.c harness/image.c $(SMOLVLM_VISION_SRC) -lm $(BLAS_LIBS)
+
+.PHONY: test_smolvlm_vision
+test_smolvlm_vision: tests/test_smolvlm_vision.c tests/smolvlm_vision_fixture.h $(SMOLVLM_VISION_SRC) harness/smolvlm_vision.h $(HARNESS_HDR) $(CHUCK_HEADERS)
+	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o $@ tests/test_smolvlm_vision.c $(SMOLVLM_VISION_SRC) -lm $(BLAS_LIBS)
+	./$@
+
+test: test_smolvlm_vision
 
 test_qwen35_text: tests/test_qwen35_text.c examples/bpe.c examples/bpe.h gguf.c notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) -o $@ tests/test_qwen35_text.c examples/bpe.c gguf.c notorch.c -lm
@@ -1355,7 +1366,7 @@ clean:
 	rm -f test_spa_agent_conditioned
 	rm -f test_numerical_values
 	rm -f test_sampling
-	rm -f qwen35_vision_probe test_qwen35_vision
+	rm -f qwen35_vision_probe test_qwen35_vision smolvlm_vision_probe test_smolvlm_vision
 	rm -f test_janus_prefix doe_experience doe_probe test_expert_vote test_replay_measure test_expert_recall test_media_replay test_expert_lineage test_media_experts test_expert_dream test_portable_spore test_expert_consolidation expert_fixtures pen7_to_gguf test_pen7 test_pen7_faults $(PEN7_FAULT_OBJ) test_penelope test_harness_emit test_harness_tokenizer test_parliament_values test_tanh_sgd
 	rm -f test_spa_agent_repeated spa_agent_replicates
 	rm -f test_spa_agent_future spa_agent_future spa_binding.o

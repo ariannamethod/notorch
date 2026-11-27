@@ -11,6 +11,62 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-27 — SmolVLM / Idefics3 vision joins the harness
+
+Hand: Neo (Claude Opus 5.5), branch `claude/smolvlm-vision`.
+The SmolVLM still-image path lived only in ocelli. It now follows the qwen35_vision layout:
+`harness/smolvlm_vision.h` and `harness/arch_smolvlm_vision.c`, `tools/smolvlm_vision_probe.c`,
+and `tests/test_smolvlm_vision.c` with `tests/smolvlm_vision_fixture.h` from
+`tests/smolvlm_vision_fixture_gen.py`. It is carried over from ocelli's `vision.c` (GPL-3.0, same
+authors) with the arithmetic kept, so the two can be compared stage by stage: bilinear tiles plus
+a global frame, SigLIP pre-norm blocks with the f16-rounded tanh GELU of llama.cpp's clip, the
+idefics3 pixel shuffle and the bias-free connector. What ocelli wrote as constants is read from
+the projector: `clip.vision.image_size`, `patch_size`, `projector.scale_factor`, `projection_dim`,
+the tower widths and depth, `layer_norm_epsilon`, `image_mean` and `image_std`. The longest
+edge comes from `clip.vision.preproc_image_size` or from the caller; the SmolVLM2-500M projector
+has no such key, the eye projector carries 2048. Markers are found by their text in the body's
+vocabulary (`bpe_token_id`, `bpe_encode_special`), and a layout that needs a marker the
+vocabulary lacks is refused. Weights are any dtype `gguf_dequant` reads, which covers the Q8_0
+`mm.model.fc` of a quantized projector.
+
+Reused: `nt_image_load` from `harness/image.c` (the probe decodes with it), `mm_t` and `softmax`
+from `harness/runtime.c`. Not reused: `image.c` resizes with an antialiased bicubic on bytes, and
+ocelli tiles with the float bilinear of `notorch_vision.h`. That header cannot join a harness
+unit, because its own stb_image implementation would collide with `image.c`'s, so the bilinear
+is carried operation for operation.
+
+`arch_llama` gains `forward_embd`. `rows[j]` stands in place of the embedding of `tokens[j]`,
+`hidden` returns the final-norm output of the last row, and a non-finite row is refused before
+the cache is touched. With `rows` NULL the result is `forward` bit for bit.
+
+Proof, Neo (A18 Pro, Accelerate): `make test_smolvlm_vision` gives 42 checks and 0 failures.
+The pixels, the tower and the connector are compared against the fixture. The prompt ids are
+compared with `<image>` at 264 rather than 49190. A spliced run with distinct embeddings in the
+slots matches plain text holding those tokens bit for bit. Red hands, each a copy of the branch
+with one change and the same command:
+- `<image>` hardcoded to 49190: 3 failures
+- splice dropped in `llama_rows`: 2
+- mean/std hardcoded to 0.5: 3
+- exact f32 GELU: 2
+- fc1 chosen by name instead of by bias length: load refused
+- global frame dropped: 6
+- tile order swapped: 1
+
+`test_residual` (19 checks), `test_multi_decode` (753) and `test_harness_tokenizer` (75) pass both
+on this branch and on `2e4d6b1`. The new files and `arch_llama.c` compile without warnings under
+the tree's CFLAGS; the two `notorch.c` warnings were already there on `2e4d6b1`.
+`smolvlm_vision_probe` builds and was not run here.
+
+The fixture's reference is numpy rather than Transformers. Transformers' GELU is exact f32 and
+ocelli's is the f16 table. An f16 GELU is a step function, so seed 897 is chosen to keep every
+GELU input and output of the frozen frame 1e-5 (relative) away from a rounding midpoint. Another
+BLAS summation order cannot flip a step there.
+
+Open: parity with ocelli on real bodies (pixels, tower, rows, forced-id logits, greedy ids) is
+a separate run. The SmolVLM-Instruct tower follows the same metadata-driven path, but its parity
+reference is the measurement-only llama.cpp check, not ocelli; its projector was not on this
+machine and has not been loaded. The full `make test` was not run.
+
 ## 2026-11-27 — Spores and episodes publish in Termux; the replay check links its BLAS
 
 Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`.
