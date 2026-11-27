@@ -474,6 +474,9 @@ static void *cuda_gemma3_load(gguf_file *gf, nt_dims *dims) {
     cuda_model *m = cuda_new(&nt_arch_gemma3, gf, dims, &cm);
     if (!m) return NULL;
     gemma3_model *c = (gemma3_model *)cm;
+    /* The device slot for a post-block shift is not filled for gemma3 yet: refuse, never run the base. */
+    for (int l = 0; l < c->L; l++)
+        if (c->layers[l].residual_shift) { fprintf(stderr, "cuda: blk.%d.residual_shift is not uploaded to the device; body refused\n", l); cuda_free(m); return NULL; }
     m->gemma = 1;
     m->E = c->E; m->H = c->H; m->KVH = c->KV; m->HD = c->HD; m->QD = c->QD; m->KVD = c->KD;
     m->FF = c->FF; m->V = c->V; m->L = c->L; m->window = c->window; m->neox = 1;

@@ -34,6 +34,7 @@ typedef struct {
 
 typedef struct {
     float *attn_norm, *q_norm, *k_norm, *post_attn_norm, *ffn_norm, *post_ffw_norm;
+    float *residual_shift;  /* [E], optional, added after the complete block */
     wt q, k, v, o, gate, up, down;
 } gemma3_layer;
 typedef struct {

@@ -328,7 +328,7 @@ int main(void) {
         int fd = mkstemp(path);
         if (fd < 0) return 1;
         close(fd);
-        CHECK((family == 2 ? fixture_gemma3(path) : fixture(path, family == 1)) == 0, "write Q8_0 fixture");
+        CHECK((family == 2 ? fixture_gemma3(path, -1) : fixture(path, family == 1)) == 0, "write Q8_0 fixture");
         gguf_file *gf = gguf_open(path), *gf2 = gguf_open(path);
         nt_dims dims, gdims;
         void *cm = gf ? cpu->load(gf, &dims) : NULL;

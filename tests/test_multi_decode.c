@@ -6,7 +6,8 @@
  * Q8_0 matrices, 64 wide so every matrix goes through the packed kernels and their batched
  * forms — the int8 path by default, the float path under NT_NO_I8 — once with the thread
  * fan-out forced on and once with it off, for a qwen2 body (attention biases), a qwen3
- * body (per-head q/k norms) and a gemma3 body (sliding-window layers). Three sequences of different lengths decode greedily; the
+ * body (per-head q/k norms) and a gemma3 body (sliding-window layers), the last once more
+ * with a persisted residual shift on a sliding layer. Three sequences of different lengths decode greedily; the
  * multi-sequence run feeds the tokens the single runs chose, so any difference is the
  * forward's. A per-row steering callback with its own user pointer runs both ways, and the
  * refusals are checked for leaving the logits unwritten. */
@@ -121,14 +122,15 @@ static void refusals(const nt_arch *arch, void *model, nt_dims dims) {
 }
 
 int main(void) {
-    const char *families[] = {"qwen2", "qwen3", "gemma3"};
-    for (int family = 0; family < 3; family++) {
-        const nt_arch *arch = family == 2 ? &nt_arch_gemma3 : &nt_arch_llama;
+    const char *families[] = {"qwen2", "qwen3", "gemma3", "gemma3 shifted"};
+    for (int family = 0; family < 4; family++) {
+        const nt_arch *arch = family >= 2 ? &nt_arch_gemma3 : &nt_arch_llama;
         char path[] = "/tmp/nt_multi_XXXXXX";
         int fd = mkstemp(path);
         if (fd < 0) return 1;
         close(fd);
-        CHECK((family == 2 ? fixture_gemma3(path) : fixture(path, family == 1)) == 0, "write Q8_0 fixture");
+        CHECK((family >= 2 ? fixture_gemma3(path, family == 3 ? 2 : -1) : fixture(path, family == 1)) == 0,
+              "write Q8_0 fixture");
         for (int noi8 = 0; noi8 < 2; noi8++) {
             if (noi8) setenv("NT_NO_I8", "1", 1); else unsetenv("NT_NO_I8");
             gguf_file *gf = gguf_open(path);
