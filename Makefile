@@ -675,7 +675,7 @@ check_expert_recall: test_expert_recall test_portable_spore tests/test_expert_re
 	sh tests/test_expert_recall.sh
 
 check_text_replay: notorch libnotorch_harness.a libnotorch.a test_portable_spore tests/test_text_replay.sh
-	sh tests/test_text_replay.sh
+	NT_TEST_LIBS="$(BLAS_FLAGS) -lm -pthread $(BLAS_LIBS)" sh tests/test_text_replay.sh
 
 test: check_expert_recall check_text_replay
 

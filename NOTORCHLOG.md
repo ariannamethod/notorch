@@ -11,6 +11,37 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-27 — Spores and episodes publish in Termux; the replay check links its BLAS
+
+Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`.
+`save_spore` (`harness/experts.c`) and the replay-episode writer (`harness/replay_episode.c`)
+publish with `link(tmp, path)`, which refuses an existing destination and shows every byte
+at once. Android's SELinux policy denies hard links in app data: in Termux `link()` and `ln`
+both return `Permission denied`. As a result `--spore-out` and `--replay-out` failed with
+"could not publish a new …" on every Termux run. Both now call `nt_publish_new`. It tries
+`link` first; on `EACCES`/`EPERM` it falls back to `renameat2(..., RENAME_NOREPLACE)`, which
+gives the same refusal and the same all-at-once publish. Bionic wraps renameat2 only from
+API 30, so the call is the raw syscall. Where `link` succeeds nothing changes.
+
+`check_text_replay` linked its API driver with `${NT_TEST_LIBS:--lm -pthread}`. On any build
+with BLAS that ends in `undefined reference to cblas_sgemm`, which is how the full
+`make -k test` in the Ubuntu chroot reached rc=2. The Makefile now passes
+`$(BLAS_FLAGS) -lm -pthread $(BLAS_LIBS)`. On Darwin, Accelerate travels in `BLAS_FLAGS`;
+that case was not run here.
+
+Proof, Galaxy A56: before the change, Termux `check_text_replay` stops at the first
+`--replay-out`. After it the check passes, as it does in the chroot with BLAS linked. With
+`--spore-out` aimed at an existing file the run exits 1 with "could not publish a new spore",
+and the file keeps its bytes. A fresh spore (15,776 bytes) and episode (736 bytes) publish and
+leave no `.XXXXXX` temporaries. On this branch the full `make -k test` in the Ubuntu chroot
+returns 0. On `374e171` it returned 2.
+
+Open: in Termux the same full run fails 12 targets: embeddinggemma2 ×3, qwen3embedding ×2,
+qwen35 ×3, lfm3_omni, lfm3, harness_tokenizer and janus_prefix. Every one of them makes its
+fixture with `mkstemp`/`mkdtemp` under a hardcoded `/tmp`, which Android does not have; Termux's
+temporary directory is `$TMPDIR`. Because those prerequisites fail, make skips the commands in
+the `test` recipe itself, `test_affinity` among them.
+
 ## 2026-11-27 — Termux builds again: thread placement through the thread id
 
 Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`, based on `374e171`.
