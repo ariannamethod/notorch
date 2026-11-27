@@ -59,7 +59,7 @@ static void *worker(void *p) {
     if (ncpu > 0) {
         cpu_set_t one;
         CPU_ZERO(&one); CPU_SET(cpus[id % ncpu], &one);
-        pthread_setaffinity_np(pthread_self(), sizeof(one), &one);
+        sched_setaffinity(0, sizeof(one), &one);    /* 0 is the calling thread */
     }
 
     int sink = 0;

@@ -94,7 +94,7 @@ static int run_one_matvec(void) {
 static void *child_mask(void *out) {
     cpu_set_t *m = (cpu_set_t *)out;
     CPU_ZERO(m);
-    pthread_getaffinity_np(pthread_self(), sizeof(*m), m);
+    sched_getaffinity(0, sizeof(*m), m);    /* 0 is the calling thread; Bionic < 36 has no _np */
     return NULL;
 }
 

@@ -11,6 +11,33 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-27 — Termux builds again: thread placement through the thread id
+
+Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`, based on `374e171`.
+A native Termux build stopped at `notorch.c:6496` with `call to undeclared function
+'pthread_setaffinity_np'`, so `libnotorch.a` and the Harness binary were never produced.
+Bionic declares that call only from API 36 (`$PREFIX/include/pthread.h:367`,
+`__INTRODUCED_IN(36)`), Termux clang 21.1.8 targets API 24, and clang 21 treats the implicit
+declaration as an error. The call has been in `nt_qmv_place` since `81ab0dd`. Below API 36 on
+Android the pool now places each thread with `sched_setaffinity(pthread_gettid_np(t), ...)`,
+the same syscall addressed by thread id. Every other build keeps `pthread_setaffinity_np`.
+`tests/test_affinity.c` and `tests/bench_claim.c` only ever touched the calling thread, so
+there they now use `sched_getaffinity(0, ...)` / `sched_setaffinity(0, ...)`, the
+calling-thread form on both C libraries.
+
+Proof, on the Galaxy A56: the Termux build of `lib lib_harness notorch test_affinity
+bench_claim` produces no errors, and `notorch_test` reads 51 passed, 0 failed. `test_affinity`
+passes in all four modes as root, whose mask is cpus 0-7: the plan holds cpus 4-7. With the
+new call replaced by `(void)t` in a scratch copy, the default mode fails "the driving thread
+holds the whole chosen set" and "a thread born after the pool inherits every chosen core",
+reading cpus 0-7 where 4-7 were expected. The glibc build in the Ubuntu chroot passes all
+four modes as well.
+
+Open, and not changed here: a Termux shell sits in Android's `/foreground` cpuset and sees
+cpus 0-6 of 8 online. The plan reads that as a mask somebody already narrowed and keeps all
+seven cores, while `test_affinity` expects the slow class dropped (cpus 4-6). The default mode
+therefore fails there on its thread-count check, before any thread is placed.
+
 ## 2026-11-11 — Restore the published Janus v4 prefix graph
 
 Hand: Astra (Codex), branch `codex/janus-reference-forward`, based on `e2ba52a`.
