@@ -264,11 +264,13 @@ static void attn_heads(void *vctx, int h0, int h1) {
  * n for a multi-sequence decode), written [head_rows, vocab]. With `users` NULL the
  * callback sees the whole block once per layer, as it always has; with `users` it is
  * called per row with that row's user pointer, n = 1 and its own position. Callers have
- * validated every row. */
+ * validated every row. `rows`, when not NULL, puts rows[j] in place of the embedding of
+ * tokens[j] wherever it is not NULL; `hidden` receives the final-norm output of the last
+ * row. Both are nt_arch.forward_embd's. */
 static int llama_rows(llama_model *m, int n, const int *tokens, kv_cache *const *kvs,
                       const int *pos, float *logits, int head_rows,
                       nt_residual_fn post_attention, nt_residual_fn callback,
-                      void *user, void *const *users) {
+                      void *user, void *const *users, const float *const *rows, float *hidden) {
     int rc = NT_OK;
     int E = m->embed, H = m->n_heads, KV = m->n_kv_heads;
     int HD = m->head_dim, KVD = m->kv_dim, FFN = m->ffn, Q_DIM = m->q_dim;
@@ -283,7 +285,8 @@ static int llama_rows(llama_model *m, int n, const int *tokens, kv_cache *const 
     if (!x) return NT_E_MEMORY;
     for (int j = 0; j < n; j++) {
         float *xj = x + (long)j * E;
-        if (m->tok_emb.f32) memcpy(xj, m->tok_emb.f32 + (long)tokens[j] * E, E * sizeof(float));
+        if (rows && rows[j]) memcpy(xj, rows[j], E * sizeof(float));
+        else if (m->tok_emb.f32) memcpy(xj, m->tok_emb.f32 + (long)tokens[j] * E, E * sizeof(float));
         else if (gguf_dequant_row(m->gf, m->emb_ti, (uint64_t)tokens[j], xj) != 0)
             memset(xj, 0, E * sizeof(float));
     }
@@ -424,14 +427,15 @@ static int llama_rows(llama_model *m, int n, const int *tokens, kv_cache *const 
      * 896 for a 0.5B Qwen — so running it at every prompt position spends a
      * tenth of the prefill on distributions nobody reads. A multi-sequence decode
      * reads it once for all its rows; qmm gives each row the qmv result bit for bit. */
-    if (logits) {
+    if (logits || hidden) {
         pft = pf_mark();
         int first = n - head_rows;
         for (int j = 0; j < head_rows; j++)
             rmsnorm(xn + (long)j * E, x + (long)(first + j) * E, m->out_norm, E, eps);
+        if (hidden) memcpy(hidden, xn + (long)(head_rows - 1) * E, E * sizeof(float));
         const wt *lm_head = m->has_output_weight ? &m->out_weight : &m->tok_emb;
-        if (head_rows == 1) qmv(logits, lm_head, xn);
-        else                qmm(logits, lm_head, xn, head_rows);
+        if (logits && head_rows == 1) qmv(logits, lm_head, xn);
+        else if (logits)              qmm(logits, lm_head, xn, head_rows);
         pf_add(PF_HEAD, pft);
     }
 
@@ -452,7 +456,28 @@ int nt_llama_forward_hooks(void *model, kv_cache *kv, const int *tokens, int n,
     kv_cache **kvs = (kv_cache**)malloc((size_t)n * sizeof(kv_cache*));
     if (!pos || !kvs) { free(pos); free(kvs); return NT_E_MEMORY; }
     for (int j = 0; j < n; j++) { pos[j] = pos0 + j; kvs[j] = kv; }
-    rc = llama_rows(m, n, tokens, kvs, pos, logits, 1, post_attention, post_block, user, NULL);
+    rc = llama_rows(m, n, tokens, kvs, pos, logits, 1, post_attention, post_block, user, NULL, NULL, NULL);
+    free(pos); free(kvs);
+    return rc;
+}
+
+/* Media rows in place of token embeddings, for a vision tower's output (harness/
+ * smolvlm_vision.h). A NULL rows array is forward exactly. */
+static int llama_forward_embd(void *model, kv_cache *kv, const int *tokens,
+                              const float *const *rows, int n, int pos0,
+                              float *logits, float *hidden) {
+    if (!model) return NT_E_ARG;
+    llama_model *m = (llama_model*)model;
+    int rc = nt_check_call(kv, tokens, n, pos0, m->vocab, m->n_layers, m->kv_dim);
+    if (rc != NT_OK) return rc;
+    for (int j = 0; rows && j < n; j++)
+        for (int e = 0; rows[j] && e < m->embed; e++)
+            if (!isfinite(rows[j][e])) return NT_E_ARG;
+    int *pos = (int*)malloc((size_t)n * sizeof(int));
+    kv_cache **kvs = (kv_cache**)malloc((size_t)n * sizeof(kv_cache*));
+    if (!pos || !kvs) { free(pos); free(kvs); return NT_E_MEMORY; }
+    for (int j = 0; j < n; j++) { pos[j] = pos0 + j; kvs[j] = kv; }
+    rc = llama_rows(m, n, tokens, kvs, pos, logits, 1, NULL, NULL, NULL, NULL, rows, hidden);
     free(pos); free(kvs);
     return rc;
 }
@@ -483,7 +508,7 @@ static int llama_forward_multi(void *model, kv_cache *const *kvs, const int *tok
         int rc = nt_check_call(kvs[j], &tokens[j], 1, pos[j], m->vocab, m->n_layers, m->kv_dim);
         if (rc != NT_OK) return rc;
     }
-    return llama_rows(m, n, tokens, kvs, pos, logits, n, NULL, callback, NULL, users);
+    return llama_rows(m, n, tokens, kvs, pos, logits, n, NULL, callback, NULL, users, NULL, NULL);
 }
 
 static const gguf_file *llama_describe(const void *model, nt_dims *dims) {
@@ -522,4 +547,5 @@ const nt_arch nt_arch_llama = {
     .forward_residual = llama_forward_residual,
     .forward_multi = llama_forward_multi,
     .doe = &llama_doe,
+    .forward_embd = llama_forward_embd,
 };

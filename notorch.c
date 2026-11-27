@@ -1541,10 +1541,11 @@ void nt_tape_backward(int loss_idx) {
                 nt_tape_entry* px = &g_tape.entries[e->parent1];
                 int T = (int)e->aux;
                 int D = (int)e->aux2;
+                float eps = e->aux3;  /* recorded by nt_seq_rmsnorm_eps */
                 int has_gamma = (e->parent2 >= 0 && e->parent2 < g_tape.count);
                 int srn_done_gpu = 0;
 #ifdef USE_CUDA
-                if (g_use_gpu) {
+                if (g_use_gpu && eps == 1e-6f) {  /* kernels hardcode 1e-6 */
                     float* d_X    = nt_tensor_ensure_gpu(px->output);
                     float* d_dout = nt_tensor_ensure_gpu(e->grad);
                     float* d_gamma = NULL;
@@ -1581,7 +1582,7 @@ void nt_tape_backward(int loss_idx) {
                         float* dout_t = dout + t * D;
                         float ss = 0;
                         for (int d = 0; d < D; d++) ss += x_t[d] * x_t[d];
-                        float rms = sqrtf(ss / D + 1e-6f);
+                        float rms = sqrtf(ss / D + eps);
                         float rms3 = rms * rms * rms;
 
                         // dout_eff = dout * gamma for x-gradient
@@ -2415,12 +2416,12 @@ void nt_tape_backward(int loss_idx) {
                         float mx = logits_t[0];
                         for (int j = 1; j < V; j++)
                             if (logits_t[j] > mx) mx = logits_t[j];
-                        float sum = 0;
+                        double sum = 0;   /* in double, as the forward's normalizer */
                         for (int j = 0; j < V; j++) {
                             dl[t * V + j] = expf(logits_t[j] - mx);
                             sum += dl[t * V + j];
                         }
-                        for (int j = 0; j < V; j++) dl[t * V + j] /= sum;
+                        for (int j = 0; j < V; j++) dl[t * V + j] = (float)(dl[t * V + j] / sum);
                         dl[t * V + target] -= 1.0f;
                         float s = m * dout[0] / n_active;
                         for (int j = 0; j < V; j++) dl[t * V + j] *= s;
@@ -2687,6 +2688,7 @@ void nt_tape_backward(int loss_idx) {
 
                 float fb = (e->aux3 > 0.0f) ? e->aux3 : 10000.0f;
                 int split_half = (e->aux4 > 0.5f) ? 1 : 0;
+                int janus = split_half && e->aux4 < 1.5f;  /* aux4 = 2: split-half NEOX */
                 int rope_done_gpu = 0;
 #ifdef USE_CUDA
                 if (g_use_gpu && !split_half) {  /* GPU only handles even/odd */
@@ -2718,13 +2720,13 @@ void nt_tape_backward(int loss_idx) {
                                 int o1 = split_half ? (base + half + i) : (base + 2 * i + 1);
                                 float dx0 = dout[o0];
                                 float dx1 = dout[o1];
-                                if (split_half) {
+                                if (janus) {
                                     /* Forward (Janus): n0 = x0*c + x1*s; n1 = -x0*s + x1*c
                                      * Backward (transpose): dx0 = c*dn0 - s*dn1; dx1 = s*dn0 + c*dn1 */
                                     gx[o0] =  dx0 * cos_a - dx1 * sin_a;
                                     gx[o1] =  dx0 * sin_a + dx1 * cos_a;
                                 } else {
-                                    /* Forward (notorch even/odd): n0 = x0*c - x1*s; n1 = x0*s + x1*c
+                                    /* Forward (notorch even/odd, split-half NEOX): n0 = x0*c - x1*s; n1 = x0*s + x1*c
                                      * Backward (transpose): dx0 = c*dn0 + s*dn1; dx1 = -s*dn0 + c*dn1 */
                                     gx[o0] = dx0 * cos_a + dx1 * sin_a;
                                     gx[o1] = -dx0 * sin_a + dx1 * cos_a;
@@ -4022,7 +4024,11 @@ int nt_rmsnorm(int x_idx, int gamma_idx) {
 }
 
 int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
-    if (x_idx < 0 || T <= 0 || D <= 0) return -1;
+    return nt_seq_rmsnorm_eps(x_idx, gamma_idx, T, D, 1e-6f);
+}
+
+int nt_seq_rmsnorm_eps(int x_idx, int gamma_idx, int T, int D, float eps) {
+    if (x_idx < 0 || T <= 0 || D <= 0 || !(eps > 0.0f)) return -1;
     nt_tape_entry* px = &g_tape.entries[x_idx];
 
     nt_tensor* out = nt_tensor_new((size_t)T * D);
@@ -4030,7 +4036,8 @@ int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
 
     int done_gpu = 0;
 #ifdef USE_CUDA
-    if (g_use_gpu) {
+    /* The CUDA kernels hardcode eps = 1e-6; any other eps runs on the CPU. */
+    if (g_use_gpu && eps == 1e-6f) {
         /* GPU forward: y = (x / rms) * gamma (single dispatch, gamma optional). */
         float* d_X = nt_tensor_ensure_gpu(px->output);
         float* d_Y = nt_tensor_ensure_gpu(out);
@@ -4045,6 +4052,11 @@ int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
             done_gpu = 1;
         }
     }
+    if (!done_gpu) {
+        nt_tensor_ensure_cpu(px->output);
+        if (gamma_idx >= 0 && gamma_idx < g_tape.count)
+            nt_tensor_ensure_cpu(g_tape.entries[gamma_idx].output);
+    }
 #endif
     if (!done_gpu) {
         for (int t = 0; t < T; t++) {
@@ -4052,7 +4064,7 @@ int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
             float* o_t = out->data + t * D;
             float ss = 0;
             for (int d = 0; d < D; d++) ss += x_t[d] * x_t[d];
-            float rms = sqrtf(ss / D + 1e-6f);
+            float rms = sqrtf(ss / D + eps);
             for (int d = 0; d < D; d++) o_t[d] = x_t[d] / rms;
         }
         if (gamma_idx >= 0 && gamma_idx < g_tape.count) {
@@ -4064,7 +4076,8 @@ int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
     }
 
     int g_idx2 = (gamma_idx >= 0 && gamma_idx < g_tape.count) ? gamma_idx : -1;
-    int idx = nt_tape_record3(out, NT_OP_SEQ_RMSNORM, x_idx, g_idx2, -1, (float)T, (float)D);
+    /* record4 sets aux3 explicitly; record3 would leave a stale aux3 from an earlier tape. */
+    int idx = nt_tape_record4(out, NT_OP_SEQ_RMSNORM, x_idx, g_idx2, -1, (float)T, (float)D, eps, 0.0f);
     nt_tensor_free(out);
     return idx;
 }
@@ -5017,8 +5030,10 @@ int nt_seq_cross_entropy_masked(int logits_idx, int targets_idx, int mask_idx, i
 #endif
     nt_tensor* out = nt_tensor_new(1);
     if (!out) return -1;
-    float total_loss = 0;
-    float n_active = 0;
+    /* The normalizer is a sum of V terms; in float it drifts by ~sqrt(V) ulps, 4.2e-5 on
+     * the loss at V = 151936. Both sums are kept in double. */
+    double total_loss = 0;
+    double n_active = 0;
     for (int t = 0; t < T; t++) {
         float m = pm->output->data[t];
         if (m == 0.0f) continue;
@@ -5027,12 +5042,12 @@ int nt_seq_cross_entropy_masked(int logits_idx, int targets_idx, int mask_idx, i
         if (target < 0 || target >= V) target = 0;
         float mx = logits_t[0];
         for (int j = 1; j < V; j++) if (logits_t[j] > mx) mx = logits_t[j];
-        float sum = 0;
+        double sum = 0;
         for (int j = 0; j < V; j++) sum += expf(logits_t[j] - mx);
-        total_loss += m * -(logits_t[target] - mx - logf(sum));
+        total_loss += m * -((double)logits_t[target] - mx - log(sum));
         n_active += m;
     }
-    out->data[0] = (n_active > 0) ? total_loss / n_active : 0.0f;
+    out->data[0] = (n_active > 0) ? (float)(total_loss / n_active) : 0.0f;
     int idx = nt_tape_record3(out, NT_OP_SEQ_CROSSENT_MASKED, logits_idx, targets_idx, mask_idx, (float)T, (float)V);
     nt_tensor_free(out);
     return idx;
@@ -5194,15 +5209,21 @@ int nt_rope(int x_idx, int T, int head_dim) {
     return nt_rope_freq(x_idx, T, head_dim, 10000.0f);
 }
 
-int nt_rope_split_half_freq(int x_idx, int T, int head_dim, float freq_base) {
+static int rope_split_half(int x_idx, int T, int head_dim, float freq_base, int neox) {
     /* Split-half RoPE: pairs (i, i+head_dim/2) instead of even/odd
-     * (2i, 2i+1). Used by nanochat / Janus v4 (infer_v4.c:35-49).
-     * Sign convention matches canonical Janus rope_pos:
+     * (2i, 2i+1).
+     * neox = 0: canonical Janus rope_pos, used by nanochat / Janus v4
+     * (infer_v4.c:35-49), recorded with aux4 = 1.0:
      *   q[i]      =  q0*cos + q1*sin
      *   q[i+half] = -q0*sin + q1*cos
      * (notorch's even/odd nt_rope_freq uses the inverse rotation.)
-     * CPU-only forward; dispatches via NT_OP_ROPE with aux4=1.0
-     * — backward case branches on aux4 for split-half formulas. */
+     * neox = 1: the GGUF NEOX rotation of Qwen2/Qwen3/Gemma3 inference
+     * (harness/runtime.c rope with neox=1, gemma3_rope), recorded with aux4 = 2.0;
+     * the same rotation as even/odd nt_rope_freq, on split-half pairs:
+     *   q[i]      = q0*cos - q1*sin
+     *   q[i+half] = q0*sin + q1*cos
+     * CPU-only forward; dispatches via NT_OP_ROPE and the backward case
+     * branches on aux4. */
     if (x_idx < 0 || T <= 0 || head_dim <= 0) return -1;
     if (freq_base <= 0.0f) freq_base = 10000.0f;
     nt_tape_entry* px = &g_tape.entries[x_idx];
@@ -5230,8 +5251,13 @@ int nt_rope_split_half_freq(int x_idx, int T, int head_dim, float freq_base) {
                 float sin_a = sinf(angle);
                 float x0 = out->data[base + i];
                 float x1 = out->data[base + half + i];
-                out->data[base + i]        =  x0 * cos_a + x1 * sin_a;
-                out->data[base + half + i] = -x0 * sin_a + x1 * cos_a;
+                if (neox) {
+                    out->data[base + i]        = x0 * cos_a - x1 * sin_a;
+                    out->data[base + half + i] = x0 * sin_a + x1 * cos_a;
+                } else {
+                    out->data[base + i]        =  x0 * cos_a + x1 * sin_a;
+                    out->data[base + half + i] = -x0 * sin_a + x1 * cos_a;
+                }
             }
         }
     }
@@ -5239,9 +5265,17 @@ int nt_rope_split_half_freq(int x_idx, int T, int head_dim, float freq_base) {
     out->cpu_dirty = 0; out->gpu_valid = 0;
 #endif
     int idx = nt_tape_record4(out, NT_OP_ROPE, x_idx, -1, -1,
-                              (float)T, (float)head_dim, freq_base, 1.0f /* split-half */);
+                              (float)T, (float)head_dim, freq_base, neox ? 2.0f : 1.0f);
     nt_tensor_free(out);
     return idx;
+}
+
+int nt_rope_split_half_freq(int x_idx, int T, int head_dim, float freq_base) {
+    return rope_split_half(x_idx, T, head_dim, freq_base, 0);
+}
+
+int nt_rope_neox_freq(int x_idx, int T, int head_dim, float freq_base) {
+    return rope_split_half(x_idx, T, head_dim, freq_base, 1);
 }
 
 int nt_dropout(int x_idx, float p) {

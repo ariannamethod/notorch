@@ -11,6 +11,240 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-27 — SmolVLM vision matches ocelli stage by stage on three bodies
+
+Hand: Neo (Claude Opus 5.5), branch `claude/smolvlm-vision`. Auditor: Fable 5.2, verdict PASS on
+the receipt `vision-parity-receipt.json`, sha256
+`61195d3fcf07272ef3485a31d768d46ddf318cf5126c53052753cad54d738c93`, whose own `verdict` field
+reads `PASS`. The receipt and its runner (sha256 `b08b804f…`) stay with the SUBLITERATUS run
+that produced them and are not in a tracked tree yet. This closes the first Open line of the
+entry below.
+
+The branch at `c77fe6f` ran against ocelli `main` at `12f3535`, a clean tree and its live
+binary (sha256 `db5d40d7…`); the runner checked heads, binaries and bodies again after the
+run (`after_ok` true). notorch ran under `NT_NO_I8=1`, ocelli under `OCELLI_EXACT=1`. Three bodies:
+the clean SmolVLM2-500M (text `0b944935`, projector `b5dc8ebe`, longest edge 2048 from the
+caller, since that projector has no key for it), the source eye (text `365d333e`) and the baked
+eye (the source eye with a baked `ffn_down.bias`, text `151dee46`), both eyes on projector
+`0f42e4e9`. Each body read six images with the default instruction "Describe this image in one
+sentence.", 18 pairs in all; five images split into 17 frames (4×4 tiles and the global frame,
+1,143 prompt tokens) and one into 13 (3×4, 878 tokens).
+
+- R0: on each of the 18 pairs the live ocelli binary printed the dump's prompt length, frame
+  count and grid, and its answer bytes equal the dump's: 18 GREEN. Prompt ids equal on all 18.
+- S1 pixels, S2 tower, S3 connector rows: max|Δ| and rel-L2 0.0 on all 18 pairs, against
+  tolerances of 1e-6 for S1 and rel-L2 1e-4 with max 1e-2 for S2 and S3.
+- S4, logits with ocelli's ids fed back: the tolerance is K = 20 times a measured floor, capped
+  at 2e-2. The floor is the same prompt without vision rows, decoder against decoder, worst of
+  six images: 5.21e-5 for the clean body, 1.32e-4 for the source eye, 1.22e-4 for the baked
+  eye, which gives tolerances 1.04e-3, 2.64e-3 and 2.44e-3. `cap_binding` is `K*floor` for all
+  three bodies, so the cap never bound. The worst S4 max per body is 5.51e-5, 1.32e-4 and
+  1.19e-4; the largest ratio to tolerance is 0.053 (pair `src500/4`). No argmax flipped.
+- S5, free greedy ids: equal to ocelli's on all 18 pairs over 12 to 41 steps, no divergence.
+- V8, first-step logits of the source eye against the baked eye on the notorch path, required
+  above 1e-3: 1.244 to 1.719 over the six images; the ocelli path gives 1.244 to 1.718.
+- Shared decoder: the SmolLM2-360M text path, notorch `2e4d6b1` against the branch, gives
+  byte-equal ids, logits, greedy ids and `forward_multi` logits in the default mode and under
+  `NT_NO_I8=1`.
+
+Seven mutants, each a branch copy with one change, ran on the baked eye and the logo image
+(N3a on the source/baked pair through V8). All seven are KILLED, and `gate_insensitive_to` is
+empty:
+- N1 splice dropped: S1 to S3 green, S4 ratio 6521, S5 parts at step 1.
+- N2 connector not applied: S3 rel-L2 1.0, S4 ratio 8786.
+- N3a bias past the whole prefill: V8 0.0.
+- N3b bias past the visual rows only: S4 max 1.12 against 2.44e-3, ratio 459.7 over the
+  declared sensitivity margin of 10; S5 parts at step 9.
+- N4 two tiles swapped: S1 max 1.90, S2 rel-L2 0.83, S3 rel-L2 0.62, S4 ratio 138.4.
+- N5 global frame dropped: prompt ids differ, S1 to S3 sizes differ, S4 ratio 3967, red on all
+  five stages as declared.
+- N6 tower eps ×10: S2 rel-L2 1.9e-3 against 1e-4, S4 ratio 2.30, S5 green.
+
+N4 did not color S5. With two tiles swapped the answer ids on the logo image stayed the same
+over all 27 steps, and no argmax flipped under ocelli's ids; S1 to S4 caught it. A check of the
+caption ids alone would have passed this defect. N6 leaves S5 green too, and S2 catches it.
+
+Not covered, the receipt's `not_covered` word for word:
+
+```
+single-frame layout: no pair had frames == 1
+SmolVLM-Instruct tower: projectors run were ['0f42e4e9', 'b5dc8ebe'] only
+instructions other than the default 'Describe this image in one sentence.'
+forward_residual: no call in this run passes a residual callback (forward, forward_embd, forward_multi only)
+```
+
+Inherited from ocelli, and invisible to parity with it: both published SmolVLM
+`preprocessor_config.json` files ask for `"resample": 1`, Lanczos in PIL, while ocelli and the
+port resize bilinearly. The difference from the HF preprocessing stands as the entry below
+records it.
+
+## 2026-11-27 — SmolVLM / Idefics3 vision joins the harness
+
+Hand: Neo (Claude Opus 5.5), branch `claude/smolvlm-vision`.
+The SmolVLM still-image path lived only in ocelli. It now follows the qwen35_vision layout:
+`harness/smolvlm_vision.h` and `harness/arch_smolvlm_vision.c`, `tools/smolvlm_vision_probe.c`,
+and `tests/test_smolvlm_vision.c` with `tests/smolvlm_vision_fixture.h` from
+`tests/smolvlm_vision_fixture_gen.py`. It is carried over from ocelli's `vision.c` (GPL-3.0, same
+authors) with the arithmetic kept, so the two can be compared stage by stage: bilinear tiles plus
+a global frame, SigLIP pre-norm blocks with the f16-rounded tanh GELU of llama.cpp's clip, the
+idefics3 pixel shuffle and the bias-free connector. What ocelli wrote as constants is read from
+the projector: `clip.vision.image_size`, `patch_size`, `projector.scale_factor`, `projection_dim`,
+the tower widths and depth, `layer_norm_epsilon`, `image_mean` and `image_std`. The longest
+edge comes from `clip.vision.preproc_image_size` or from the caller; the SmolVLM2-500M projector
+has no such key, the eye projector carries 2048. Markers are found by their text in the body's
+vocabulary (`bpe_token_id`, `bpe_encode_special`), and a layout that needs a marker the
+vocabulary lacks is refused. Weights are any dtype `gguf_dequant` reads, which covers the Q8_0
+`mm.model.fc` of a quantized projector.
+
+Reused: `nt_image_load` from `harness/image.c` (the probe decodes with it), `mm_t` and `softmax`
+from `harness/runtime.c`. Not reused: `image.c` resizes with an antialiased bicubic on bytes, and
+ocelli tiles with the float bilinear of `notorch_vision.h`. That header cannot join a harness
+unit, because its own stb_image implementation would collide with `image.c`'s, so the bilinear
+is carried operation for operation.
+
+`arch_llama` gains `forward_embd`. `rows[j]` stands in place of the embedding of `tokens[j]`,
+`hidden` returns the final-norm output of the last row, and a non-finite row is refused before
+the cache is touched. With `rows` NULL the result is `forward` bit for bit. `forward_embd` takes
+no residual callback, so a live SUBLITERATUS direction cannot be applied on the image path yet;
+only a baked `ffn_down.bias` reaches it. The `omni_main` path that now accepts llama with media
+rows is not covered by a test.
+
+The tower is expanded to F32: about 400 MB for SmolVLM2-500M, twice its 199,470,624-byte F16
+projector. That rules out a 4 GB node; the eye that runs on the phone stays in ocelli.
+
+Proof, Neo (A18 Pro, Accelerate): `make test_smolvlm_vision` gives 42 checks and 0 failures.
+The pixels, the tower and the connector are compared against the fixture. The prompt ids are
+compared with `<image>` at 264 rather than 49190. A spliced run with distinct embeddings in the
+slots matches plain text holding those tokens bit for bit. Red hands, each a copy of the branch
+with one change and the same command:
+- `<image>` hardcoded to 49190: 3 failures
+- splice dropped in `llama_rows`: 2
+- mean/std hardcoded to 0.5: 3
+- exact f32 GELU: 2
+- fc1 chosen by name instead of by bias length: load refused
+- global frame dropped: 6
+- tile order swapped: 1
+- `User:` without ocelli's newline: 4 (the layout and the three checks that read it)
+
+`test_residual` (19 checks), `test_multi_decode` (753) and `test_harness_tokenizer` (75) pass both
+on this branch and on `2e4d6b1`. The new files and `arch_llama.c` compile without warnings under
+the tree's CFLAGS; the two `notorch.c` warnings were already there on `2e4d6b1`.
+`smolvlm_vision_probe` builds and was not run here.
+
+The fixture's reference is numpy rather than Transformers. Transformers' GELU is exact f32 and
+ocelli's is the f16 table. An f16 GELU is a step function, so seed 897 is chosen to keep every
+GELU input and output of the frozen frame 1e-5 (relative) away from a rounding midpoint. Another
+BLAS summation order cannot flip a step there.
+
+Open: parity with ocelli on real bodies (pixels, tower, rows, forced-id logits, greedy ids) is
+a separate run. The SmolVLM-Instruct tower follows the same metadata-driven path, but its parity
+reference is the measurement-only llama.cpp check, not ocelli; its projector was not on this
+machine and has not been loaded. The full `make test` was not run.
+
+Open: the published `preprocessor_config.json` of SmolVLM2-500M-Video-Instruct and of
+SmolVLM-Instruct both say `"resample": 1`, which is Lanczos in PIL. ocelli and this port resize
+bilinearly. The difference from the HF preprocessing comes with ocelli, and parity with ocelli
+cannot see it.
+
+Open: the layout keeps ocelli's two newlines for parity: one after `User:`, and, in the
+global-only form, one between the closing `<fake_token_around_image>` and the instruction. The
+model's own `tokenizer.chat_template` has neither; it goes straight from `User:` to `<image>` and
+from `<image>` to the text. The measurement check on SmolVLM-Instruct decides which form stays.
+
+## 2026-11-27 — RMSNorm on the tape takes the body's eps
+
+Hand: Claude (neo), branch `claude/rmsnorm-eps-param`, based on `2e4d6b1`.
+`nt_seq_rmsnorm` hardcoded `eps = 1e-6` in forward and backward. SmolLM2 GGUF files carry
+`llama.attention.layer_norm_rms_epsilon = 1e-5`, and the harness takes that value from the
+file, so a tape forward over the same weights computed a different function than inference.
+`nt_seq_rmsnorm_eps(x, gamma, T, D, eps)` takes eps explicitly, refuses `eps <= 0` and stores
+it in `aux3` of the tape entry, where the `NT_OP_SEQ_RMSNORM` backward reads it. The entry is
+written with `nt_tape_record4`: `nt_tape_record3` leaves `aux3` holding whatever an earlier
+tape put in that slot. `nt_seq_rmsnorm` is now a wrapper that passes `1e-6f`, so its 42 call
+lines in 12 example and termux files compute what they computed before.
+
+The CUDA kernels (`kernel_rmsnorm`, `kernel_seq_rmsnorm_backward`,
+`kernel_seq_rmsnorm_gamma_grad`) still hardcode `1e-6f`. Under `USE_CUDA` the op takes its GPU
+branches only when `eps == 1e-6f`; any other eps runs forward and backward on the CPU, and the
+forward first pulls `x` and `gamma` down with `nt_tensor_ensure_cpu`, as `nt_rope_freq` does.
+`notorch_cuda.cu` is unchanged because there is no `nvcc` on neo; `notorch.c` passes
+`-fsyntax-only -DUSE_CUDA`, and nothing ran on a GPU. `nt_rmsnorm` (one vector,
+`NT_OP_RMSNORM`) keeps `1e-6`; only `tests/test_notorch.c` calls it.
+
+Proof, neo (A18 Pro, Accelerate): `test_seq_rmsnorm_eps` takes T=2, D=4 with |x| ~ 3e-3, so
+mean(x²) sits next to eps. It checks the eps 1e-5 forward against a double reference (absolute
+1e-5), the 4-argument op against the 1e-6 reference, and the x and gamma gradients of sum(y)
+against the closed form (relative 1e-4). `notorch_test` reads 52 passed, 0 failed; on
+`2e4d6b1` it read 51. Five mutations each leave 51 passed, 1 failed: forward back on 1e-6,
+backward back on 1e-6, both at once (the old behaviour), the wrapper passing 1e-5, and
+`record3` in place of `record4`. Dropping the eps guard reddens the refusal check. Linked
+against `harness/runtime.c`, the tape at eps 1e-5 matches the harness `rmsnorm` on T=3, D=960,
+x uniform in ±0.01, to 1.19e-7; the 1e-6 path differs from it by 0.19.
+
+Open: the JS edition's `seqRmsnorm` already takes `eps` (`js-edition/notorch.js:2343`), but its
+backward hardcodes `1e-6` (`:677`). It is not touched here.
+
+## 2026-11-27 — Split-half RoPE in the NEOX sign
+
+Hand: Claude (neo), branch `claude/rope-neox-sign`, based on `2e4d6b1`.
+`nt_rope_split_half_freq` rotates split-half pairs in the Janus convention (`x0*c + x1*s`,
+`-x0*s + x1*c`), the opposite direction to the NEOX rotation that inference applies
+(`x0*c - x1*s`, `x0*s + x1*c`): `harness/runtime.c` `rope` with `neox=1` for Qwen2/Qwen3
+(chosen in `arch_llama.c:50`) and `gemma3_rope` (`arch_gemma3.c:129`) for Gemma3.
+On the tape the Janus op gives Qwen a different attention function. `nt_rope_neox_freq(x, T,
+head_dim, freq_base)` rotates in the NEOX sign and records `aux4 = 2`. Both ops share one
+static body, `rope_split_half(..., neox)`, and the Janus formula lines and their `aux4 = 1` are
+unchanged. In the `NT_OP_ROPE` backward, `aux4 = 2` takes the same transpose as even/odd
+`nt_rope_freq`, since it is the same rotation on different pairs. The GPU branch stays guarded by
+`!split_half`, so NEOX forward and backward run on the CPU, as split-half Janus always has.
+There is no GPU code for split-half.
+
+Proof, neo (A18 Pro, Accelerate): `test_rope_neox` (T=3, 2 heads of 4, base 1e4) checks both
+split-half forwards against hand formulas in double (absolute 1e-5), checks that the input
+separates them (max difference > 0.1 at t ≥ 1), and gradchecks both backwards (relative 0.05).
+`notorch_test` reads 52 passed, 0 failed. Five mutations each leave 51 passed, 1 failed: NEOX
+forward with Janus signs, NEOX recorded as `aux4 = 1`, a backward that ignores `aux4 = 2`, the
+Janus forward flipped to NEOX, and a backward that treats every split-half as NEOX. Janus
+forward and gradient bytes on T=5, 3 heads of 64, base 1e6 are identical to `2e4d6b1`
+(7680 bytes, `cmp`). Linked against `harness/runtime.c`, `nt_rope_neox_freq` on T=9, 14 heads
+of 64, base 1e6 equals `rope(..., neox=1)` exactly (max |diff| = 0); the Janus op differs from it
+by 1.97.
+
+## 2026-11-27 — Masked cross-entropy sums its softmax normalizer in double
+
+Hand: neo (Claude, Opus 5.5), branch `claude/masked-ce-double-sum`.
+`nt_seq_cross_entropy_masked` summed the softmax normalizer of each active row in `float`
+over the whole vocabulary, in the forward (`sum += expf(...)`, then `logf(sum)`) and again
+in the backward that divides every probability by it. A float sum of V terms drifts by about
+sqrt(V) ulps: at V = 151936 (Qwen's vocabulary) the loss came out 12.7024994 against a double
+reference of 12.7025416, off by 4.23e-5, and the gradient row by 2.14e-5 relative L1. The
+resonator parity on SmolLM2-360M (V = 49152) traced a 2.75e-3 nat gap on an 18-token answer to
+this op: log p summed in double from the same tape logits matched the engine to 5.7e-5. Both
+normalizers, the loss sum and the active count are now kept in double; the result and the
+gradient are stored as float, as before. The op has no GPU branch.
+
+`test_seq_cross_entropy_masked_wide_vocab` checks the loss against a double reference to
+4e-6 and the gradient to 2e-6 relative L1, at V = 151936 with one masked row. neo, Accelerate:
+notorch_test 52 passed, 0 failed; on the unchanged op the new test is red (51/1, the loss),
+and red again with the forward alone or the backward alone put back on a float sum (51/1 each).
+The unmasked `nt_seq_cross_entropy` and `nt_cross_entropy` keep the same float sum, and the
+former has a CUDA branch; they are left for their own change.
+
+## 2026-11-27 — Two trainer claims brought to the code
+
+Hand: Claude (neo), branch `claude/readme-trainer-facts`, based on `2e4d6b1`.
+The README said the post-training trainers hold reference-model parameters frozen via
+`nt_tape_freeze_param`. None of `train_dpo.c`, `train_grpo.c` or `train_distillation.c` calls
+it. The reference (the teacher, in distillation) is a separate copy of the weights, made by
+`model_clone` (`train_dpo.c:109-134`, `train_grpo.c:127`) or built as its own model
+(`train_distillation.c:448`). Its forward runs on a tape that is cleared with no backward and
+no optimizer step (`train_dpo.c:232-240`, `train_grpo.c:394-397`, `train_distillation.c:504-509`).
+The README sentence now says that.
+
+`train_dpo.c:32` labelled its defaults "MiniMind-64M". Built from the file's own `model_new`
+(DIM 512, 8 layers, 8/4 heads, hidden 2048, vocab 6400, untied head), they count 38,020,608
+parameters in 91 tensors. The label is replaced by that count.
+
 ## 2026-11-27 — Spores and episodes publish in Termux; the replay check links its BLAS
 
 Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`.

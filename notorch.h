@@ -428,8 +428,13 @@ int nt_seq_linear_t(int w_idx, int x_idx, int T);
 // RMSNorm: y = x / rms(x) * gamma
 int nt_rmsnorm(int x_idx, int gamma_idx);
 
-// Sequence RMSNorm: normalize each of T positions independently
+// Sequence RMSNorm: normalize each of T positions independently (eps = 1e-6)
 int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D);
+
+// Same with an explicit eps (> 0), e.g. the GGUF *.attention.layer_norm_rms_epsilon
+// of the body being trained. Backward uses the same eps. Under USE_CUDA only
+// eps == 1e-6 runs on the GPU; any other eps runs this op on the CPU.
+int nt_seq_rmsnorm_eps(int x_idx, int gamma_idx, int T, int D, float eps);
 
 // SiLU activation: y = x * sigmoid(x)
 int nt_silu(int x_idx);
@@ -502,6 +507,13 @@ int nt_rope_freq(int x_idx, int T, int head_dim, float freq_base);
 // CPU-only forward; GPU backward dispatches only for even/odd, split-half
 // falls back to CPU.
 int nt_rope_split_half_freq(int x_idx, int T, int head_dim, float freq_base);
+
+// Split-half RoPE in the GGUF NEOX sign, as Qwen2/Qwen3/Gemma3 inference rotates
+// (harness/runtime.c rope with neox=1, harness/arch_gemma3.c gemma3_rope):
+//   q[i]      = q0*cos - q1*sin
+//   q[i+half] = q0*sin + q1*cos
+// The opposite direction to nt_rope_split_half_freq. CPU-only forward and backward.
+int nt_rope_neox_freq(int x_idx, int T, int head_dim, float freq_base);
 
 // Dropout: zero random elements with probability p (training only)
 int nt_dropout(int x_idx, float p);

@@ -1,5 +1,7 @@
 /qwen35_vision_probe
 /test_qwen35_vision
+/smolvlm_vision_probe
+/test_smolvlm_vision
 # binaries
 /qwen35_eval
 /qwen35_to_gguf

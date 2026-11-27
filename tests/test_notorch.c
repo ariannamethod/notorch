@@ -528,6 +528,85 @@ static void test_rmsnorm(void) {
     PASS("rmsnorm");
 }
 
+// Reference seq RMSNorm in double: y = x / sqrt(mean(x^2) + eps) * g, and the
+// gradients of L = sum(y), which is what nt_tape_backward seeds on y.
+static void seq_rmsnorm_ref(const float* x, const float* g, int T, int D, double eps,
+                            double* y, double* gx, double* gg) {
+    for (int d = 0; d < D; d++) gg[d] = 0;
+    for (int t = 0; t < T; t++) {
+        const float* xt = x + t * D;
+        double ss = 0, sgx = 0;
+        for (int d = 0; d < D; d++) { ss += (double)xt[d] * xt[d]; sgx += (double)g[d] * xt[d]; }
+        double rms = sqrt(ss / D + eps);
+        for (int d = 0; d < D; d++) {
+            y[t * D + d]  = xt[d] / rms * g[d];
+            gx[t * D + d] = g[d] / rms - xt[d] * sgx / (D * rms * rms * rms);
+            gg[d] += xt[d] / rms;
+        }
+    }
+}
+
+// SmolLM2 GGUF stores eps = 1e-5. |x| ~ 3e-3 puts mean(x^2) next to eps, so
+// 1e-5 and 1e-6 give outputs and gradients that differ far beyond tolerance.
+static void test_seq_rmsnorm_eps(void) {
+    enum { T = 2, D = 4 };
+    const float xv[T * D] = { 3e-3f, -1e-3f, 2e-3f, -4e-3f, 1e-3f, 2.5e-3f, -3e-3f, 0.5e-3f };
+    const float gv[D] = { 1.0f, 0.5f, -2.0f, 1.5f };
+    double y5[T * D], gx5[T * D], gg5[D], y6[T * D], gx6[T * D], gg6[D];
+    seq_rmsnorm_ref(xv, gv, T, D, 1e-5, y5, gx5, gg5);
+    seq_rmsnorm_ref(xv, gv, T, D, 1e-6, y6, gx6, gg6);
+    double sep_y = 0, sep_g = 0;
+    for (int i = 0; i < T * D; i++) {
+        sep_y = fmax(sep_y, fabs(y5[i] - y6[i]));
+        sep_g = fmax(sep_g, fabs(gx5[i] - gx6[i]) / fmax(1.0, fabs(gx5[i])));
+    }
+    ASSERT(sep_y > 0.05 && sep_g > 0.05, "probe input separates eps 1e-5 from 1e-6");
+
+    nt_tensor* x = nt_tensor_new(T * D);
+    nt_tensor* g = nt_tensor_new(D);
+    memcpy(x->data, xv, sizeof xv);
+    memcpy(g->data, gv, sizeof gv);
+
+    // The 4-argument op keeps eps = 1e-6.
+    nt_tape_start();
+    int xi = nt_tape_param(x), gi = nt_tape_param(g);
+    int yi = nt_seq_rmsnorm(xi, gi, T, D);
+    ASSERT(yi >= 0, "seq_rmsnorm records");
+    for (int i = 0; i < T * D; i++)
+        ASSERT_CLOSE(nt_tape_get()->entries[yi].output->data[i], (float)y6[i], 1e-5f,
+                     "seq_rmsnorm default eps 1e-6");
+    nt_tape_clear();
+
+    // Forward and backward both use eps = 1e-5. Forward: absolute 1e-5 on O(1)
+    // outputs. Gradients reach ~5e2, so they are checked to 1e-4 relative.
+    nt_tape_start();
+    xi = nt_tape_param(x); gi = nt_tape_param(g);
+    yi = nt_seq_rmsnorm_eps(xi, gi, T, D, 1e-5f);
+    ASSERT(yi >= 0, "seq_rmsnorm_eps records");
+    nt_tape_backward(yi);
+    nt_tape* tp = nt_tape_get();
+    ASSERT(tp->entries[xi].grad && tp->entries[gi].grad, "seq_rmsnorm_eps grads exist");
+    for (int i = 0; i < T * D; i++) {
+        ASSERT_CLOSE(tp->entries[yi].output->data[i], (float)y5[i], 1e-5f,
+                     "seq_rmsnorm_eps forward eps 1e-5");
+        ASSERT_CLOSE(tp->entries[xi].grad->data[i], (float)gx5[i],
+                     1e-4f * fmaxf(1.0f, fabsf((float)gx5[i])), "seq_rmsnorm_eps dx eps 1e-5");
+    }
+    for (int d = 0; d < D; d++)
+        ASSERT_CLOSE(tp->entries[gi].grad->data[d], (float)gg5[d],
+                     1e-4f * fmaxf(1.0f, fabsf((float)gg5[d])), "seq_rmsnorm_eps dgamma eps 1e-5");
+    nt_tape_clear();
+
+    nt_tape_start();
+    xi = nt_tape_param(x);
+    ASSERT(nt_seq_rmsnorm_eps(xi, -1, T, D, 0.0f) < 0, "seq_rmsnorm_eps refuses eps <= 0");
+    nt_tape_clear();
+
+    nt_tensor_free(x);
+    nt_tensor_free(g);
+    PASS("seq_rmsnorm_eps");
+}
+
 static void test_causal_attention(void) {
     nt_tape_start();
     int T = 3, D = 4;
@@ -613,6 +692,59 @@ static void test_seq_cross_entropy(void) {
     nt_tape_clear();
     nt_tensor_free(logits); nt_tensor_free(targets);
     PASS("seq_cross_entropy");
+}
+
+// Masked CE over a Qwen-width vocabulary against a double reference. The softmax
+// normalizer of 151936 terms summed in float drifts by ~1e-5 relative, which moves
+// the loss and every gradient of the row by that factor.
+static void test_seq_cross_entropy_masked_wide_vocab(void) {
+    nt_tape_start();
+    enum { T = 4, V = 151936 };
+    static const int target[T] = {7, 151935, 40000, 99999};
+    static const float on[T] = {0, 1, 1, 1};
+    nt_tensor* logits = nt_tensor_new((size_t)T * V);
+    nt_tensor* targets = nt_tensor_new(T);
+    nt_tensor* mask = nt_tensor_new(T);
+    nt_seed(20261127);
+    nt_tensor_rand(logits, 4.0f);
+    for (int t = 0; t < T; t++) { targets->data[t] = (float)target[t]; mask->data[t] = on[t]; }
+    int l_idx = nt_tape_record(logits, NT_OP_NONE, -1, -1, 0);
+    int t_idx = nt_tape_record(targets, NT_OP_NONE, -1, -1, 0);
+    int m_idx = nt_tape_record(mask, NT_OP_NONE, -1, -1, 0);
+    int loss_idx = nt_seq_cross_entropy_masked(l_idx, t_idx, m_idx, T, V);
+    ASSERT(loss_idx >= 0, "masked_ce ok");
+
+    double lse[T], ref = 0, active = 0;
+    for (int t = 0; t < T; t++) {
+        const float* x = logits->data + (size_t)t * V;
+        double mx = x[0], s = 0;
+        for (int j = 1; j < V; j++) if (x[j] > mx) mx = x[j];
+        for (int j = 0; j < V; j++) s += exp((double)x[j] - mx);
+        lse[t] = mx + log(s);
+        if (on[t]) { ref += lse[t] - x[target[t]]; active += 1; }
+    }
+    ref /= active;
+    double loss = nt_tape_get()->entries[loss_idx].output->data[0];
+    char msg[160];
+    snprintf(msg, sizeof msg, "masked_ce loss at V=151936: |%.9g - %.9g| = %.3g > 4e-6", loss, ref, fabs(loss - ref));
+    ASSERT(fabs(loss - ref) <= 4e-6, msg);
+
+    nt_tape_backward(loss_idx);
+    nt_tensor* grad = nt_tape_get()->entries[l_idx].grad;
+    ASSERT(grad != NULL, "masked_ce grad exists");
+    double err = 0, mag = 0;
+    for (int t = 0; t < T; t++)
+        for (int j = 0; j < V; j++) {
+            double r = on[t] ? (exp((double)logits->data[(size_t)t * V + j] - lse[t]) - (j == target[t])) / active : 0;
+            err += fabs(grad->data[(size_t)t * V + j] - r);
+            mag += fabs(r);
+        }
+    snprintf(msg, sizeof msg, "masked_ce gradient at V=151936: relative L1 %.3g > 2e-6", err / mag);
+    ASSERT(err / mag <= 2e-6, msg);
+
+    nt_tape_clear();
+    nt_tensor_free(logits); nt_tensor_free(targets); nt_tensor_free(mask);
+    PASS("seq_cross_entropy_masked_wide_vocab");
 }
 
 static void test_seq_linear(void) {
@@ -1095,6 +1227,60 @@ static void test_gradcheck_rope(void) {
     PASS("gradcheck_rope");
 }
 
+// ── Split-half RoPE: NEOX sign next to the Janus sign ──
+// Hand formulas: NEOX as harness/runtime.c rope with neox=1, Janus as infer_v4.c rope_pos.
+static void rope_split_half_ref(const float* x, int T, int n_heads, int hd, double base,
+                                int neox, double* y) {
+    int D = n_heads * hd, half = hd / 2;
+    for (int t = 0; t < T; t++)
+        for (int h = 0; h < n_heads; h++)
+            for (int i = 0; i < half; i++) {
+                int a = t * D + h * hd + i, b = a + half;
+                double ang = t / pow(base, 2.0 * i / hd), c = cos(ang), s = sin(ang);
+                if (neox) { y[a] = x[a] * c - x[b] * s; y[b] =  x[a] * s + x[b] * c; }
+                else      { y[a] = x[a] * c + x[b] * s; y[b] = -x[a] * s + x[b] * c; }
+            }
+}
+static int gc_rope_neox_graph(int p_idx) {
+    return nt_cross_entropy(nt_rope_neox_freq(p_idx, 3, 4, 10000.0f), 0);
+}
+static int gc_rope_janus_graph(int p_idx) {
+    return nt_cross_entropy(nt_rope_split_half_freq(p_idx, 3, 4, 10000.0f), 0);
+}
+static void test_rope_neox(void) {
+    enum { T = 3, H = 2, HD = 4, D = H * HD };
+    nt_seed(91);
+    nt_tensor* x = nt_tensor_new(T * D);
+    nt_tensor_rand(x, 1.0f);
+    double yn[T * D], yj[T * D];
+    rope_split_half_ref(x->data, T, H, HD, 10000.0, 1, yn);
+    rope_split_half_ref(x->data, T, H, HD, 10000.0, 0, yj);
+    double sep = 0;
+    for (int i = D; i < T * D; i++) sep = fmax(sep, fabs(yn[i] - yj[i]));
+    ASSERT(sep > 0.1, "probe input separates NEOX from Janus at t >= 1");
+
+    // Forward: absolute 1e-5 on |y| <= ~1.4 against the double hand formulas.
+    nt_tape_start();
+    int xi = nt_tape_param(x);
+    int n = nt_rope_neox_freq(xi, T, HD, 10000.0f);
+    int j = nt_rope_split_half_freq(xi, T, HD, 10000.0f);
+    ASSERT(n >= 0 && j >= 0, "split-half ropes record");
+    nt_tape* tp = nt_tape_get();
+    for (int i = 0; i < T * D; i++) {
+        ASSERT_CLOSE(tp->entries[n].output->data[i], (float)yn[i], 1e-5f, "rope_neox forward");
+        ASSERT_CLOSE(tp->entries[j].output->data[i], (float)yj[i], 1e-5f, "rope_split_half Janus forward");
+    }
+    nt_tape_clear();
+
+    // Backward: finite differences, max relative error 0.05 (as gradcheck_rope).
+    float err_n = numgrad_check_all(x, gc_rope_neox_graph, 1e-3f, 0.05f, "rope_neox");
+    ASSERT(err_n < 0.05f, "gradcheck rope_neox");
+    float err_j = numgrad_check_all(x, gc_rope_janus_graph, 1e-3f, 0.05f, "rope_split_half");
+    ASSERT(err_j < 0.05f, "gradcheck rope_split_half Janus");
+    nt_tensor_free(x);
+    PASS("rope_neox");
+}
+
 // ── Gradient check: GEGLU ──
 static nt_tensor* gc_geglu_x;
 static nt_tensor* gc_geglu_w2;
@@ -1535,6 +1721,7 @@ int main(void) {
     test_seq_gate();
     test_softmax();
     test_rmsnorm();
+    test_seq_rmsnorm_eps();
 
     printf("\n[Tape + Forward/Backward]\n");
     test_tape_basic();
@@ -1542,6 +1729,7 @@ int main(void) {
     test_causal_attention();
     test_mh_causal_attention();
     test_seq_cross_entropy();
+    test_seq_cross_entropy_masked_wide_vocab();
     test_seq_linear();
 
     printf("\n[Optimizers]\n");
@@ -1599,6 +1787,7 @@ int main(void) {
     test_gradcheck_causal_attention();
     test_gradcheck_embedding();
     test_gradcheck_rope();
+    test_rope_neox();
     test_gradcheck_geglu();
     test_gradcheck_arithmetic();
 

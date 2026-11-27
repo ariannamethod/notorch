@@ -213,6 +213,8 @@ match the independent encoder; full-vocabulary logits and greedy continuations
 match through image prefill and decoding. Text conversion remains byte-identical.
 See [commands, format boundaries and measured parity](docs/qwen35.md).
 
+SmolVLM2-500M vision matches ocelli stage by stage on three bodies (the base, the LoRA source eye and its baked shift); the SmolVLM-Instruct tower and the single-frame layout are not compared ([parity record](NOTORCHLOG.md#2026-11-27--smolvlm-vision-matches-ocelli-stage-by-stage-on-three-bodies)).
+
 ### LFM3-Omni: eyes, ears and a voice
 
 LiquidAI's LFM3-Omni-2B with every modality its card declares: text, images,
@@ -1146,7 +1148,7 @@ make train_grpo           # Group Relative Policy Optimization (DeepSeek-R1) —
 make train_distillation   # Knowledge Distillation (Hinton 2015) — analytic soft-KD (τ²) + hard-CE
 ```
 
-each is a single self-contained C file under `examples/` (~550–610 LOC) with its own reference model and a minimal dataset adapter. use them as templates: swap the model, point at your dataset, keep the loss + optimizer wiring. Reference-model parameters are held frozen via `nt_tape_freeze_param`, the same mechanism LoRA uses. These are reference implementations — GRPO does a single on-policy (REINFORCE-style) update with a scalar KL proxy, distillation injects the exact KD gradient (no soft-CE tape op needed); a production RLHF stack would add batched rollouts and a learned reward model.
+each is a single self-contained C file under `examples/` (~550–610 LOC) with its own reference model and a minimal dataset adapter. use them as templates: swap the model, point at your dataset, keep the loss + optimizer wiring. The reference model (the teacher, in distillation) is a separate copy of the weights: `model_clone` in DPO and GRPO, its own model in distillation. Its forward runs on a tape that is cleared with no backward pass and no optimizer step, so it never changes. None of the three calls `nt_tape_freeze_param`; that mechanism is for adapters, where a frozen base shares one tape with trainable weights. These are reference implementations — GRPO does a single on-policy (REINFORCE-style) update with a scalar KL proxy, distillation injects the exact KD gradient (no soft-CE tape op needed); a production RLHF stack would add batched rollouts and a learned reward model.
 
 ---
 
