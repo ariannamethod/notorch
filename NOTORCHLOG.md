@@ -210,6 +210,26 @@ forward and gradient bytes on T=5, 3 heads of 64, base 1e6 are identical to `2e4
 of 64, base 1e6 equals `rope(..., neox=1)` exactly (max |diff| = 0); the Janus op differs from it
 by 1.97.
 
+## 2026-11-27 — Masked cross-entropy sums its softmax normalizer in double
+
+Hand: neo (Claude, Opus 5.5), branch `claude/masked-ce-double-sum`.
+`nt_seq_cross_entropy_masked` summed the softmax normalizer of each active row in `float`
+over the whole vocabulary, in the forward (`sum += expf(...)`, then `logf(sum)`) and again
+in the backward that divides every probability by it. A float sum of V terms drifts by about
+sqrt(V) ulps: at V = 151936 (Qwen's vocabulary) the loss came out 12.7024994 against a double
+reference of 12.7025416, off by 4.23e-5, and the gradient row by 2.14e-5 relative L1. The
+resonator parity on SmolLM2-360M (V = 49152) traced a 2.75e-3 nat gap on an 18-token answer to
+this op: log p summed in double from the same tape logits matched the engine to 5.7e-5. Both
+normalizers, the loss sum and the active count are now kept in double; the result and the
+gradient are stored as float, as before. The op has no GPU branch.
+
+`test_seq_cross_entropy_masked_wide_vocab` checks the loss against a double reference to
+4e-6 and the gradient to 2e-6 relative L1, at V = 151936 with one masked row. neo, Accelerate:
+notorch_test 52 passed, 0 failed; on the unchanged op the new test is red (51/1, the loss),
+and red again with the forward alone or the backward alone put back on a float sum (51/1 each).
+The unmasked `nt_seq_cross_entropy` and `nt_cross_entropy` keep the same float sum, and the
+former has a CUDA branch; they are left for their own change.
+
 ## 2026-11-27 — Spores and episodes publish in Termux; the replay check links its BLAS
 
 Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`.

@@ -2416,12 +2416,12 @@ void nt_tape_backward(int loss_idx) {
                         float mx = logits_t[0];
                         for (int j = 1; j < V; j++)
                             if (logits_t[j] > mx) mx = logits_t[j];
-                        float sum = 0;
+                        double sum = 0;   /* in double, as the forward's normalizer */
                         for (int j = 0; j < V; j++) {
                             dl[t * V + j] = expf(logits_t[j] - mx);
                             sum += dl[t * V + j];
                         }
-                        for (int j = 0; j < V; j++) dl[t * V + j] /= sum;
+                        for (int j = 0; j < V; j++) dl[t * V + j] = (float)(dl[t * V + j] / sum);
                         dl[t * V + target] -= 1.0f;
                         float s = m * dout[0] / n_active;
                         for (int j = 0; j < V; j++) dl[t * V + j] *= s;
@@ -5030,8 +5030,10 @@ int nt_seq_cross_entropy_masked(int logits_idx, int targets_idx, int mask_idx, i
 #endif
     nt_tensor* out = nt_tensor_new(1);
     if (!out) return -1;
-    float total_loss = 0;
-    float n_active = 0;
+    /* The normalizer is a sum of V terms; in float it drifts by ~sqrt(V) ulps, 4.2e-5 on
+     * the loss at V = 151936. Both sums are kept in double. */
+    double total_loss = 0;
+    double n_active = 0;
     for (int t = 0; t < T; t++) {
         float m = pm->output->data[t];
         if (m == 0.0f) continue;
@@ -5040,12 +5042,12 @@ int nt_seq_cross_entropy_masked(int logits_idx, int targets_idx, int mask_idx, i
         if (target < 0 || target >= V) target = 0;
         float mx = logits_t[0];
         for (int j = 1; j < V; j++) if (logits_t[j] > mx) mx = logits_t[j];
-        float sum = 0;
+        double sum = 0;
         for (int j = 0; j < V; j++) sum += expf(logits_t[j] - mx);
-        total_loss += m * -(logits_t[target] - mx - logf(sum));
+        total_loss += m * -((double)logits_t[target] - mx - log(sum));
         n_active += m;
     }
-    out->data[0] = (n_active > 0) ? total_loss / n_active : 0.0f;
+    out->data[0] = (n_active > 0) ? (float)(total_loss / n_active) : 0.0f;
     int idx = nt_tape_record3(out, NT_OP_SEQ_CROSSENT_MASKED, logits_idx, targets_idx, mask_idx, (float)T, (float)V);
     nt_tensor_free(out);
     return idx;

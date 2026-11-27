@@ -694,6 +694,59 @@ static void test_seq_cross_entropy(void) {
     PASS("seq_cross_entropy");
 }
 
+// Masked CE over a Qwen-width vocabulary against a double reference. The softmax
+// normalizer of 151936 terms summed in float drifts by ~1e-5 relative, which moves
+// the loss and every gradient of the row by that factor.
+static void test_seq_cross_entropy_masked_wide_vocab(void) {
+    nt_tape_start();
+    enum { T = 4, V = 151936 };
+    static const int target[T] = {7, 151935, 40000, 99999};
+    static const float on[T] = {0, 1, 1, 1};
+    nt_tensor* logits = nt_tensor_new((size_t)T * V);
+    nt_tensor* targets = nt_tensor_new(T);
+    nt_tensor* mask = nt_tensor_new(T);
+    nt_seed(20261127);
+    nt_tensor_rand(logits, 4.0f);
+    for (int t = 0; t < T; t++) { targets->data[t] = (float)target[t]; mask->data[t] = on[t]; }
+    int l_idx = nt_tape_record(logits, NT_OP_NONE, -1, -1, 0);
+    int t_idx = nt_tape_record(targets, NT_OP_NONE, -1, -1, 0);
+    int m_idx = nt_tape_record(mask, NT_OP_NONE, -1, -1, 0);
+    int loss_idx = nt_seq_cross_entropy_masked(l_idx, t_idx, m_idx, T, V);
+    ASSERT(loss_idx >= 0, "masked_ce ok");
+
+    double lse[T], ref = 0, active = 0;
+    for (int t = 0; t < T; t++) {
+        const float* x = logits->data + (size_t)t * V;
+        double mx = x[0], s = 0;
+        for (int j = 1; j < V; j++) if (x[j] > mx) mx = x[j];
+        for (int j = 0; j < V; j++) s += exp((double)x[j] - mx);
+        lse[t] = mx + log(s);
+        if (on[t]) { ref += lse[t] - x[target[t]]; active += 1; }
+    }
+    ref /= active;
+    double loss = nt_tape_get()->entries[loss_idx].output->data[0];
+    char msg[160];
+    snprintf(msg, sizeof msg, "masked_ce loss at V=151936: |%.9g - %.9g| = %.3g > 4e-6", loss, ref, fabs(loss - ref));
+    ASSERT(fabs(loss - ref) <= 4e-6, msg);
+
+    nt_tape_backward(loss_idx);
+    nt_tensor* grad = nt_tape_get()->entries[l_idx].grad;
+    ASSERT(grad != NULL, "masked_ce grad exists");
+    double err = 0, mag = 0;
+    for (int t = 0; t < T; t++)
+        for (int j = 0; j < V; j++) {
+            double r = on[t] ? (exp((double)logits->data[(size_t)t * V + j] - lse[t]) - (j == target[t])) / active : 0;
+            err += fabs(grad->data[(size_t)t * V + j] - r);
+            mag += fabs(r);
+        }
+    snprintf(msg, sizeof msg, "masked_ce gradient at V=151936: relative L1 %.3g > 2e-6", err / mag);
+    ASSERT(err / mag <= 2e-6, msg);
+
+    nt_tape_clear();
+    nt_tensor_free(logits); nt_tensor_free(targets); nt_tensor_free(mask);
+    PASS("seq_cross_entropy_masked_wide_vocab");
+}
+
 static void test_seq_linear(void) {
     nt_tape_start();
     int T = 3, in_d = 4, out_d = 2;
@@ -1676,6 +1729,7 @@ int main(void) {
     test_causal_attention();
     test_mh_causal_attention();
     test_seq_cross_entropy();
+    test_seq_cross_entropy_masked_wide_vocab();
     test_seq_linear();
 
     printf("\n[Optimizers]\n");
