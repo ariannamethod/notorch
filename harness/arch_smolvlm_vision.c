@@ -287,11 +287,12 @@ int nt_smolvlm_vision_encode(const nt_smolvlm_vision *v,const nt_smolvlm_image *
     free(hidden);free(res);return rc;
 }
 
-/* The layout ocelli renders (ocelli.c:622-641), which is idefics3's split image: per tile
- * "<fake_token_around_image><row_r_col_c>" and the frame's <image> slots, "\n" after each
- * tile row, then "\n<fake_token_around_image><global-img>", the global frame's slots and a
- * closing "<fake_token_around_image>". The global-only form keeps ocelli's newline after
- * the closing marker. */
+/* The layout ocelli renders (ocelli.c:631-649 at 12f3535): "<|im_start|>User:\n", then
+ * idefics3's split image: per tile "<fake_token_around_image><row_r_col_c>" and the frame's
+ * <image> slots, "\n" after each tile row, then "\n<fake_token_around_image><global-img>",
+ * the global frame's slots and a closing "<fake_token_around_image>". The global-only form
+ * keeps ocelli's newline after the closing marker. Neither ocelli newline, after "User:" or
+ * after that marker, is in the model's chat_template. */
 int nt_smolvlm_prompt(const nt_smolvlm_vision *v,const nt_smolvlm_image *im,const bpe_tokenizer *tok,
                       const char *instruction,int *ids,int cap) {
     if(!v || !image_valid(im) || !tok || !instruction || !ids || cap<2 || bpe_add_bos(tok))return -1;
@@ -310,7 +311,7 @@ int nt_smolvlm_prompt(const nt_smolvlm_vision *v,const nt_smolvlm_image *im,cons
     size_t size=(size_t)im->frames*((size_t)T*7+48)+len+128,o=0;
     char *s=malloc(size);if(!s)return -1;
     #define PUT(...) do{if(o<size)o+=(size_t)snprintf(s+o,size-o,__VA_ARGS__);}while(0)
-    PUT("<|im_start|>User:");
+    PUT("<|im_start|>User:\n");
     for(int r=0;split && r<im->rows;r++) {
         for(int c=0;c<im->cols;c++) {
             char m[48];snprintf(m,sizeof(m),"<row_%d_col_%d>",r+1,c+1);

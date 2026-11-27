@@ -145,7 +145,7 @@ SPECIALS = ['<|im_start|>', '<end_of_utterance>', '<fake_token_around_image>', '
 
 def prompt_ids(rows, cols):
     img = '<image>' * TOK
-    s = '<|im_start|>User:'
+    s = '<|im_start|>User:\n'
     if rows * cols > 1:
         for r in range(rows):
             for c in range(cols):

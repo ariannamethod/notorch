@@ -57,6 +57,7 @@ with one change and the same command:
 - fc1 chosen by name instead of by bias length: load refused
 - global frame dropped: 6
 - tile order swapped: 1
+- `User:` without ocelli's newline: 4 (the layout and the three checks that read it)
 
 `test_residual` (19 checks), `test_multi_decode` (753) and `test_harness_tokenizer` (75) pass both
 on this branch and on `2e4d6b1`. The new files and `arch_llama.c` compile without warnings under
@@ -78,10 +79,10 @@ SmolVLM-Instruct both say `"resample": 1`, which is Lanczos in PIL. ocelli and t
 bilinearly. The difference from the HF preprocessing comes with ocelli, and parity with ocelli
 cannot see it.
 
-Open: the global-only layout keeps ocelli's form for parity. It puts a `\n` between the closing
-`<fake_token_around_image>` and the instruction. The model's own `tokenizer.chat_template` puts
-the text right after `<image>`. The measurement check on SmolVLM-Instruct decides which form
-stays.
+Open: the layout keeps ocelli's two newlines for parity: one after `User:`, and, in the
+global-only form, one between the closing `<fake_token_around_image>` and the instruction. The
+model's own `tokenizer.chat_template` has neither; it goes straight from `User:` to `<image>` and
+from `<image>` to the text. The measurement check on SmolVLM-Instruct decides which form stays.
 
 ## 2026-11-27 — Spores and episodes publish in Termux; the replay check links its BLAS
 
