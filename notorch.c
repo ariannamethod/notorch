@@ -1541,10 +1541,11 @@ void nt_tape_backward(int loss_idx) {
                 nt_tape_entry* px = &g_tape.entries[e->parent1];
                 int T = (int)e->aux;
                 int D = (int)e->aux2;
+                float eps = e->aux3;  /* recorded by nt_seq_rmsnorm_eps */
                 int has_gamma = (e->parent2 >= 0 && e->parent2 < g_tape.count);
                 int srn_done_gpu = 0;
 #ifdef USE_CUDA
-                if (g_use_gpu) {
+                if (g_use_gpu && eps == 1e-6f) {  /* kernels hardcode 1e-6 */
                     float* d_X    = nt_tensor_ensure_gpu(px->output);
                     float* d_dout = nt_tensor_ensure_gpu(e->grad);
                     float* d_gamma = NULL;
@@ -1581,7 +1582,7 @@ void nt_tape_backward(int loss_idx) {
                         float* dout_t = dout + t * D;
                         float ss = 0;
                         for (int d = 0; d < D; d++) ss += x_t[d] * x_t[d];
-                        float rms = sqrtf(ss / D + 1e-6f);
+                        float rms = sqrtf(ss / D + eps);
                         float rms3 = rms * rms * rms;
 
                         // dout_eff = dout * gamma for x-gradient
@@ -4022,7 +4023,11 @@ int nt_rmsnorm(int x_idx, int gamma_idx) {
 }
 
 int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
-    if (x_idx < 0 || T <= 0 || D <= 0) return -1;
+    return nt_seq_rmsnorm_eps(x_idx, gamma_idx, T, D, 1e-6f);
+}
+
+int nt_seq_rmsnorm_eps(int x_idx, int gamma_idx, int T, int D, float eps) {
+    if (x_idx < 0 || T <= 0 || D <= 0 || !(eps > 0.0f)) return -1;
     nt_tape_entry* px = &g_tape.entries[x_idx];
 
     nt_tensor* out = nt_tensor_new((size_t)T * D);
@@ -4030,7 +4035,8 @@ int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
 
     int done_gpu = 0;
 #ifdef USE_CUDA
-    if (g_use_gpu) {
+    /* The CUDA kernels hardcode eps = 1e-6; any other eps runs on the CPU. */
+    if (g_use_gpu && eps == 1e-6f) {
         /* GPU forward: y = (x / rms) * gamma (single dispatch, gamma optional). */
         float* d_X = nt_tensor_ensure_gpu(px->output);
         float* d_Y = nt_tensor_ensure_gpu(out);
@@ -4045,6 +4051,11 @@ int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
             done_gpu = 1;
         }
     }
+    if (!done_gpu) {
+        nt_tensor_ensure_cpu(px->output);
+        if (gamma_idx >= 0 && gamma_idx < g_tape.count)
+            nt_tensor_ensure_cpu(g_tape.entries[gamma_idx].output);
+    }
 #endif
     if (!done_gpu) {
         for (int t = 0; t < T; t++) {
@@ -4052,7 +4063,7 @@ int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
             float* o_t = out->data + t * D;
             float ss = 0;
             for (int d = 0; d < D; d++) ss += x_t[d] * x_t[d];
-            float rms = sqrtf(ss / D + 1e-6f);
+            float rms = sqrtf(ss / D + eps);
             for (int d = 0; d < D; d++) o_t[d] = x_t[d] / rms;
         }
         if (gamma_idx >= 0 && gamma_idx < g_tape.count) {
@@ -4064,7 +4075,8 @@ int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D) {
     }
 
     int g_idx2 = (gamma_idx >= 0 && gamma_idx < g_tape.count) ? gamma_idx : -1;
-    int idx = nt_tape_record3(out, NT_OP_SEQ_RMSNORM, x_idx, g_idx2, -1, (float)T, (float)D);
+    /* record4 sets aux3 explicitly; record3 would leave a stale aux3 from an earlier tape. */
+    int idx = nt_tape_record4(out, NT_OP_SEQ_RMSNORM, x_idx, g_idx2, -1, (float)T, (float)D, eps, 0.0f);
     nt_tensor_free(out);
     return idx;
 }

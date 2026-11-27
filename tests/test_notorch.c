@@ -528,6 +528,85 @@ static void test_rmsnorm(void) {
     PASS("rmsnorm");
 }
 
+// Reference seq RMSNorm in double: y = x / sqrt(mean(x^2) + eps) * g, and the
+// gradients of L = sum(y), which is what nt_tape_backward seeds on y.
+static void seq_rmsnorm_ref(const float* x, const float* g, int T, int D, double eps,
+                            double* y, double* gx, double* gg) {
+    for (int d = 0; d < D; d++) gg[d] = 0;
+    for (int t = 0; t < T; t++) {
+        const float* xt = x + t * D;
+        double ss = 0, sgx = 0;
+        for (int d = 0; d < D; d++) { ss += (double)xt[d] * xt[d]; sgx += (double)g[d] * xt[d]; }
+        double rms = sqrt(ss / D + eps);
+        for (int d = 0; d < D; d++) {
+            y[t * D + d]  = xt[d] / rms * g[d];
+            gx[t * D + d] = g[d] / rms - xt[d] * sgx / (D * rms * rms * rms);
+            gg[d] += xt[d] / rms;
+        }
+    }
+}
+
+// SmolLM2 GGUF stores eps = 1e-5. |x| ~ 3e-3 puts mean(x^2) next to eps, so
+// 1e-5 and 1e-6 give outputs and gradients that differ far beyond tolerance.
+static void test_seq_rmsnorm_eps(void) {
+    enum { T = 2, D = 4 };
+    const float xv[T * D] = { 3e-3f, -1e-3f, 2e-3f, -4e-3f, 1e-3f, 2.5e-3f, -3e-3f, 0.5e-3f };
+    const float gv[D] = { 1.0f, 0.5f, -2.0f, 1.5f };
+    double y5[T * D], gx5[T * D], gg5[D], y6[T * D], gx6[T * D], gg6[D];
+    seq_rmsnorm_ref(xv, gv, T, D, 1e-5, y5, gx5, gg5);
+    seq_rmsnorm_ref(xv, gv, T, D, 1e-6, y6, gx6, gg6);
+    double sep_y = 0, sep_g = 0;
+    for (int i = 0; i < T * D; i++) {
+        sep_y = fmax(sep_y, fabs(y5[i] - y6[i]));
+        sep_g = fmax(sep_g, fabs(gx5[i] - gx6[i]) / fmax(1.0, fabs(gx5[i])));
+    }
+    ASSERT(sep_y > 0.05 && sep_g > 0.05, "probe input separates eps 1e-5 from 1e-6");
+
+    nt_tensor* x = nt_tensor_new(T * D);
+    nt_tensor* g = nt_tensor_new(D);
+    memcpy(x->data, xv, sizeof xv);
+    memcpy(g->data, gv, sizeof gv);
+
+    // The 4-argument op keeps eps = 1e-6.
+    nt_tape_start();
+    int xi = nt_tape_param(x), gi = nt_tape_param(g);
+    int yi = nt_seq_rmsnorm(xi, gi, T, D);
+    ASSERT(yi >= 0, "seq_rmsnorm records");
+    for (int i = 0; i < T * D; i++)
+        ASSERT_CLOSE(nt_tape_get()->entries[yi].output->data[i], (float)y6[i], 1e-5f,
+                     "seq_rmsnorm default eps 1e-6");
+    nt_tape_clear();
+
+    // Forward and backward both use eps = 1e-5. Forward: absolute 1e-5 on O(1)
+    // outputs. Gradients reach ~5e2, so they are checked to 1e-4 relative.
+    nt_tape_start();
+    xi = nt_tape_param(x); gi = nt_tape_param(g);
+    yi = nt_seq_rmsnorm_eps(xi, gi, T, D, 1e-5f);
+    ASSERT(yi >= 0, "seq_rmsnorm_eps records");
+    nt_tape_backward(yi);
+    nt_tape* tp = nt_tape_get();
+    ASSERT(tp->entries[xi].grad && tp->entries[gi].grad, "seq_rmsnorm_eps grads exist");
+    for (int i = 0; i < T * D; i++) {
+        ASSERT_CLOSE(tp->entries[yi].output->data[i], (float)y5[i], 1e-5f,
+                     "seq_rmsnorm_eps forward eps 1e-5");
+        ASSERT_CLOSE(tp->entries[xi].grad->data[i], (float)gx5[i],
+                     1e-4f * fmaxf(1.0f, fabsf((float)gx5[i])), "seq_rmsnorm_eps dx eps 1e-5");
+    }
+    for (int d = 0; d < D; d++)
+        ASSERT_CLOSE(tp->entries[gi].grad->data[d], (float)gg5[d],
+                     1e-4f * fmaxf(1.0f, fabsf((float)gg5[d])), "seq_rmsnorm_eps dgamma eps 1e-5");
+    nt_tape_clear();
+
+    nt_tape_start();
+    xi = nt_tape_param(x);
+    ASSERT(nt_seq_rmsnorm_eps(xi, -1, T, D, 0.0f) < 0, "seq_rmsnorm_eps refuses eps <= 0");
+    nt_tape_clear();
+
+    nt_tensor_free(x);
+    nt_tensor_free(g);
+    PASS("seq_rmsnorm_eps");
+}
+
 static void test_causal_attention(void) {
     nt_tape_start();
     int T = 3, D = 4;
@@ -1535,6 +1614,7 @@ int main(void) {
     test_seq_gate();
     test_softmax();
     test_rmsnorm();
+    test_seq_rmsnorm_eps();
 
     printf("\n[Tape + Forward/Backward]\n");
     test_tape_basic();

@@ -151,6 +151,39 @@ global-only form, one between the closing `<fake_token_around_image>` and the in
 model's own `tokenizer.chat_template` has neither; it goes straight from `User:` to `<image>` and
 from `<image>` to the text. The measurement check on SmolVLM-Instruct decides which form stays.
 
+## 2026-11-27 — RMSNorm on the tape takes the body's eps
+
+Hand: Claude (neo), branch `claude/rmsnorm-eps-param`, based on `2e4d6b1`.
+`nt_seq_rmsnorm` hardcoded `eps = 1e-6` in forward and backward. SmolLM2 GGUF files carry
+`llama.attention.layer_norm_rms_epsilon = 1e-5`, and the harness takes that value from the
+file, so a tape forward over the same weights computed a different function than inference.
+`nt_seq_rmsnorm_eps(x, gamma, T, D, eps)` takes eps explicitly, refuses `eps <= 0` and stores
+it in `aux3` of the tape entry, where the `NT_OP_SEQ_RMSNORM` backward reads it. The entry is
+written with `nt_tape_record4`: `nt_tape_record3` leaves `aux3` holding whatever an earlier
+tape put in that slot. `nt_seq_rmsnorm` is now a wrapper that passes `1e-6f`, so its 42 call
+lines in 12 example and termux files compute what they computed before.
+
+The CUDA kernels (`kernel_rmsnorm`, `kernel_seq_rmsnorm_backward`,
+`kernel_seq_rmsnorm_gamma_grad`) still hardcode `1e-6f`. Under `USE_CUDA` the op takes its GPU
+branches only when `eps == 1e-6f`; any other eps runs forward and backward on the CPU, and the
+forward first pulls `x` and `gamma` down with `nt_tensor_ensure_cpu`, as `nt_rope_freq` does.
+`notorch_cuda.cu` is unchanged because there is no `nvcc` on neo; `notorch.c` passes
+`-fsyntax-only -DUSE_CUDA`, and nothing ran on a GPU. `nt_rmsnorm` (one vector,
+`NT_OP_RMSNORM`) keeps `1e-6`; only `tests/test_notorch.c` calls it.
+
+Proof, neo (A18 Pro, Accelerate): `test_seq_rmsnorm_eps` takes T=2, D=4 with |x| ~ 3e-3, so
+mean(x²) sits next to eps. It checks the eps 1e-5 forward against a double reference (absolute
+1e-5), the 4-argument op against the 1e-6 reference, and the x and gamma gradients of sum(y)
+against the closed form (relative 1e-4). `notorch_test` reads 52 passed, 0 failed; on
+`2e4d6b1` it read 51. Five mutations each leave 51 passed, 1 failed: forward back on 1e-6,
+backward back on 1e-6, both at once (the old behaviour), the wrapper passing 1e-5, and
+`record3` in place of `record4`. Dropping the eps guard reddens the refusal check. Linked
+against `harness/runtime.c`, the tape at eps 1e-5 matches the harness `rmsnorm` on T=3, D=960,
+x uniform in ±0.01, to 1.19e-7; the 1e-6 path differs from it by 0.19.
+
+Open: the JS edition's `seqRmsnorm` already takes `eps` (`js-edition/notorch.js:2343`), but its
+backward hardcodes `1e-6` (`:677`). It is not touched here.
+
 ## 2026-11-27 — Spores and episodes publish in Termux; the replay check links its BLAS
 
 Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`.

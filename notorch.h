@@ -428,8 +428,13 @@ int nt_seq_linear_t(int w_idx, int x_idx, int T);
 // RMSNorm: y = x / rms(x) * gamma
 int nt_rmsnorm(int x_idx, int gamma_idx);
 
-// Sequence RMSNorm: normalize each of T positions independently
+// Sequence RMSNorm: normalize each of T positions independently (eps = 1e-6)
 int nt_seq_rmsnorm(int x_idx, int gamma_idx, int T, int D);
+
+// Same with an explicit eps (> 0), e.g. the GGUF *.attention.layer_norm_rms_epsilon
+// of the body being trained. Backward uses the same eps. Under USE_CUDA only
+// eps == 1e-6 runs on the GPU; any other eps runs this op on the CPU.
+int nt_seq_rmsnorm_eps(int x_idx, int gamma_idx, int T, int D, float eps);
 
 // SiLU activation: y = x * sigmoid(x)
 int nt_silu(int x_idx);
