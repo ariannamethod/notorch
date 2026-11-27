@@ -11,6 +11,64 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-27 — Spores and episodes publish in Termux; the replay check links its BLAS
+
+Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`.
+`save_spore` (`harness/experts.c`) and the replay-episode writer (`harness/replay_episode.c`)
+publish with `link(tmp, path)`, which refuses an existing destination and shows every byte
+at once. Android's SELinux policy denies hard links in app data: in Termux `link()` and `ln`
+both return `Permission denied`. As a result `--spore-out` and `--replay-out` failed with
+"could not publish a new …" on every Termux run. Both now call `nt_publish_new`. It tries
+`link` first; on `EACCES`/`EPERM` it falls back to `renameat2(..., RENAME_NOREPLACE)`, which
+gives the same refusal and the same all-at-once publish. Bionic wraps renameat2 only from
+API 30, so the call is the raw syscall. Where `link` succeeds nothing changes.
+
+`check_text_replay` linked its API driver with `${NT_TEST_LIBS:--lm -pthread}`. On any build
+with BLAS that ends in `undefined reference to cblas_sgemm`, which is how the full
+`make -k test` in the Ubuntu chroot reached rc=2. The Makefile now passes
+`$(BLAS_FLAGS) -lm -pthread $(BLAS_LIBS)`. On Darwin, Accelerate travels in `BLAS_FLAGS`;
+that case was not run here.
+
+Proof, Galaxy A56: before the change, Termux `check_text_replay` stops at the first
+`--replay-out`. After it the check passes, as it does in the chroot with BLAS linked. With
+`--spore-out` aimed at an existing file the run exits 1 with "could not publish a new spore",
+and the file keeps its bytes. A fresh spore (15,776 bytes) and episode (736 bytes) publish and
+leave no `.XXXXXX` temporaries. On this branch the full `make -k test` in the Ubuntu chroot
+returns 0. On `374e171` it returned 2.
+
+Open: in Termux the same full run fails 12 targets: embeddinggemma2 ×3, qwen3embedding ×2,
+qwen35 ×3, lfm3_omni, lfm3, harness_tokenizer and janus_prefix. Every one of them makes its
+fixture with `mkstemp`/`mkdtemp` under a hardcoded `/tmp`, which Android does not have; Termux's
+temporary directory is `$TMPDIR`. Because those prerequisites fail, make skips the commands in
+the `test` recipe itself, `test_affinity` among them.
+
+## 2026-11-27 — Termux builds again: thread placement through the thread id
+
+Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`, based on `374e171`.
+A native Termux build stopped at `notorch.c:6496` with `call to undeclared function
+'pthread_setaffinity_np'`, so `libnotorch.a` and the Harness binary were never produced.
+Bionic declares that call only from API 36 (`$PREFIX/include/pthread.h:367`,
+`__INTRODUCED_IN(36)`), Termux clang 21.1.8 targets API 24, and clang 21 treats the implicit
+declaration as an error. The call has been in `nt_qmv_place` since `81ab0dd`. Below API 36 on
+Android the pool now places each thread with `sched_setaffinity(pthread_gettid_np(t), ...)`,
+the same syscall addressed by thread id. Every other build keeps `pthread_setaffinity_np`.
+`tests/test_affinity.c` and `tests/bench_claim.c` only ever touched the calling thread, so
+there they now use `sched_getaffinity(0, ...)` / `sched_setaffinity(0, ...)`, the
+calling-thread form on both C libraries.
+
+Proof, on the Galaxy A56: the Termux build of `lib lib_harness notorch test_affinity
+bench_claim` produces no errors, and `notorch_test` reads 51 passed, 0 failed. `test_affinity`
+passes in all four modes as root, whose mask is cpus 0-7: the plan holds cpus 4-7. With the
+new call replaced by `(void)t` in a scratch copy, the default mode fails "the driving thread
+holds the whole chosen set" and "a thread born after the pool inherits every chosen core",
+reading cpus 0-7 where 4-7 were expected. The glibc build in the Ubuntu chroot passes all
+four modes as well.
+
+Open, and not changed here: a Termux shell sits in Android's `/foreground` cpuset and sees
+cpus 0-6 of 8 online. The plan reads that as a mask somebody already narrowed and keeps all
+seven cores, while `test_affinity` expects the slow class dropped (cpus 4-6). The default mode
+therefore fails there on its thread-count check, before any thread is placed.
+
 ## 2026-11-11 — Restore the published Janus v4 prefix graph
 
 Hand: Astra (Codex), branch `codex/janus-reference-forward`, based on `e2ba52a`.

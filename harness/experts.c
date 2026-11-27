@@ -497,7 +497,7 @@ static int save_spore(nt_experts *p, const char *path, int portable) {
         gguf_write_tensor_f32(w, t[i].name, t[i].data, elements(&t[i]));
     /* link publishes all bytes at once and refuses any existing destination,
      * including the host, the parent spore, and a concurrent writer's child. */
-    if (!gguf_write_close(w) && !fsync(fd)) rc = link(tmp, path);
+    if (!gguf_write_close(w) && !fsync(fd)) rc = nt_publish_new(tmp, path);
 done:
     close(fd);
     unlink(tmp);

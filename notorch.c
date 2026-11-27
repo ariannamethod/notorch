@@ -6493,7 +6493,14 @@ static void nt_qmv_place(pthread_t t) {
 #if defined(__linux__)
     const nt_qmv_plan *p = nt_qmv_get_plan();
     if (!p->pin || p->ncpu <= 0) return;
+#if defined(__ANDROID__) && __ANDROID_API__ < 36
+    /* Bionic declares pthread_setaffinity_np only from API 36 and Termux builds for 24, where
+     * clang 21 refuses the undeclared call outright. The syscall underneath takes a thread id,
+     * which Bionic gives for any pthread_t since API 21. */
+    sched_setaffinity(pthread_gettid_np(t), sizeof(p->cpus), &p->cpus);
+#else
     pthread_setaffinity_np(t, sizeof(p->cpus), &p->cpus);
+#endif
 #else
     (void)t;
 #endif

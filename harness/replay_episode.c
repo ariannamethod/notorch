@@ -3,6 +3,7 @@
  * Disk files are sealed GGUF v3 containers, episode schema version 1. */
 #include "harness/replay_internal.h"
 #include "sha256.h"
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <math.h>
@@ -10,6 +11,9 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#endif
 #include <unistd.h>
 
 _Static_assert(sizeof(int) == 4, "episode IDs use 32-bit int");
@@ -307,12 +311,27 @@ int nt_replay_save(const nt_replay_episode *e, const char *path) {
     }
     /* close also flushes a zero-tensor text episode. link preserves every
      * pre-existing destination, including a host file or another episode. */
-    if (!gguf_write_close(w) && !fsync(fd)) rc = link(tmp, path);
+    if (!gguf_write_close(w) && !fsync(fd)) rc = nt_publish_new(tmp, path);
 done:
     close(fd);
     unlink(tmp);
     free(tmp);
     return rc;
+}
+
+/* link refuses an existing destination and publishes every byte at once. Android's SELinux
+ * policy denies hard links in app data — Termux gets EACCES from link() and from ln — while
+ * rename stays allowed, so there renameat2 with RENAME_NOREPLACE keeps the same refusal.
+ * Bionic wraps renameat2 only from API 30, hence the raw syscall. The caller's unlink(tmp)
+ * then finds nothing, which is harmless. */
+int nt_publish_new(const char *tmp, const char *path) {
+    if (!link(tmp, path)) return 0;
+#if defined(__linux__) && defined(SYS_renameat2)
+    if ((errno == EACCES || errno == EPERM) &&
+        !syscall(SYS_renameat2, AT_FDCWD, tmp, AT_FDCWD, path, 1u /* RENAME_NOREPLACE */))
+        return 0;
+#endif
+    return -1;
 }
 
 /* A bounded reader for the sealed episode schema. In contrast to model GGUF
