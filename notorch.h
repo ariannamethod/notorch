@@ -508,6 +508,13 @@ int nt_rope_freq(int x_idx, int T, int head_dim, float freq_base);
 // falls back to CPU.
 int nt_rope_split_half_freq(int x_idx, int T, int head_dim, float freq_base);
 
+// Split-half RoPE in the GGUF NEOX sign, as Qwen2/Qwen3/Gemma3 inference rotates
+// (harness/runtime.c rope with neox=1, harness/arch_gemma3.c gemma3_rope):
+//   q[i]      = q0*cos - q1*sin
+//   q[i+half] = q0*sin + q1*cos
+// The opposite direction to nt_rope_split_half_freq. CPU-only forward and backward.
+int nt_rope_neox_freq(int x_idx, int T, int head_dim, float freq_base);
+
 // Dropout: zero random elements with probability p (training only)
 int nt_dropout(int x_idx, float p);
 

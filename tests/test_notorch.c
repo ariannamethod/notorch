@@ -1174,6 +1174,60 @@ static void test_gradcheck_rope(void) {
     PASS("gradcheck_rope");
 }
 
+// ── Split-half RoPE: NEOX sign next to the Janus sign ──
+// Hand formulas: NEOX as harness/runtime.c rope with neox=1, Janus as infer_v4.c rope_pos.
+static void rope_split_half_ref(const float* x, int T, int n_heads, int hd, double base,
+                                int neox, double* y) {
+    int D = n_heads * hd, half = hd / 2;
+    for (int t = 0; t < T; t++)
+        for (int h = 0; h < n_heads; h++)
+            for (int i = 0; i < half; i++) {
+                int a = t * D + h * hd + i, b = a + half;
+                double ang = t / pow(base, 2.0 * i / hd), c = cos(ang), s = sin(ang);
+                if (neox) { y[a] = x[a] * c - x[b] * s; y[b] =  x[a] * s + x[b] * c; }
+                else      { y[a] = x[a] * c + x[b] * s; y[b] = -x[a] * s + x[b] * c; }
+            }
+}
+static int gc_rope_neox_graph(int p_idx) {
+    return nt_cross_entropy(nt_rope_neox_freq(p_idx, 3, 4, 10000.0f), 0);
+}
+static int gc_rope_janus_graph(int p_idx) {
+    return nt_cross_entropy(nt_rope_split_half_freq(p_idx, 3, 4, 10000.0f), 0);
+}
+static void test_rope_neox(void) {
+    enum { T = 3, H = 2, HD = 4, D = H * HD };
+    nt_seed(91);
+    nt_tensor* x = nt_tensor_new(T * D);
+    nt_tensor_rand(x, 1.0f);
+    double yn[T * D], yj[T * D];
+    rope_split_half_ref(x->data, T, H, HD, 10000.0, 1, yn);
+    rope_split_half_ref(x->data, T, H, HD, 10000.0, 0, yj);
+    double sep = 0;
+    for (int i = D; i < T * D; i++) sep = fmax(sep, fabs(yn[i] - yj[i]));
+    ASSERT(sep > 0.1, "probe input separates NEOX from Janus at t >= 1");
+
+    // Forward: absolute 1e-5 on |y| <= ~1.4 against the double hand formulas.
+    nt_tape_start();
+    int xi = nt_tape_param(x);
+    int n = nt_rope_neox_freq(xi, T, HD, 10000.0f);
+    int j = nt_rope_split_half_freq(xi, T, HD, 10000.0f);
+    ASSERT(n >= 0 && j >= 0, "split-half ropes record");
+    nt_tape* tp = nt_tape_get();
+    for (int i = 0; i < T * D; i++) {
+        ASSERT_CLOSE(tp->entries[n].output->data[i], (float)yn[i], 1e-5f, "rope_neox forward");
+        ASSERT_CLOSE(tp->entries[j].output->data[i], (float)yj[i], 1e-5f, "rope_split_half Janus forward");
+    }
+    nt_tape_clear();
+
+    // Backward: finite differences, max relative error 0.05 (as gradcheck_rope).
+    float err_n = numgrad_check_all(x, gc_rope_neox_graph, 1e-3f, 0.05f, "rope_neox");
+    ASSERT(err_n < 0.05f, "gradcheck rope_neox");
+    float err_j = numgrad_check_all(x, gc_rope_janus_graph, 1e-3f, 0.05f, "rope_split_half");
+    ASSERT(err_j < 0.05f, "gradcheck rope_split_half Janus");
+    nt_tensor_free(x);
+    PASS("rope_neox");
+}
+
 // ── Gradient check: GEGLU ──
 static nt_tensor* gc_geglu_x;
 static nt_tensor* gc_geglu_w2;
@@ -1679,6 +1733,7 @@ int main(void) {
     test_gradcheck_causal_attention();
     test_gradcheck_embedding();
     test_gradcheck_rope();
+    test_rope_neox();
     test_gradcheck_geglu();
     test_gradcheck_arithmetic();
 

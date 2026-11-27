@@ -184,6 +184,32 @@ x uniform in ±0.01, to 1.19e-7; the 1e-6 path differs from it by 0.19.
 Open: the JS edition's `seqRmsnorm` already takes `eps` (`js-edition/notorch.js:2343`), but its
 backward hardcodes `1e-6` (`:677`). It is not touched here.
 
+## 2026-11-27 — Split-half RoPE in the NEOX sign
+
+Hand: Claude (neo), branch `claude/rope-neox-sign`, based on `2e4d6b1`.
+`nt_rope_split_half_freq` rotates split-half pairs in the Janus convention (`x0*c + x1*s`,
+`-x0*s + x1*c`), the opposite direction to the NEOX rotation that inference applies
+(`x0*c - x1*s`, `x0*s + x1*c`): `harness/runtime.c` `rope` with `neox=1` for Qwen2/Qwen3
+(chosen in `arch_llama.c:50`) and `gemma3_rope` (`arch_gemma3.c:129`) for Gemma3.
+On the tape the Janus op gives Qwen a different attention function. `nt_rope_neox_freq(x, T,
+head_dim, freq_base)` rotates in the NEOX sign and records `aux4 = 2`. Both ops share one
+static body, `rope_split_half(..., neox)`, and the Janus formula lines and their `aux4 = 1` are
+unchanged. In the `NT_OP_ROPE` backward, `aux4 = 2` takes the same transpose as even/odd
+`nt_rope_freq`, since it is the same rotation on different pairs. The GPU branch stays guarded by
+`!split_half`, so NEOX forward and backward run on the CPU, as split-half Janus always has.
+There is no GPU code for split-half.
+
+Proof, neo (A18 Pro, Accelerate): `test_rope_neox` (T=3, 2 heads of 4, base 1e4) checks both
+split-half forwards against hand formulas in double (absolute 1e-5), checks that the input
+separates them (max difference > 0.1 at t ≥ 1), and gradchecks both backwards (relative 0.05).
+`notorch_test` reads 52 passed, 0 failed. Five mutations each leave 51 passed, 1 failed: NEOX
+forward with Janus signs, NEOX recorded as `aux4 = 1`, a backward that ignores `aux4 = 2`, the
+Janus forward flipped to NEOX, and a backward that treats every split-half as NEOX. Janus
+forward and gradient bytes on T=5, 3 heads of 64, base 1e6 are identical to `2e4d6b1`
+(7680 bytes, `cmp`). Linked against `harness/runtime.c`, `nt_rope_neox_freq` on T=9, 14 heads
+of 64, base 1e6 equals `rope(..., neox=1)` exactly (max |diff| = 0); the Janus op differs from it
+by 1.97.
+
 ## 2026-11-27 — Spores and episodes publish in Termux; the replay check links its BLAS
 
 Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`.
