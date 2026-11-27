@@ -11,6 +11,31 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-27 — Converters publish their GGUF without hard links
+
+Hand: Defender (Claude, phone-1), branch `claude/termux-tmpdir`.
+`embeddinggemma2_to_gguf`, `qwen3embedding_to_gguf` and `pen7_to_gguf` published their finished
+`.partial` file with `link()`, which Android's SELinux policy denies in app data. Once the
+fixtures stopped failing on `/tmp`, this was what stopped `test_embeddinggemma2_text` and
+`test_qwen3embedding_text` in Termux, at "converter writes the tokenizer GGUF".
+`nt_publish_new` is the link-then-`renameat2(RENAME_NOREPLACE)` publish that spores and replay
+episodes have used since `2e4d6b1`. It moves out of `replay_episode.c` into
+`harness/publish_new.h` as a `static inline` function, so the converters, which do not link the
+Harness library, call the same code. `HARNESS_HDR` and the three converter rules depend on the
+header.
+
+Proof, Galaxy A56, Termux: both text tests pass, and the full `make -k test` (7m28s) runs
+every prerequisite and the `test` recipe up to `test_affinity`. The 14 recipe commands after
+it, run one by one, return 0 except `test_affinity nopin`. In the Ubuntu chroot (glibc, mask
+0-7) the full `make -k test` with both changes returns 0 in 5m59s.
+
+Open: in a plain Termux shell `test_affinity` fails its thread-count check in the default and
+`nopin` modes ("planned 7, expected 3 over cpus 4 5 6"). Termux runs in cpuset `/foreground`
+with `Cpus_allowed_list 0-6`. `nt_qmv_plan_init` narrows to the fast cores only when the mask
+equals the online set, so it reads the cpuset as somebody's deliberate narrowing and plans
+seven threads, four of them on small cores. Under `su` (mask 0-7) all four modes pass. This
+is library behaviour, not a test fixture; it is left for a measured change.
+
 ## 2026-11-27 — Tests make their fixtures under `$TMPDIR`
 
 Hand: Defender (Claude, phone-1), branch `claude/termux-tmpdir`, based on `da510e7`.
