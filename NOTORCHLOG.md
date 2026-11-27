@@ -230,6 +230,21 @@ and red again with the forward alone or the backward alone put back on a float s
 The unmasked `nt_seq_cross_entropy` and `nt_cross_entropy` keep the same float sum, and the
 former has a CUDA branch; they are left for their own change.
 
+## 2026-11-27 — Two trainer claims brought to the code
+
+Hand: Claude (neo), branch `claude/readme-trainer-facts`, based on `2e4d6b1`.
+The README said the post-training trainers hold reference-model parameters frozen via
+`nt_tape_freeze_param`. None of `train_dpo.c`, `train_grpo.c` or `train_distillation.c` calls
+it. The reference (the teacher, in distillation) is a separate copy of the weights, made by
+`model_clone` (`train_dpo.c:109-134`, `train_grpo.c:127`) or built as its own model
+(`train_distillation.c:448`). Its forward runs on a tape that is cleared with no backward and
+no optimizer step (`train_dpo.c:232-240`, `train_grpo.c:394-397`, `train_distillation.c:504-509`).
+The README sentence now says that.
+
+`train_dpo.c:32` labelled its defaults "MiniMind-64M". Built from the file's own `model_new`
+(DIM 512, 8 layers, 8/4 heads, hidden 2048, vocab 6400, untied head), they count 38,020,608
+parameters in 91 tensors. The label is replaced by that count.
+
 ## 2026-11-27 — Spores and episodes publish in Termux; the replay check links its BLAS
 
 Hand: Defender (Claude, phone-1), branch `claude/termux-affinity`.

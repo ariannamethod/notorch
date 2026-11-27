@@ -29,7 +29,7 @@
 #include <math.h>
 #include <sys/time.h>
 
-/* ── Model config (MiniMind-64M defaults, override via #define) ── */
+/* ── Model config (defaults: 38,020,608 params, override via #define) ── */
 #ifndef DIM
 #define DIM       512
 #endif
