@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 enum { WIDTH = 32, HEAD = 16, LAYERS = 2, EXPERTS = 4, USED = 2, VOCAB = 4, COUNT = 4 };
 static const float eps = 0.25f;
@@ -322,7 +323,7 @@ int main(void) {
           "large fixture counts use all 64 bits");
     CHECK(element_count((uint64_t[]){UINT64_MAX,2},2) == 0,
           "fixture rejects an unrepresentable element count");
-    char path[] = "/tmp/nt_olmoe_doe_XXXXXX";
+    char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "nt_olmoe_doe_XXXXXX");
     int fd = mkstemp(path);
     if (fd<0) return 1;
     close(fd);

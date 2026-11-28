@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 static int failed,checks;
 static char sym[256][4];   /* the byte-level spelling of each byte */
 #define CHECK(c,s) do{checks++;if(!(c)){fprintf(stderr,"FAIL: %s\n",s);failed++;}}while(0)
@@ -17,7 +18,7 @@ static void refused(bpe_tokenizer *t,const char *s) {
 /* Byte tokens 0..255, one token per merge from 256, then <|im_start|>,
  * <|im_end|> and <|endoftext|> as CONTROL. */
 static bpe_tokenizer *fixture(const char *pre,char merges[][16],int nm) {
-    char path[]="/tmp/notorch-qwen35-text-XXXXXX";int fd=mkstemp(path);if(fd<0)return NULL;close(fd);
+    char path[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"notorch-qwen35-text-XXXXXX");int fd=mkstemp(path);if(fd<0)return NULL;close(fd);
     static char words[512][16];const char *tokens[512],*list[256];int32_t types[512];
     for(int b=0;b<256;b++)strcpy(words[b],sym[b]);
     for(int i=0;i<nm;i++){char *o=words[256+i];for(const char *m=merges[i];*m;m++)if(*m!=' ')*o++=*m;*o=0;list[i]=merges[i];}

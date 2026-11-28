@@ -43,6 +43,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <math.h>
+#include "nt_test_tmp.h"
 
 static int n_pass = 0, n_fail = 0;
 
@@ -57,7 +58,7 @@ static void ok(int cond, const char *fmt, ...) {
 
 static const char *outdir(void) {
     const char *d = getenv("NT_TEST_DIR");
-    return d && *d ? d : "/tmp";
+    return d && *d ? d : nt_test_tmpdir();
 }
 
 static const char *scratch(const char *leaf) {

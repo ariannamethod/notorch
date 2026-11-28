@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include "nt_test_tmp.h"
 
 static int n_pass = 0, n_fail = 0;
 
@@ -18,6 +19,8 @@ static int n_pass = 0, n_fail = 0;
 } while(0)
 
 #define ASSERT_NEAR(a, b, tol, msg) ASSERT(fabsf((a) - (b)) < (tol), msg)
+
+static char bmp[NT_TMP_MAX];   /* the fixture image, under $TMPDIR */
 
 /* Write a minimal 4x4 BMP for testing */
 static void write_test_bmp(const char* path) {
@@ -57,9 +60,9 @@ static void write_test_bmp(const char* path) {
 /* ── Test: image loading ── */
 static void test_load(void) {
     printf("\n── image loading ──\n");
-    write_test_bmp("/tmp/notorch_test.bmp");
+    write_test_bmp(bmp);
 
-    nt_image* img = nt_image_load("/tmp/notorch_test.bmp", 3);
+    nt_image* img = nt_image_load(bmp, 3);
     ASSERT(img != NULL, "load BMP");
     ASSERT(img->width == 4, "width == 4");
     ASSERT(img->height == 4, "height == 4");
@@ -72,7 +75,7 @@ static void test_load(void) {
     ASSERT(all_valid, "all pixels in [0, 1]");
 
     /* Grayscale load */
-    nt_image* gray = nt_image_load("/tmp/notorch_test.bmp", 1);
+    nt_image* gray = nt_image_load(bmp, 1);
     ASSERT(gray != NULL, "load grayscale");
     ASSERT(gray->channels == 1, "gray channels == 1");
     ASSERT(gray->width == 4 && gray->height == 4, "gray size 4x4");
@@ -88,8 +91,8 @@ static void test_load(void) {
 /* ── Test: resize ── */
 static void test_resize(void) {
     printf("\n── resize ──\n");
-    write_test_bmp("/tmp/notorch_test.bmp");
-    nt_image* img = nt_image_load("/tmp/notorch_test.bmp", 3);
+    write_test_bmp(bmp);
+    nt_image* img = nt_image_load(bmp, 3);
 
     nt_image* big = nt_image_resize(img, 16, 16);
     ASSERT(big->width == 16, "resize width == 16");
@@ -124,8 +127,8 @@ static void test_resize(void) {
 /* ── Test: center crop ── */
 static void test_crop(void) {
     printf("\n── center crop ──\n");
-    write_test_bmp("/tmp/notorch_test.bmp");
-    nt_image* img = nt_image_load("/tmp/notorch_test.bmp", 3);
+    write_test_bmp(bmp);
+    nt_image* img = nt_image_load(bmp, 3);
 
     nt_image* cropped = nt_image_center_crop(img, 2, 2);
     ASSERT(cropped->width == 2, "crop width == 2");
@@ -145,8 +148,8 @@ static void test_crop(void) {
 /* ── Test: normalize ── */
 static void test_normalize(void) {
     printf("\n── normalize ──\n");
-    write_test_bmp("/tmp/notorch_test.bmp");
-    nt_image* img = nt_image_load("/tmp/notorch_test.bmp", 3);
+    write_test_bmp(bmp);
+    nt_image* img = nt_image_load(bmp, 3);
 
     float mean[] = {0.5f, 0.5f, 0.5f};
     float std[]  = {0.5f, 0.5f, 0.5f};
@@ -172,8 +175,8 @@ static void test_normalize(void) {
 /* ── Test: horizontal flip ── */
 static void test_hflip(void) {
     printf("\n── horizontal flip ──\n");
-    write_test_bmp("/tmp/notorch_test.bmp");
-    nt_image* img = nt_image_load("/tmp/notorch_test.bmp", 3);
+    write_test_bmp(bmp);
+    nt_image* img = nt_image_load(bmp, 3);
 
     /* Save original top-left pixel */
     float orig_00_r = img->data[0 * 4 * 4 + 0 * 4 + 0]; /* R[0,0] */
@@ -195,8 +198,8 @@ static void test_hflip(void) {
 /* ── Test: grayscale conversion ── */
 static void test_grayscale(void) {
     printf("\n── grayscale ──\n");
-    write_test_bmp("/tmp/notorch_test.bmp");
-    nt_image* img = nt_image_load("/tmp/notorch_test.bmp", 3);
+    write_test_bmp(bmp);
+    nt_image* img = nt_image_load(bmp, 3);
     ASSERT(img->channels == 3, "starts as RGB");
 
     nt_image_to_gray(img);
@@ -214,8 +217,8 @@ static void test_grayscale(void) {
 /* ── Test: patch extraction ── */
 static void test_patches(void) {
     printf("\n── patch extraction ──\n");
-    write_test_bmp("/tmp/notorch_test.bmp");
-    nt_image* img = nt_image_load("/tmp/notorch_test.bmp", 3);
+    write_test_bmp(bmp);
+    nt_image* img = nt_image_load(bmp, 3);
 
     /* 4x4 image, 2x2 patches → 4 patches, each 3*2*2=12 dim */
     nt_tensor* p = nt_image_to_patches(img, 2, 2);
@@ -242,10 +245,10 @@ static void test_patches(void) {
 /* ── Test: ViT preprocess pipeline ── */
 static void test_vit_preprocess(void) {
     printf("\n── ViT preprocess ──\n");
-    write_test_bmp("/tmp/notorch_test.bmp");
+    write_test_bmp(bmp);
 
     /* 4x4 BMP → resize to 8 → center crop 8x8 → patches 4x4 → [4, 48] */
-    nt_tensor* patches = nt_vit_preprocess("/tmp/notorch_test.bmp", 8, 4);
+    nt_tensor* patches = nt_vit_preprocess(bmp, 8, 4);
     ASSERT(patches != NULL, "vit_preprocess returns non-NULL");
     ASSERT(patches->shape[0] == 4, "vit: 4 patches from 8x8 / 4x4");
     ASSERT(patches->shape[1] == 48, "vit: patch_dim = 3*4*4 = 48");
@@ -259,9 +262,9 @@ static void test_vit_preprocess(void) {
 /* ── Test: gray preprocess ── */
 static void test_gray_preprocess(void) {
     printf("\n── gray preprocess ──\n");
-    write_test_bmp("/tmp/notorch_test.bmp");
+    write_test_bmp(bmp);
 
-    nt_tensor* t = nt_gray_preprocess("/tmp/notorch_test.bmp", 8);
+    nt_tensor* t = nt_gray_preprocess(bmp, 8);
     ASSERT(t != NULL, "gray_preprocess returns non-NULL");
     ASSERT(t->len == 64, "gray 8x8 = 64 values");
 
@@ -367,6 +370,7 @@ static void test_attention(void) {
 }
 
 int main(void) {
+    nt_test_tmp(bmp, sizeof bmp, "notorch_test.bmp");
     printf("═══════════════════════════════════════════\n");
     printf("  notorch vision + BPE tests\n");
     printf("═══════════════════════════════════════════\n");

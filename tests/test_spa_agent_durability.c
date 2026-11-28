@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 enum fault {
     NO_FAULT, OPEN_FAULT, STAT_FAULT, NOT_DIRECTORY, CREATE_FAULT,
@@ -164,7 +165,7 @@ static int relative_path_case(const char *directory,const nt_spa_agent *old,
 }
 
 int main(void) {
-    char directory[]="/tmp/notorch-spa-durability-XXXXXX",path[512];
+    char directory[NT_TMP_MAX],path[512];nt_test_tmp(directory,sizeof directory,"notorch-spa-durability-XXXXXX");
     nt_spa_agent old,replacement;
     nt_spa_agent_config config;
     static const struct {

@@ -19,6 +19,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static int failures;
 #define CHECK(c, what) do { if (!(c)) { failures++; fprintf(stderr, "FAIL %s (line %d)\n", what, __LINE__); } } while (0)
@@ -33,7 +34,7 @@ static void put(const char *path, const char *text) {
 }
 static int score(const char *dir, const char *q, const char *d, const char *out, const char *opts) {
     char cmd[2048];
-    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_score %s/%s %s/%s %s/%s %s 2>/dev/null", dir, q, dir, d, dir, out, opts);
+    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_score '%s/%s' '%s/%s' '%s/%s' %s 2>/dev/null", dir, q, dir, d, dir, out, opts);
     return sh(cmd);
 }
 /* Document IDs of a ranking value: [["id",score],...] or [{"document_id":...},...]. */
@@ -117,7 +118,7 @@ static int write_jsonl(const char *path, const npy *ids, const npy *v) {
 }
 static int gate(const char *npy_dir, const char *baseline_path) {
     npy qi, di, qe, de, sc;
-    char dir[] = "/tmp/notorch-eg2-score-gate-XXXXXX", path[256], id[64];
+    char dir[NT_TMP_MAX], path[256], id[64]; nt_test_tmp_sh(dir, sizeof dir, "notorch-eg2-score-gate-XXXXXX");
     if (npy_load(npy_dir, "query_ids.npy", &qi) || npy_load(npy_dir, "document_ids.npy", &di) ||
         npy_load(npy_dir, "queries_embeddings.npy", &qe) || npy_load(npy_dir, "documents_embeddings.npy", &de) ||
         npy_load(npy_dir, "scores.npy", &sc)) return 1;
@@ -171,7 +172,7 @@ static int gate(const char *npy_dir, const char *baseline_path) {
 int main(int argc, char **argv) {
     if (argc == 3) return gate(argv[1], argv[2]);
     if (argc != 1) { fprintf(stderr, "usage: %s [NPY_DIR BASELINE.jsonl]\n", argv[0]); return 2; }
-    char dir[] = "/tmp/notorch-eg2-score-XXXXXX", path[256];
+    char dir[NT_TMP_MAX], path[256]; nt_test_tmp_sh(dir, sizeof dir, "notorch-eg2-score-XXXXXX");
     if (!mkdtemp(dir)) { perror("mkdtemp"); return 1; }
 #define FILE_IN(name, text) do { snprintf(path, sizeof(path), "%s/%s", dir, name); put(path, text); } while (0)
     FILE_IN("q.jsonl", "{\"id\":\"q1\",\"embedding\":[1,0,0,0]}\n{\"id\":\"q2\",\"tokens\":4,\"embedding\":[0,0.5,0.25,0]}\n");

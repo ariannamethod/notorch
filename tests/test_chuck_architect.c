@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static const char *case_name;
 #define CHECK(c, message) do { if (!(c)) { \
@@ -476,7 +477,7 @@ static int train_step(nt_chuck_architect *a) {
 }
 
 static int test_resume(void) {
-    char directory[] = "/tmp/notorch-architect-test-XXXXXX";
+    char directory[NT_TMP_MAX]; nt_test_tmp(directory, sizeof directory, "notorch-architect-test-XXXXXX");
     CHECK(mkdtemp(directory) != NULL, "temporary checkpoint directory");
     char pending_path[256], baseline_path[256], resumed_path[256], bad_path[256];
     snprintf(pending_path, sizeof pending_path, "%s/pending.bin", directory);

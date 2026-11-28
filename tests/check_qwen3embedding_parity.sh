@@ -11,7 +11,7 @@ set -eu
 if [ $# -ne 2 ] || [ ! -f "$1" ] || [ ! -f "$2" ]; then
     echo "usage: $0 MODEL.gguf REFERENCE.jsonl" >&2; exit 2
 fi
-DIR=$(mktemp -d /tmp/notorch-qe-parity-XXXXXX)
+DIR=$(mktemp -d "${TMPDIR:-/tmp}/notorch-qe-parity-XXXXXX")
 trap 'rm -rf "$DIR"' EXIT
 awk '{
     id = $0; sub(/.*"id": *"/, "", id); sub(/".*/, "", id)

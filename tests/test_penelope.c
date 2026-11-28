@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 enum { E=8,V=7,L=2,F=16,T=40,NT=4+11*L };
 static int checks,failed;
 #define CHECK(c,s) do{checks++;if(!(c)){fprintf(stderr,"FAIL: %s\n",s);failed++;}}while(0)
@@ -110,7 +111,7 @@ static int tokenizer_fixture(const char*path,int mode){
     return gguf_write_close(w);
 }
 int main(void){
-    char path[]="/tmp/nt_penelope_XXXXXX";int fd=mkstemp(path);if(fd<0)return 1;close(fd);
+    char path[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"nt_penelope_XXXXXX");int fd=mkstemp(path);if(fd<0)return 1;close(fd);
     CHECK(fixture(path,0)==0,"write PEN7 fixture");gguf_file*gf=gguf_open(path);nt_dims dims;
     const nt_arch*a=nt_pick_arch("penelope");CHECK(a==&nt_arch_penelope,"registered family");
     void*m=gf?a->load(gf,&dims):NULL;CHECK(m!=NULL,"load finite declared model");if(!m)return 1;

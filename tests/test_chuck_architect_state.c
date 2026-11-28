@@ -17,6 +17,7 @@
 #if defined(__APPLE__)
 #include <xlocale.h>
 #endif
+#include "nt_test_tmp.h"
 
 static unsigned checks, skips;
 static const char *case_name;
@@ -164,7 +165,7 @@ static int pending_life(nt_chuck_architect *a) {
 }
 
 static int test_hostile_lives(void) {
-    char directory[] = "/tmp/notorch-architect-state-XXXXXX";
+    char directory[NT_TMP_MAX]; nt_test_tmp(directory, sizeof directory, "notorch-architect-state-XXXXXX");
     CHECK(mkdtemp(directory), "create temporary life directory");
     char original[256], forged[256];
     snprintf(original, sizeof original, "%s/original.bin", directory);

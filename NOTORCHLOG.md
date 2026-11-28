@@ -11,6 +11,23 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-28 — Tests quote the fixture paths they hand to the shell
+
+Hand: Defender (Claude, phone-1), branch `claude/termux-tmpdir`, after merging `5b0264a`.
+Once fixtures came from `$TMPDIR`, `test_embeddinggemma2_text`, `test_qwen3embedding_text`
+and `test_embeddinggemma2_score` put that directory unquoted into the commands they pass to
+`system()`, so a `TMPDIR` with a space in it split into several arguments (the Codex review
+of #221 reproduced it). Every path these three tests build from the fixture directory is now
+single-quoted in the command. `nt_test_tmp_sh()` in `tests/nt_test_tmp.h` builds the path
+like `nt_test_tmp()` and stops the test with code 2 when it holds a single quote, the one
+character that quoting cannot carry.
+
+Proof, Galaxy A56: with `TMPDIR` pointing at a directory whose name holds a space and `;$x`,
+the three tests return 0 in the chroot and in Termux; before the change
+`test_embeddinggemma2_text` returned 1 with it in the chroot, at "converter writes the
+tokenizer GGUF". With a single quote in the directory name all three return 2. The full
+`make -k test` on the merged tree returns 0 in the chroot, in 6m57s.
+
 ## 2026-11-27 — Gemma 3 carries its post-block shift as blk.N.residual_shift
 
 Hand: Neo (Claude Opus 5.5), branch `claude/gemma3-residual-shift`, commit `ef5d5b1` on
@@ -84,6 +101,51 @@ Not covered:
   (`test_multi_decode`). Baking Gemma-3-270M and its byte gate are the engine's later steps.
 - `tests/decode_fixtures.h` changed (sha256 `68cce552…` → `b27d7f41…`); the JSON records under
   `experiments/chuck_loss_architect/` that list the old hash are records of their run and stay.
+
+## 2026-11-27 — Converters publish their GGUF without hard links
+
+Hand: Defender (Claude, phone-1), branch `claude/termux-tmpdir`.
+`embeddinggemma2_to_gguf`, `qwen3embedding_to_gguf` and `pen7_to_gguf` published their finished
+`.partial` file with `link()`, which Android's SELinux policy denies in app data. Once the
+fixtures stopped failing on `/tmp`, this was what stopped `test_embeddinggemma2_text` and
+`test_qwen3embedding_text` in Termux, at "converter writes the tokenizer GGUF".
+`nt_publish_new` is the link-then-`renameat2(RENAME_NOREPLACE)` publish that spores and replay
+episodes have used since `2e4d6b1`. It moves out of `replay_episode.c` into
+`harness/publish_new.h` as a `static inline` function, so the converters, which do not link the
+Harness library, call the same code. `HARNESS_HDR` and the three converter rules depend on the
+header.
+
+Proof, Galaxy A56, Termux: both text tests pass, and the full `make -k test` (7m28s) runs
+every prerequisite and the `test` recipe up to `test_affinity`. The 14 recipe commands after
+it, run one by one, return 0 except `test_affinity nopin`. In the Ubuntu chroot (glibc, mask
+0-7) the full `make -k test` with both changes returns 0 in 5m59s.
+
+Open: in a plain Termux shell `test_affinity` fails its thread-count check in the default and
+`nopin` modes ("planned 7, expected 3 over cpus 4 5 6"). Termux runs in cpuset `/foreground`
+with `Cpus_allowed_list 0-6`. `nt_qmv_plan_init` narrows to the fast cores only when the mask
+equals the online set, so it reads the cpuset as somebody's deliberate narrowing and plans
+seven threads, four of them on small cores. Under `su` (mask 0-7) all four modes pass. This
+is library behaviour, not a test fixture; it is left for a measured change.
+
+## 2026-11-27 — Tests make their fixtures under `$TMPDIR`
+
+Hand: Defender (Claude, phone-1), branch `claude/termux-tmpdir`, based on `da510e7`.
+Android has no `/tmp`; Termux points `TMPDIR` at `$PREFIX/tmp`. Every test that spelled its
+fixture template `"/tmp/..."` failed in `mkstemp` or `mkdtemp` before reaching the code it is
+about. That was the 12 targets left open in the entry "Spores and episodes publish in
+Termux" below, and because they are prerequisites, make never ran the `test` recipe itself.
+`tests/nt_test_tmp.h` gives `nt_test_tmpdir()` (`$TMPDIR` when set, else `/tmp`) and
+`nt_test_tmp(buf, n, name)`, which stops the test on a path that does not fit instead of
+handing `mkstemp` a cut-off template. 39 test sources build their templates through it.
+`test_gguf_write` keeps its own `NT_TEST_DIR` first and falls back to the same directory.
+`check_qwen3embedding_{model,parity}.sh` and `test_libnotorch_lib.sh` now take
+`${TMPDIR:-/tmp}`, as the other scripts already did. `test_cuda_decode` and the build lines in
+comments are untouched.
+
+Proof, Galaxy A56: in the chroot, `test_gemma3`, `test_vision` and `test_spa_agent_state`
+return 0, and with `TMPDIR=/nonexistent` they return 1, 139 and 1, so the path really comes
+from the variable. `test_vision` segfaults there because it does not check `fopen`; that was
+already so before this change.
 
 ## 2026-11-27 — SmolVLM vision matches ocelli stage by stage on three bodies
 

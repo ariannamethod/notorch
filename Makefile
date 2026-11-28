@@ -182,7 +182,7 @@ PEN7_LIB_OBJ = pen7.o harness/arch_penelope.o harness/runtime.o
 
 harness/arch_penelope.o: harness/penelope_internal.h
 
-HARNESS_HDR = harness/image.h harness/qwen35_vision.h harness/tokenizer.h harness/experts_internal.h harness/replay_internal.h harness/spore_frame.h harness/experts.h sha256.h harness/arch.h harness/arch_models.h harness/archs.h harness/runtime.h harness/logo.h harness/penelope_internal.h examples/bpe.h gguf.h notorch.h
+HARNESS_HDR = harness/image.h harness/qwen35_vision.h harness/tokenizer.h harness/experts_internal.h harness/replay_internal.h harness/publish_new.h harness/spore_frame.h harness/experts.h sha256.h harness/arch.h harness/arch_models.h harness/archs.h harness/runtime.h harness/logo.h harness/penelope_internal.h examples/bpe.h gguf.h notorch.h
 
 libnotorch.a: $(PEN7_LIB_OBJ) notorch.c notorch.h gguf.c gguf.h spa_agent.o spa_binding.o sentencepiece.o sha256.o Makefile $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -c notorch.c -o notorch.o
@@ -349,7 +349,7 @@ EG2_TEXT = tools/embeddinggemma2_text.h tools/narrow_json.h examples/bpe.c examp
 embeddinggemma2_encode: tools/embeddinggemma2_encode.c $(EG2_TEXT) $(EG2_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(EG2_FLAGS) -o $@ tools/embeddinggemma2_encode.c examples/bpe.c $(EG2_SRC) -lm $(EG2_LIBS)
 
-embeddinggemma2_to_gguf: tools/embeddinggemma2_to_gguf.c tools/narrow_json.h gguf.c gguf.h sha256.c sha256.h notorch.c $(CHUCK_HEADERS)
+embeddinggemma2_to_gguf: tools/embeddinggemma2_to_gguf.c tools/narrow_json.h harness/publish_new.h gguf.c gguf.h sha256.c sha256.h notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) -o $@ tools/embeddinggemma2_to_gguf.c gguf.c sha256.c notorch.c -lm
 
 .PHONY: test_embeddinggemma2 test_embeddinggemma2_text check_embeddinggemma2_tokenizer
@@ -391,7 +391,7 @@ QE_TEXT = tools/qwen3embedding_text.h examples/bpe.c examples/bpe.h
 qwen3embedding_encode: tools/qwen3embedding_encode.c $(QE_TEXT) $(QE_SRC) $(HARNESS_HDR) $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) $(EG2_FLAGS) -o $@ tools/qwen3embedding_encode.c examples/bpe.c $(QE_SRC) -lm $(EG2_LIBS)
 
-qwen3embedding_to_gguf: tools/qwen3embedding_to_gguf.c tools/narrow_json.h gguf.c gguf.h sha256.c sha256.h notorch.c $(CHUCK_HEADERS)
+qwen3embedding_to_gguf: tools/qwen3embedding_to_gguf.c tools/narrow_json.h harness/publish_new.h gguf.c gguf.h sha256.c sha256.h notorch.c $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) -o $@ tools/qwen3embedding_to_gguf.c gguf.c sha256.c notorch.c -lm
 
 .PHONY: test_qwen3embedding test_qwen3embedding_text check_qwen3embedding_tokenizer check_qwen3embedding_model
@@ -1172,7 +1172,7 @@ gguf_quantize: tools/gguf_quantize.c gguf.c notorch.c gguf.h notorch.h $(CHUCK_H
 	$(CC) $(CFLAGS) $(BLAS_FLAGS) -o gguf_quantize tools/gguf_quantize.c gguf.c notorch.c -lm $(BLAS_LIBS)
 	@echo "Compiled: gguf_quantize (f32/f16 GGUF -> packed GGUF, $(BLAS_NAME))"
 
-pen7_to_gguf: tools/pen7_to_gguf.c tools/pen7_bpe.h gguf.c sha256.c notorch.c gguf.h sha256.h notorch.h $(CHUCK_HEADERS)
+pen7_to_gguf: tools/pen7_to_gguf.c tools/pen7_bpe.h harness/publish_new.h gguf.c sha256.c notorch.c gguf.h sha256.h notorch.h $(CHUCK_HEADERS)
 	$(CC) $(CFLAGS) -ffp-contract=off $(BLAS_FLAGS) -o $@ tools/pen7_to_gguf.c gguf.c sha256.c notorch.c -lm $(BLAS_LIBS)
 
 check_pen7_converter: pen7_to_gguf

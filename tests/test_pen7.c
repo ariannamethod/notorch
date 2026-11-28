@@ -13,6 +13,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 enum { E=8, V=260, L=2, F=16, T=40, NT=4+11*L };
 static int checks,failed;
@@ -256,7 +257,7 @@ int main(int argc,char**argv){
            snprintf(m,sizeof(m),"%s/m.gguf",argv[2])>=(int)sizeof(m))return 1;
         return !!(fixture(a,1,0)||fixture(b,0,0)||fixture(m,.37f,0));
     }
-    char dir[]="/tmp/nt_pen7_XXXXXX";if(!mkdtemp(dir))return 1;
+    char dir[NT_TMP_MAX];nt_test_tmp(dir,sizeof dir,"nt_pen7_XXXXXX");if(!mkdtemp(dir))return 1;
     char a[128],b[128],m[128],bad[128];snprintf(a,sizeof(a),"%s/a.gguf",dir);snprintf(b,sizeof(b),"%s/b.gguf",dir);snprintf(m,sizeof(m),"%s/m.gguf",dir);snprintf(bad,sizeof(bad),"%s/bad.gguf",dir);
     small(a,b,m,bad);for(int i=1;i<argc;i++)real(argv[i]);
     if(argc==3)real_pair(argv[1],argv[2]);

@@ -3,6 +3,7 @@
 #define NT_REPLAY_INTERNAL_H
 
 #include "harness/experts_internal.h"
+#include "harness/publish_new.h"
 
 struct nt_replay_episode {
     char host[65], id[65];
@@ -15,8 +16,5 @@ struct nt_replay_episode {
 nt_replay_episode *nt_replay_clone(const nt_replay_episode *e);
 /* Boolean: content and shape are valid for this exact resident body. */
 int nt_replay_matches(const nt_experts *p, const nt_replay_episode *e);
-/* 0 when tmp now also stands at path, which must not have existed; -1 otherwise.
- * Spores and episodes publish through this. */
-int nt_publish_new(const char *tmp, const char *path);
 
 #endif

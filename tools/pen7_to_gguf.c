@@ -13,6 +13,7 @@
 #include "notorch.h"
 #include "sha256.h"
 #include "pen7_bpe.h"
+#include "harness/publish_new.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <float.h>
@@ -328,7 +329,7 @@ int main(int argc, char **argv) {
     if (strcmp(recheck,source_sha)) { fprintf(stderr,"pen7: source changed during conversion\n"); goto done; }
     if (hash_file(temp,output_sha,&bytes)) goto done;
     if (chmod(temp,0644)) { perror("pen7: output permissions"); goto done; }
-    if (link(temp,output)) { perror("pen7: publish without replacement"); goto done; }
+    if (nt_publish_new(temp,output)) { perror("pen7: publish without replacement"); goto done; }
     printf("{\"source_sha256\":\"%s\",\"gguf_sha256\":\"%s\",\"gguf_bytes\":%llu,"
            "\"tensors\":%d,\"parameters\":%llu,\"dtype\":\"%s\",\"bit_exact\":%s,"
            "\"storage_verified\":true,\"max_parameter_abs_error\":%.17g,\"rms_parameter_error\":%.17g,"

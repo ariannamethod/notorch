@@ -17,6 +17,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static int failures;
 #define CHECK(c, what) do { if (!(c)) { failures++; fprintf(stderr, "FAIL %s (line %d)\n", what, __LINE__); } } while (0)
@@ -162,10 +163,10 @@ static char *field(const char *jsonl, int row, const char *key) {
 int main(int argc, char **argv) {
     if (argc == 5) return gate(argv);
     if (argc != 1) { fprintf(stderr, "usage: %s [TOKENIZER.gguf ENCODED.jsonl GOLDEN.json FIXTURE_TOKENS.tsv]\n", argv[0]); return 2; }
-    char dir[] = "/tmp/notorch-eg2-text-XXXXXX", path[256], cmd[1024], convert[512], tsv[256];
+    char dir[NT_TMP_MAX], path[256], cmd[1024], convert[512], tsv[256]; nt_test_tmp_sh(dir, sizeof dir, "notorch-eg2-text-XXXXXX");
     if (!mkdtemp(dir)) { perror("mkdtemp"); return 1; }
     snprintf(path, sizeof(path), "%s/tokenizer.json", dir);
-    snprintf(convert, sizeof(convert), "./embeddinggemma2_to_gguf --tokenizer %s %s/tok.gguf >/dev/null 2>&1", path, dir);
+    snprintf(convert, sizeof(convert), "./embeddinggemma2_to_gguf --tokenizer '%s' '%s/tok.gguf' >/dev/null 2>&1", path, dir);
     write_tokenizer(path, REPEATED_ID);
     CHECK(sh(convert) != 0, "a vocabulary with a repeated ID is refused");
     write_tokenizer(path, NOT_SPECIAL);
@@ -212,16 +213,16 @@ int main(int argc, char **argv) {
     };
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
         put(tsv, rows[i].rows);
-        snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode %s/model.gguf %s %s/out%zu.jsonl "
-                 "--tokenizer %s/tok.gguf --condition none 2>/dev/null", dir, tsv, dir, i, dir);
+        snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode '%s/model.gguf' '%s' '%s/out%zu.jsonl' "
+                 "--tokenizer '%s/tok.gguf' --condition none 2>/dev/null", dir, tsv, dir, i, dir);
         CHECK((sh(cmd) == 0) == rows[i].ok, rows[i].ok ? "CLI text mode runs" : "CLI refuses TAB, CR, over-long and lossy rows");
     }
-    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode %s/model.gguf %s %s/bad.jsonl --tokenizer %s/tok.gguf "
+    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode '%s/model.gguf' '%s' '%s/bad.jsonl' --tokenizer '%s/tok.gguf' "
              "--condition Document 2>/dev/null", dir, tsv, dir, dir);
     CHECK(sh(cmd) != 0, "unknown condition refused");
     put(tsv, "t7\ta<eos>b\n");
-    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode %s/model.gguf %s %s/literal.jsonl --tokenizer %s/tok.gguf "
-             "--condition none 2>%s/literal.err", dir, tsv, dir, dir, dir);
+    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode '%s/model.gguf' '%s' '%s/literal.jsonl' --tokenizer '%s/tok.gguf' "
+             "--condition none 2>'%s/literal.err'", dir, tsv, dir, dir, dir);
     int literal_rc = sh(cmd);
     snprintf(path, sizeof(path), "%s/literal.err", dir);
     char *err = nj_load(path, NULL);
@@ -229,8 +230,8 @@ int main(int argc, char **argv) {
     free(err);
     FILE *nul = fopen(tsv, "wb");
     if (!nul || fwrite("t8\tab\0c\n", 1, 8, nul) != 8 || fclose(nul)) { perror(tsv); return 1; }
-    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode %s/model.gguf %s %s/nul.jsonl --tokenizer %s/tok.gguf "
-             "--condition none 2>%s/nul.err", dir, tsv, dir, dir, dir);
+    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode '%s/model.gguf' '%s' '%s/nul.jsonl' --tokenizer '%s/tok.gguf' "
+             "--condition none 2>'%s/nul.err'", dir, tsv, dir, dir, dir);
     int nul_rc = sh(cmd);
     snprintf(path, sizeof(path), "%s/nul.err", dir);
     err = nj_load(path, NULL);
@@ -238,14 +239,14 @@ int main(int argc, char **argv) {
     free(err);
     nul = fopen(tsv, "wb");
     if (!nul || fwrite("t9\t2 7\0 1\n", 1, 10, nul) != 10 || fclose(nul)) { perror(tsv); return 1; }
-    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode %s/model.gguf %s %s/nul-ids.jsonl 2>%s/nul-ids.err", dir, tsv, dir, dir);
+    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode '%s/model.gguf' '%s' '%s/nul-ids.jsonl' 2>'%s/nul-ids.err'", dir, tsv, dir, dir);
     nul_rc = sh(cmd);
     snprintf(path, sizeof(path), "%s/nul-ids.err", dir);
     err = nj_load(path, NULL);
     CHECK(nul_rc != 0 && err && strstr(err, "row 1: NUL byte inside the row"), "ID mode refuses a NUL byte instead of encoding the IDs before it");
     free(err);
     put(tsv, "t1\t2 7 1\n");
-    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode %s/model.gguf %s %s/ids.jsonl 2>/dev/null", dir, tsv, dir);
+    snprintf(cmd, sizeof(cmd), "./embeddinggemma2_encode '%s/model.gguf' '%s' '%s/ids.jsonl' 2>/dev/null", dir, tsv, dir);
     CHECK(sh(cmd) == 0, "CLI ID mode runs");
     snprintf(path, sizeof(path), "%s/out0.jsonl", dir);
     char *text_out = nj_load(path, NULL);

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 #define SLOTS 3
 #define WIDTH 11
@@ -191,7 +192,7 @@ static int test_interruptions(void) {
         expected[step] = capture_body();
         policy_hash[step] = nt_chuck_architect_hash(&baseline.life);
     }
-    char directory[] = "/tmp/chuck-scenario-stage-XXXXXX";
+    char directory[NT_TMP_MAX]; nt_test_tmp(directory, sizeof directory, "chuck-scenario-stage-XXXXXX");
     REQUIRE(mkdtemp(directory), "temporary lives directory");
     char path[256]; snprintf(path, sizeof path, "%s/life.bin", directory);
     for (size_t cut = 0; cut < sizeof cuts / sizeof *cuts; ++cut)
@@ -240,7 +241,7 @@ static int test_interleaved_lives(void) {
         }
         live[who] = initial[who];
     }
-    char directory[] = "/tmp/chuck-scenario-lives-XXXXXX";
+    char directory[NT_TMP_MAX]; nt_test_tmp(directory, sizeof directory, "chuck-scenario-lives-XXXXXX");
     REQUIRE(mkdtemp(directory), "temporary independent lives");
     char paths[2][256];
     for (int who = 0; who < 2; ++who) snprintf(paths[who], sizeof paths[who], "%s/%d.bin", directory, who);

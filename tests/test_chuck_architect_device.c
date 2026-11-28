@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 enum { N = 257, STEPS = 40 };
 static int checks, failures;
@@ -213,7 +214,7 @@ static int trajectory(int kind, int device, int resume, state_image out[STEPS]) 
         capture(&out[step]);
         out[step].policy_hash = nt_chuck_architect_hash(&a);
         if (resume && step == 17) {
-            char path[] = "/tmp/notorch-device-life-XXXXXX";
+            char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "notorch-device-life-XXXXXX");
             int fd = mkstemp(path);
             REQUIRE(fd >= 0, "resume temporary path");
             close(fd);

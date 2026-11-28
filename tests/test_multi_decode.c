@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "nt_test_tmp.h"
 
 static int failed, checks;
 #define CHECK(c, name) do { checks++; if (!(c)) { \
@@ -125,7 +126,7 @@ int main(void) {
     const char *families[] = {"qwen2", "qwen3", "gemma3", "gemma3 shifted"};
     for (int family = 0; family < 4; family++) {
         const nt_arch *arch = family >= 2 ? &nt_arch_gemma3 : &nt_arch_llama;
-        char path[] = "/tmp/nt_multi_XXXXXX";
+        char path[NT_TMP_MAX]; nt_test_tmp(path, sizeof path, "nt_multi_XXXXXX");
         int fd = mkstemp(path);
         if (fd < 0) return 1;
         close(fd);

@@ -9,10 +9,11 @@
  * checkpoint both converters produce the same bytes. There is no per-tensor
  * receipt; the printed output hash is the binding. The tokenizer is a file of its
  * own, so adding it does not move the model's identity. Both outputs are
- * create-only: a complete, synced .partial file is linked to the final name. */
+ * create-only: a complete, synced .partial file is published under the final name. */
 #include "gguf.h"
 #include "sha256.h"
 #include "tools/narrow_json.h"
+#include "harness/publish_new.h"
 #include <fcntl.h>
 #include <math.h>
 #include <stdint.h>
@@ -51,7 +52,7 @@ static int publish(const char *partial, const char *out, int tensors) {
         if (map != MAP_FAILED) munmap(map, (size_t)st.st_size);
     }
     if (fd >= 0) close(fd);
-    if (!ok || link(partial, out)) { perror(out); unlink(partial); return 1; }
+    if (!ok || nt_publish_new(partial, out)) { perror(out); unlink(partial); return 1; }
     unlink(partial);
     printf("{\"tensors\": %d, \"sha256\": \"", tensors);
     for (int i = 0; i < 32; i++) printf("%02x", d[i]);

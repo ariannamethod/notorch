@@ -6,11 +6,12 @@
  * The model file holds the source tensors with their BF16/F32 bytes unchanged,
  * sorted by name, and the architecture metadata the encoder reads. The tokenizer
  * is a file of its own, so it does not move the model's identity. Both outputs
- * are create-only: a complete, synced .partial file is linked to the final name,
+ * are create-only: a complete, synced .partial file is published under the final name,
  * and the printed SHA-256 is the binding. */
 #include "gguf.h"
 #include "sha256.h"
 #include "tools/narrow_json.h"
+#include "harness/publish_new.h"
 #include <fcntl.h>
 #include <math.h>
 #include <stdint.h>
@@ -50,7 +51,7 @@ static int publish(const char *partial, const char *out, int tensors) {
         if (map != MAP_FAILED) munmap(map, (size_t)st.st_size);
     }
     if (fd >= 0) close(fd);
-    if (!ok || link(partial, out)) { perror(out); unlink(partial); return 1; }
+    if (!ok || nt_publish_new(partial, out)) { perror(out); unlink(partial); return 1; }
     unlink(partial);
     printf("{\"tensors\": %d, \"sha256\": \"", tensors);
     for (int i = 0; i < 32; i++) printf("%02x", d[i]);
