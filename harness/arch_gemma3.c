@@ -2,7 +2,8 @@
  * scaled embeddings; per-head QK RMSNorm; NEOX local/global RoPE; GELU;
  * post-attention and post-FFN RMSNorm before each residual addition.
  * GGUF conversion has already folded +1 into every norm weight.
- * Unlike a llama block, ffn_down.bias is NOT an additive residual direction. */
+ * Unlike a llama block, ffn_down.bias is NOT an additive residual direction.
+ * The post-block residual shift of a Gemma body is blk.N.residual_shift. */
 #include "harness/arch_models.h"
 #include <limits.h>
 #include <math.h>
@@ -43,7 +44,7 @@ static void gemma3_free(void *ptr) {
     for (int i = 0; i < m->L; i++) {
         gemma3_layer *l = &m->layers[i];
         free(l->attn_norm); free(l->q_norm); free(l->k_norm);
-        free(l->post_attn_norm); free(l->ffn_norm); free(l->post_ffw_norm);
+        free(l->post_attn_norm); free(l->ffn_norm); free(l->post_ffw_norm); free(l->residual_shift);
         free(l->q.f32); free(l->k.f32); free(l->v.f32); free(l->o.f32);
         free(l->gate.f32); free(l->up.f32); free(l->down.f32);
     }
@@ -114,6 +115,12 @@ static void *gemma3_load(gguf_file *gf, nt_dims *dims) {
         /* A llama-style saved residual shift must never load and disappear silently. */
         snprintf(name, sizeof(name), "blk.%d.ffn_down.bias", i);
         if (gguf_find_tensor(gf, name) >= 0) goto bad;
+        snprintf(name, sizeof(name), "blk.%d.residual_shift", i);
+        if (gguf_find_tensor(gf, name) >= 0) {
+            int ti = shape(gf, name, 0, m->E);
+            if (ti < 0 || gf->tensors[ti].dtype != GGUF_TYPE_F32 ||
+                !(l->residual_shift = gguf_dequant(gf, ti))) goto bad;
+        }
     }
     dims->n_layers = L; dims->kv_dim = m->KD; dims->vocab = m->V;
     fprintf(stderr, "gemma3: E=%d H=%d KV=%d HD=%d FF=%d V=%d L=%d window=%d pattern=%d\n",
@@ -209,6 +216,9 @@ static int gemma3_rows(gemma3_model *m, int n, const int *ids, kv_cache *const *
         qmm(out,&l->down,gate,n);
         for (int j=0;j<n;j++) rmsnorm(out+(size_t)j*E,out+(size_t)j*E,l->post_ffw_norm,E,m->eps);
         for (size_t i=0;i<(size_t)n*E;i++) x[i]+=out[i];
+        /* A separate addition after the skip, in the order of an equivalent hook. */
+        if (l->residual_shift)
+            for (int j=0;j<n;j++) add_bias(x+(size_t)j*E,l->residual_shift,E);
         if (hook && !users && (rc=hook(user,b,pos[0],n,E,x))!=NT_OK) goto done;
         if (hook && users)
             for (int j=0;j<n;j++)

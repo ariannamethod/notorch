@@ -3,5 +3,5 @@
 
 int main(int argc, char **argv) {
     if (argc != 3) return 1;
-    return fixture(argv[1], 0) || fixture_gemma3(argv[2]);
+    return fixture(argv[1], 0) || fixture_gemma3(argv[2], -1);
 }

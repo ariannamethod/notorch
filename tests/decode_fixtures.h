@@ -86,9 +86,10 @@ static int fixture(const char *path, int qwen3) {
 }
 
 /* Gemma 3: six layers, five of them sliding with a window of 4, so the positions this test
- * reaches (up to 10) cut the window for most rows. Norms near one, Q8_0 matrices. */
+ * reaches (up to 10) cut the window for most rows. Norms near one, Q8_0 matrices. With
+ * shift_layer >= 0 the body also carries an F32 blk.<shift_layer>.residual_shift. */
 enum { GL = 6 };
-static int fixture_gemma3(const char *path) {
+static int fixture_gemma3(const char *path, int shift_layer) {
     const char *fields[] = {"attn_norm", "attn_q", "attn_k", "attn_v", "attn_output", "attn_q_norm",
         "attn_k_norm", "post_attention_norm", "ffn_norm", "ffn_gate", "ffn_up", "ffn_down", "post_ffw_norm"};
     int rows[] = {0, E, HD, HD, E, 0, 0, 0, 0, FF, FF, E, 0};
@@ -117,6 +118,9 @@ static int fixture_gemma3(const char *path) {
             if (rows[f]) gguf_write_tensor_decl(w, name, 2, (uint64_t[]){(uint64_t)cols[f], (uint64_t)rows[f]}, GGUF_TYPE_Q8_0);
             else gguf_write_tensor_decl(w, name, 1, (uint64_t[]){(uint64_t)cols[f]}, GGUF_TYPE_F32);
         }
+    char shift_name[96];
+    snprintf(shift_name, sizeof(shift_name), "blk.%d.residual_shift", shift_layer);
+    if (shift_layer >= 0) gguf_write_tensor_decl(w, shift_name, 1, (uint64_t[]){E}, GGUF_TYPE_F32);
     if (put_q8(w, "token_embd.weight", V, E, 2)) return -1;
     float norm[FF];
     for (int i = 0; i < FF; i++) norm[i] = 0.9f + 0.02f * (float)(i % 7);
@@ -127,6 +131,11 @@ static int fixture_gemma3(const char *path) {
             if (rows[f]) { if (put_q8(w, name, rows[f], cols[f], l * 13 + f)) return -1; }
             else gguf_write_tensor_f32(w, name, norm, (uint64_t)cols[f]);
         }
+    if (shift_layer >= 0) {
+        float shift[E];
+        for (int i = 0; i < E; i++) shift[i] = value(i, 9) * 0.5f;
+        gguf_write_tensor_f32(w, shift_name, shift, E);
+    }
     return gguf_write_close(w);
 }
 
