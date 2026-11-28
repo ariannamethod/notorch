@@ -11,6 +11,23 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-28 — Tests quote the fixture paths they hand to the shell
+
+Hand: Defender (Claude, phone-1), branch `claude/termux-tmpdir`, after merging `5b0264a`.
+Once fixtures came from `$TMPDIR`, `test_embeddinggemma2_text`, `test_qwen3embedding_text`
+and `test_embeddinggemma2_score` put that directory unquoted into the commands they pass to
+`system()`, so a `TMPDIR` with a space in it split into several arguments (the Codex review
+of #221 reproduced it). Every path these three tests build from the fixture directory is now
+single-quoted in the command. `nt_test_tmp_sh()` in `tests/nt_test_tmp.h` builds the path
+like `nt_test_tmp()` and stops the test with code 2 when it holds a single quote, the one
+character that quoting cannot carry.
+
+Proof, Galaxy A56: with `TMPDIR` pointing at a directory whose name holds a space and `;$x`,
+the three tests return 0 in the chroot and in Termux; before the change
+`test_embeddinggemma2_text` returned 1 with it in the chroot, at "converter writes the
+tokenizer GGUF". With a single quote in the directory name all three return 2. The full
+`make -k test` on the merged tree returns 0 in the chroot, in 6m57s.
+
 ## 2026-11-27 — Gemma 3 carries its post-block shift as blk.N.residual_shift
 
 Hand: Neo (Claude Opus 5.5), branch `claude/gemma3-residual-shift`, commit `ef5d5b1` on

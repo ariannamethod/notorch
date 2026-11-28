@@ -184,10 +184,10 @@ int main(int argc, char **argv) {
         if (cp < 128) sym[b][0] = (char)cp;
         else { sym[b][0] = (char)(0xc0 | (cp >> 6)); sym[b][1] = (char)(0x80 | (cp & 63)); }
     }
-    char dir[NT_TMP_MAX], path[256], cmd[1024], convert[512], tsv[256]; nt_test_tmp(dir, sizeof dir, "notorch-qe-text-XXXXXX");
+    char dir[NT_TMP_MAX], path[256], cmd[1024], convert[512], tsv[256]; nt_test_tmp_sh(dir, sizeof dir, "notorch-qe-text-XXXXXX");
     if (!mkdtemp(dir)) { perror("mkdtemp"); return 1; }
     snprintf(path, sizeof(path), "%s/tokenizer.json", dir);
-    snprintf(convert, sizeof(convert), "./qwen3embedding_to_gguf --tokenizer %s %s/tok.gguf >/dev/null 2>&1", path, dir);
+    snprintf(convert, sizeof(convert), "./qwen3embedding_to_gguf --tokenizer '%s' '%s/tok.gguf' >/dev/null 2>&1", path, dir);
     const int refusals[] = {MARKS_REGEX, FALLBACK, WITH_BOS, LSTRIP};
     for (int i = 0; i < 4; i++) { write_tokenizer(path, refusals[i]); CHECK(sh(convert) != 0, "converter refuses a tokenizer of another scheme"); }
     write_tokenizer(path, VALID);
@@ -260,16 +260,16 @@ int main(int argc, char **argv) {
     };
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
         put(tsv, rows[i].rows);
-        snprintf(cmd, sizeof(cmd), "./qwen3embedding_encode %s/model.gguf %s %s/out%zu.jsonl "
-                 "--tokenizer %s/tok.gguf --condition document 2>/dev/null", dir, tsv, dir, i, dir);
+        snprintf(cmd, sizeof(cmd), "./qwen3embedding_encode '%s/model.gguf' '%s' '%s/out%zu.jsonl' "
+                 "--tokenizer '%s/tok.gguf' --condition document 2>/dev/null", dir, tsv, dir, i, dir);
         CHECK((sh(cmd) == 0) == rows[i].ok, rows[i].ok ? "CLI text mode runs" : "CLI refuses TAB, CR, over-long, lossy and padded rows");
     }
-    snprintf(cmd, sizeof(cmd), "./qwen3embedding_encode %s/model.gguf %s %s/bad.jsonl --tokenizer %s/tok.gguf "
+    snprintf(cmd, sizeof(cmd), "./qwen3embedding_encode '%s/model.gguf' '%s' '%s/bad.jsonl' --tokenizer '%s/tok.gguf' "
              "--condition none 2>/dev/null", dir, tsv, dir, dir);
     CHECK(sh(cmd) != 0, "unknown condition refused");
     put(tsv, "t8\ta<|endoftext|>\n");
-    snprintf(cmd, sizeof(cmd), "./qwen3embedding_encode %s/model.gguf %s %s/literal.jsonl --tokenizer %s/tok.gguf "
-             "--condition document 2>%s/literal.err", dir, tsv, dir, dir, dir);
+    snprintf(cmd, sizeof(cmd), "./qwen3embedding_encode '%s/model.gguf' '%s' '%s/literal.jsonl' --tokenizer '%s/tok.gguf' "
+             "--condition document 2>'%s/literal.err'", dir, tsv, dir, dir, dir);
     int literal_rc = sh(cmd);
     snprintf(path, sizeof(path), "%s/literal.err", dir);
     char *err = nj_load(path, NULL);
@@ -277,8 +277,8 @@ int main(int argc, char **argv) {
     free(err);
     FILE *nul = fopen(tsv, "wb");
     if (!nul || fwrite("t9\t!a\0b\n", 1, 8, nul) != 8 || fclose(nul)) { perror(tsv); return 1; }
-    snprintf(cmd, sizeof(cmd), "./qwen3embedding_encode %s/model.gguf %s %s/nul.jsonl --tokenizer %s/tok.gguf "
-             "--condition document 2>%s/nul.err", dir, tsv, dir, dir, dir);
+    snprintf(cmd, sizeof(cmd), "./qwen3embedding_encode '%s/model.gguf' '%s' '%s/nul.jsonl' --tokenizer '%s/tok.gguf' "
+             "--condition document 2>'%s/nul.err'", dir, tsv, dir, dir, dir);
     int nul_rc = sh(cmd);
     snprintf(path, sizeof(path), "%s/nul.err", dir);
     err = nj_load(path, NULL);
@@ -288,7 +288,7 @@ int main(int argc, char **argv) {
     char id_rows[64];
     snprintf(id_rows, sizeof(id_rows), "t1\t%d %d\n", 256 + 3, EOT);
     put(tsv, id_rows);
-    snprintf(cmd, sizeof(cmd), "./qwen3embedding_encode %s/model.gguf %s %s/ids.jsonl 2>/dev/null", dir, tsv, dir);
+    snprintf(cmd, sizeof(cmd), "./qwen3embedding_encode '%s/model.gguf' '%s' '%s/ids.jsonl' 2>/dev/null", dir, tsv, dir);
     CHECK(sh(cmd) == 0, "CLI ID mode runs");
     snprintf(path, sizeof(path), "%s/out0.jsonl", dir);
     char *text_out = nj_load(path, NULL);

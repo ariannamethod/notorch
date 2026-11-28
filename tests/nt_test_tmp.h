@@ -27,4 +27,17 @@ static inline char *nt_test_tmp(char *buf, size_t n, const char *name) {
     return buf;
 }
 
+/* The same, for a test that hands the path to system(). Such a test single-quotes every path
+ * it builds from buf, so spaces and shell syntax in TMPDIR pass through unchanged; a single
+ * quote cannot, and stops the test here. */
+static inline char *nt_test_tmp_sh(char *buf, size_t n, const char *name) {
+    nt_test_tmp(buf, n, name);
+    for (const char *p = buf; *p; p++)
+        if (*p == '\'') {
+            fprintf(stderr, "temporary path holds a single quote: %s\n", buf);
+            exit(2);
+        }
+    return buf;
+}
+
 #endif
