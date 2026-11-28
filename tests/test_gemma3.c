@@ -13,13 +13,15 @@
 enum {E=4,V=5,L=6,FF=8,N=5};
 static int checks,failed;
 #define CHECK(c,s) do{checks++;if(!(c)){fprintf(stderr,"FAIL: %s\n",s);failed++;}}while(0)
-typedef struct{char name[80];int rows,cols;float data[32];}tensor;
+typedef struct{char name[80];int rows,cols,dtype;float data[32];}tensor;
 static void put(tensor*t,const char*name,int rows,int cols,int salt){
-    snprintf(t->name,sizeof(t->name),"%s",name);t->rows=rows;t->cols=cols;
+    snprintf(t->name,sizeof(t->name),"%s",name);t->rows=rows;t->cols=cols;t->dtype=GGUF_TYPE_F32;
     for(int i=0;i<(rows?rows:1)*cols;i++)t->data[i]=rows?((i*7+salt*3)%23-11)*.0375f:.8f+.03f*((i+salt)%7);
 }
+/* A persisted blk.<layer>.residual_shift of `width` values, declared as `dtype`. */
+typedef struct{int layer,width,dtype;float v[E];}shift_spec;
 /* mode1 malformed postnorm; mode2 illegal residual bias; mode3 none+factor2. */
-static int fixture(const char*path,int mode,int silent_ffn){
+static int fixture(const char*path,int mode,int silent_ffn,const shift_spec*shift){
     tensor ts[82];int nt=0;
     put(&ts[nt++],"token_embd.weight",V,E,1);put(&ts[nt++],"output_norm.weight",0,E,2);
     const char*fields[]={"attn_norm","attn_q","attn_k","attn_v","attn_output","attn_q_norm",
@@ -31,6 +33,11 @@ static int fixture(const char*path,int mode,int silent_ffn){
         if(l==silent_ffn && k==11) memset(ts[nt-1].data,0,sizeof(ts[nt-1].data));
     }
     if(mode==2)put(&ts[nt++],"blk.0.ffn_down.bias",0,E,0);
+    if(shift){
+        char name[80];snprintf(name,sizeof(name),"blk.%d.residual_shift",shift->layer);
+        put(&ts[nt],name,0,shift->width,0);ts[nt].dtype=shift->dtype;
+        memcpy(ts[nt++].data,shift->v,sizeof(shift->v));
+    }
     gguf_writer*w=gguf_write_open(path);if(!w)return -1;
     gguf_write_kv_str(w,"general.architecture","gemma3");
 #define U(k,v) gguf_write_kv_u32(w,"gemma3."k,v)
@@ -47,7 +54,7 @@ static int fixture(const char*path,int mode,int silent_ffn){
 #undef F
     for(int i=0;i<nt;i++){
         uint64_t shape[]={(uint64_t)ts[i].cols,(uint64_t)ts[i].rows};
-        gguf_write_tensor_decl(w,ts[i].name,ts[i].rows?2:1,shape,GGUF_TYPE_F32);
+        gguf_write_tensor_decl(w,ts[i].name,ts[i].rows?2:1,shape,ts[i].dtype);
     }
     for(int i=0;i<nt;i++)gguf_write_tensor_f32(w,ts[i].name,ts[i].data,
         (uint64_t)(ts[i].rows?ts[i].rows:1)*(uint64_t)ts[i].cols);
@@ -140,7 +147,7 @@ static void expert_boundaries(const nt_arch *a, void *m, kv_cache *kv,
         int l = layers[i];
         boundary pre = {.layer=l}, reference = {.layer=l};
         nt_dims dims;
-        gguf_file *g = fixture(path,0,l) == 0 ? gguf_open(path) : NULL;
+        gguf_file *g = fixture(path,0,l,NULL) == 0 ? gguf_open(path) : NULL;
         void *quiet = g ? a->load(g,&dims) : NULL;
         CHECK(quiet && a->forward_residual(quiet,kv,ids,N,0,NULL,capture,&reference) == NT_OK &&
               reference.calls == 1, "independent pre-FFN oracle for all five positions");
@@ -162,9 +169,77 @@ static void expert_boundaries(const nt_arch *a, void *m, kv_cache *kv,
     CHECK(a->forward(m,kv,ids,N,0,logits) == NT_OK && !memcmp(plain,logits,sizeof(logits)),
           "fresh forward after expert abort");
 }
+
+/* The live intervention a persisted shift replaces: one addition after the block. */
+typedef struct{int layer;const float*s;}live_shift;
+static int add_shift(void*user,int layer,int pos,int n,int width,float*x){
+    const live_shift*ls=user;(void)pos;
+    if(layer==ls->layer)for(int j=0;j<n;j++)for(int i=0;i<width;i++)x[j*width+i]+=ls->s[i];
+    return NT_OK;
+}
+static void*load_shifted(const nt_arch*a,const char*path,const shift_spec*s,gguf_file**g){
+    nt_dims d;*g=fixture(path,0,-1,s)==0?gguf_open(path):NULL;
+    return *g?a->load(*g,&d):NULL;
+}
+/* blk.N.residual_shift against the hook on the base body, on a sliding and a global layer.
+ * The shift values are chosen so that adding the shift inside the branch, x+(n+s), changes
+ * the prefill logits on both layers; with .3 in lane 0 the global layer's differing bit is
+ * absorbed by the output norm and only decode sees it. */
+static void shift_checks(const nt_arch*a,void*m,const int*ids,const float*base){
+    char path[NT_TMP_MAX],what[96];
+    nt_test_tmp(path,sizeof path,"nt_gemma3_shift_XXXXXX");
+    int fd=mkstemp(path);
+    if(fd<0){CHECK(0,"create shift fixture");return;}
+    close(fd);
+    kv_cache*kl=kv_new(L,8,4),*ks=kv_new(L,8,4);
+    CHECK(kl&&ks,"allocate shift caches");
+    shift_spec s={.width=E,.dtype=GGUF_TYPE_F32,.v={.7f,-.7f,1.1f,.45f}};
+    int layers[]={2,5};
+    for(size_t k=0;kl&&ks&&k<sizeof(layers)/sizeof(*layers);k++){
+        s.layer=layers[k];
+        live_shift ls={s.layer,s.v};
+        gguf_file*g;void*sm=load_shifted(a,path,&s,&g);
+        float live[V],saved[V],other[V];
+        snprintf(what,sizeof(what),"layer %d: body with residual_shift loads",s.layer);
+        CHECK(sm!=NULL,what);
+        snprintf(what,sizeof(what),"layer %d: live shift changes the logits",s.layer);
+        CHECK(a->forward_residual(m,kl,ids,N,0,live,add_shift,&ls)==NT_OK&&memcmp(live,base,sizeof(live)),what);
+        if(sm){
+            snprintf(what,sizeof(what),"layer %d: persisted shift matches hook byte for byte",s.layer);
+            CHECK(a->forward(sm,ks,ids,N,0,saved)==NT_OK&&!memcmp(live,saved,sizeof(saved)),what);
+            int rc=0,same=1;
+            for(int j=0;j<N;j++){
+                rc|=a->forward_residual(m,kl,ids+j,1,j,live,add_shift,&ls);
+                rc|=a->forward(sm,ks,ids+j,1,j,other);
+                same&=!memcmp(live,other,sizeof(other));
+            }
+            snprintf(what,sizeof(what),"layer %d: decode with persisted shift matches hook at every step",s.layer);
+            CHECK(!rc&&same,what);
+            snprintf(what,sizeof(what),"layer %d: idle DOE hooks keep the persisted shift",s.layer);
+            CHECK(a->doe&&a->doe->forward(sm,ks,ids,N,0,other,NULL,NULL,NULL)==NT_OK&&!memcmp(saved,other,sizeof(other)),what);
+            a->free(sm);
+        }
+        if(g)gguf_close(g);
+    }
+    gguf_file*g;void*sm;float zero[V];
+    s.layer=2;memset(s.v,0,sizeof(s.v));sm=load_shifted(a,path,&s,&g);
+    CHECK(sm&&kl&&a->forward(sm,kl,ids,N,0,zero)==NT_OK&&!memcmp(base,zero,sizeof(zero)),
+          "zero residual_shift leaves the base logits byte for byte");
+    if(sm)a->free(sm);
+    if(g)gguf_close(g);
+    s.width=E-1;sm=load_shifted(a,path,&s,&g);
+    CHECK(g&&!sm,"residual_shift of width E-1 refused");
+    if(sm)a->free(sm);
+    if(g)gguf_close(g);
+    s.width=E;s.dtype=GGUF_TYPE_F16;sm=load_shifted(a,path,&s,&g);
+    CHECK(g&&!sm,"F16 residual_shift refused");
+    if(sm)a->free(sm);
+    if(g)gguf_close(g);
+    kv_free(kl);kv_free(ks);unlink(path);
+}
 int main(void){
     char path[NT_TMP_MAX];nt_test_tmp(path,sizeof path,"nt_gemma3_XXXXXX");int fd=mkstemp(path);if(fd<0)return 1;close(fd);
-    CHECK(fixture(path,0,-1)==0,"write tiny Gemma3 GGUF");
+    CHECK(fixture(path,0,-1,NULL)==0,"write tiny Gemma3 GGUF");
     gguf_file*gf=gguf_open(path);nt_dims dims;
     const nt_arch*a=nt_pick_arch("gemma3");
     CHECK(a==&nt_arch_gemma3,"architecture registry selects Gemma3");
@@ -191,9 +266,10 @@ int main(void){
     p=(probe){0};CHECK(a->forward_residual(m,kv,ids,N,0,NULL,observe,&p)==0&&p.calls==L&&!p.bad,"residual capture without logits");
     int bad=V;CHECK(a->forward(m,kv,&bad,1,0,out)==NT_E_TOKEN,"invalid token refused");
     CHECK(a->forward(m,kv,ids,N,5,out)==NT_E_CAPACITY,"cache overflow refused");
+    shift_checks(a,m,ids,base);
     a->free(m);gguf_close(gf);
     for(int mode=1;mode<=5;mode++){
-        CHECK(fixture(path,mode,-1)==0,"write variant GGUF");gf=gguf_open(path);m=gf?a->load(gf,&dims):NULL;
+        CHECK(fixture(path,mode,-1,NULL)==0,"write variant GGUF");gf=gguf_open(path);m=gf?a->load(gf,&dims):NULL;
         if(mode!=3)CHECK(!m,"malformed or unsupported tensor/metadata refused");
         else CHECK(m&&a->forward(m,kv,ids,N,0,out)==0&&!memcmp(base,out,sizeof(out)),"rope scaling none ignores factor");
         if(m)a->free(m);

@@ -11,6 +11,80 @@ a concise capability summary in the README too. When in doubt: it goes here firs
 
 Newest entries on top.
 
+## 2026-11-27 — Gemma 3 carries its post-block shift as blk.N.residual_shift
+
+Hand: Neo (Claude Opus 5.5), branch `claude/gemma3-residual-shift`, commit `ef5d5b1` on
+`da510e7`. Made for Gemma export in the SUBLITERATUS engine.
+
+Gemma normalizes the FFN branch with `post_ffw_norm` before it joins the skip, so a constant in
+`ffn_down.bias` would land inside the normalization: the branch becomes w⊙(u+b)/rms(u+b), which
+no constant shift of the stream equals. A shift added after the complete block had no tensor to
+be saved in, and the steering engine refused to export Gemma. This change adds that tensor.
+
+- `gemma3_layer.residual_shift` comes from an optional `blk.N.residual_shift`: F32, ndim 1,
+  shape [E]. Any other dtype or width refuses the body; the `ffn_down.bias` refusal stays. F16
+  is refused rather than converted, because an F16 vector does not reproduce the live F32 shift.
+- `gemma3_rows` adds it to each row with `add_bias` right after `x[i]+=out[i]` and before the
+  post-block hook (`arch_gemma3.c:218-221`), the place and order of the live hook and of llama's
+  `ffn_down.bias` (`arch_llama.c:411-413`). forward, forward_residual, forward_multi and the DOE
+  forward all go through `gemma3_rows`.
+- `cuda_gemma3_load` refuses a body that carries any `residual_shift`. The CPU loader under it
+  fills the field, and the device slot (`d->ffn_down_bias`, added at `cuda_decode.cu:609`) is
+  filled for llama only, so without the refusal the GPU would run the base.
+
+Tests, neo, Accelerate:
+- `test_gemma3`, 52 → 66 checks. On layer 2 (sliding) and layer 5 (global): the body loads; the
+  live hook changes the logits; the body's `forward` equals `forward_residual` of the base body
+  with a hook that adds the same F32 vector, memcmp of the logits; the same at every step of a
+  one-token decode; idle DOE hooks keep it. A zero shift leaves the base logits byte for byte.
+  Width E−1 and F16 are refused, and mode 2 (`blk.0.ffn_down.bias`) still is.
+- `test_multi_decode`, 753 → 1004 checks: a fourth body, the gemma3 fixture with an F32
+  `blk.2.residual_shift`. forward_multi equals single decode bit for bit, logits and caches, on
+  the int8 and NT_NO_I8 paths, one thread and threaded, plain and steered.
+- The shift is {0.7, −0.7, 1.1, 0.45}. The first pick, 0.3 in lane 0, left the order mutant M3
+  green on the global layer's prefill: the last row differs in lane 2 only, `(x+n)+s` =
+  `0x1.6ccac8p+1` against `x+(n+s)` = `0x1.6ccacap+1`, and the output norm and tied head absorbed
+  that ulp; decode caught it. With 0.7 in lane 0 the same lane differs and the prefill logits
+  change. On layer 2 the last row differs in lane 0 (`0x1.a0d84p+0` / `0x1.a0d842p+0`). The lanes
+  come from an instrumented scratch copy; the committed test cannot see the branch value n.
+- `make test -o check_experience -o check_text_replay` exits 0, and its 588 summary lines equal
+  those of `da510e7` except the two counts above. Plain `make test` is red on neo at `da510e7`
+  before this change, and the main `test` recipe never starts because it waits for every
+  prerequisite: `check_experience` stops at `test -s partial/state-1.gguf` after
+  `doe_experience … awake worker 1 2 partial late-error` (three runs of three on both trees), and
+  `check_text_replay` stops at the `--replay-only continuing-episode … --spore-out default-budget`
+  run. The branch stops at the same steps. Neither target is touched here.
+
+Eight mutants, each a scratch copy of `arch_gemma3.c` with one change. Each object was deleted
+and rebuilt: make 3.81 compares whole seconds, and a first pass in which M2 to M4b ran M1's
+binary was discarded. The final pass gives eight distinct `arch_gemma3.o` hashes, none equal
+to the control's, and the unmutated build is green on every kill line. All eight are KILLED:
+- M0 read, never added → "layer 2/5: persisted shift matches hook byte for byte".
+- M1 added to the down projection before `post_ffw_norm` → the same, both layers.
+- M2 block i's shift added in block i+1 → the same, both layers.
+- M3 added to the normalized branch before the skip, x+(n+s) → the same, both layers.
+- M4a width check removed → "residual_shift of width E-1 refused".
+- M4b dtype check removed → "F16 residual_shift refused".
+- M5 skipped when forward_multi calls (`head_rows==1` only) → all eight "gemma3 shifted …:
+  multi-sequence logits equal single decode bit for bit".
+- M6 loaded from the preceding directory entry → "zero residual_shift leaves the base logits byte
+  for byte".
+
+Not covered:
+- A `blk.N.residual_shift` with N ≥ `block_count` is never looked up: the load loop stops at L,
+  and such a body loads and runs as the base, silently. The SUBLITERATUS writer writes only a
+  layer whose `ffn_down.weight` exists (its `src/export.c:139-143`), so it cannot produce one.
+  Not fixed here.
+- CUDA: the refusal is written, not compiled (no nvcc on neo) and not run.
+  `tests/test_cuda_decode.c` takes the new fixture argument and passes `-fsyntax-only` against a
+  declarations-only stub of `cuda_runtime_api.h`, nothing more. Loading the shift into the device
+  slot, with a run of `test_cuda_decode` on a CUDA host, is a separate change.
+- `arch_llama.c` does not look for `residual_shift`; the engine writes it for gemma3 only.
+- No real Gemma GGUF ran here: the fixtures are E=4 F32 (`test_gemma3`) and E=64 Q8_0
+  (`test_multi_decode`). Baking Gemma-3-270M and its byte gate are the engine's later steps.
+- `tests/decode_fixtures.h` changed (sha256 `68cce552…` → `b27d7f41…`); the JSON records under
+  `experiments/chuck_loss_architect/` that list the old hash are records of their run and stay.
+
 ## 2026-11-27 — Converters publish their GGUF without hard links
 
 Hand: Defender (Claude, phone-1), branch `claude/termux-tmpdir`.
